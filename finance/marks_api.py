@@ -70,8 +70,16 @@ def transaction_charges(txn_id: str):
         return jsonify({"error": "No such transaction."}), 404
     if t.amount >= 0:
         return jsonify({"charges": []})
-    return jsonify({"charges": marks.search_charges(t, txns, request.args.get("q", ""),
-                                                    st.merchant_names())})
+    q = request.args.get("q", "")
+    found = marks.search_charges(t, txns, q, st.merchant_names())
+    if request.args.get("case") == "reimbursement" and not q.strip():
+        # TEST-31 (T-09w): Work paying me back from the deposit's page lists
+        # its likely matches first, "Your share of …" among them.
+        likely = marks.reimbursement_candidates(t, txns, st.merchant_names(), st.splits(),
+                                                st.payback_people())
+        seen = {c["id"] for c in likely}
+        found = likely + [c for c in found if c["id"] not in seen]
+    return jsonify({"charges": found})
 
 
 @bp.get("/transactions/<txn_id>/deposits")
@@ -87,9 +95,11 @@ def transaction_deposits(txn_id: str):
     if t.amount <= 0:
         return jsonify({"deposits": []})
     q = request.args.get("q", "")
+    from .splits import your_share_left
     return jsonify({"deposits": marks.reimbursing_deposits(
         t, txns, st.merchant_names(), st.payback_kinds(), q=q,
-        days=365 if q.strip() else marks.REFUND_DAYS, limit=20)})
+        days=365 if q.strip() else marks.REFUND_DAYS, limit=20,
+        share=your_share_left(t, st.splits().get(t.fingerprint), txns, st.payback_people()))})
 
 
 def _impact_for(st, before_txns, after_txns, t, res: dict) -> dict:
@@ -169,7 +179,10 @@ def mark_transaction(txn_id: str):
         undo["marks"] = res["marks"]
     return jsonify({"ok": True, "id": txn_id, "case": case, "title": res["title"],
                     "detail": res.get("detail") or impact.get("detail") or "", "impact": impact,
-                    "remember": res["remember"], "undo": undo})
+                    "remember": res["remember"], "undo": undo,
+                    # TEST-31 (S-11w): more than her share came in; the app asks
+                    # "What's the extra $15.00?" next.
+                    **({"extra": res["extra"]} if res.get("extra") else {})})
 
 
 @bp.put("/transactions/<txn_id>/always")

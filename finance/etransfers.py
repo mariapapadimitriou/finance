@@ -105,7 +105,9 @@ def known_people(transactions, splits: dict | None = None, payer: dict | None = 
         names += [p.get("name") or "" for p in sp.get("people") or []]
     for t in transactions:
         names += list(getattr(t, "joint_people", None) or [])
-    names += list((payer or {}).values())
+    # TEST-31: "me" and "everyone" say who a reimbursement is for; not names.
+    from .splits import SELF
+    names += [n for n in (payer or {}).values() if n not in SELF]
     seen, out = set(), []
     for n in names:
         n = " ".join(str(n or "").split())

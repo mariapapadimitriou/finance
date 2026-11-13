@@ -276,6 +276,13 @@ def add_links(st, charge: Transaction, splitting: dict, txns: list[Transaction],
     by_id = {t.fingerprint: t for t in txns}
     kinds, stored = st.payback_kinds(), st.parts()
     linked = [t for t in txns if charge.fingerprint in t.repays_all]
+    if splitting.get("mine"):
+        # TEST-31 (S-40w): REIMBURSED BY on her own row, each opening the
+        # same Unlink? sheet as any reimbursement (S-34kr7).
+        splitting["mine"]["links"] = sorted(
+            (inflow_link(st, charge, x, None, by_id, kinds, stored) for x in linked
+             if x.fingerprint in (splitting["mine"].get("ids") or [])),
+            key=lambda link: (link["date"], str(link["id"])))
     for p in splitting.get("people") or []:
         links = [inflow_link(st, charge, x, p["name"], by_id, kinds, stored) for x in linked
                  if credited.get(x.fingerprint) == p["name"]]

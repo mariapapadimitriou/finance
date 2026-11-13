@@ -1209,8 +1209,12 @@ class Store:
             if payer is None:
                 payer = self.payback_people()
             # A closed split still counts what's unpaid: closing lets it go.
-            status = people_status(t, {**s, "closed_at": None}, rows, payer)
+            mine: dict = {}
+            status = people_status(t, {**s, "closed_at": None}, rows, payer, mine=mine)
             t.split_owed = round(sum(max(p["amount"] - p["paid"], 0.0) for p in status), 2)
+            # TEST-31: what work reimbursed of her own share comes off at once
+            # (decision 5), never more than her share.
+            t.split_reimbursed = round(min(mine.get("paid", 0.0), mine.get("amount", 0.0)), 2)
 
     def all_transactions(self) -> list[Transaction]:
         """Every row (`_all_transactions`), read once per request (2026-11-08).
@@ -1346,8 +1350,9 @@ class Store:
         if t.split_mode and t.split_mode != UNSURE and t.my_share is not None:
             # Rule A: what's still owed needs the paybacks, which are
             # elsewhere in the ledger.
-            t.split_owed = next((x.split_owed for x in self.all_transactions()
-                                 if x.fingerprint == t.fingerprint), 0.0)
+            same = next((x for x in self.all_transactions() if x.fingerprint == t.fingerprint), None)
+            t.split_owed = same.split_owed if same else 0.0
+            t.split_reimbursed = same.split_reimbursed if same else 0.0
         return t
 
     def _loaded(self, rows) -> list[Transaction]:

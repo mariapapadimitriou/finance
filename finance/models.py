@@ -332,6 +332,9 @@ class Transaction:
     # others on a split still owe. Until they pay it back it counts as her
     # spending; each payback, cash or app payment takes its part off.
     split_owed: float = 0.0
+    # TEST-31 (product owner, 2026-11-13): what work reimbursed of her own
+    # share of a split. It comes off what the purchase costs her at once.
+    split_reimbursed: float = 0.0
     # Why you left this row out, if you did: one transaction, or every row a
     # rule of yours matches. An excluded row counts as nothing — not spending,
     # not income, not savings — and never pairs with another as a transfer.

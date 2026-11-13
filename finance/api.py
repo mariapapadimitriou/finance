@@ -167,10 +167,11 @@ def _splitting(t, split: dict, txns, payer) -> dict:
     a Not sure yet split still costs her, `closed_at` when she said That's
     everything."""
     from . import splits as sp
+    mine: dict = {}
     out = {
         "mode": split["mode"], "watch": split["watch"],
         "you": round(t.my_share if t.my_share is not None else t.amount, 2),
-        "people": sp.people_status(t, split, txns, payer),
+        "people": sp.people_status(t, split, txns, payer, mine=mine),
         # SPLIT-22b (S-05u): paybacks here credited to no one yet.
         "uncredited": sp.uncredited_rows(t, split, txns, payer),
         "base": sp.split_base(t),
@@ -185,6 +186,13 @@ def _splitting(t, split: dict, txns, payer) -> dict:
         gift = extra_gift(store(), t.fingerprint, person["name"]) if person.get("paid") else 0.0
         if gift >= 0.005:
             person["gift"] = round(gift, 2)
+    if mine.get("ids"):
+        # TEST-31 (S-04w, S-04w2): her own share, reimbursed. `reimbursed`
+        # is what work paid of it, `on` the day; `stays` what's still hers.
+        # S-40w's REIMBURSED BY rows come from `links` (unlink.add_links).
+        paid = round(min(mine["paid"], mine["amount"]), 2)
+        out["mine"] = {"amount": mine["amount"], "reimbursed": paid, "on": mine["on"],
+                       "stays": round(max(mine["amount"] - paid, 0.0), 2), "ids": mine["ids"]}
     if split["mode"] == sp.UNSURE:
         out["still"] = sp.still_yours(t)
         out["paid"] = round(t.unsure_paid or 0.0, 2)
@@ -474,13 +482,23 @@ def transaction_detail(txn_id: str):
         if t.repays:
             charge = next((x for x in txns if x.fingerprint == t.repays), None)
             if charge is not None:
+                # TEST-31 (T-41w): `paid`, what this put toward it ("Your
+                # share · $60.00" when the person is "me").
                 r["repays_charge"] = dict(_txn_brief(charge),
-                                          person=payer.get(txn_id))
+                                          person=payer.get(txn_id),
+                                          paid=round(t.part_for(charge.fingerprint), 2))
                 # A split purchase shows its split (2026-11-08): whose share
                 # this paid, beside everyone else's, not the whole charge.
                 split = splits.get(charge.fingerprint)
                 if split and charge.amount > 0:
                     r["repays_charge"]["split"] = _splitting(charge, split, txns, payer)
+                if payer.get(txn_id) in sp.SELF:
+                    # TEST-31 (T-41w): Unlink opens the same sheet as from the
+                    # split card (S-34kr7, "Unlink? Work paying me back").
+                    from . import unlink as ul
+                    by_id = {x.fingerprint: x for x in txns}
+                    r["repays_charge"]["link"] = ul.inflow_link(st, charge, t, None, by_id,
+                                                                st.payback_kinds(), st.parts())
         elif t.amount < 0 and not t.excluded:
             options, by_name = sp.for_inflow(t, txns, splits, payer)
             r["repayment"] = {"suggestion": sp.suggest(t, txns, splits, payer),

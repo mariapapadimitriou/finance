@@ -97,6 +97,15 @@ MODES = ("even", "amount", "percent", "shares", "unknown")
 # no amounts. Each payback linked to it comes off what it costs her.
 UNSURE = "unknown"
 
+# TEST-31 (product owner, 2026-11-13): who a payback linked to a split counts
+# for, when it isn't one of the people. ME: her own share, reimbursed (work
+# paying her back for her part, T-09w); it never counts for anyone else.
+# EVERYONE: a whole-purchase reimbursement ("all of it"), which pays her share
+# first and then whoever still owes, as any whole-purchase payback would.
+ME = "me"
+EVERYONE = "everyone"
+SELF = (ME, EVERYONE)
+
 
 def _cents(x) -> int:
     return int(round(float(x) * 100))
@@ -290,7 +299,8 @@ def payments(records: list[dict], dates: dict[str, str] | None = None,
 def people_status(charge: Transaction, split: dict, transactions: list[Transaction],
                   payer: dict[str, str], left_out: list[Transaction] | None = None,
                   extra_out: list[Transaction] | None = None,
-                  credited_to: dict[str, str] | None = None) -> list[dict]:
+                  credited_to: dict[str, str] | None = None,
+                  mine: dict | None = None) -> list[dict]:
     """Each person in a split: their part, what they've paid back and when,
     what they still owe (S-04), and what they paid over their part (`over`,
     SPLIT-02: a share lowered below what they'd paid, which she owes back).
@@ -314,6 +324,11 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
 
     `credited_to`, when given, maps each payback counted here to who it
     counted for (S-11xm's "Jo paid back $30.00 of this for Pizza Nova").
+
+    `mine`, when given, gets her own share and what reimbursed it (TEST-31,
+    S-04w): `amount` her share, `paid` what work paid of it, `on` the day it
+    was last paid and `ids` the deposits. A payback linked for ME counts
+    only for her; one for EVERYONE fills her share, then whoever owes.
     """
     names = [p["name"] for p in split["people"]]
     unsure = split.get("mode") == UNSURE
@@ -339,11 +354,30 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
     named = {c for p in split["people"] for x in p.get("cash") or [] for c in x.get("charges") or []}
     merchants = {t.fingerprint: t.merchant for t in transactions if t.fingerprint in named}
     unnamed: list[Transaction] = []
+    everyone: list[Transaction] = []
+    # TEST-31: her own share, as split (a refund shrinks it the same way).
+    yours = round(float(charge.my_share or 0.0) * factor, 2) \
+        if split.get("me", True) and charge.my_share is not None and not unsure else 0.0
+    mine_paid, mine_on, mine_ids = 0.0, None, []
     extras_named: list[Transaction] = []
     shared: dict[str, list[dict]] = {}
     names_of: dict[str, str] = {}
     for t in sorted(_linked(charge.fingerprint, transactions), key=lambda x: x.date):
         who = payer.get(t.fingerprint)
+        if who in SELF:
+            # TEST-31: never anyone's payback, so never asked about. Not sure
+            # yet has no shares: what came back already lowers what it costs.
+            if unsure:
+                continue
+            if who == EVERYONE:
+                everyone.append(t)
+                continue
+            mine_paid = round(mine_paid + t.part_for(charge.fingerprint), 2)
+            mine_on = t.date[:10]
+            mine_ids.append(t.fingerprint)
+            if credited_to is not None:
+                credited_to[t.fingerprint] = ME
+            continue
         if who not in paid and who:
             # "Sam Lee" paying back the Sam in the split.
             who = next((n for n in names if same_person(n, who)), None)
@@ -376,6 +410,26 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
                 "others": [names_of.get(c) or "another purchase" for c in t.repays_all
                            if c != charge.fingerprint],
                 "word": "e-Transfer" if "etransfer" in text or "interac" in text else "payment"})
+    # TEST-31 (decision 2): "all of it" pays her share first, then each
+    # person who still owes, in the split's order; anything over is no one's.
+    for t in everyone:
+        got = t.part_for(charge.fingerprint)
+        take = round(min(got, max(yours - mine_paid, 0.0)), 2)
+        if take >= 0.005:
+            mine_paid = round(mine_paid + take, 2)
+            mine_on = t.date[:10]
+            mine_ids.append(t.fingerprint)
+            got = round(got - take, 2)
+        for n in names:
+            take = round(min(got, max(part[n] - paid[n], 0.0)), 2)
+            if take >= 0.005:
+                paid[n] = round(paid[n] + take, 2)
+                when[n] = t.date[:10]
+                got = round(got - take, 2)
+        if credited_to is not None:
+            credited_to[t.fingerprint] = EVERYONE
+    if mine is not None:
+        mine.update({"amount": yours, "paid": mine_paid, "on": mine_on, "ids": mine_ids})
     # A payback nobody's name is on (a bank that leaves the sender off, or
     # one linked from search). Only these: one with a name is never moved to
     # someone else (2026-11-09).
@@ -437,6 +491,23 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
                     "shared": shared.get(p["name"], []),
                     "let_go": p.get("let_go")})
     return out
+
+
+def your_share_left(charge: Transaction, split: dict | None, transactions: list[Transaction],
+                    payer: dict[str, str], inflow: Transaction | None = None) -> float | None:
+    """TEST-31 (T-09w): what's still hers of a split with shares, for work to
+    reimburse: her share less what already reimbursed it. None when she
+    isn't in it, it's Not sure yet, or it isn't split. `inflow`, already
+    linked for her, doesn't count against itself."""
+    if (not split or split.get("mode") == UNSURE or not split.get("me", True)
+            or charge.my_share is None or charge.amount <= 0):
+        return None
+    mine: dict = {}
+    people_status(charge, split, transactions, payer, mine=mine)
+    back = mine.get("paid", 0.0)
+    if inflow is not None and inflow.fingerprint in (mine.get("ids") or []):
+        back -= inflow.part_for(charge.fingerprint)
+    return round(max(mine.get("amount", 0.0) - back, 0.0), 2)
 
 
 def unsure_rows(transactions: list[Transaction], splits: dict[str, dict],
