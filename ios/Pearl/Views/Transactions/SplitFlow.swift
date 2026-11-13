@@ -1510,11 +1510,11 @@ struct SplitPeople: View {
                         PearlFace(name: p.name, size: 40)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(p.name).font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
+                            // Bar only (1284:230, S-44b–i): the status line and
+                            // the bar, no "what paid it back" line under it
+                            // (product owner, Nov 13). The payments are in •••.
                             Text((full ? "✓ " : "") + status(p)).font(Pearl.text(.callout))
                                 .foregroundColor(full ? Pearl.moneyIn : Pearl.muted)
-                            if let line = deposited(p) {
-                                Text(line).font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
-                            }
                             if amountsUnder { owedAmount(p) }
                         }
                         .fixedSize(horizontal: false, vertical: true)
@@ -1591,31 +1591,6 @@ struct SplitPeople: View {
         let app: String? = (p.app ?? 0) >= p.paid - 0.005 && (p.app ?? 0) > 0 ? (p.appName ?? "Another app") : nil
         return [how, app, p.paidOn.map { Format.short($0) }].compactMap { $0 }.joined(separator: " · ")
     }
-
-    /// SPLIT-15: a cash payment a deposit holds part of, once: "$200.00
-    /// deposited Nov 12 · $50.00 still cash".
-    private func deposited(_ p: Transaction.Splitting.Person) -> String? {
-        // SPLIT-25 (S-05v): an e-Transfer that also paid back other purchases:
-        // "$60.00 · paid back Loblaws and Pizza Nova".
-        if let s = p.shared?.first {
-            return "\(Format.amount(s.whole)) · paid back \(Format.andList([t.merchant] + s.others))"
-        }
-        // SPLIT-19 (S-11c, Paying me back): one payment that paid back other
-        // purchases too: "$60.00 · paid back Loblaws and Pizza Nova".
-        if let pay = p.payments?.last(where: { ($0.paidBack?.count ?? 0) > 1 }), let names = pay.paidBack {
-            let back = (pay.givenBack ?? 0) >= 0.005 ? ", \(Format.amount(pay.givenBack ?? 0)) given back" : ""
-            return "\(Format.amount(pay.whole ?? pay.amount))\(back) · paid back \(Format.andList(names))"
-        }
-        // SPLIT-19 (S-11c, I gave it back): "$60.00, $17.94 given back".
-        if let pay = p.payments?.last(where: { ($0.givenBack ?? 0) >= 0.005 }), let back = pay.givenBack {
-            return "\(Format.amount(pay.whole ?? pay.amount + back)), \(Format.amount(back)) given back"
-        }
-        guard let pay = p.payments?.last(where: { $0.deposited >= 0.005 && $0.still >= 0.005 }) else { return nil }
-        return "\(Format.amount(pay.deposited)) deposited"
-            + (pay.depositedOn.map { " \(Format.short($0))" } ?? "")
-            + " · \(Format.amount(pay.still)) still cash"
-    }
-
 }
 
 // MARK: - Mark paid back (S-06, S-29, S-30)
