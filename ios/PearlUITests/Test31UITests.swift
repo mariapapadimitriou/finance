@@ -201,6 +201,36 @@ final class Test31UITests: XCTestCase {
             XCTAssertTrue(row.waitForExistence(timeout: 6), "T-41w: no PAID BACK row")
             note("T-41w row: \(row.label)")
             XCTAssertEqual(row.label, "Paid back, your share of Pai Northern Thai, $60.00")
+            // T-41w's top: the answer, a "Paid back" chip, a green amount.
+            XCTAssertTrue(button("Work paying me back").exists, "T-41w: the card reads Work paying me back")
+            XCTAssertTrue(element(containing: "Paid back").exists, "T-41w: Paid back chip")
+            XCTAssertFalse(element(containing: "Not counted").exists, "T-41w: not Not counted")
+        }
+    }
+
+    /// T-41w's rule for a friend's payback: "Paying me back", the Paid back
+    /// chip and a green amount, in light and dark.
+    func testAFriendsPaybackReadsPaidBack() {
+        for scheme in ["light", "dark"] {
+            launch(scheme)
+            guard let pizza = id("Pizza Nova"),
+                  let priya = rows("Priya").first(where: { abs(($0["amount"] as? Double) ?? 0) == 40 })?["id"] as? String
+            else { XCTFail("No Pizza Nova or Priya's $40.00"); return }
+            _ = call("PUT", "transactions/\(pizza)/split",
+                     ["mode": "amount", "include_me": true, "people": [["name": "Priya", "amount": 40]], "you": 80])
+            _ = call("POST", "transactions/\(pizza)/paybacks/\(priya)", ["person": "Priya"])
+            openCashFlow()
+            let search = app.textFields.matching(NSPredicate(format: "placeholderValue == 'Search'")).firstMatch
+            if search.waitForExistence(timeout: 4) { search.tap(); search.typeText("Priya"); sleep(2) }
+            let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Priya' AND label CONTAINS '40.00'")).firstMatch
+            tap(row, "Priya's $40.00")
+            sleep(2)
+            step("T-41w friend payback")
+            XCTAssertTrue(button("Paying me back").waitForExistence(timeout: 6), "The card reads Paying me back")
+            XCTAssertTrue(element(containing: "Paid back").exists, "Paid back chip")
+            // The green amount, sampled from the hero.
+            let hero = app.staticTexts.matching(NSPredicate(format: "label CONTAINS '40'")).firstMatch
+            note("hero: \(hero.label) \(hero.frame)")
         }
     }
 
