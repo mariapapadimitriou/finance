@@ -325,3 +325,29 @@ What is still pending: the library has to be published from the Figma UI (no API
 **Closing check, 2026-11-10 (later):** the Allowance orb and Pearl dust report UNPUBLISHED in the library and `color/text/muted` light still resolves to mist/500 (#605D76) in the handoff file, so the publish has not gone out. The Design refresh frames keep their local stand-ins and directly painted #514D67 until it does (re-binding now would revert the grey). Ready to run on publish: `refresh05-swap-to-library.js` — swaps 147 Pearl dust and 3 Allowance orb instances (Progress=70, words copied), re-binds the #514D67 text to `color/text/muted`, and puts Pearl dust under H-00 as built; the as-built orb stays as drawn because its inside copy (“NOVEMBER” / “$6,413”) does not fit the component’s Label/Amount/Sub slots without changing lines. H-00 has no dark twin on the Pearl app page.
 
 **Closing, 2026-11-10 (published and swapped):** the Design refresh page now uses the published Pearl dust (147 instances) and Allowance orb (3: H-00r, H-00u, H-00u0, Progress=70, words unchanged; H-00r matches its pre-swap render); the 394 texts painted #514D67 are re-bound to `color/text/muted`, which now resolves to mist/600 #514D67 in light. Cash flow (2,691 texts) and Pearl app (610) show the new grey through the variable. H-00 as built uses a Pearl dust instance in place of its two auras and bubbles (identical positions, no visual change); its orb stays as drawn because its inside copy does not fit the component's slots. H-00 has no dark twin. The section 15 stand-ins 1196:17083 / 1196:17096 have no instances left and are renamed "Superseded". Dark frames untouched.
+
+### [designBOT → engBOT] 2026-11-13 · CONSOLIDATE-01 · Figma is one snapshot of the app as built
+**Status:** Redesigned (file structure) · T-93o and the bar-only split cards Awaiting product owner
+**Jira:** THL-275, THL-289, THL-291, THL-181, THL-303, THL-304, THL-305 (labels), THL-127, THL-45 (IB-04)   **Figma:** Pearl app `751:6166`; Proposals `1284:99`
+The product owner reviewed the 39 in-app refresh items and kept 38; item 08 (T-93n) is to become T-93o. Before this pass the product owner saved the version "Before consolidation 2026-11-13" by hand. Everything removed below can be restored from it.
+- **One page.** The Cash flow page and the in-use Design refresh frames are now on Pearl app, under eight top-level sections: Home `1285:72187`, Cash flow and transactions `1285:72188`, Sorting `1285:72189`, Splits and paybacks `1285:72190`, Joint accounts `1285:72191`, Profile and settings `1285:72192`, Onboarding and sign-in `1285:72193`, Confirmation sheets `1285:72194`. The frames were moved, not copied, so every node ID cited in Swift comments and in these logs still points at the same frame. The Design refresh and Cash flow pages are deleted.
+- **Deleted (140 frames, plus one empty section):**
+  - Old frames the refresh replaced: H-00, T-01, T-03, S-04 v2, S-05o, S-07, S-08, S-03f, S-03b v2, S-34s and its error state, S-34k ×9 and S-05t, with their dark twins.
+  - Every frame already marked superseded: SEC-04, SEC-12, CN-05, S-24x, S-01j, S-05p, S-03j, S-46a, S-45c, S-45e, S-45c2–c4, S-47c2 and the section-11 kit.
+  - The unpicked or history refresh items: principles, visual and motion systems, T-08r, T-83r, T-16r, T-93r, S-03r/S-04r, the REFRESH-03 pairs and the REFRESH-05 colour columns.
+- **Proposals `1284:99`:**
+  - Awaiting product owner `1284:100`:
+    - T-93o `1284:103` / `1284:170`. When Pearl's best guess is Other, the card still offers Yes and Skip, and Yes sorts only this one transaction, with no "always for" rule.
+    - 20 split cards that show only the bar. Jo's "$60.00 e-Transfer · paid back…" line is hidden (Person row, Show detail off).
+  - Deferred: the recovery codes, `1284:101`.
+  - To check `1284:102`: S-03, S-05, S-19, S-20, S-06 v2, S-06 v3, S-06 v3a, T-75 and O-09c. The code still cites these codes, but newer frames may have replaced them.
+- **Renames:**
+  - The "Are these your rent?" sheet is now IB-04 (six frames). Its Swift comment at `IncomeBillsView.swift:82` still says IB-03.
+  - "Jira pending" is replaced by THL-303 (SPLIT-C), THL-304 (JOINT-A) and THL-305 (JOINT-B).
+  - "· Design refresh · Approved — build" is removed from 393 names.
+  - Codes such as S-04r v2, S-40 and S-03r2 are kept because the Swift cites them.
+- **For engBOT:**
+  - T-01r groups Cash flow by day (TODAY, WED, NOV 12), but the app draws one card for the default sort (`TransactionsView.swift:950-968`).
+  - T-03r keeps "Always for" in the category card, but the app still shows it among the options.
+  - O-11b `260:4705` doesn't show the orb the app now uses.
+  - Nothing new to build until the product owner picks from Proposals.

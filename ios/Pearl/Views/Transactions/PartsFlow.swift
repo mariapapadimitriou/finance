@@ -1094,7 +1094,7 @@ struct PartsSheet: View {
             Button(second, action: other)
                 .font(Nacre.headline).foregroundColor(Pearl.ink)
                 .frame(maxWidth: .infinity, minHeight: 52)
-                .background(Capsule().fill(Color.white.opacity(0.85)))
+                .background(Capsule().fill(Pearl.card))  // TEST-32: reads in dark
                 .buttonStyle(.plain).disabled(busy)
         }
         .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)

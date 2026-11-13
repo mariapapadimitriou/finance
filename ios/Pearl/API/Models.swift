@@ -1543,14 +1543,15 @@ struct Ask: Identifiable, Hashable {
     var t: BriefTransaction { item.txn }
     var skipped: Bool { item.skipped == true }
 
-    /// A guess Pearl can be told yes to (T-90, T-92): a category, "Saved to",
-    /// or a question the evidence asks.
-    /// T-93n (TEST-12, THL-275 "no best-guess card"): Pearl's best for a
-    /// category is Other, which is no guess at all.
-    var otherGuess: Bool {
+    /// T-93o (replaces T-93n): Pearl's best for a category is Other. It's a
+    /// guess like any other, Yes or Skip; Yes sorts this one as Other and
+    /// never saves "always for <merchant>" (a rule would file every one there).
+    var guessesOther: Bool {
         kind == .category && item.pair == nil && (item.guess?.text ?? t.category ?? "Other") == "Other"
     }
 
+    /// A guess Pearl can be told yes to (T-90, T-92): a category, "Saved to",
+    /// or a question the evidence asks.
     func isGuess(_ accounts: [AccountsOverview.Account]) -> Bool {
         kind == .category || savedTo(accounts) != nil || item.pair != nil || incomeGuess != nil
     }
@@ -1583,7 +1584,7 @@ struct Ask: Identifiable, Hashable {
 
     /// A rule needs a name it can match, and never files everything under Other.
     private func canRule(_ accounts: [AccountsOverview.Account]) -> Bool {
-        guard t.learnable != false else { return false }
+        guard t.learnable != false, !guessesOther else { return false }
         return savedTo(accounts) != nil || (t.category ?? "Other") != "Other"
     }
 
@@ -1620,6 +1621,8 @@ struct Ask: Identifiable, Hashable {
     func yesLine(_ accounts: [AccountsOverview.Account]) -> String {
         if let pair = item.pair { return pair.line }
         if let income = incomeGuess { return "Yes counts it as \(income)." }
+        // T-93o (1284:103): Other is just this one, and the card is the way out.
+        if guessesOther { return "Yes sorts this one as Other." }
         if varies(accounts) { return "Yes sorts just this one. \(t.name) varies, so no rule." }
         return savesRule(accounts) ? "Yes sorts this, and always for \(t.name)." : "Yes sorts just this one."
     }
@@ -1628,8 +1631,8 @@ struct Ask: Identifiable, Hashable {
     var chip: String {
         if let pair = item.pair { return pair.question }
         switch kind {
-        // T-93n (TEST-12): Other isn't a guess; the chip asks instead.
-        case .category: return otherGuess ? "What was this?" : "\(item.guess?.text ?? t.category ?? "Other")?"
+        // T-93o: Other is a guess like any other, "Other?".
+        case .category: return "\(item.guess?.text ?? t.category ?? "Other")?"
         case .transfer: return "Saved or spent?"
         case .moneyIn:
             // S-21x: the extra on a paid-back purchase.

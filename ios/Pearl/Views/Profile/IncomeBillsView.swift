@@ -9,6 +9,7 @@ import SwiftUI
 // IB-02  what Pearl found in her transactions and she hasn't confirmed:
 //        pay to say yes or no to, and bills to confirm together
 // IB-03  her own amount a month, instead of Pearl's estimate
+// IB-04  "Are these your rent?": e-Transfers to one person that look like rent
 //
 // Every write returns the whole page again (finance/income_bills_api.py),
 // so nothing here adds anything up. A bill's tick saves at once once she has
@@ -79,7 +80,7 @@ struct IncomeBillsView: View {
                 .presentationDragIndicator(.visible)
         }
         .sheet(item: $rent) { q in
-            // IB-03 (TEST-06): a Pearl sheet, not an action sheet.
+            // IB-04 (TEST-06): a Pearl sheet, not an action sheet.
             let who = q.recipient ?? "them"
             PearlConfirmSheet(face: q.recipient, overline: "A question", title: "Are these your rent?",
                               message: "Your e-Transfers to \(who) look like rent. If they are, they count as Rent from now on, and \(Format.whole(q.amount)) a month is set aside.",

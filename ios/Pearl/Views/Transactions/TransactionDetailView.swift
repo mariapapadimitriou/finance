@@ -953,41 +953,63 @@ struct TransactionDetailView: View {
     // MARK: What it counts as
 
     private var categoryCard: some View {
-        Button {
-            if t.leftToSort { parting = deposit(rest: true) }
-            // Income opens What was this?: its kinds, and what else it could be (2026-11-08).
-            else if isIncome { asking = Asking(step: .into) } else { sorting = sortAsk(.category) }
-        } label: {
-            // T-03: the category's icon and name; income says what kind
-            // (T-37, "Salary"). The pill above says what it counts as.
-            categoryLabel(symbol: isIncome ? "Income" : (t.category ?? t.label),
-                          title: isIncome ? Self.kindName(t.incomeType) : t.label, sub: countsLine)
+        GlassCard {
+            Button {
+                if t.leftToSort { parting = deposit(rest: true) }
+                // Income opens What was this?: its kinds, and what else it could be (2026-11-08).
+                else if isIncome { asking = Asking(step: .into) } else { sorting = sortAsk(.category) }
+            } label: {
+                // T-03: the category's icon and name; income says what kind
+                // (T-37, "Salary"). The pill above says what it counts as.
+                // T-03r (1074:698): "Change" by the chevron.
+                categoryRow(symbol: isIncome ? "Income" : (t.category ?? t.label),
+                            title: isIncome ? Self.kindName(t.incomeType) : t.label, sub: countsLine,
+                            change: !isIncome)
+            }
+            .buttonStyle(.plain)
+            .disabled(busy)
+            .accessibilityHint(isIncome ? "Changes what it was" : "Changes the category")
+            if alwaysInCategoryCard {
+                // T-03r (1074:698, dark 1074:814): Always for the merchant is
+                // part of what it is, so it sits under the category, not in Options.
+                RowSeparator()
+                alwaysToggle(sub: "New \(t.merchant) purchases go to \(t.label)")
+            }
         }
-        .buttonStyle(.plain)
-        .disabled(busy)
-        .accessibilityHint(isIncome ? "Changes what it was" : "Changes the category")
+    }
+
+    /// T-03r: the sorted spending row's Always switch is in the category card.
+    private var alwaysInCategoryCard: Bool {
+        offersNewOnes && guessName == nil && t.parts.isEmpty && !jointAsks && !t.asks && !isIncome
+            && t.transfer == nil
     }
 
     private func categoryLabel(symbol: String, title: String, sub: String?) -> some View {
-        GlassCard {
-            HStack(spacing: 12) {
-                Image(systemName: CategorySheet.symbol(for: symbol))
-                    .font(.system(size: 15, weight: .medium)).foregroundColor(Pearl.action)
-                    .frame(width: 36, height: 36)
-                    .background(Circle().fill(Pearl.action.opacity(0.1)))
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(Nacre.headline).foregroundColor(Pearl.ink).lineLimit(2)
-                    if let sub = sub {
-                        Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                    }
+        GlassCard { categoryRow(symbol: symbol, title: title, sub: sub) }
+    }
+
+    private func categoryRow(symbol: String, title: String, sub: String?, change: Bool = false) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: CategorySheet.symbol(for: symbol))
+                .font(.system(size: 15, weight: .medium)).foregroundColor(Pearl.action)
+                .frame(width: 36, height: 36)
+                .background(Circle().fill(Pearl.action.opacity(0.1)))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(Nacre.headline).foregroundColor(Pearl.ink).lineLimit(2)
+                if let sub = sub {
+                    Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
                 }
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
             }
-            .padding(.horizontal, 16).frame(minHeight: 60).padding(.vertical, 4)
-            .contentShape(Rectangle())
+            Spacer(minLength: 8)
+            if change {
+                Text("Change").font(Font.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+                    .foregroundColor(Pearl.action)
+            }
+            Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
         }
+        .padding(.horizontal, 16).frame(minHeight: 60).padding(.vertical, 4)
+        .contentShape(Rectangle())
     }
 
     // MARK: Pearl's guess (T-96)
@@ -1295,7 +1317,7 @@ struct TransactionDetailView: View {
                 Button("Something else") { asking = Asking(step: .joint) }
                     .font(Nacre.headline).foregroundColor(Pearl.ink)
                     .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Capsule().fill(Color.white.opacity(0.8)))
+                    .background(Capsule().fill(Pearl.card))  // TEST-32: was white under white words in dark
                     .buttonStyle(.plain)
             }
             .disabled(busy)
@@ -1536,7 +1558,7 @@ struct TransactionDetailView: View {
                 Button("Keep linked") { unlinking = false }
                     .font(Nacre.headline).foregroundColor(Pearl.ink)
                     .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Capsule().fill(Color.white.opacity(0.85)))
+                    .background(Capsule().fill(Pearl.card))  // TEST-32
                     .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
@@ -1565,7 +1587,7 @@ struct TransactionDetailView: View {
                 Button("Keep linked") { unlinkingPayback = nil }
                     .font(Nacre.headline).foregroundColor(Pearl.ink)
                     .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Capsule().fill(Color.white.opacity(0.85)))
+                    .background(Capsule().fill(Pearl.card))  // TEST-32
                     .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
@@ -1583,11 +1605,42 @@ struct TransactionDetailView: View {
 
     /// T-03: one Options card. Split with others, Regular pay (T-37),
     /// Unlink refund (T-41), Pay from a piggy bank and One-off purchase, each a plain row.
+    /// "Always for Loblaws": new ones from the merchant sort the same way.
+    private func alwaysToggle(sub: String?) -> some View {
+        Toggle(isOn: Binding(get: { newOnesOn }, set: { on in
+            // Nothing left to answer on a sorted row, so the switch acts at once.
+            if guessName == nil {
+                Task { await setAlways(on) }
+            } else {
+                newOnes = on
+                holdForCard { $0.always = on }
+            }
+        })) {
+            HStack(spacing: 12) {
+                IconBubble(symbol: "repeat")
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Always for \(t.merchant)").font(Nacre.body).foregroundColor(Pearl.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let sub = sub {
+                        Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+        .tint(Pearl.action)
+        .disabled(busy)
+        .padding(.horizontal, 16).frame(minHeight: 52).padding(.vertical, sub == nil ? 0 : 12)
+        .accessibilityHint("New ones from \(t.merchant) sort the same way")
+    }
+
     @ViewBuilder private var options: some View {
         let unlink = t.refundOf != nil
         // Income can be left out of the usual month too (2026-11-08).
         let canOneOff = t.canOneOff && (!t.inflow || isIncome)
         let incomeAlways = isIncome ? t.incomeRule?.payer : nil
+        // T-03r: on a sorted row Always is in the category card instead.
+        let offersNewOnes = self.offersNewOnes && !alwaysInCategoryCard
         if canSplit || couldBePay || unlink || canOneOff || canPayFromBank || offersNewOnes
             || incomeAlways != nil || jointCharge {
             section("Options")
@@ -1671,25 +1724,7 @@ struct TransactionDetailView: View {
                 }
                 if offersNewOnes {
                     if canSplit || couldBePay || unlink || canOneOff { RowSeparator() }
-                    Toggle(isOn: Binding(get: { newOnesOn }, set: { on in
-                        // Nothing left to answer on a sorted row, so the switch acts at once.
-                        if guessName == nil {
-                            Task { await setAlways(on) }
-                        } else {
-                            newOnes = on
-                            holdForCard { $0.always = on }
-                        }
-                    })) {
-                        HStack(spacing: 12) {
-                            IconBubble(symbol: "repeat")
-                            Text("Always for \(t.merchant)").font(Nacre.body).foregroundColor(Pearl.ink)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    .tint(Pearl.action)
-                    .disabled(busy)
-                    .padding(.horizontal, 16).frame(minHeight: 52)
-                    .accessibilityHint("New ones from \(t.merchant) sort the same way")
+                    alwaysToggle(sub: nil)
                 }
                 if let payer = incomeAlways {
                     if canSplit || couldBePay || unlink || canOneOff || offersNewOnes { RowSeparator() }

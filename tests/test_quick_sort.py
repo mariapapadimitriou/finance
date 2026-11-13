@@ -126,6 +126,24 @@ class TestTheCards:
         assert done["sorted"] == 0 and done["skipped"] == 1
         assert done["reason"] == "Every guess was right, so nothing moved."
 
+    def test_yes_on_other_sorts_just_this_one(self, client):
+        """T-93o: Yes on a card whose best guess is Other sorts this one as
+        Other. Even asked for one, it saves no "always for <merchant>" rule,
+        and the merchant's other card stays open."""
+        ledger(client, [tx("2026-10-07", "MYSTERY SHOP", 42.00, "Other", category_source="issuer"),
+                        tx("2026-10-05", "MYSTERY SHOP", 12.00, "Other", category_source="issuer")])
+        items = [i for i in client.get("/api/review").get_json()["unsure_category"]
+                 if "mystery" in i["txn"]["merchant"].lower()]
+        assert len(items) == 2, items
+        first, second = items[0]["txn"]["id"], items[1]["txn"]["id"]
+        r = client.put(f"/api/quick-sort/{first}",
+                       json={"action": "right", "every": False, "rows": [], "new_ones": True}).get_json()
+        assert r["ok"] and not r["rule_saved"] and r["also"] == []
+        assert "mystery shop" not in client.st.overrides()
+        assert client.st.confirmed_categories().get(first) == "Other"
+        open_ids = {i["txn"]["id"] for i in client.get("/api/review").get_json()["unsure_category"]}
+        assert first not in open_ids and second in open_ids
+
     def test_yes_on_one_card_saves_no_rule(self, client):
         """T-90: a swipe right sorts this card only, however many others there are."""
         ledger(client, [unsure("2026-10-08", "Uber Eats", 24.80, "Dining"),

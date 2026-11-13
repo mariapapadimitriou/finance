@@ -164,6 +164,12 @@ enum Format {
         return name == "Today" || name == "Yesterday" ? name : short(iso)
     }
 
+    /// T-01r's day header: "Today", "Yesterday", "Wed, Nov 12".
+    static func dayHeader(_ iso: String, now: Date = Date()) -> String {
+        let name = dayParts(iso, now: now).name
+        return name == "Today" || name == "Yesterday" ? name : weekdayDay(iso)
+    }
+
     /// "Wed, Nov 11".
     static func weekdayDay(_ iso: String) -> String {
         date(iso).map { shortWeekdayDay.string(from: $0) } ?? iso

@@ -39,11 +39,13 @@ instead.
 
 ## What you compare against
 
-- **Figma** (read only): iOS handoff file `ohcxhB9hV25H6nANVw3lq4`. Cash flow
-  designs are on the "Cash flow" page (`1051:44500`), the rest on "Pearl app"
-  (`751:6166`), look-and-feel work on "Design refresh" (`1070:30063`). Call
+- **Figma** (read only): iOS handoff file `ohcxhB9hV25H6nANVw3lq4`. "Pearl app"
+  (`751:6166`) is the single snapshot of the app as built; compare against
+  it. New and unbuilt designs, look-and-feel ones included, are on
+  "Proposals" (`1284:99`) and aren't in the app yet. Frames no longer used are
+  deleted, not marked superseded. Call
   `create_session` with the file key first; use `get_metadata` and
-  `get_screenshot` by node. Never edit Figma. Ignore frames marked superseded.
+  `get_screenshot` by node. Never edit Figma.
 - **Jira** (read only): site `thalloapp.atlassian.net` (cloudId
   `19f0ae97-2a11-4843-bfc9-0bcfd4fe99c8`), project THL. Quote the acceptance
   criterion a problem breaks. Don't comment on or move tickets.
