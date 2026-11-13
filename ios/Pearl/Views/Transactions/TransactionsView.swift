@@ -980,12 +980,13 @@ struct TransactionsView: View {
 
     private struct Section { let title: String; let rows: [Transaction] }
 
-    /// T-01r: Newest first is a card per day, under its day.
-    private var byDay: Bool { filters.sort == .newest }
+    /// T-01r: Newest first is a card per day, under its day. A search (T-45)
+    /// stays one card of results, each with its day, as its frames draw it.
+    private var byDay: Bool { filters.sort == .newest && !inSearch }
 
     /// The plain month, newest first: Select sits on the first day's header.
     private var selectOnFirstDay: Bool {
-        byDay && !inSearch && counts == nil && !selecting && loadedOnce && !shown.isEmpty
+        byDay && counts == nil && !selecting && loadedOnce && !shown.isEmpty
     }
 
     /// One card, or one per day, category or merchant when sorted that way.
@@ -995,7 +996,7 @@ struct TransactionsView: View {
         switch filters.sort {
         case .category: key = { $0.label }
         case .merchant: key = { $0.merchant }
-        case .newest:
+        case .newest where byDay:
             // T-01r: one card per day. Days are kept in the order they first
             // come, so a row out of order never makes a second card for a day.
             var order: [String] = []
