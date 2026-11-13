@@ -106,6 +106,14 @@ def seed(db_path: str) -> None:
           (day(1), "INTERAC E-TRF FROM SAM LEE", -20.00, None),
           (day(1), "E-TRANSFER FROM PRIYA SHAH", -40.00, None)],
          "td_chq_2210", "TD Chequing ••2210", "depository")
+    # TEST-31: Pai Northern Thai $120.00 split with Sam ($60.00 each), and
+    # Northwind (work) sending $60.00 for her share, not linked yet, so
+    # What did this pay back? offers "Your share of Pai Northern Thai".
+    load([(day(2), "PAI NORTHERN THAI", 120.00, None)], "amex_1004", "American Express ••1004", "credit")
+    load([(day(1), "NORTHWIND LTD EXPENSES", -60.00, None)], "td_chq_2210", "TD Chequing ••2210", "depository")
+    pai = next(t for t in store.all_transactions() if t.description == "PAI NORTHERN THAI")
+    store.set_split(pai.fingerprint, "even", [{"name": "Sam", "amount": 60.0}], True)
+    store.set_share(pai.fingerprint, 60.0)
     store.set_setting("monthly_income", 5200.0)
     store.set_setting("savings_target", 900.0)
     # Today's Quick sort offer already used, so it doesn't open on launch
