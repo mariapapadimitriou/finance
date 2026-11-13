@@ -608,7 +608,7 @@ struct SplitSheet: View {
                                 .focused($focused, equals: key)
                                 .frame(width: 92, height: 36)
                                 .padding(.horizontal, 8)
-                                .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.8)))
+                                .background(RoundedRectangle(cornerRadius: 10).fill(Pearl.card))  // TEST-32
                                 // S-03re (TEST-16): the outline is on the field
                                 // being typed in, or on someone already over.
                                 .overlay(RoundedRectangle(cornerRadius: 10)

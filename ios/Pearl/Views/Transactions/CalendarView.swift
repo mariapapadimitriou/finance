@@ -344,7 +344,7 @@ struct CalendarCard: View {
         switch cell.state {
         case "on": return Nacre.mint
         case "ahead": return Pearl.blush.opacity(0.7)
-        case "today": return Color.white.opacity(0.6)
+        case "today": return Pearl.card  // TEST-32: white under white numbers in dark
         default: return .clear
         }
     }

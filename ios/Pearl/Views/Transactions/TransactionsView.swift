@@ -300,7 +300,10 @@ struct TransactionsView: View {
                     Text(cal ? "Calendar" : "Transactions")
                         .font(Nacre.subheadline).foregroundColor(Pearl.ink)
                         .frame(maxWidth: .infinity).frame(height: 32)
-                        .background(Capsule().fill(on ? Color.white.opacity(0.9) : .clear))
+                        // TEST-32: the chosen segment is color/surface/card (T-01r,
+                        // 1074:510), white in light and #151B44 in dark, so
+                        // the ink word reads in both; white was white on white.
+                        .background(Capsule().fill(on ? Pearl.card : .clear))
                         .shadow(color: .black.opacity(on ? 0.06 : 0), radius: 3, y: 1)
                         // TEST-14: 44 pt to tap; the pill still draws at 32.
                         .frame(height: 44).contentShape(Rectangle())

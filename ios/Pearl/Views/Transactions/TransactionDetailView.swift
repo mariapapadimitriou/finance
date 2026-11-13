@@ -1317,7 +1317,7 @@ struct TransactionDetailView: View {
                 Button("Something else") { asking = Asking(step: .joint) }
                     .font(Nacre.headline).foregroundColor(Pearl.ink)
                     .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Capsule().fill(Color.white.opacity(0.8)))
+                    .background(Capsule().fill(Pearl.card))  // TEST-32: was white under white words in dark
                     .buttonStyle(.plain)
             }
             .disabled(busy)
@@ -1558,7 +1558,7 @@ struct TransactionDetailView: View {
                 Button("Keep linked") { unlinking = false }
                     .font(Nacre.headline).foregroundColor(Pearl.ink)
                     .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Capsule().fill(Color.white.opacity(0.85)))
+                    .background(Capsule().fill(Pearl.card))  // TEST-32
                     .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
@@ -1587,7 +1587,7 @@ struct TransactionDetailView: View {
                 Button("Keep linked") { unlinkingPayback = nil }
                     .font(Nacre.headline).foregroundColor(Pearl.ink)
                     .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Capsule().fill(Color.white.opacity(0.85)))
+                    .background(Capsule().fill(Pearl.card))  // TEST-32
                     .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
