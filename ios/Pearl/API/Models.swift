@@ -1622,7 +1622,7 @@ struct Ask: Identifiable, Hashable {
         if let pair = item.pair { return pair.line }
         if let income = incomeGuess { return "Yes counts it as \(income)." }
         // T-93o (1284:103): Other is just this one, and the card is the way out.
-        if guessesOther { return "Yes sorts this one as Other. Tap the card to pick something else." }
+        if guessesOther { return "Yes sorts this one as Other." }
         if varies(accounts) { return "Yes sorts just this one. \(t.name) varies, so no rule." }
         return savesRule(accounts) ? "Yes sorts this, and always for \(t.name)." : "Yes sorts just this one."
     }

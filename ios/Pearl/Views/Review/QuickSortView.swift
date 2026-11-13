@@ -120,7 +120,9 @@ struct QuickSortView: View {
                     .accessibilityHidden(true)
                 if current.map(hasYes) == true, current.flatMap({ drafts[$0.id]?.split }) == nil {
                     // T-98s (REFRESH-03): a held split's one line is `hint`; no second line.
-                    Text("Tap the card for other answers.")
+                    // T-93o (1284:103): on an Other guess, "Tap the card to pick something else."
+                    Text(current.map { $0.guessesOther && drafts[$0.id] == nil } == true
+                         ? "Tap the card to pick something else." : "Tap the card for other answers.")
                         .font(Nacre.footnote).foregroundColor(Pearl.muted)
                         .padding(.top, 2)
                         .accessibilityHidden(true)
