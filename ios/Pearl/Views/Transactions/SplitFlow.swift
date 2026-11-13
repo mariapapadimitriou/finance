@@ -595,20 +595,12 @@ struct SplitSheet: View {
                             // S-48c: a payer shows what they paid (on %, as a percent); a tap says why.
                             Text(mode == "percent" ? Self.plain(number(key)) + "%" : Format.amount(Double(lockedCents(key)) / 100))
                                 .font(Nacre.body).monospacedDigit().foregroundColor(Pearl.ink)
-                                .onTapGesture { showLock(key) }
-                                .accessibilityLabel("\(label(key)), paid \(Format.amount(Double(lockedCents(key)) / 100)), locked")
-                                .accessibilityAddTraits(.isButton)
                         } else if locked(key) {
                             Text(mode == "percent" ? Self.plain(number(key)) + "%" : Format.amount(Double(lockedCents(key)) / 100))
                                 .font(Nacre.body).monospacedDigit().foregroundColor(Pearl.ink)
-                                .onTapGesture { showLock(key) }
-                                .accessibilityLabel("\(label(key)), paid \(Format.amount(Double(lockedCents(key)) / 100)), locked")
-                                .accessibilityAddTraits(.isButton)
                         } else if mode == "even" {
                             Text(Format.amount(evenAmount(key))).font(Nacre.body).monospacedDigit()
                                 .foregroundColor(Pearl.ink)
-                                // TEST-14: "Priya, $42.50", not a bare amount.
-                                .accessibilityLabel("\(label(key)), \(Format.amount(evenAmount(key)))")
                         } else {
                             TextField("", text: binding(key), prompt: Text(placeholder(key)).foregroundColor(Pearl.muted))
                                 .font(Nacre.body).monospacedDigit().multilineTextAlignment(.trailing)
@@ -627,6 +619,14 @@ struct SplitSheet: View {
                         }
                     }
                     .padding(.horizontal, 16).frame(minHeight: 56)
+                    // TEST-14 / TEST-27: a row with no field is one element, so
+                    // VoiceOver hears "Priya, $42.50" and the visible words match
+                    // what's spoken (a label on the amount alone read as clipped).
+                    // A locked payer's whole row says why it's locked.
+                    .modifier(TextRow(on: payer(key) || locked(key) || mode == "even",
+                                      locked: payer(key) || locked(key),
+                                      label: "\(label(key)), paid \(Format.amount(Double(lockedCents(key)) / 100)), locked",
+                                      tap: { showLock(key) }))
                     }
                 }
                 // More people from here, and back to the amounts after (2026-11-08).
@@ -639,7 +639,7 @@ struct SplitSheet: View {
             if !settling { withMeCard(compact: true) }
             VStack(spacing: 8) {
                 // S-03r2: the bar, with what's assigned of the whole.
-                SplitBar(assigned: assignedCents, total: totalCents)
+                SplitBar(others: max(assignedCents - meterMine, 0), mine: meterMine, total: totalCents)
                 HStack(alignment: .firstTextBaseline) {
                     if gapCents == 0 && settling && !toCheck.isEmpty {
                         // S-48c: "2 to check: Sam and Priya".
@@ -1017,6 +1017,13 @@ struct SplitSheet: View {
     private var blocksShort: Bool { gapCents > 0 && !withMe }
 
     /// S-03r2's bar: what's assigned of the whole, in cents.
+    /// TEST-28 (S-03rg): her part of the meter, typed or giving way.
+    private var meterMine: Int {
+        guard withMe else { return 0 }
+        if mode == "amount" { return givesWay ? max(restCents, 0) : Int((number(Self.me) * 100).rounded()) }
+        return shareCents(Self.me)
+    }
+
     private var assignedCents: Int {
         switch mode {
         case "amount": return totalCents - gapCents
@@ -2416,21 +2423,35 @@ struct SwipeToRemove<Content: View>: View {
     }
 }
 
-/// S-03r2 / S-03re (TEST-08, TEST-16, `split.meter`): the assigned part in
-/// color/action/primary, then what's left on color/fill/control; over the
-/// total, the whole bar is the action colour.
+/// S-03r2 / S-03rg (TEST-08, TEST-16, TEST-28, `split.meter`; section 20
+/// note 1266:28323): left to right, in proportion to the purchase with 2 pt
+/// gaps, everyone else's shares in color/action/primary, her share (typed or
+/// giving way) in color/brand/blush, and what isn't assigned yet on
+/// color/surface/track. "I had some too" off has no blush part; over the
+/// total, the whole bar is one solid color/action/primary.
 struct SplitBar: View {
-    let assigned: Int
+    /// Everyone else's shares, in cents.
+    let others: Int
+    /// Her share, typed or giving way, in cents (0 when she isn't in it).
+    let mine: Int
     let total: Int
 
     var body: some View {
         GeometryReader { g in
-            let w = g.size.width
-            let part = min(Double(max(assigned, 0)) / max(Double(total), 1), 1)
-            ZStack(alignment: .leading) {
-                Capsule().fill(Pearl.control)
-                Capsule().fill(Pearl.action).frame(width: w * part)
+            let over = others + mine > total
+            let whole = Double(max(total, 1))
+            let parts: [(Double, Color)] = over ? [(1, Pearl.action)] : [
+                (Double(max(others, 0)) / whole, Pearl.action),
+                (Double(max(mine, 0)) / whole, Pearl.bubble),
+                (Double(max(total - others - mine, 0)) / whole, Pearl.track),
+            ].filter { $0.0 > 0.0005 }
+            let gaps = CGFloat(max(parts.count - 1, 0)) * 2
+            HStack(spacing: 2) {
+                ForEach(Array(parts.enumerated()), id: \.offset) { _, p in
+                    Capsule().fill(p.1).frame(width: max((g.size.width - gaps) * p.0, 4))
+                }
             }
+            .frame(width: g.size.width, alignment: .leading)
         }
         .frame(height: 8)
         .accessibilityHidden(true)
@@ -2495,6 +2516,31 @@ struct MismatchSheet: View {
             Button(overline == nil ? "Back to amounts" : "Keep it as it is", action: onBack)
                 .buttonStyle(PearlSecondaryButtonStyle())
                 .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 12)
+        }
+    }
+}
+
+/// TEST-27: How to split's rows with no field, read as one element. A locked
+/// payer's row taps anywhere to say why it's locked (S-47f).
+private struct TextRow: ViewModifier {
+    let on: Bool
+    let locked: Bool
+    let label: String
+    let tap: () -> Void
+
+    func body(content: Content) -> some View {
+        if !on {
+            content
+        } else if locked {
+            content
+                .contentShape(Rectangle())
+                .onTapGesture(perform: tap)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(label)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint("Says how to change it")
+        } else {
+            content.accessibilityElement(children: .combine)
         }
     }
 }
