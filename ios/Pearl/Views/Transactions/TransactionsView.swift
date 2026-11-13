@@ -97,8 +97,10 @@ struct TransactionsView: View {
                     } else if byCategory && loadedOnce && !shown.isEmpty {
                         categoryList.padding(.top, 8)
                     } else {
-                        listHeader.padding(.top, 24)
-                        list.padding(.top, 10)
+                        // T-01r: under Newest the first day's header carries
+                        // Select, so the plain list has no header of its own.
+                        if !selectOnFirstDay { listHeader.padding(.top, 24) }
+                        list.padding(.top, selectOnFirstDay ? 16 : 10)
                         if !inSearch && !selecting && loadedOnce {
                             Button("Add a transaction") { adding = true }
                                 .font(Nacre.textButton).foregroundColor(Pearl.link)
@@ -605,7 +607,9 @@ struct TransactionsView: View {
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(sections, id: \.title) { section in
-                    if !section.title.isEmpty {
+                    if byDay {
+                        dayHeader(section, first: section.title == sections.first?.title)
+                    } else if !section.title.isEmpty {
                         HStack {
                             Text(section.title.uppercased()).tracking(0.4)
                             Spacer()
@@ -619,13 +623,14 @@ struct TransactionsView: View {
                             if index > 0 { RowSeparator(inset: 72) }
                             if selecting {
                                 Button { toggle(t) } label: {
-                                    TransactionRow(t: t, paidBack: paidBack(for: t), picked: picked.contains(t.id))
+                                    TransactionRow(t: t, paidBack: paidBack(for: t), picked: picked.contains(t.id),
+                                                   showsDay: !byDay)
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityAddTraits(picked.contains(t.id) ? .isSelected : [])
                             } else {
                                 NavigationLink(value: t) {
-                                    TransactionRow(t: t, paidBack: paidBack(for: t),
+                                    TransactionRow(t: t, paidBack: paidBack(for: t), showsDay: !byDay,
                                                    onConfirm: { Task { await confirmGuess(t) } })
                                 }
                                 .buttonStyle(.plain)
@@ -635,6 +640,30 @@ struct TransactionsView: View {
                 }
             }
         }
+    }
+
+    /// T-01r (1074:356, dark 1074:497): "TODAY", "YESTERDAY", "WED, NOV 12"
+    /// over each day's card, with nothing on the right; the first one also
+    /// carries Select, where "n transactions · Select" used to be.
+    private func dayHeader(_ section: Section, first: Bool) -> some View {
+        HStack {
+            Text(section.title.uppercased())
+                .font(Font.custom("Figtree-Medium", size: 13, relativeTo: .footnote)).tracking(0.78)
+                .foregroundColor(Pearl.muted)
+                .accessibilityAddTraits(.isHeader)
+            Spacer()
+            if first && selectOnFirstDay {
+                Button("Select") { selecting = true }
+                    .font(Font.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+                    .foregroundColor(Pearl.action)
+                    // TEST-14: 44 pt to tap; the header still draws at 18.
+                    .frame(minHeight: 44).padding(.vertical, -13)
+            }
+        }
+        .frame(minHeight: 18)
+        .padding(.top, first ? 0 : 6)
+        .padding(.bottom, -4)
+        .accessibilityIdentifier("day-header")
     }
 
     // MARK: By category (T-18)
@@ -948,13 +977,32 @@ struct TransactionsView: View {
 
     private struct Section { let title: String; let rows: [Transaction] }
 
-    /// One card, or one per category or merchant when sorted that way.
+    /// T-01r: Newest first is a card per day, under its day.
+    private var byDay: Bool { filters.sort == .newest }
+
+    /// The plain month, newest first: Select sits on the first day's header.
+    private var selectOnFirstDay: Bool {
+        byDay && !inSearch && counts == nil && !selecting && loadedOnce && !shown.isEmpty
+    }
+
+    /// One card, or one per day, category or merchant when sorted that way.
     private var sections: [Section] {
         let rows = shown
         let key: ((Transaction) -> String)?
         switch filters.sort {
         case .category: key = { $0.label }
         case .merchant: key = { $0.merchant }
+        case .newest:
+            // T-01r: one card per day. Days are kept in the order they first
+            // come, so a row out of order never makes a second card for a day.
+            var order: [String] = []
+            var by: [String: [Transaction]] = [:]
+            for t in rows {
+                let day = Format.dayHeader(t.date)
+                if by[day] == nil { order.append(day) }
+                by[day, default: []].append(t)
+            }
+            return order.map { Section(title: $0, rows: by[$0] ?? []) }
         default: key = nil
         }
         guard let key = key else { return [Section(title: "", rows: rows)] }
@@ -1134,6 +1182,8 @@ struct TransactionRow: View {
     var picked: Bool? = nil
     /// On a category's own page (T-46) the category goes without saying.
     var showsCategory = true
+    /// T-01r: under a day header the day goes without saying.
+    var showsDay = true
     /// Tapping the dotted guess says it's right, without opening the row.
     var onConfirm: (() -> Void)? = nil
 
@@ -1148,7 +1198,9 @@ struct TransactionRow: View {
             Initials(name: t.merchant)
             VStack(alignment: .leading, spacing: 3) {
                 Text(t.merchant).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
-                Text(meta).font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(splitNote == nil ? 1 : 2)
+                if !meta.isEmpty {
+                    Text(meta).font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(splitNote == nil ? 1 : 2)
+                }
                 if let extra = extra {
                     Text(extra).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(1)
                 }
@@ -1187,15 +1239,16 @@ struct TransactionRow: View {
     private var otherGuess: Bool { t.suggested && !t.asks && t.label == "Other" }
 
     /// "Health · Today"; "Today · Pending" while it's a guess; "Paid back · Sushi Nami".
+    /// Under T-01r's day header: "Health", "Pending".
     private var meta: String {
-        let when = Format.relativeDay(t.date)
+        let when: String? = showsDay ? Format.relativeDay(t.date) : nil
         if let paidBack = paidBack { return "Paid back · \(paidBack)" }
         if let charge = t.refundOf { return "Refund · \(charge.merchant)" }
         // T-01r2 (TEST-25): a split says what the server says.
         if let note = splitNote { return note }
         // T-82 (THL-292): a transfer a recurring rule sorted says so.
         if t.recurring != nil, let note = t.note, note.hasPrefix("Recurring") { return note }
-        if t.suggested { return t.pending ? "\(when) · Pending" : when }
+        if t.suggested { return [when, t.pending ? "Pending" : nil].compactMap { $0 }.joined(separator: " · ") }
         return [showsCategory ? t.label : nil, when, t.pending ? "Pending" : nil].compactMap { $0 }
             .joined(separator: " · ")
     }
