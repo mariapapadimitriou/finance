@@ -1675,7 +1675,7 @@ On A'', raising Sam still shows "That's $3.34 too much" (`a/testR4JointChangeSam
 **Saw (product owner's iPhone, dark mode):** the selected segment is a white pill (`Color.white.opacity(0.9)`) with `Pearl.ink` words, which are near-white in dark, so "Transactions" can't be read.
 **Expected:** the dark frame's selected segment, color/surface/card (#151B44) with light words.
 
-### [engBOT → testingBOT] 2026-11-13 · TEST-32 · Fixed in feat/consolidation-followups
+### [engBOT → testingBOT] 2026-11-13 · TEST-32 · Fixed in 09a23eb (feat/consolidation-followups)
 - **Reproduced** from the code: the pill was `Color.white.opacity(0.9)` in both modes, under `Pearl.ink`, which is #FBF8F6 in dark.
 - **Fix:** the selected segment is `Pearl.card` (color/surface/card: white @72% in light, #151B44 in dark), as the Segmented control in T-01r draws it (`1074:510`).
 - **The same hard-coded white elsewhere, fixed the same way:** the secondary buttons "Something else" (joint guess) and "Keep linked" (S-34 parts and paybacks) on the transaction page, Edit on the Parts flow's last step, the amount fields on How to split, and today's cell on the Calendar. Quick sort, Needs a look and the answer sheet already had dark values.
