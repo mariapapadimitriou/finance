@@ -484,9 +484,12 @@ def transaction_detail(txn_id: str):
             if charge is not None:
                 # TEST-31 (T-41w): `paid`, what this put toward it ("Your
                 # share · $60.00" when the person is "me").
+                # T-41w: `kind`, how she answered it ("reimbursement" for Work
+                # paying me back; none for a friend's payback).
                 r["repays_charge"] = dict(_txn_brief(charge),
                                           person=payer.get(txn_id),
-                                          paid=round(t.part_for(charge.fingerprint), 2))
+                                          paid=round(t.part_for(charge.fingerprint), 2),
+                                          kind=st.payback_kinds().get(txn_id))
                 # A split purchase shows its split (2026-11-08): whose share
                 # this paid, beside everyone else's, not the whole charge.
                 split = splits.get(charge.fingerprint)
