@@ -874,7 +874,8 @@ struct TransactionDetailView: View {
             .accessibilityHint(t.transfer == nil ? "Rename the merchant" : "")
             Text(heroAmount)
                 .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
-                .foregroundColor(t.tone)
+                // T-41w: money that paid a purchase back is money in, green.
+                .foregroundColor(paidBackAnswer != nil ? Pearl.moneyIn : t.tone)
                 .lineLimit(1).minimumScaleFactor(0.5)
                 .accessibilityLabel(Format.spoken(heroAmount))
             Text(t.transfer != nil ? "Doesn’t count · Between your accounts" : dateLine)
@@ -883,7 +884,9 @@ struct TransactionDetailView: View {
             if t.transfer == nil {
                 // T-03's Counts pill: Spending, Income, Refund or Not counted.
                 HStack(spacing: 6) {
-                    Image(systemName: countsPill.up ? "arrow.up" : "arrow.down")
+                    // T-41w: "↺ Paid back"; otherwise the Counts arrow.
+                    Image(systemName: paidBackAnswer != nil ? "arrow.counterclockwise"
+                          : countsPill.up ? "arrow.up" : "arrow.down")
                         .font(.system(size: 12, weight: .semibold)).foregroundColor(countsPill.tone)
                     Text(countsPill.label)
                 }
@@ -965,18 +968,24 @@ struct TransactionDetailView: View {
             Button {
                 if t.leftToSort { parting = deposit(rest: true) }
                 // Income opens What was this?: its kinds, and what else it could be (2026-11-08).
-                else if isIncome { asking = Asking(step: .into) } else { sorting = sortAsk(.category) }
+                // T-41w: her answer opens What was this? again, as income does.
+                else if isIncome || paidBackAnswer != nil { asking = Asking(step: .into) } else { sorting = sortAsk(.category) }
             } label: {
                 // T-03: the category's icon and name; income says what kind
                 // (T-37, "Salary"). The pill above says what it counts as.
                 // T-03r (1074:698): "Change" by the chevron.
-                categoryRow(symbol: isIncome ? "Income" : (t.category ?? t.label),
-                            title: isIncome ? Self.kindName(t.incomeType) : t.label, sub: countsLine,
-                            change: !isIncome && !t.inflow)
+                if let answer = paidBackAnswer {
+                    // T-41w: "Work paying me back", no second line.
+                    categoryRow(symbol: "", title: answer.label, sub: nil, systemImage: answer.symbol)
+                } else {
+                    categoryRow(symbol: isIncome ? "Income" : (t.category ?? t.label),
+                                title: isIncome ? Self.kindName(t.incomeType) : t.label, sub: countsLine,
+                                change: !isIncome && !t.inflow)
+                }
             }
             .buttonStyle(.plain)
             .disabled(busy)
-            .accessibilityHint(isIncome ? "Changes what it was" : "Changes the category")
+            .accessibilityHint(isIncome || paidBackAnswer != nil ? "Changes what it was" : "Changes the category")
             if alwaysInCategoryCard {
                 // T-03r (1074:698, dark 1074:814): Always for the merchant is
                 // part of what it is, so it sits under the category, not in Options.
@@ -996,9 +1005,10 @@ struct TransactionDetailView: View {
         GlassCard { categoryRow(symbol: symbol, title: title, sub: sub) }
     }
 
-    private func categoryRow(symbol: String, title: String, sub: String?, change: Bool = false) -> some View {
+    private func categoryRow(symbol: String, title: String, sub: String?, change: Bool = false,
+                             systemImage: String? = nil) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: CategorySheet.symbol(for: symbol))
+            Image(systemName: systemImage ?? CategorySheet.symbol(for: symbol))
                 .font(.system(size: 15, weight: .medium)).foregroundColor(Pearl.action)
                 .frame(width: 36, height: 36)
                 .background(Circle().fill(Pearl.action.opacity(0.1)))
@@ -1089,6 +1099,17 @@ struct TransactionDetailView: View {
 
     private var isIncome: Bool { t.inflow && t.counts == "income" && t.transfer == nil }
 
+    /// T-41w (1297:64759, built from T-41): a deposit that pays a purchase
+    /// back reads as her answer on What was this?, with its tile's icon:
+    /// "Work paying me back" (briefcase) or "Paying me back" (person.2).
+    /// A "Paid back" chip and a green amount go with it.
+    private var paidBackAnswer: (label: String, symbol: String)? {
+        guard t.inflow, t.transfer == nil, t.excluded.isEmpty, let charge = t.repaysCharge else { return nil }
+        let key = charge.kind == "reimbursement" ? "reimbursement" : "paid_back"
+        guard let tile = CaseTile.notIncome.first(where: { $0.key == key }) else { return nil }
+        return (tile.label, tile.symbol)
+    }
+
     /// Money in that could be her pay: not a refund, a payback or a transfer.
     private var couldBePay: Bool {
         t.inflow && t.transfer == nil && t.refundOf == nil && t.repays == nil && t.excluded.isEmpty
@@ -1114,6 +1135,8 @@ struct TransactionDetailView: View {
     /// What the Counts pill says (T-03, T-37, T-41).
     private var countsPill: (label: String, up: Bool, tone: Color) {
         if !t.excluded.isEmpty { return ("Not counted", !t.inflow, Pearl.muted) }
+        // T-41w: a deposit that paid a purchase back says so.
+        if paidBackAnswer != nil { return ("Paid back", true, Pearl.moneyIn) }
         if t.refundOf != nil { return ("Refund", true, Pearl.moneyIn) }
         switch t.counts {
         case "income": return ("Income", true, Pearl.moneyIn)

@@ -688,9 +688,12 @@ struct Transaction: Decodable, Identifiable, Hashable {
         var split: Splitting? = nil
         /// On the purchase's PAID BACK row: its S-05o and Unlink? (SPLIT-25).
         var link: LinkInfo? = nil
+        /// T-41w: how the deposit was answered: "reimbursement" for Work
+        /// paying me back; nil for a friend paying her back.
+        var kind: String? = nil
 
         enum CodingKeys: String, CodingKey {
-            case id, date, merchant, description, amount, person, paid, split, link
+            case id, date, merchant, description, amount, person, paid, split, link, kind
             case accountName = "account_name"
         }
 
