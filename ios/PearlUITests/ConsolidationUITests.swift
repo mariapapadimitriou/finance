@@ -190,19 +190,23 @@ final class ConsolidationUITests: XCTestCase {
         launch()
         tap(app.buttons["See the list"], "See the list")
         tap(button("Quick sort"), "Quick sort card")
+        let deck = app.descendants(matching: .any)["quick-sort-card"]
         var n = 0
-        while !element(containing: "Other?").exists && n < 8 {
+        while !(deck.waitForExistence(timeout: 4) && deck.label.contains("Other?")) && n < 8 {
             tap(app.buttons["Skip"], "Skip"); sleep(1); n += 1
         }
-        XCTAssertTrue(element(containing: "Other?").exists, "T-93o: no card reads “Other?”")
+        XCTAssertTrue(deck.label.contains("Other?"), "T-93o: no card reads “Other?”")
         step("T-93o other card")
         XCTAssertTrue(element(containing: "PEARL’S GUESS").exists, "T-93o: Other is Pearl’s guess")
-        XCTAssertFalse(element(containing: "What was this?").exists, "T-93o: the card no longer asks")
         XCTAssertTrue(app.buttons["Yes"].exists, "T-93o: Yes")
         XCTAssertTrue(app.buttons["Skip"].exists, "T-93o: Skip")
         XCTAssertFalse(app.buttons["Answer"].exists, "T-93o: no Answer")
         XCTAssertTrue(element(containing: "Yes sorts this one as Other").exists, "T-93o: the line above the buttons")
+        XCTAssertTrue(element(containing: "Tap the card to pick something else").exists, "T-93o: the way out")
+        XCTAssertFalse(element(containing: "Tap the card for other answers").exists, "T-93o: one line, as drawn")
         let card = app.descendants(matching: .any)["quick-sort-card"]
+        // The list behind the deck can say "What was this?" for money in; the card can't.
+        XCTAssertFalse(card.label.contains("What was this?"), "T-93o: the card no longer asks")
         let merchant = ["Corner Store", "Makersmkt", "Northshop", "City Parking", "Lucky Noodle", "Bright Dental"]
             .first { card.label.localizedCaseInsensitiveContains($0) } ?? ""
         note("Other card: \(card.label)")
@@ -222,19 +226,23 @@ final class ConsolidationUITests: XCTestCase {
         launch("dark")
         tap(app.buttons["See the list"], "See the list")
         tap(button("Quick sort"), "Quick sort card")
+        // The list behind the deck shows "Other?" chips too: read the card itself.
+        let card = app.descendants(matching: .any)["quick-sort-card"]
         var n = 0
-        while !element(containing: "Other?").exists && n < 8 {
+        while !(card.waitForExistence(timeout: 4) && card.label.contains("Other?")) && n < 8 {
             tap(app.buttons["Skip"], "Skip"); sleep(1); n += 1
         }
-        XCTAssertTrue(element(containing: "Other?").exists, "T-93o: no card reads “Other?”")
+        XCTAssertTrue(card.label.contains("Other?"), "T-93o: no card reads “Other?”")
+        let merchant = card.label.components(separatedBy: ", ").dropFirst().first ?? ""
+        note("Other card: \(card.label)")
         step("T-93o other card dark")
         tap(app.buttons["Skip"], "Skip")
         sleep(2)
-        let review = call("GET", "review") as? [String: Any]
-        let open = (review?["unsure_category"] as? [[String: Any]])?.compactMap { ($0["txn"] as? [String: Any])?["merchant"] as? String } ?? []
-        note("still in Needs a look: \(open)")
-        XCTAssertTrue(open.contains { $0.localizedCaseInsensitiveContains("Corner Store") },
-                      "T-93o: Skip leaves the Other card in Needs a look")
+        let review = call("GET", "review")
+        let text = String(data: (try? JSONSerialization.data(withJSONObject: review ?? [:])) ?? Data(), encoding: .utf8) ?? ""
+        note("skipped \(merchant); in Needs a look: \(text.localizedCaseInsensitiveContains(merchant))")
+        XCTAssertFalse(merchant.isEmpty)
+        XCTAssertTrue(text.localizedCaseInsensitiveContains(merchant), "T-93o: Skip leaves \(merchant) in Needs a look")
     }
 
     // MARK: Bar only (1284:230, S-44b–i)
@@ -251,9 +259,19 @@ final class ConsolidationUITests: XCTestCase {
         for (id, total) in [(pizza, 120.0), (bar, 100.0)] {
             _ = call("PUT", "transactions/\(id)/split",
                      ["mode": "amount", "include_me": true, "people": [["name": "Priya", "amount": 20]], "you": total - 20])
-            let r = call("POST", "transactions/\(id)/paybacks/\(priya)", ["person": "Priya", "amount": 20]) as? [String: Any]
-            note("payback on \(id): \(r?["toast"] ?? r?["error"] ?? "-")")
         }
+        // One payback, several purchases (Who paid you back?): the old card
+        // said "$40.00 · paid back Pizza Nova and Bar Isabel" under Priya.
+        let r = call("POST", "transactions/\(priya)/mark",
+                     ["case": "payback", "person": "Priya",
+                      "charges": [["id": pizza, "amount": 20], ["id": bar, "amount": 20]]]) as? [String: Any]
+        note("payback: \(r?["title"] ?? r?["error"] ?? "-")")
+        let shared = (call("GET", "transactions/\(pizza)") as? [String: Any]).flatMap {
+            (($0["transaction"] as? [String: Any]) ?? $0)["splitting"] as? [String: Any] }
+        let priyaRow = (shared?["people"] as? [[String: Any]])?.first { $0["name"] as? String == "Priya" }
+        note("Priya on Pizza Nova: owes=\(priyaRow?["owes"] ?? "-") shared=\(priyaRow?["shared"] ?? "-")")
+        XCTAssertFalse(((priyaRow?["shared"] as? [Any]) ?? []).isEmpty,
+                       "Setup: Priya's $40.00 should have paid back both, so the old card had a payment line")
         openCashFlow()
         let search = app.textFields.matching(NSPredicate(format: "placeholderValue == 'Search'")).firstMatch
         if search.waitForExistence(timeout: 4) { search.tap(); search.typeText("Pizza Nova"); sleep(2) }
@@ -262,8 +280,11 @@ final class ConsolidationUITests: XCTestCase {
         app.swipeUp(velocity: .slow)
         step("bar only Pizza Nova")
         XCTAssertTrue(element(containing: "✓ Paid back").waitForExistence(timeout: 6), "No ✓ Paid back on Priya's row")
-        XCTAssertFalse(element(containing: "paid back Pizza Nova").exists, "Bar only: the payment line is still there")
-        XCTAssertFalse(element(containing: "paid back Bar Isabel").exists, "Bar only: the payment line is still there")
-        XCTAssertFalse(element(containing: "still cash").exists)
+        // What's drawn: the row's VoiceOver label still names the payment
+        // (it reads Priya's row aloud), but no line on the card says it.
+        let drawn = app.staticTexts.allElementsBoundByIndex.map(\.label)
+        XCTAssertFalse(drawn.contains { $0.contains("paid back Pizza Nova") || $0.contains("paid back Bar Isabel") },
+                       "Bar only: the payment line is still there")
+        XCTAssertFalse(drawn.contains { $0.contains("still cash") || $0.contains("given back") })
     }
 }
