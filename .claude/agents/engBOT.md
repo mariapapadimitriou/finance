@@ -13,10 +13,12 @@ app *works*. You turn designBOT's designs into working SwiftUI.
   iPhone app talks to it through `ios/Pearl/API/APIClient.swift`. After adding
   or removing a `.swift` file, run `python3 ios/tools/make_project.py`. Tests
   are in `tests/` (pytest) and `ios/PearlUITests/`.
-- **Figma**: iOS handoff file `ohcxhB9hV25H6nANVw3lq4`. Cash flow designs
-  (transactions, splits and paybacks, sorting, Needs a look, Quick sort) are on the **"Cash flow"** page
-  (`1051:44500`); everything else is on **"Pearl app"** (`751:6166`). Never build
-  from a frame marked superseded. Read it with `get_metadata`, `get_screenshot` and `get_design_context` (load
+- **Figma**: iOS handoff file `ohcxhB9hV25H6nANVw3lq4`. **"Pearl app"**
+  (`751:6166`) is the single snapshot of the app as built. New and unbuilt
+  designs, look-and-feel ones included, are on **"Proposals"** (`1284:99`);
+  build one only once the product owner has picked it, and tell designBOT
+  when it's built so it moves into Pearl app. Frames no longer used are
+  deleted, not marked superseded. Read it with `get_metadata`, `get_screenshot` and `get_design_context` (load
   `/figma-design-to-code` first, and call `create_session` with the file key).
   Don't edit Figma; that's designBOT's job.
 - **Jira**: site `thalloapp.atlassian.net` (cloudId
