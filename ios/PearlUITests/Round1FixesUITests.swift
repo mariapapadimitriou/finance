@@ -906,21 +906,8 @@ final class Round1FixesUITests: XCTestCase {
 
     // MARK: From the redesign line (sections 16 and 17, Sort now, T-01r / T-01r3, TEST-12, TEST-22)
 
-    /// T-93n: a card whose best guess is Other asks, with Answer.
-    func testAnOtherGuessIsAQuestion() {
-        launch()
-        tap(app.buttons["See the list"], "See the list")
-        XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Other?'")).firstMatch
-                        .waitForExistence(timeout: 6), "Needs a look still shows an Other? chip")
-        tap(button("Quick sort"), "Quick sort card")
-        var n = 0
-        while !text(containing: "What was this?").exists && n < 6 {
-            app.buttons["Skip"].tap(); sleep(1); n += 1
-        }
-        XCTAssertTrue(text(containing: "What was this?").exists, "No card asks What was this?")
-        XCTAssertTrue(app.buttons["Answer"].exists, "Its round button should be Answer")
-        XCTAssertTrue(text(containing: "NEEDS A LOOK").exists)
-    }
+    // T-93n's checks (an Other guess asks, with Answer) went with T-93o:
+    // ConsolidationUITests.testQuickSortOtherIsYesOrSkip.
 
     /// T-01r: Leftover leads, then Spent / Saved / Leftover, Came in, and
     /// "need a look · Sort"; spending amounts in ink. T-01r3 (TEST-05):
@@ -949,15 +936,6 @@ final class Round1FixesUITests: XCTestCase {
             XCTAssertTrue(e.waitForExistence(timeout: 8), "No \(words) on Cash flow")
         }
         XCTAssertFalse(text(containing: "Over $").exists && text(containing: "Leftover $").exists)
-    }
-
-    /// TEST-12 (T-93n): Cash flow's rows ask "What was this?" too; never "Other?".
-    func testCashFlowRowsHaveNoOtherGuess() {
-        launch()
-        openCashFlow()
-        sleep(2)
-        let other = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Other?' OR label CONTAINS 'guess: Other'"))
-        XCTAssertFalse(other.firstMatch.exists, "TEST-12: Cash flow still shows an Other? guess")
     }
 
     /// S-03r2 / S-03r2b: "I had some too" on How to split; off, your row

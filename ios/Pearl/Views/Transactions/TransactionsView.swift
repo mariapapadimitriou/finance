@@ -1204,11 +1204,8 @@ struct TransactionRow: View {
                 if let extra = extra {
                     Text(extra).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(1)
                 }
-                if otherGuess {
-                    // T-93n (TEST-12): Other isn't a guess, so the row asks,
-                    // as Needs a look and Quick sort do; there's nothing to confirm.
-                    GuessChip(label: "What was this?", question: false, asking: true).padding(.top, 4)
-                } else if t.suggested {
+                // T-93o: a best guess of Other is a guess like any other, "Other?".
+                if t.suggested {
                     if let onConfirm = onConfirm, !t.asks {
                         Button(action: onConfirm) { GuessChip(label: t.label, question: true) }
                             .buttonStyle(.plain)
@@ -1228,15 +1225,11 @@ struct TransactionRow: View {
         .padding(.vertical, 12)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityHint(otherGuess ? "Pearl couldn’t place this one. Opens it to answer."
-                           : t.suggested ? "Pearl’s guess. Opens it to check." : "")
+        .accessibilityHint(t.suggested ? "Pearl’s guess. Opens it to check." : "")
         .accessibilityAction(named: "Confirm \(t.label)") {
-            if t.suggested, !t.asks, !otherGuess { onConfirm?() }
+            if t.suggested, !t.asks { onConfirm?() }
         }
     }
-
-    /// T-93n (TEST-12): a best guess of Other is a question, not a guess.
-    private var otherGuess: Bool { t.suggested && !t.asks && t.label == "Other" }
 
     /// "Health · Today"; "Today · Pending" while it's a guess; "Paid back · Sushi Nami".
     /// Under T-01r's day header: "Health", "Pending".
@@ -1312,8 +1305,6 @@ struct GuessChip: View {
     let label: String
     /// "Dining out?" for a guess; "Not sorted yet" already says it's waiting.
     var question = true
-    /// T-93n (TEST-12): "What was this?" asks; it isn't Pearl's guess.
-    var asking = false
 
     var body: some View {
         HStack(spacing: 4) {
@@ -1324,7 +1315,7 @@ struct GuessChip: View {
         .foregroundColor(Pearl.ink)
         .padding(.horizontal, 10).frame(height: 24)
         .overlay(Capsule().strokeBorder(Pearl.ink.opacity(0.7), style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
-        .accessibilityLabel(asking ? label : "Pearl’s guess: \(label)")
+        .accessibilityLabel("Pearl’s guess: \(label)")
     }
 }
 
