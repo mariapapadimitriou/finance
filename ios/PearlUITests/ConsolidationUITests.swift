@@ -245,6 +245,43 @@ final class ConsolidationUITests: XCTestCase {
         XCTAssertTrue(text.localizedCaseInsensitiveContains(merchant), "T-93o: Skip leaves \(merchant) in Needs a look")
     }
 
+    /// The transaction page's guess card for an Other guess reads "Other",
+    /// Pearl's guess, like any guess (product owner, 2026-11-13, with
+    /// T-93o). Opened from Needs a look: Yes, Other sorts this one alone
+    /// with no Always switch, and the card still opens the category page
+    /// to pick something else.
+    func testOtherGuessPageReadsOther() {
+        launch()
+        tap(app.buttons["See the list"], "See the list")
+        tap(button("Corner Store"), "the Corner Store question")
+        sleep(2)
+        step("other guess page")
+        let card = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Other'")).firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 6), "The guess card should read Other")
+        note("guess card: \(card.label)")
+        XCTAssertTrue(card.label.contains("Pearl’s guess"), "Other is Pearl’s guess, like any guess: \(card.label)")
+        XCTAssertFalse(card.label.contains("What was this?"), "The guess card no longer asks What was this?")
+        XCTAssertFalse(app.switches.matching(NSPredicate(format: "label BEGINSWITH 'Always for'")).firstMatch.exists,
+                       "No Always switch for an Other guess")
+        XCTAssertTrue(button("Yes, Other").waitForExistence(timeout: 4), "No Yes, Other")
+        // Tapping the card still opens the page to pick something else.
+        card.tap()
+        sleep(2)
+        step("pick something else from the other card")
+        XCTAssertTrue(app.staticTexts["Category"].waitForExistence(timeout: 6), "The card should open the category page")
+        XCTAssertTrue(app.buttons["Groceries"].exists || element(containing: "Groceries").exists)
+        tap(app.buttons["Close"].firstMatch, "Close")
+        sleep(2)
+        tap(button("Yes, Other"), "Yes, Other")
+        sleep(3)
+        step("after yes other on the page")
+        guard let row = rows("Corner Store").first else { XCTFail("No Corner Store row"); return }
+        note("after Yes, Other: \(row["category"] ?? "-") suggested=\(row["suggested"] ?? "-")")
+        XCTAssertEqual(row["category"] as? String, "Other")
+        XCTAssertEqual(row["suggested"] as? Bool, false, "Yes, Other answers it")
+        XCTAssertEqual((row["rule"] as? [String: Any])?["has_rule"] as? Bool, false, "Yes, Other saves no rule")
+    }
+
     // MARK: Bar only (1284:230, S-44b–i)
 
     /// A paid-back person's row shows "✓ Paid back · <day>" and the bar, and no
@@ -286,5 +323,14 @@ final class ConsolidationUITests: XCTestCase {
         XCTAssertFalse(drawn.contains { $0.contains("paid back Pizza Nova") || $0.contains("paid back Bar Isabel") },
                        "Bar only: the payment line is still there")
         XCTAssertFalse(drawn.contains { $0.contains("still cash") || $0.contains("given back") })
+        // VoiceOver matches the bar-only row (product owner, 2026-11-13):
+        // the person, "paid back", the day and the amount; not how.
+        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Priya, paid back'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 4), "No paid-back VoiceOver label on Priya's row")
+        note("Priya's VoiceOver label: \(row.label)")
+        XCTAssertTrue(row.label.hasSuffix("$20.00"), "VoiceOver should end with the amount: \(row.label)")
+        for how in ["e-Transfer", "part of", "also paid back", "Cash", "payments"] {
+            XCTAssertFalse(row.label.contains(how), "VoiceOver still says how it was paid (\(how)): \(row.label)")
+        }
     }
 }
