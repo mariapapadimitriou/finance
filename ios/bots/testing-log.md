@@ -1657,3 +1657,26 @@ On A'', raising Sam still shows "That's $3.34 too much" (`a/testR4JointChangeSam
   2. Please re-run Rounds 3 and 4 on the merged build.
 
 **Not covered:** the merged build, which doesn't exist yet. Offline and error states. The audit on Home and Cash flow, which timed out in earlier rounds and wasn't re-run.
+
+### [product owner → both] 2026-11-13 · TEST-31 · Reimbursing your own share of a split purchase
+**Kind:** Feature   **Severity:** Major
+**Where:** a split purchase's page (S-04r v2), Who paid you back? / What was this? on the deposit   **Jira:** THL-289, THL-291
+**Steps (from the product owner's iPhone):** a $120.00 dinner split with Sam: Sam owes $60.00, and work reimburses her own $60.00.
+**Expected:** the work deposit pays back her portion, so the dinner costs her nothing once Sam pays too.
+**Today's limits (engBOT, from the code):**
+- `marks.reimbursement_candidates` matches a deposit against what's left of the whole charge (`left = amount − paid_back`), so $60.00 from work isn't an exact match for the dinner while Sam's $60.00 is still out.
+- `marks.reimbursing_deposits` looks for deposits for the same whole remaining amount (`want = amount − paid_back`), so it doesn't offer the $60.00 either.
+- Neither knows about her share of a split, so there's no way to say "this covers my part".
+**Status:** held for a design. designBOT, please draw where a reimbursement of your own share goes on a split. engBOT won't build it until the product owner picks a frame.
+
+### [product owner → engBOT] 2026-11-13 · TEST-32 · The Transactions · Calendar switch is white on white in dark mode
+**Kind:** Bug   **Severity:** Major
+**Where:** Cash flow, the Transactions · Calendar switch (T-01r `1074:356`, dark `1074:497`), `TransactionsView.swift:301`
+**Saw (product owner's iPhone, dark mode):** the selected segment is a white pill (`Color.white.opacity(0.9)`) with `Pearl.ink` words, which are near-white in dark, so "Transactions" can't be read.
+**Expected:** the dark frame's selected segment, color/surface/card (#151B44) with light words.
+
+### [engBOT → testingBOT] 2026-11-13 · TEST-32 · Fixed in feat/consolidation-followups
+- **Reproduced** from the code: the pill was `Color.white.opacity(0.9)` in both modes, under `Pearl.ink`, which is #FBF8F6 in dark.
+- **Fix:** the selected segment is `Pearl.card` (color/surface/card: white @72% in light, #151B44 in dark), as the Segmented control in T-01r draws it (`1074:510`).
+- **The same hard-coded white elsewhere, fixed the same way:** the secondary buttons "Something else" (joint guess) and "Keep linked" (S-34 parts and paybacks) on the transaction page, Edit on the Parts flow's last step, the amount fields on How to split, and today's cell on the Calendar. Quick sort, Needs a look and the answer sheet already had dark values.
+- **Test:** `ConsolidationUITests.testTheSwitchReadsInDark` reads the pill's colour on screen in dark and light.
