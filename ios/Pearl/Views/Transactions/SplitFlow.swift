@@ -1539,17 +1539,17 @@ struct SplitPeople: View {
         .padding(.vertical, 10)
     }
 
-    /// VoiceOver (S-05v): "Jo, paid back 30 dollars, November 16, part of a
-    /// 60 dollar e-Transfer that also paid back Pizza Nova."
+    /// VoiceOver for a person on a split with shares. Bar only (product
+    /// owner, 2026-11-13): it says what the row draws, "Priya, paid back,
+    /// November 12, $20.00", and not how it was paid ("part of a $60.00
+    /// e-Transfer…", Cash, PayPal); the payments are in •••.
     private func spoken(_ p: Transaction.Splitting.Person) -> String {
         // Note 1096:4483: "Priya, owes you 30 dollars."
         if p.owes >= 0.005 && p.paid < 0.005 { return "\(p.name), owes you \(Format.amount(p.owes))" }
-        guard p.owes < 0.005, p.letGo == nil, let links = p.links, !links.isEmpty else {
+        guard p.owes < 0.005, p.letGo == nil, p.paid >= 0.005 else {
             return [p.name, status(p), Format.amount(p.owes >= 0.005 ? p.owes : p.paid)].joined(separator: ", ")
         }
-        let how = links.count == 1 ? links[0].message : "\(links.count) payments"
-        let lowered = how.prefix(1).lowercased() + how.dropFirst()
-        return [p.name, "paid back \(Format.amount(p.paid))", p.paidOn.map { Format.monthDay($0) }, lowered]
+        return [p.name, "paid back", p.paidOn.map { Format.monthDay($0) }, Format.amount(p.paid)]
             .compactMap { $0 }.joined(separator: ", ")
     }
 

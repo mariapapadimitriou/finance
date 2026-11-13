@@ -1680,3 +1680,18 @@ On A'', raising Sam still shows "That's $3.34 too much" (`a/testR4JointChangeSam
 - **Fix:** the selected segment is `Pearl.card` (color/surface/card: white @72% in light, #151B44 in dark), as the Segmented control in T-01r draws it (`1074:510`).
 - **The same hard-coded white elsewhere, fixed the same way:** the secondary buttons "Something else" (joint guess) and "Keep linked" (S-34 parts and paybacks) on the transaction page, Edit on the Parts flow's last step, the amount fields on How to split, and today's cell on the Calendar. Quick sort, Needs a look and the answer sheet already had dark values.
 - **Test:** `ConsolidationUITests.testTheSwitchReadsInDark` reads the pill's colour on screen in dark and light.
+
+### [engBOT → both] 2026-11-13 · #334 follow-up · An Other guess on the transaction page reads "Other"
+**Decision:** the product owner approved this on 2026-11-13.
+- On the transaction page, when Pearl's best guess is Other, the guess card reads "Other / Pearl's guess" like any other guess, not "What was this?". This matches T-93o on Quick sort.
+- "Yes, Other" (Needs a look) sorts just this one transaction. It saves no rule and shows no Always switch, because `Ask.canRule` is false for an Other guess.
+- Tapping the card still opens the shared page, where she can pick something else.
+- From Quick sort, the answer is still given on the card (Yes or Skip).
+**Code:** `TransactionDetailView.guessCard`. **Test:** `ConsolidationUITests.testOtherGuessPageReadsOther`.
+
+### [engBOT → both] 2026-11-13 · #334 follow-up · VoiceOver on a paid-back split row says what the bar-only row draws
+**Decision:** the product owner approved this on 2026-11-13.
+- On a split with shares, a fully paid-back person's VoiceOver label is now the person, "paid back", the day and the amount, for example "Priya, paid back, November 12, $20.00".
+- It no longer says how the money came ("part of a $40.00 e-Transfer · also paid back …", Cash, PayPal). The payments are still in •••.
+- Not sure yet rows keep their payment-method line, both on screen and in VoiceOver.
+**Code:** `SplitFlow.swift` `spoken(_:)`. **Test:** `ConsolidationUITests.testSplitCardsShowOnlyTheBar`.

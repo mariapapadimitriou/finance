@@ -1046,10 +1046,10 @@ struct TransactionDetailView: View {
         Button { sorting = guessing?.ask ?? sortAsk(.category) } label: {
             let still = chosenCategory == nil && !pickedGuess
             let symbol = chosenCategory ?? guessing?.ask.item.guess?.text ?? t.category ?? t.label
-            // T-93n (TEST-12): Other isn't a guess, so the row asks.
-            let asks = still && symbol == "Other"
-            categoryLabel(symbol: symbol, title: asks ? "What was this?" : label,
-                          sub: asks ? nil : still ? "Pearl’s guess" : "Your choice")
+            // T-93o (product owner, 2026-11-13): a best guess of Other reads
+            // "Other", Pearl's guess, like any guess; Yes is this one alone,
+            // with no Always (Ask.canRule), and tapping still opens What was this?.
+            categoryLabel(symbol: symbol, title: label, sub: still ? "Pearl’s guess" : "Your choice")
                 .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous)
                     .strokeBorder(Pearl.ink.opacity(still ? 0.7 : 0),
                                   style: StrokeStyle(lineWidth: 1.2, dash: [5, 3])))
