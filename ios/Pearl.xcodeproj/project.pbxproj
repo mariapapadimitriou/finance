@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		AEEA3ED321BEA8B167EC2950 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B9447FB87C39BED247C466A /* APIClient.swift */; };
+		20C346BE1C39DB7E6555AFD8 /* Boxed.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6C3358EC82EA6FE19393BFD /* Boxed.swift */; };
 		B83A9DA9B4B837A8966C5B1C /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEC593419BBFC2C02400C055 /* Models.swift */; };
 		447CDE89543B103ACD878613 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C5660576F12049C54E11ECA /* AppModel.swift */; };
 		320A0024BC90E91C1C716012 /* Format.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95910E98ECA767C288B13D6F /* Format.swift */; };
@@ -98,6 +99,7 @@
 		B99716DE63C4303C7C7240C4 /* Round3JourneysUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round3JourneysUITests.swift; sourceTree = "<group>"; };
 		1B06563AFFD524886417B556 /* Test31UITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Test31UITests.swift; sourceTree = "<group>"; };
 		9B9447FB87C39BED247C466A /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		E6C3358EC82EA6FE19393BFD /* Boxed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Boxed.swift; sourceTree = "<group>"; };
 		CEC593419BBFC2C02400C055 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		9C5660576F12049C54E11ECA /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		95910E98ECA767C288B13D6F /* Format.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Format.swift; sourceTree = "<group>"; };
@@ -229,6 +231,7 @@
 			isa = PBXGroup;
 			children = (
 				9B9447FB87C39BED247C466A /* APIClient.swift */,
+				E6C3358EC82EA6FE19393BFD /* Boxed.swift */,
 				CEC593419BBFC2C02400C055 /* Models.swift */,
 			);
 			path = API;
@@ -471,6 +474,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AEEA3ED321BEA8B167EC2950 /* APIClient.swift in Sources */,
+				20C346BE1C39DB7E6555AFD8 /* Boxed.swift in Sources */,
 				B83A9DA9B4B837A8966C5B1C /* Models.swift in Sources */,
 				447CDE89543B103ACD878613 /* AppModel.swift in Sources */,
 				320A0024BC90E91C1C716012 /* Format.swift in Sources */,
