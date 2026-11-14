@@ -550,7 +550,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
     let myNote: String
     let split: Bool
     let fullAmount: Double?
-    let refundOf: Linked?
+    @Boxed var refundOf: Linked?
     let refundedBy: [Linked]
     let repays: String?
     let oneOff: Bool
@@ -586,17 +586,17 @@ struct Transaction: Decodable, Identifiable, Hashable {
     /// Money in: what kind of income ("salary"), and her regular pay from
     /// this payer, when it is one (THL-198).
     let incomeType: String?
-    let regularPay: RegularPay?
+    @Boxed var regularPay: RegularPay?
     /// A purchase split with people (THL-291): your part and each of theirs.
-    let splitting: Splitting?
+    @Boxed var splitting: Splitting?
     /// A deposit split into parts, or a part of one.
     let parts: [DepositPart]
-    let partOf: PartOf?
+    @Boxed var partOf: PartOf?
     let leftToSort: Bool
-    let oneOffLine: OneOffLine?
+    @Boxed var oneOffLine: OneOffLine?
     let repaidBy: [Brief]
-    let transfer: Transfer?
-    let repaysCharge: Brief?
+    @Boxed var transfer: Transfer?
+    @Boxed var repaysCharge: Brief?
 
     struct Chip: Decodable, Hashable {
         let label: String?
@@ -613,7 +613,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         var share: Bool? = nil
         var paid: Double? = nil
         /// On the purchase's REFUNDED BY row: its S-05o and Unlink refund? (SPLIT-25).
-        var link: LinkInfo? = nil
+        @Boxed var link: LinkInfo? = nil
     }
 
     /// SPLIT-25 (THL-291): one payment that paid back this purchase, as
@@ -688,9 +688,9 @@ struct Transaction: Decodable, Identifiable, Hashable {
         /// The part of it that paid this back, when that's less than all.
         let paid: Double?
         /// The purchase's split, when it was split (2026-11-08).
-        var split: Splitting? = nil
+        @Boxed var split: Splitting? = nil
         /// On the purchase's PAID BACK row: its S-05o and Unlink? (SPLIT-25).
-        var link: LinkInfo? = nil
+        @Boxed var link: LinkInfo? = nil
         /// T-41w: how the deposit was answered: "reimbursement" for Work
         /// paying me back; nil for a friend paying her back.
         var kind: String? = nil
