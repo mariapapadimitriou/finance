@@ -191,7 +191,11 @@ def _splitting(t, split: dict, txns, payer) -> dict:
         # is what work paid of it, `on` the day; `stays` what's still hers.
         # S-40w's REIMBURSED BY rows come from `links` (unlink.add_links).
         paid = round(min(mine["paid"], mine["amount"]), 2)
-        out["mine"] = {"amount": mine["amount"], "reimbursed": paid, "on": mine["on"],
+        # TEST-31 Money back (S-04m): "refund" when shop refunds covered it,
+        # so her row says Refunded; "reimbursement" for work.
+        kinds = store().payback_kinds()
+        kind = "refund" if all(kinds.get(i) == "refund_share" for i in mine["ids"]) else "reimbursement"
+        out["mine"] = {"amount": mine["amount"], "reimbursed": paid, "on": mine["on"], "kind": kind,
                        "stays": round(max(mine["amount"] - paid, 0.0), 2), "ids": mine["ids"]}
     if split["mode"] == sp.UNSURE:
         out["still"] = sp.still_yours(t)
@@ -1768,6 +1772,23 @@ def unlink_refund(inflow_id: str):
     if st.get_transaction(inflow_id) is None:
         return jsonify({"error": "No such transaction."}), 404
     was = st.refunds().get(inflow_id)
+    inflow = st.get_transaction(inflow_id)
+    if not was and inflow.repays and st.payback_kinds().get(inflow_id) == "refund_share":
+        # TEST-31 Money back (S-40m, T-41m): her share's refund is a link for
+        # her; Unlink refund takes it off, with the same Undo.
+        marks = {"paybacks": {inflow_id: {"charge": inflow.repays, "kind": "refund_share",
+                                          "person": st.payback_people().get(inflow_id),
+                                          "amount": inflow.repays_amount}},
+                 "payback_more": {inflow_id: st.payback_more(inflow_id)}}
+        charge = inflow.repays
+        st.unlink_payback(inflow_id)
+        st.set_payback_kind(inflow_id, None)
+        out = transaction_detail(inflow_id)
+        data = out.get_json() if hasattr(out, "get_json") else None
+        if isinstance(data, dict):
+            return jsonify(dict(data, title="Refund unlinked", charge=charge,
+                                undo={"rows": [], "marks": marks}))
+        return out
     if not was:
         return jsonify({"error": "That refund isn't linked to a purchase."}), 404
     st.link_refund(inflow_id, None)

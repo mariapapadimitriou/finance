@@ -72,11 +72,12 @@ def transaction_charges(txn_id: str):
         return jsonify({"charges": []})
     q = request.args.get("q", "")
     found = marks.search_charges(t, txns, q, st.merchant_names())
-    if request.args.get("case") == "reimbursement" and not q.strip():
-        # TEST-31 (T-09w): Work paying me back from the deposit's page lists
-        # its likely matches first, "Your share of …" among them.
-        likely = marks.reimbursement_candidates(t, txns, st.merchant_names(), st.splits(),
-                                                st.payback_people())
+    case = request.args.get("case")
+    if case in ("reimbursement", "refund") and not q.strip():
+        # TEST-31 (T-09w, T-09rs): Work paying me back or Money back from the
+        # deposit's page lists its likely matches first, "Your share of …" among them.
+        likely = (marks.reimbursement_candidates if case == "reimbursement" else marks.refund_candidates)(
+            t, txns, st.merchant_names(), st.splits(), st.payback_people())
         seen = {c["id"] for c in likely}
         found = likely + [c for c in found if c["id"] not in seen]
     return jsonify({"charges": found})

@@ -498,7 +498,8 @@ enum PersonChoice {
 
 /// TEST-31 S-40w: the ••• on her own reimbursed row. REIMBURSED BY with View
 /// the deposit and Unlink… (the S-34kr7 sheet), then Change your share. No
-/// Remove: she can't remove herself.
+/// Remove: she can't remove herself. S-40m (Money back): REFUNDED BY, the
+/// refund card, View the refund and Unlink… (S-34kr8 "Unlink refund?").
 struct MineOptionsSheet: View {
     let t: Transaction
     let split: Transaction.Splitting
@@ -513,11 +514,11 @@ struct MineOptionsSheet: View {
         PearlSheet {
             PearlSheetHeader(face: "Me", overline: "\(t.merchant) · split \(ways) ways", title: "You",
                              sub: mine.full
-                                ? "✓ Reimbursed by \(by)" + (mine.on.map { " · \(Format.short($0))" } ?? "")
-                                : "Reimbursed \(Format.amount(mine.reimbursed)) of \(Format.amount(mine.amount)) · \(Format.amount(mine.stays)) stays yours",
+                                ? "✓ " + (mine.refunded ? "Refunded" : "Reimbursed by \(by)") + (mine.on.map { " · \(Format.short($0))" } ?? "")
+                                : "\(mine.refunded ? "Refunded" : "Reimbursed") \(Format.amount(mine.reimbursed)) of \(Format.amount(mine.amount)) · \(Format.amount(mine.stays)) stays yours",
                              subTone: mine.full ? Pearl.moneyIn : Pearl.muted, close: onClose)
             if let links = mine.links, !links.isEmpty {
-                PearlSectionLabel(text: "Reimbursed by")
+                PearlSectionLabel(text: mine.refunded ? "Refunded by" : "Reimbursed by")
                 ForEach(links) { link in card(link, only: links.count == 1) }
             }
             PearlSectionLabel(text: "Change the split")
@@ -531,11 +532,12 @@ struct MineOptionsSheet: View {
     private func card(_ link: Transaction.LinkInfo, only: Bool) -> some View {
         VStack(spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
-                PearlBubble(symbol: "briefcase")
+                PearlBubble(symbol: link.kind == "refund" ? "arrow.uturn.backward" : "briefcase")
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(link.sheet.face) · \(Format.short(link.date))")
                         .font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                    Text("Deposit · Work paying me back").font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
+                    Text(link.kind == "refund" ? "Refund · Money back" : "Deposit · Work paying me back")
+                        .font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)

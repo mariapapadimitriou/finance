@@ -33,7 +33,11 @@ SPLIT = "Split into parts"
 REST = "Left to sort"
 
 KINDS = ("payback", "gift", "income", "moved", "savings", "cash", "refund",
-         "category", "overpaid", "reimbursement", "loan", "lent_back", "rest")
+         "category", "overpaid", "reimbursement", "loan", "lent_back", "rest", "not_mine")
+# TEST-31 Money back, S-11m (product owner, 2026-11-14): Not mine is a tile
+# for the extra on a refund of her share, so it's a part there (only there):
+# left out.
+NOT_MINE = "Not mine"
 # The kinds income can be (finance/income.py).
 INCOME_KINDS = ("salary", "bonus", "interest", "gifts", "government", "tax_refund", "other")
 MAX_PARTS = 12
@@ -66,8 +70,12 @@ def _clean(st, deposit: Transaction, parts: list, later: bool) -> list[dict]:
     by_id = {t.fingerprint: t for t in st.all_transactions()}
     cash = {c["id"]: c for c in st.split_cash()}
     out = []
+    # SPLIT-04: Not mine is not a part, except for the extra on a refund of
+    # her share (S-11m, product owner 2026-11-14).
+    refund_share = any(isinstance(p, dict) and p.get("kind") == "refund" and p.get("share") for p in parts)
     for p in parts:
-        if not isinstance(p, dict) or p.get("kind") not in KINDS or p.get("kind") == "rest":
+        if not isinstance(p, dict) or p.get("kind") not in KINDS or p.get("kind") == "rest" \
+                or (p.get("kind") == "not_mine" and not refund_share):
             raise Problem("Say what each part is.")
         try:
             amount = round(float(p.get("amount")), 2)
@@ -84,6 +92,25 @@ def _clean(st, deposit: Transaction, parts: list, later: bool) -> list[dict]:
                                "refund": "Pick the purchase it refunds."}.get(kind,
                                                                              "Pick the expense it reimburses."))
             detail["charge"] = charge.fingerprint
+            if kind == "refund" and p.get("share"):
+                # TEST-31 Money back: the part is money back on her share (S-11w).
+                detail["share"] = True
+            elif kind == "refund" and p.get("person"):
+                # TEST-31 Money back, decision 2 (2026-11-14): a refund bigger
+                # than her share can count toward what someone on the split
+                # still owes ("Part of Sam's share", S-11m).
+                from .splits import UNSURE
+                split = st.splits().get(charge.fingerprint) or {}
+                person = " ".join(str(p.get("person")).split())[:40]
+                if split.get("mode") == UNSURE or person not in [q.get("name") for q in split.get("people") or []]:
+                    raise Problem("Pick someone on this split.")
+                # Up to what they still owe; Pearl asks about the rest (S-11m).
+                from .splits import people_status
+                status = people_status(charge, split, list(by_id.values()), st.payback_people())
+                owes = next((q["owes"] for q in status if q["name"] == person), 0.0)
+                if amount > owes + 0.005:
+                    raise Problem(f"{person} owes ${owes:,.2f}. Make it ${owes:,.2f} or less.")
+                detail["person"] = person
         if kind in ("payback", "overpaid"):
             person = " ".join(str(p.get("person") or "").split())[:40]
             if kind == "overpaid" and not person:
@@ -210,6 +237,8 @@ def apply(st, deposit: Transaction, parts: list, later: bool = False, replace: b
             # SPLIT-C decision 4: linking to a closed split opens it again.
             from .splits import reopen_closed
             reopen_closed(st, d["charge"], reopened)
+        elif p["kind"] == "refund" and (d.get("share") or d.get("person")):
+            _your_share_part(st, d["charge"], cid, d.get("person"))
         elif p["kind"] == "refund":
             st.link_refund(cid, d["charge"])
         elif p["kind"] == "reimbursement":
@@ -224,6 +253,8 @@ def apply(st, deposit: Transaction, parts: list, later: bool = False, replace: b
             st.set_party(cid, d["person"])
         elif p["kind"] == "rest":
             st.exclude(cid, REST)
+        elif p["kind"] == "not_mine":
+            st.exclude(cid, NOT_MINE)
     st.exclude(deposit.fingerprint, SPLIT)
     st.set_parts(deposit.fingerprint, stored)
     rest = next((p["amount"] for p in stored if p["kind"] == "rest"), 0.0)
@@ -234,6 +265,16 @@ def apply(st, deposit: Transaction, parts: list, later: bool = False, replace: b
     if reopened:
         out["reopened"] = reopened["split_closed"]
     return out
+
+
+def _your_share_part(st, charge_id: str, part_id: str, person: str | None = None) -> None:
+    """TEST-31 Money back: a part of a deposit that's money back on her own
+    share of a split purchase, linked for her as work paying her share is;
+    or, with `person`, toward what they still owe (decision 2)."""
+    from .marks import REFUND_SHARE
+    from .splits import ME
+    st.link_payback(charge_id, part_id, person or ME)
+    st.set_payback_kind(part_id, REFUND_SHARE)
 
 
 def _reimburse(st, charge: Transaction, part_id: str, amount: float, detail: dict) -> None:

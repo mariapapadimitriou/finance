@@ -1367,9 +1367,12 @@ struct SplitPeople: View {
     /// library's 10% steps (decision 7). Its ••• opens S-40w.
     private func mineRow(_ mine: Transaction.Splitting.Mine) -> some View {
         let by = mine.links?.last?.sheet.face ?? "work"
+        // TEST-31 Money back, S-04m / S-04m2: "✓ Refunded · Nov 14",
+        // "Refunded $45.00 of $60.00 · $15.00 stays yours".
+        let done = mine.refunded ? "Refunded" : "Reimbursed by \(by)"
         let status = mine.full
-            ? "✓ Reimbursed by \(by)" + (mine.on.map { " · \(Format.short($0))" } ?? "")
-            : "Reimbursed \(Format.amount(mine.reimbursed)) of \(Format.amount(mine.amount)) · \(Format.amount(mine.stays)) stays yours"
+            ? "✓ \(done)" + (mine.on.map { " · \(Format.short($0))" } ?? "")
+            : "\(mine.refunded ? "Refunded" : "Reimbursed") \(Format.amount(mine.reimbursed)) of \(Format.amount(mine.amount)) · \(Format.amount(mine.stays)) stays yours"
         let shown = mine.full ? mine.reimbursed : mine.stays
         let amount = Text(Format.amount(shown)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
             .foregroundColor(mine.full ? Pearl.moneyIn : Pearl.ink).pearlAmountFit()
@@ -1393,16 +1396,17 @@ struct SplitPeople: View {
                 .buttonStyle(.plain)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(mine.full
-                    ? "You, reimbursed by \(by)" + (mine.on.map { ", \(Format.monthDay($0))" } ?? "") + ", \(Format.amount(mine.reimbursed))"
-                    : "You, reimbursed \(Format.amount(mine.reimbursed)) of \(Format.amount(mine.amount)), \(Format.amount(mine.stays)) stays yours")
+                    ? "You, \(done.lowercased())" + (mine.on.map { ", \(Format.monthDay($0))" } ?? "") + ", \(Format.amount(mine.reimbursed))"
+                    : "You, \(mine.refunded ? "refunded" : "reimbursed") \(Format.amount(mine.reimbursed)) of \(Format.amount(mine.amount)), \(Format.amount(mine.stays)) stays yours")
                 .accessibilityHint("Shows options.")
                 .accessibilityAddTraits(.isButton)
                 .accessibilityIdentifier("split-you-row")
                 PearlMoreButton(label: "Options for you") { mineOptions = true }
             }
-            // Decision 7: the library's 10% steps (75% shows as 80%).
+            // Decision 7: the library's 10% steps (75% shows as 80%). Part
+            // paid is the rose part-paid bar, as S-04r v3 (S-04w2, S-04m2).
             PaidBar(paid: mine.full ? 1 : (mine.reimbursed / max(mine.amount, 0.01) * 10).rounded() / 10, of: 1,
-                    tone: mine.full ? Pearl.moneyIn : Pearl.champagne)
+                    tone: mine.full ? Pearl.moneyIn : Pearl.action)
                 .accessibilityHidden(true)
         }
         .padding(.vertical, 10)

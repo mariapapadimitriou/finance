@@ -242,6 +242,12 @@ def describe(t: Transaction, ctx: Context) -> dict:
     elif is_others(t):
         chip, structural = "Not yours", True
         note = "Not yours"
+    elif t.repays and ctx.payback_kinds.get(t.fingerprint) == "refund_share":
+        # TEST-31 Money back (T-41m): a refund of her share reads as a refund,
+        # as refunds do everywhere (note 1303:3395).
+        charge = ctx.by_id.get(t.repays)
+        chip, structural = "Refund", True
+        note = (f"Refund of {_name(charge, ctx)} · came off it" if charge else "Refund · came off its purchase")
     elif t.repays and ctx.payback_kinds.get(t.fingerprint) == "reimbursement":
         charge = ctx.by_id.get(t.repays)
         chip, structural, group = "Reimbursement", True, "transfer"
@@ -382,6 +388,10 @@ def describe(t: Transaction, ctx: Context) -> dict:
     # these go". The chip says so, so it's clear why it won't change.
     ruled = t.category_source in ("merchant_override", RULED, "pay_rule")
     refund_of = ctx.by_id.get(ctx.refunds.get(t.fingerprint, ""))
+    # TEST-31 Money back: her share's refund is linked for her (person "me"),
+    # and says which purchase it's a refund for, and how much of her share.
+    share_refund = ctx.by_id.get(t.repays or "") \
+        if t.repays and ctx.payback_kinds.get(t.fingerprint) == "refund_share" else None
     return {
         "id": t.fingerprint,
         "date": t.date[:10],
@@ -417,7 +427,11 @@ def describe(t: Transaction, ctx: Context) -> dict:
         "saved_to_label": "",
         "refund_of": ({"id": refund_of.fingerprint, "merchant": _name(refund_of, ctx),
                        "date": refund_of.date[:10], "amount": abs(refund_of.amount)}
-                      if refund_of else None),
+                      if refund_of else
+                      {"id": share_refund.fingerprint, "merchant": _name(share_refund, ctx),
+                       "date": share_refund.date[:10], "amount": abs(share_refund.amount), "share": True,
+                       "paid": round(t.part_for(share_refund.fingerprint), 2)}
+                      if share_refund else None),
         "refunded_by": [{"id": r.fingerprint, "merchant": _name(r, ctx), "date": r.date[:10],
                          "amount": abs(r.amount)} for r in refunds_in] if not inflow else [],
         "reimbursement": ctx.payback_kinds.get(t.fingerprint) == "reimbursement",

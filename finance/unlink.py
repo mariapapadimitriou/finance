@@ -106,6 +106,13 @@ def _inflow_link(st, charge: Transaction, x: Transaction, who: str | None, by_id
     out: dict = {"id": x.fingerprint, "inflow": x.fingerprint, "cash_id": None, "amount": here,
                  "whole": whole, "date": x.date[:10], "person": who, "others": others,
                  "made_split": made, "was_waiting": False, "deposit": None}
+    if kind == "refund_share":
+        # TEST-31 Money back (S-40m): her share's refund opens the refund's
+        # own sheet (S-34kr8 "Unlink refund?"), for what it put toward this.
+        link = refund_link(charge, x)
+        link.update(amount=here, view={"id": parent.fingerprint if parent else x.fingerprint,
+                                       "label": "View the refund"})
+        return link
     if kind == REIMBURSEMENT:
         entry = next((p for p in stored_parts.get(parent.fingerprint, []) if p["part_id"] == x.fingerprint),
                      None) if parent else None

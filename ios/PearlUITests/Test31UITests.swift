@@ -234,6 +234,61 @@ final class Test31UITests: XCTestCase {
         }
     }
 
+    /// TEST-31 Money back (approved 2026-11-14): T-09rs → S-04m → S-40m →
+    /// T-41m, light and dark. Joey King St $90.00 split with Priya, and its
+    /// $45.00 back. NOT RUN YET: the product owner asked for no simulator on
+    /// this PR (2026-11-14); it compiles with the UI-test target.
+    func testMoneyBackOnYourShare() {
+        for scheme in ["light", "dark"] {
+            launch(scheme)
+            guard let joey = id("Joey King St", amount: 90), let back = id("Joey King St", amount: 45) else {
+                XCTFail("No Joey King St or its $45.00 back in the demo"); return
+            }
+            _ = call("DELETE", "transactions/\(back)/refund")
+            openRow("Joey King St Refund")
+            let card = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Pearl’s guess' OR label BEGINSWITH 'Other' OR label CONTAINS[c] 'refund' OR label CONTAINS[c] 'income'")).firstMatch
+            tap(card, "the deposit's card")
+            sleep(2)
+            tap(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Money back'")).firstMatch, "Money back")
+            sleep(2)
+            step("T-09rs what was this a refund for")
+            XCTAssertTrue(element(containing: "What was this a refund for?").exists, "T-09rs: T-09r's title")
+            XCTAssertFalse(element(containing: "Pearl will remember").exists, "T-09rs: no remember line")
+            let share = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Your share of Joey King St'")).firstMatch
+            XCTAssertTrue(share.waitForExistence(timeout: 6), "T-09rs: no “Your share of Joey King St”")
+            XCTAssertTrue(element(containing: "all of it").exists, "T-09rs: all of it stays beside it")
+            share.tap()
+            if let save = app.buttons.matching(NSPredicate(format: "label == 'Save'")).allElementsBoundByIndex
+                .last(where: { $0.isHittable }) { save.tap() }
+            sleep(3)
+            XCTAssertEqual(mine(joey)?["reimbursed"] as? Double, 45, "Her share should be refunded")
+            XCTAssertEqual(mine(joey)?["kind"] as? String, "refund")
+            app.terminate(); launch(scheme)
+            openRow("Joey King St")
+            app.swipeUp(velocity: .slow)
+            step("S-04m split card")
+            let you = app.buttons["split-you-row"]
+            XCTAssertTrue(you.waitForExistence(timeout: 6))
+            XCTAssertTrue(you.label.hasPrefix("You, refunded"), "S-04m: \(you.label)")
+            XCTAssertTrue(element(containing: "· refunded").exists, "S-04m: the hero says refunded")
+            tap(app.buttons["Options for you"].firstMatch, "Options for you")
+            sleep(2)
+            step("S-40m your options")
+            XCTAssertTrue(element(containing: "REFUNDED BY").exists || element(containing: "Refunded by").exists)
+            XCTAssertTrue(app.buttons["View the refund"].exists, "S-40m: View the refund")
+            XCTAssertTrue(app.buttons["Unlink…"].exists, "S-40m: Unlink…")
+            XCTAssertTrue(button("Change your share").exists)
+            app.buttons["View the refund"].tap()
+            sleep(3)
+            step("T-41m refund page")
+            let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Refund for your share of Joey King St'")).firstMatch
+            XCTAssertTrue(row.waitForExistence(timeout: 6), "T-41m: REFUND FOR row")
+            XCTAssertTrue(element(containing: "Refund").exists, "T-41m: the Refund chip")
+            XCTAssertFalse(element(containing: "Paid back").exists, "T-41m: not Paid back")
+            XCTAssertTrue(button("Unlink refund").exists, "T-41m: Unlink refund")
+        }
+    }
+
     /// S-04w3 and S-04w2 from the server: Sam pays his $60.00 too ("Costs you
     /// $0.00"), then the share link goes and a $45.00 part stands in.
     func testBothPaidAndPartial() {

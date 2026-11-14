@@ -875,7 +875,8 @@ struct TransactionDetailView: View {
             Text(heroAmount)
                 .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
                 // T-41w: money that paid a purchase back is money in, green.
-                .foregroundColor(paidBackAnswer != nil ? Pearl.moneyIn : t.tone)
+                // T-41m: a refund of her share too.
+                .foregroundColor(paidBackAnswer != nil || t.refundOf?.share == true ? Pearl.moneyIn : t.tone)
                 .lineLimit(1).minimumScaleFactor(0.5)
                 .accessibilityLabel(Format.spoken(heroAmount))
             Text(t.transfer != nil ? "Doesn’t count · Between your accounts" : dateLine)
@@ -950,7 +951,9 @@ struct TransactionDetailView: View {
                 lead = s.people.allSatisfy({ $0.owes < 0.005 })
                     ? "Costs you \(Format.amount(mine.stays))"
                     : "Your share \(Format.amount(mine.amount)) · "
-                        + (mine.full ? "reimbursed" : "\(Format.amount(mine.reimbursed)) reimbursed")
+                        // S-04m: "refunded", "$45.00 refunded" for Money back.
+                        + (mine.full ? (mine.refunded ? "refunded" : "reimbursed")
+                           : "\(Format.amount(mine.reimbursed)) \(mine.refunded ? "refunded" : "reimbursed")")
             } else {
                 // S-04r v2: "Your share $30.00 · Wed, Nov 11"; S-04j the same.
                 lead = "Your share \(Format.amount(s.you))"
@@ -1104,7 +1107,9 @@ struct TransactionDetailView: View {
     /// "Work paying me back" (briefcase) or "Paying me back" (person.2).
     /// A "Paid back" chip and a green amount go with it.
     private var paidBackAnswer: (label: String, symbol: String)? {
-        guard t.inflow, t.transfer == nil, t.excluded.isEmpty, let charge = t.repaysCharge else { return nil }
+        // T-41m: a refund of her share stays a refund page (T-41).
+        guard t.inflow, t.transfer == nil, t.excluded.isEmpty, t.refundOf == nil,
+              let charge = t.repaysCharge else { return nil }
         let key = charge.kind == "reimbursement" ? "reimbursement" : "paid_back"
         guard let tile = CaseTile.notIncome.first(where: { $0.key == key }) else { return nil }
         return (tile.label, tile.symbol)
@@ -1213,7 +1218,33 @@ struct TransactionDetailView: View {
                 }
             }
         }
-        if let charge = t.refundOf {
+        if let charge = t.refundOf, charge.share == true {
+            // TEST-31 Money back T-41m (1302:3306): REFUND FOR, "Pai Northern
+            // Thai" over "Your share · Nov 12", what it refunded of her share.
+            let paid = charge.paid ?? abs(t.amount)
+            section("Refund for")
+            SolidCard {
+                Button { Task { await open(charge.id) } } label: {
+                    HStack(spacing: 14) {
+                        Initials(name: charge.merchant)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(charge.merchant).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                            Text("Your share · \(Format.short(charge.date))").font(Nacre.subheadline)
+                                .foregroundColor(Pearl.muted).lineLimit(1)
+                        }
+                        Spacer(minLength: 8)
+                        Text(Format.amount(paid)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 12)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Refund for your share of \(charge.merchant), \(Format.amount(paid))")
+                .accessibilityHint("Opens its split")
+                .accessibilityAddTraits(.isButton)
+            }
+        } else if let charge = t.refundOf {
             section("Refund for")
             SolidCard {
                 let category = siblings.first { $0.id == charge.id }?.label
@@ -1241,7 +1272,7 @@ struct TransactionDetailView: View {
                 }
             }
         }
-        if let charge = t.repaysCharge, charge.person == "me" {
+        if let charge = t.repaysCharge, charge.person == "me", t.refundOf == nil {
             // TEST-31 T-41w (1297:64759, dark 1297:64849): work paid her
             // share. PAID BACK, the purchase over "Your share · Nov 12",
             // opening its split card; then Unlink.
@@ -1283,7 +1314,7 @@ struct TransactionDetailView: View {
                 .buttonStyle(.plain)
                 .disabled(busy)
             }
-        } else if let charge = t.repaysCharge {
+        } else if let charge = t.repaysCharge, t.refundOf == nil {
             section("Pays back")
             if let split = charge.split {
                 // The split, not the whole purchase (2026-11-08): who it paid

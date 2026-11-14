@@ -56,6 +56,10 @@ struct PartsSheet: View {
     /// the credited part; this asks "What's the extra $15.00?" with the
     /// shared tiles, under "$60.00 pays back your share of Pai Northern Thai."
     var shareLine: String? = nil
+    /// TEST-31 S-11m (1302:3494): on a refund of her share, who on the split
+    /// still owes, for THE EXTRA's "Part of <name>'s share" tiles. Nil keeps
+    /// the shared tiles (work, S-11w).
+    var shareOwing: [MarkReply.ShareExtra.Owing]? = nil
     /// S-11x (SPLIT-23 (1), THL-181): a payback linked to a purchase nobody
     /// still owed on. S-11 v2 opens for the whole amount, "The $30.00", with
     /// why it's extra; a tile moves it off the purchase and records the
@@ -108,6 +112,8 @@ struct PartsSheet: View {
     @State private var otherAmount: Double?
     @State private var busy = false
     @State private var error: String?
+    /// TEST-31 S-11m: Something else shows the shared What was this? tiles.
+    @State private var allTiles = false
 
     /// `work`: Work paying me back, the expense it pays (T-09, as on the shared page).
     /// `otherKind`: S-11k (SPLIT-18), which kind Other income is.
@@ -127,6 +133,8 @@ struct PartsSheet: View {
         var category: String? = nil
         /// Their share of a purchase split in this same save (S-24, SPLIT-07).
         var held = false
+        /// TEST-31 Money back: a refund part that's her own share.
+        var share = false
 
         /// A part as saved, to edit (S-10e).
         init(saved p: DepositPart) {
@@ -143,7 +151,8 @@ struct PartsSheet: View {
 
         init(kind: String, amount: Double, charge: String? = nil, merchant: String? = nil, person: String? = nil,
              incomeKind: String? = nil, cashIds: [Int] = [], date: String? = nil, held: Bool = false,
-             category: String? = nil) {
+             category: String? = nil, share: Bool = false) {
+            self.share = share
             self.category = category
             self.kind = kind
             self.amount = amount
@@ -165,7 +174,10 @@ struct PartsSheet: View {
                 // S-12c: "Splits Costco · Dad's share"; S-12 v2: "Payback · Flight to Athens, Sep 28".
                 if held { return "Splits \(merchant ?? "a purchase") · \(person ?? "their")’s share" }
                 return "Payback · \(merchant ?? "a purchase")" + (date.map { ", \(Format.short($0))" } ?? "")
+            // S-11m: the extra toward someone's share.
+            case "refund" where person != nil: return "Part of \(possessive(person ?? "their")) share"
             case "refund": return "Refund · \(merchant ?? "a purchase")"
+            case "not_mine": return "Not mine"
             case "gift": return "Gift"
             case "income": return TransactionDetailView.kindName(incomeKind)
             case "moved": return "From my own accounts"
@@ -205,6 +217,7 @@ struct PartsSheet: View {
             if let k = incomeKind { b["income_kind"] = k }
             if kind == "category", let c = category { b["category"] = c }
             if !cashIds.isEmpty { b["cash_ids"] = cashIds }
+            if share { b["share"] = true }
             return b
         }
     }
@@ -903,11 +916,6 @@ struct PartsSheet: View {
                     .accessibilityHint("All \(Format.amount(left)) unless you type less")
             }
             .padding(.horizontal, 4)
-            if let line = shareLine {
-                // TEST-31 S-11w: what the rest of it already did.
-                Text(line).font(Nacre.footnote).foregroundColor(Pearl.ink)
-                    .padding(.horizontal, 4).fixedSize(horizontal: false, vertical: true)
-            }
             if let w = whole {
                 // S-11x: why it's extra, in S-35c's "Why Pearl asks" style, before the tiles.
                 // S-11xm over: more than the extra turns it into the caution line.
@@ -917,16 +925,27 @@ struct PartsSheet: View {
             }
             // S-11xm over: the tiles dim and don't answer until it's the extra or less.
             Group {
-                label("Income").accessibilityAddTraits(.isHeader)
-                CaseGrid(cases: CaseTile.income, chosen: tile).disabled(busy || over)
-                label("Not income").padding(.top, 4).accessibilityAddTraits(.isHeader)
-                CaseGrid(cases: notIncomeTiles, chosen: tile).disabled(busy || over)
+                if shareOwing != nil && !allTiles {
+                    // TEST-31 S-11m: THE EXTRA on a refund of her share.
+                    label("The extra").accessibilityAddTraits(.isHeader)
+                    CaseGrid(cases: extraTiles, chosen: tile).disabled(busy)
+                } else {
+                    label("Income").accessibilityAddTraits(.isHeader)
+                    CaseGrid(cases: CaseTile.income, chosen: tile).disabled(busy || over)
+                    label("Not income").padding(.top, 4).accessibilityAddTraits(.isHeader)
+                    CaseGrid(cases: notIncomeTiles, chosen: tile).disabled(busy || over)
+                }
             }
             .opacity(over ? 0.4 : 1)
             .onChange(of: over) { now in
                 if now, let w = whole {
                     UIAccessibility.post(notification: .announcement, argument: overLine(w))
                 }
+            }
+            if let line = shareLine {
+                // TEST-31 S-11w / S-11m: what the rest of it already did.
+                Text(line).font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    .padding(.horizontal, 4).fixedSize(horizontal: false, vertical: true)
             }
             if whole != nil, let error = error {
                 // T-08k's error line: "Couldn't save that. Try again."
@@ -980,6 +999,19 @@ struct PartsSheet: View {
     private var otherBack: String {
         if parts.isEmpty { return "What was the \(Format.amount(left))?" }
         return extra ? "What’s the extra \(Format.amount(left))?" : "What’s the other \(Format.amount(left))?"
+    }
+
+    /// TEST-31 S-11m: Another purchase, Not mine, "Part of <name>'s share"
+    /// for each person who still owes (in the split's order, not anyone this
+    /// deposit already counts toward), and Something else.
+    private var extraTiles: [CaseTile] {
+        let taken = Set(parts.compactMap { $0.kind == "refund" ? $0.person : nil })
+        let people = (shareOwing ?? []).filter { $0.owes >= 0.005 && !taken.contains($0.name) }.map {
+            CaseTile(key: "person:" + $0.name, label: "Part of \(possessive($0.name)) share", symbol: "person.2")
+        }
+        return [CaseTile(key: "refund", label: "Another purchase", symbol: "bag"),
+                CaseTile(key: "not_mine", label: "Not mine", symbol: "person.crop.circle.badge.xmark")]
+            + people + [CaseTile(key: "else", label: "Something else", symbol: "ellipsis")]
     }
 
     /// A tile answers at once.
@@ -1164,7 +1196,18 @@ struct PartsSheet: View {
         error = nil
         let amount = chosenAmount
         guard amount >= 0.005 else { return }
+        if key.hasPrefix("person:"), let credit = credited.first {
+            // S-11m: up to what they owe; more, and the rest is asked about
+            // again, without them. Never split across people on its own.
+            let name = String(key.dropFirst(7))
+            let owes = shareOwing?.first { $0.name == name }?.owes ?? 0
+            add(Part(kind: "refund", amount: min(amount, owes), charge: credit.charge,
+                     merchant: credit.merchant, person: name))
+            return
+        }
         switch key {
+        case "not_mine": add(Part(kind: "not_mine", amount: amount))
+        case "else": allTiles = true
         case "regular": add(Part(kind: "income", amount: amount, incomeKind: "salary"))
         case "bonus": add(Part(kind: "income", amount: amount, incomeKind: "bonus"))
         case "gifts": add(Part(kind: "gift", amount: amount))
