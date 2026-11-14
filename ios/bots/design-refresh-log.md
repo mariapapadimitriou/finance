@@ -351,3 +351,42 @@ The product owner reviewed the 39 in-app refresh items and kept 38; item 08 (T-9
   - T-03r keeps "Always for" in the category card, but the app still shows it among the options.
   - O-11b `260:4705` doesn't show the orb the app now uses.
   - Nothing new to build until the product owner picks from Proposals.
+
+### [designBOT → engBOT] 2026-11-13 · CONSOLIDATE-02 · Built in #334 moved into Pearl app; TEST-31 drawn
+**Status:** Redesigned (Pearl app now matches #334) · TEST-31 Awaiting product owner
+**Jira:** THL-254, THL-275, THL-213, THL-122 (T-93o) · THL-289, THL-291, THL-181 (split cards, TEST-31)   **Figma:** Pearl app `751:6166`, Proposals `1284:99`
+- **T-93o** `1284:103` / `1284:170` moved into Quick sort `893:35391` (Sorting `1285:72189`), in the place of T-93n. T-93n `1231:20937` / `1231:21001` is deleted. Matched to the build: the header is "Quick sort" over "11 left", with no Later and no progress bar. The first caption line is in ink and the second muted. Its ID is unchanged, so `QuickSortView.swift:123` and `Models.swift:1624` still point at it.
+- **Bar-only split cards:** the change is applied to the 20 built frames in Splits and paybacks, not by moving the Proposals copies. Show detail is off on the paid-back person's row, so "✓ Paid back · <day>" and the bar stay. That keeps the IDs the code and logs cite (`SplitFlow.swift:1212` cites `1090:1743`). The 20 Proposals copies and their two notes are deleted. Not sure yet cards are unchanged.
+- **T-01r, T-03r, dark switch:** the frames already drew what #334 built (day headers with no total and Select on the first header, "Always for" inside the category card, the selected segment on color/surface/card), so nothing changed. Search (T-45) is one card with the day on each row, as built.
+- **TEST-31**, on Proposals › Awaiting product owner `1284:100`, light and dark:
+  - T-09w `1294:1507` / `1294:1727`
+  - S-04w `1292:1716` / `1292:1838`
+  - S-40w `1294:1929` / `1294:2052`
+  - S-04w2 `1292:1948` / `1292:2071`
+  - S-11w `1294:2157` / `1294:2374`
+  - S-04w3 `1292:2182` / `1292:2305`
+  - Note with seven product owner decisions: `1294:2593`
+
+  Built from the existing T-09, S-04r v3, S-40c and S-11c frames and the library Person row and Progress bar/Track. Nothing goes to engBOT until the product owner picks.
+- **TEST-31 approved (product owner, 2026-11-13), all seven decisions as drawn.**
+  1. "Your share" is its own match in What did this pay back?.
+  2. "All of it · $120.00" stays and works as any whole-purchase payback: it covers Sam's part too.
+  3. If work pays only part of your share, the uncovered $15.00 stays yours.
+  4. The extra's answers don't include "Part of Sam's share".
+  5. Linking lowers the cost and raises the Allowance straight away, without waiting for Sam (Rule A).
+  6. The deposit page reads PAID BACK · Your share of Pai Northern Thai $60.00.
+  7. The bar's 10% steps are fine.
+
+  Now drawn: the deposit page T-41w `1297:64759` / dark `1297:64849`, built from T-41 and the library Row. The row reads "Pai Northern Thai" over "Your share · Nov 12" because the Row is one line. VoiceOver reads the full wording.
+
+  Note `1294:2593` and all 14 TEST-31 frames now read "Approved, ready to build". They stay on Proposals `1284:100` until built.
+- **Colour pass on Pearl app:** 758 spending amounts now use color/text/primary, the token the app uses for spending.
+  - 750 of them were bound to color/text/money-out and 8 were hard-coded #BE2634, in light and dark, across about 230 Cash flow, sorting and split frames (T-01b, T-07–T-110, S-02–S-36 and their v2 versions, S-03e, S-05u/v, S-10e–S-36). Several of these are inside library Row instances, where the fix is an override.
+  - Still red on purpose: T-01b's "Over $760", the over-total amount fields in S-03r2c and S-03rh, and destructive actions such as Sign out, Remove this account and Delete your account. Hard-coded rose (#B22657) is the action colour, not spending, and is untouched.
+  - Before and after screenshots of T-46 are in scratchpad/test31.
+- **Library: the Transaction row draws spending in ink** (Pearl Design System `3fdfPDKIjhiluGHtXWSF32`, product owner's request).
+  - In the Transaction row set `91:808`, the money-out amount in both Out variants is now color/text/primary instead of color/text/money-out: Counts=Yes, Direction=Out `91:809` (text `91:819`) and Counts=No, Direction=Out `91:820` (text `91:830`, still at 70% opacity). Checked in light and dark.
+  - The set's description now says spending uses color/text/primary.
+  - No other library component draws spending in red. The money-out variable is kept as it is.
+  - It's still used in the library only by Amount field State=Over (`298:727`, text `298:728`), which is the over-the-total error. In the handoff file it's still used by "Over $760" on T-01b, the over-total fields in S-03r2c and S-03rh, and the destructive text (Sign out, Remove this account, Delete your account, Disconnect TD).
+  - **Not published yet:** the product owner publishes the library by hand. Accepting the update in the handoff file is safe: the 758 amounts I fixed one by one are overrides that are already ink, and the main component is ink now too.

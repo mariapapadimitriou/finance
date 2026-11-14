@@ -259,3 +259,18 @@ class TestNames:
         reimburse(client, i["NORTHWIND LTD PAYROLL"], i["PAI NORTHERN THAI"])
         names = known_people(client.st.all_transactions(), client.st.splits(), client.st.payback_people())
         assert "me" not in names and "Sam" in names
+
+
+class TestTheDepositPage:
+    def test_says_how_it_was_answered(self, client):
+        """T-41w: the deposit's page reads as her answer. `kind` says Work
+        paying me back; a friend's payback has none."""
+        i = dinner(client, tx("NORTHWIND LTD PAYROLL", -60.0, merchant="Northwind Ltd"),
+                   tx("E-TRANSFER FROM SAM", -60.0, merchant="Sam"))
+        tid = i["PAI NORTHERN THAI"]
+        reimburse(client, i["NORTHWIND LTD PAYROLL"], tid)
+        client.post(f"/api/transactions/{tid}/paybacks/{i['E-TRANSFER FROM SAM']}", json={"person": "Sam"})
+        work = client.get(f"/api/transactions/{i['NORTHWIND LTD PAYROLL']}").get_json()["repays_charge"]
+        sam = client.get(f"/api/transactions/{i['E-TRANSFER FROM SAM']}").get_json()["repays_charge"]
+        assert (work["kind"], work["person"], work["paid"]) == ("reimbursement", "me", 60.0)
+        assert (sam["kind"], sam["person"]) == (None, "Sam")
