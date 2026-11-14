@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3D8D115AB562519E39DD8CB4 /* PearlModelSpike.swift in Sources */ = {isa = PBXBuildFile; fileRef = C65FE3505BC53973EFBC34EE /* PearlModelSpike.swift */; };
 		AEEA3ED321BEA8B167EC2950 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B9447FB87C39BED247C466A /* APIClient.swift */; };
 		B83A9DA9B4B837A8966C5B1C /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEC593419BBFC2C02400C055 /* Models.swift */; };
 		447CDE89543B103ACD878613 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C5660576F12049C54E11ECA /* AppModel.swift */; };
@@ -97,6 +98,7 @@
 		ACEB884AD42DE3FD47663A6D /* Round2JourneysUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round2JourneysUITests.swift; sourceTree = "<group>"; };
 		B99716DE63C4303C7C7240C4 /* Round3JourneysUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round3JourneysUITests.swift; sourceTree = "<group>"; };
 		1B06563AFFD524886417B556 /* Test31UITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Test31UITests.swift; sourceTree = "<group>"; };
+		C65FE3505BC53973EFBC34EE /* PearlModelSpike.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlModelSpike.swift; sourceTree = "<group>"; };
 		9B9447FB87C39BED247C466A /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		CEC593419BBFC2C02400C055 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		9C5660576F12049C54E11ECA /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
@@ -214,6 +216,7 @@
 		2DC8CB804A1707D9C674979F /* Pearl */ = {
 			isa = PBXGroup;
 			children = (
+				AF7B83813BE518A6695730C3 /* AI */,
 				265B72681C5FF6681EA44180 /* API */,
 				19B2223411966CF353BDA057 /* App */,
 				3AA1CDF3F944EAFBBC8FA574 /* Fonts */,
@@ -223,6 +226,14 @@
 				CC637901ACFE841FF5877B6C /* Info.plist */,
 			);
 			path = Pearl;
+			sourceTree = "<group>";
+		};
+		AF7B83813BE518A6695730C3 /* AI */ = {
+			isa = PBXGroup;
+			children = (
+				C65FE3505BC53973EFBC34EE /* PearlModelSpike.swift */,
+			);
+			path = AI;
 			sourceTree = "<group>";
 		};
 		265B72681C5FF6681EA44180 /* API */ = {
@@ -470,6 +481,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3D8D115AB562519E39DD8CB4 /* PearlModelSpike.swift in Sources */,
 				AEEA3ED321BEA8B167EC2950 /* APIClient.swift in Sources */,
 				B83A9DA9B4B837A8966C5B1C /* Models.swift in Sources */,
 				447CDE89543B103ACD878613 /* AppModel.swift in Sources */,
