@@ -390,3 +390,38 @@ The product owner reviewed the 39 in-app refresh items and kept 38; item 08 (T-9
   - No other library component draws spending in red. The money-out variable is kept as it is.
   - It's still used in the library only by Amount field State=Over (`298:727`, text `298:728`), which is the over-the-total error. In the handoff file it's still used by "Over $760" on T-01b, the over-total fields in S-03r2c and S-03rh, and the destructive text (Sign out, Remove this account, Delete your account, Disconnect TD).
   - **Not published yet:** the product owner publishes the library by hand. Accepting the update in the handoff file is safe: the 758 amounts I fixed one by one are overrides that are already ink, and the main component is ink now too.
+
+### [designBOT → engBOT] 2026-11-14 · TEST-31b · Money back covers your share too
+**Status:** Redesigned · Awaiting product owner
+**Jira:** THL-289, THL-291, THL-181   **Figma:** Proposals `1284:99` › `1284:100`, below the work frames. Note `1303:3395`.
+The product owner wants TEST-31 to work for deposits answered Money back (tile key "refund") as well as Work paying me back. I copied the work frames and changed only the refund wording, light and dark:
+
+| Frame | Light | Dark |
+|---|---|---|
+| T-09rs | `1302:2312` | `1302:2517` |
+| S-04m | `1302:2720` | `1302:2791` |
+| S-04m2 | `1302:2850` | `1302:2921` |
+| S-04m3 | `1302:2980` | `1302:3052` |
+| S-40m | `1302:3112` | `1302:3215` |
+| T-41m | `1302:3306` | `1302:3400` |
+| S-11m | `1302:3494` | `1302:3708` |
+
+- **T-09rs:** keeps T-09r's title, "What was this a refund for?". "Your share of Pai Northern Thai · $60.00" is its own match beside "all of it · $120.00".
+- **S-04m, S-04m2, S-04m3:** your row reads "✓ Refunded · Nov 14", or "Refunded $45.00 of $60.00 · $15.00 stays yours", and the hero reads "· refunded". This follows the app's "Refunded in full" and REFUNDED BY.
+- **S-40m:** REFUNDED BY, View the refund, and Unlink… (S-34kr8).
+- **T-41m:** the chip stays "Refund" (not "Paid back"), with REFUND FOR, Unlink refund, and the Dining out category row, as on T-41. "Paid back" stays for people and work.
+- **S-11m:** a $75.00 refund against a $60.00 share uses the existing extra tiles Another purchase · Not mine · Something else. There's no Split into parts on money in.
+- I also changed 40 spending amounts on Proposals from red to ink (color/text/primary).
+
+Open for the product owner:
+1. Should a shop refund on a shared purchase offer "your share" first, or ask whether it was for you, for Sam, or for both?
+2. Should a refund larger than your share be able to lower what Sam owes?
+3. Should the T-41m chip stay "Refund"? I recommend it.
+- **Approved (product owner, 2026-11-14):** your share comes first; a refund bigger than your share can count toward what Sam still owes (unlike work); the chip stays "Refund". The Money back frames and section `1284:100` are now "Approved, ready to build", and note `1303:3395` has the decisions and rules.
+- **S-11m** `1302:3494` / `1302:3708`: the extra's tiles are now Another purchase · Not mine · Part of Sam's share (library people icon) · Something else.
+- **New S-04m4** `1304:3403` / dark `1304:3490`: after "Part of Sam's share", Sam's row reads "Paid $15.00 of $60.00 · owes $45.00" with the rose part bar, as any part-paid person.
+- **Rules for the extra:**
+  - Only people on the split who still owe get a tile, one each, named, in the split card's order.
+  - The extra goes toward what that person still owes, up to that amount. It counts as a payment from them, so Unlink is on their •••.
+  - If the extra is more than they still owe, they're paid in full and Pearl asks once more about what's left, without that person's tile. It never spreads an extra across people by itself.
+- **Bars:** the part-paid bars in S-04w2 and S-04m2 (light and dark) now use the same rose part bar as the built S-04r v3, instead of yellow Caution.
