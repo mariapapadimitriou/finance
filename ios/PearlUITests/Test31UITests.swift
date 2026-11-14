@@ -235,5 +235,8 @@ final class Test31UITests: XCTestCase {
         app.swipeUp(velocity: .slow)
         step("S-04w2 partial")
         XCTAssertTrue(element(containing: "stays yours").waitForExistence(timeout: 6), "S-04w2: $15.00 stays yours")
+        // Put the deposit back as it was, so a suite run on one database
+        // (run_journeys.py with no journey names) can still find it.
+        _ = call("DELETE", "transactions/\(work)/parts")
     }
 }
