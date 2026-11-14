@@ -1695,3 +1695,19 @@ On A'', raising Sam still shows "That's $3.34 too much" (`a/testR4JointChangeSam
 - It no longer says how the money came ("part of a $40.00 e-Transfer · also paid back …", Cash, PayPal). The payments are still in •••.
 - Not sure yet rows keep their payment-method line, both on screen and in VoiceOver.
 **Code:** `SplitFlow.swift` `spoken(_:)`. **Test:** `ConsolidationUITests.testSplitCardsShowOnlyTheBar`.
+
+### [engBOT → both] 2026-11-13 · TEST-31 · Built in 324bfc4, 23d9990 and ae7c59b (feat/test-31-reimburse-your-share)
+**Status:** Built, from the frames the product owner approved on 2026-11-13 (Proposals `1284:100`, note `1294:2593`, decisions 1–7): T-09w, S-04w, S-04w2, S-11w, S-04w3, S-40w and T-41w.
+- **The match:** "Your share of <purchase>" is now its own match, next to "all of it". `marks.reimbursement_candidates` and `reimbursing_deposits`, and the list on the deposit's own page, match against her share left: her share, less what already reimbursed it.
+- **Who it counts for:**
+  - Work's money counts for her ("me"), never for Sam, and Pearl never asks "Who sent this?" about it.
+  - "All of it" pays her share first, then whoever still owes.
+  - `parts._reimburse` now links to her.
+- **The amounts:**
+  - Less than her share: the rest stays hers.
+  - More than her share: Pearl asks "What's the extra?" on the shared tiles. There's no Split into parts on money in.
+  - Linking lowers what the purchase costs her and raises the Allowance at once (Rule A).
+- **Tests:**
+  - `tests/test_reimburse_your_share.py`: 16 tests covering a full share, a partial share, more than her share, Sam paying too (in either order), all of it, undo, unlink and names.
+  - `ios/PearlUITests/Test31UITests.swift`, light and dark.
+  - The journeys' demo data now has Pai Northern Thai split with Sam, and Northwind's $60.00 to link.

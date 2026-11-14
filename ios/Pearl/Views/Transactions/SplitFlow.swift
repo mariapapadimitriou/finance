@@ -1229,7 +1229,12 @@ struct SplitPeople: View {
     var onSetShare: () -> Void = {}
     /// S-47f's Options: open this person's S-40u from outside the card.
     var optionsFor: Binding<String?> = .constant(nil)
+    /// TEST-31 (S-40w): View the deposit, Unlink… and Change your share,
+    /// from the ••• on her reimbursed row.
+    var onMine: (PersonChoice) -> Void = { _ in }
     @State private var youOptions = false
+    @State private var mineOptions = false
+    @State private var afterMine: (() -> Void)?
     /// S-40 for this person.
     @State private var options: Transaction.Splitting.Person?
     @State private var afterOptions: (() -> Void)?
@@ -1286,6 +1291,11 @@ struct SplitPeople: View {
                 if split.unsure && split.withMe {
                     // S-04u6 (TEST-18): her own row first, with its •••.
                     youRow
+                    if !split.people.isEmpty { PearlDivider() }
+                } else if !split.unsure && split.withMe, let mine = split.mine {
+                    // TEST-31 (S-04w, S-04w2): her share, reimbursed by work,
+                    // with the bar and a •••.
+                    mineRow(mine)
                     if !split.people.isEmpty { PearlDivider() }
                 } else if !split.unsure && split.withMe && split.you >= 0.005 {
                     // S-04r v3 (TEST-18): "You · Your share · $30.00", no •••;
@@ -1347,6 +1357,63 @@ struct SplitPeople: View {
                 }
                 .font(Nacre.textButton).foregroundColor(Pearl.link).buttonStyle(.plain)
                 .padding(.top, 6)
+            }
+        }
+    }
+
+    /// TEST-31 S-04w: "You · ✓ Reimbursed by Northwind · Nov 14", $60.00 in
+    /// money-in green and a full bar. S-04w2: "Reimbursed $45.00 of $60.00 ·
+    /// $15.00 stays yours", $15.00 in ink, the bar part-filled in the
+    /// library's 10% steps (decision 7). Its ••• opens S-40w.
+    private func mineRow(_ mine: Transaction.Splitting.Mine) -> some View {
+        let by = mine.links?.last?.sheet.face ?? "work"
+        let status = mine.full
+            ? "✓ Reimbursed by \(by)" + (mine.on.map { " · \(Format.short($0))" } ?? "")
+            : "Reimbursed \(Format.amount(mine.reimbursed)) of \(Format.amount(mine.amount)) · \(Format.amount(mine.stays)) stays yours"
+        let shown = mine.full ? mine.reimbursed : mine.stays
+        let amount = Text(Format.amount(shown)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
+            .foregroundColor(mine.full ? Pearl.moneyIn : Pearl.ink).pearlAmountFit()
+        return VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                Button { mineOptions = true } label: {
+                    HStack(spacing: 12) {
+                        PearlFace(name: "Me", size: 40)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("You").font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
+                            Text(status).font(Pearl.text(.callout))
+                                .foregroundColor(mine.full ? Pearl.moneyIn : Pearl.muted)
+                            if amountsUnder { amount }
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        if !amountsUnder { amount }
+                    }
+                    .frame(minHeight: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(mine.full
+                    ? "You, reimbursed by \(by)" + (mine.on.map { ", \(Format.monthDay($0))" } ?? "") + ", \(Format.amount(mine.reimbursed))"
+                    : "You, reimbursed \(Format.amount(mine.reimbursed)) of \(Format.amount(mine.amount)), \(Format.amount(mine.stays)) stays yours")
+                .accessibilityHint("Shows options.")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier("split-you-row")
+                PearlMoreButton(label: "Options for you") { mineOptions = true }
+            }
+            // Decision 7: the library's 10% steps (75% shows as 80%).
+            PaidBar(paid: mine.full ? 1 : (mine.reimbursed / max(mine.amount, 0.01) * 10).rounded() / 10, of: 1,
+                    tone: mine.full ? Pearl.moneyIn : Pearl.champagne)
+                .accessibilityHidden(true)
+        }
+        .padding(.vertical, 10)
+        .sheet(isPresented: $mineOptions, onDismiss: {
+            let next = afterMine
+            afterMine = nil
+            next?()
+        }) {
+            MineOptionsSheet(t: t, split: split, mine: mine, by: by, onClose: { mineOptions = false }) { choice in
+                afterMine = { onMine(choice) }
+                mineOptions = false
             }
         }
     }
@@ -1435,7 +1502,8 @@ struct SplitPeople: View {
             return who + (split.closedAt.map { "Closed \(Format.short($0))" } ?? "Not sure yet")
         }
         if !unsure.isEmpty && !open.isEmpty { return "Owed to you" }
-        if split.people.count > 1 || t.splitsMyPart {
+        // TEST-31: S-04w "Split 2 ways" while Sam owes; S-04w3 "Paid back".
+        if split.people.count > 1 || t.splitsMyPart || (split.mine != nil && !open.isEmpty) {
             let ways = "\(split.people.count + (split.you >= 0.005 ? 1 : 0)) ways"
             return t.splitsMyPart ? "Your part, split \(ways)" : "Split \(ways)"
         }

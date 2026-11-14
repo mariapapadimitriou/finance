@@ -74,6 +74,7 @@
 		DB15C81FC4A131F96F4F13CA /* Round1FixesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18F271FC7A3EC42E811888B1 /* Round1FixesUITests.swift */; };
 		BA9E5294F99E4AEE528CF0A1 /* Round2JourneysUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACEB884AD42DE3FD47663A6D /* Round2JourneysUITests.swift */; };
 		4D6C75F8459E0A6620AB208A /* Round3JourneysUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B99716DE63C4303C7C7240C4 /* Round3JourneysUITests.swift */; };
+		3A3456AA6F1508ADD5861C54 /* Test31UITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B06563AFFD524886417B556 /* Test31UITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -95,6 +96,7 @@
 		18F271FC7A3EC42E811888B1 /* Round1FixesUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round1FixesUITests.swift; sourceTree = "<group>"; };
 		ACEB884AD42DE3FD47663A6D /* Round2JourneysUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round2JourneysUITests.swift; sourceTree = "<group>"; };
 		B99716DE63C4303C7C7240C4 /* Round3JourneysUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round3JourneysUITests.swift; sourceTree = "<group>"; };
+		1B06563AFFD524886417B556 /* Test31UITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Test31UITests.swift; sourceTree = "<group>"; };
 		9B9447FB87C39BED247C466A /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		CEC593419BBFC2C02400C055 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		9C5660576F12049C54E11ECA /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
@@ -204,6 +206,7 @@
 				18F271FC7A3EC42E811888B1 /* Round1FixesUITests.swift */,
 				ACEB884AD42DE3FD47663A6D /* Round2JourneysUITests.swift */,
 				B99716DE63C4303C7C7240C4 /* Round3JourneysUITests.swift */,
+				1B06563AFFD524886417B556 /* Test31UITests.swift */,
 			);
 			path = PearlUITests;
 			sourceTree = "<group>";
@@ -533,6 +536,7 @@
 				DB15C81FC4A131F96F4F13CA /* Round1FixesUITests.swift in Sources */,
 				BA9E5294F99E4AEE528CF0A1 /* Round2JourneysUITests.swift in Sources */,
 				4D6C75F8459E0A6620AB208A /* Round3JourneysUITests.swift in Sources */,
+				3A3456AA6F1508ADD5861C54 /* Test31UITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

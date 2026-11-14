@@ -243,7 +243,15 @@ def _reimburse(st, charge: Transaction, part_id: str, amount: float, detail: dic
     leaves it out again (`was_excluded`)."""
     from .marks import REIMBURSEMENT, waiting_reimbursed
     owed = round(charge.amount - (charge.paid_back or 0.0), 2)
-    st.link_payback(charge.fingerprint, part_id, None)
+    # TEST-31: on a split she's in, work reimburses her share (person "me"),
+    # so it never counts as Sam paying.
+    from .splits import ME, UNSURE
+    split = st.splits().get(charge.fingerprint)
+    mine = bool(split) and split.get("me", True) and split.get("mode") != UNSURE
+    st.link_payback(charge.fingerprint, part_id, ME if mine else None)
+    if mine:
+        st.set_payback_kind(part_id, REIMBURSEMENT)
+        return
     st.set_payback_kind(part_id, REIMBURSEMENT)
     if amount >= owed - 0.005 and waiting_reimbursed(charge.excluded):
         detail["was_excluded"] = charge.excluded
