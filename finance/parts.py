@@ -33,7 +33,10 @@ SPLIT = "Split into parts"
 REST = "Left to sort"
 
 KINDS = ("payback", "gift", "income", "moved", "savings", "cash", "refund",
-         "category", "overpaid", "reimbursement", "loan", "lent_back", "rest")
+         "category", "overpaid", "reimbursement", "loan", "lent_back", "rest", "not_mine")
+# TEST-31 Money back, S-11m (product owner, 2026-11-14): Not mine is a tile
+# for the extra on a refund of her share, so it's a part there: left out.
+NOT_MINE = "Not mine"
 # The kinds income can be (finance/income.py).
 INCOME_KINDS = ("salary", "bonus", "interest", "gifts", "government", "tax_refund", "other")
 MAX_PARTS = 12
@@ -245,6 +248,8 @@ def apply(st, deposit: Transaction, parts: list, later: bool = False, replace: b
             st.set_party(cid, d["person"])
         elif p["kind"] == "rest":
             st.exclude(cid, REST)
+        elif p["kind"] == "not_mine":
+            st.exclude(cid, NOT_MINE)
     st.exclude(deposit.fingerprint, SPLIT)
     st.set_parts(deposit.fingerprint, stored)
     rest = next((p["amount"] for p in stored if p["kind"] == "rest"), 0.0)

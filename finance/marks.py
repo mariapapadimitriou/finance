@@ -1474,6 +1474,14 @@ def _link_your_share(store, t: Transaction, charge: Transaction, mine_left: floa
         extra = {"amount": round(whole - use, 2), "whole": whole, "share": use,
                  "charge": charge.fingerprint, "merchant": charge.merchant}
         detail = f"${use:,.2f} pays back your share of {charge.merchant}."
+        if kind == REFUND_SHARE:
+            # S-11m (decision 2): who the extra can count toward, in the
+            # split's order: everyone who still owes something.
+            split = store.splits().get(charge.fingerprint) or {}
+            status = sp.people_status(charge, split, store.all_transactions(), store.payback_people())
+            extra["people"] = [{"name": p["name"], "owes": p["owes"]} for p in status
+                               if p["owes"] >= 0.005 and not p.get("let_go")]
+            detail = f"${use:,.2f} refunds your share of {charge.merchant}."
     return title, detail, extra
 
 

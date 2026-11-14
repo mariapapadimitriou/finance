@@ -191,7 +191,11 @@ def _splitting(t, split: dict, txns, payer) -> dict:
         # is what work paid of it, `on` the day; `stays` what's still hers.
         # S-40w's REIMBURSED BY rows come from `links` (unlink.add_links).
         paid = round(min(mine["paid"], mine["amount"]), 2)
-        out["mine"] = {"amount": mine["amount"], "reimbursed": paid, "on": mine["on"],
+        # TEST-31 Money back (S-04m): "refund" when shop refunds covered it,
+        # so her row says Refunded; "reimbursement" for work.
+        kinds = store().payback_kinds()
+        kind = "refund" if all(kinds.get(i) == "refund_share" for i in mine["ids"]) else "reimbursement"
+        out["mine"] = {"amount": mine["amount"], "reimbursed": paid, "on": mine["on"], "kind": kind,
                        "stays": round(max(mine["amount"] - paid, 0.0), 2), "ids": mine["ids"]}
     if split["mode"] == sp.UNSURE:
         out["still"] = sp.still_yours(t)

@@ -106,7 +106,9 @@ class TestMoreThanYourShare:
         tid, dep = i["PAI NORTHERN THAI"], i["PAI NORTHERN THAI REFUND"]
         body = money_back(client, dep, tid).get_json()
         assert body["extra"] == {"amount": 15.0, "whole": 75.0, "share": 60.0, "charge": tid,
-                                 "merchant": "Pai Northern Thai"}
+                                 "merchant": "Pai Northern Thai",
+                                 "people": [{"name": "Sam", "owes": 60.0}]}
+        assert body["detail"] == "$60.00 refunds your share of Pai Northern Thai."
         assert costs(client, tid) == 60.0 and sam(client, tid)["owes"] == 60.0
         # The extra's answer saves as parts: her share's money back, then a gift.
         r = client.post(f"/api/transactions/{dep}/parts", json={"parts": [
@@ -197,3 +199,45 @@ class TestTheExtraTowardSomeonesShare:
             {"kind": "refund", "amount": 60, "charge": tid, "share": True},
             {"kind": "refund", "amount": 15, "charge": tid, "person": "Jo"}]})
         assert r.status_code == 400 and r.get_json()["error"] == "Pick someone on this split."
+
+
+class TestTheExtraTiles:
+    def test_only_people_who_still_owe(self, client):
+        """S-11m: a person tile for each person who still owes, in order."""
+        i = add(client, tx("PIZZA NOVA", 120.0, "Dining", merchant="Pizza Nova"),
+                tx("PIZZA NOVA REFUND", -50.0, merchant="Pizza Nova"),
+                tx("E-TRANSFER FROM JO", -30.0, merchant="Jo"))
+        tid = i["PIZZA NOVA"]
+        client.put(f"/api/transactions/{tid}/split",
+                   json={"mode": "even", "people": [{"name": "Jo"}, {"name": "Sam"}, {"name": "Priya"}]})
+        client.post(f"/api/transactions/{tid}/paybacks/{i['E-TRANSFER FROM JO']}", json={"person": "Jo"})
+        body = money_back(client, i["PIZZA NOVA REFUND"], tid).get_json()
+        assert body["extra"]["amount"] == 20.0
+        assert [p["name"] for p in body["extra"]["people"]] == ["Sam", "Priya"]
+
+    def test_not_mine_is_a_part_here(self, client):
+        """S-11m's Not mine: that part is left out."""
+        i = dinner(client, tx("PAI NORTHERN THAI REFUND", -75.0, merchant="Pai Northern Thai"))
+        tid, dep = i["PAI NORTHERN THAI"], i["PAI NORTHERN THAI REFUND"]
+        money_back(client, dep, tid)
+        r = client.post(f"/api/transactions/{dep}/parts", json={"parts": [
+            {"kind": "refund", "amount": 60, "charge": tid, "share": True},
+            {"kind": "not_mine", "amount": 15}]})
+        assert r.status_code == 200, r.get_json()
+        parts = r.get_json()["parts"]
+        mine_not = next(p for p in parts if p["kind"] == "not_mine")
+        assert client.st.get_transaction(mine_not["id"]).excluded == "Not mine"
+        assert costs(client, tid) == 60.0
+
+
+def test_her_row_says_refunded(client):
+    """S-04m: the split card knows a refund covered her share."""
+    i = dinner(client, tx("PAI NORTHERN THAI REFUND", -60.0, merchant="Pai Northern Thai"),
+               tx("NORTHWIND LTD PAYROLL", -60.0, merchant="Northwind Ltd"))
+    tid = i["PAI NORTHERN THAI"]
+    money_back(client, i["PAI NORTHERN THAI REFUND"], tid)
+    assert splitting(client, tid)["mine"]["kind"] == "refund"
+    money_back(client, i["PAI NORTHERN THAI REFUND"], tid, share=False)
+    client.post(f"/api/transactions/{i['NORTHWIND LTD PAYROLL']}/mark",
+                json={"case": "reimbursement", "charge": tid, "share": True})
+    assert splitting(client, tid)["mine"]["kind"] == "reimbursement"
