@@ -84,6 +84,25 @@ def _clean(st, deposit: Transaction, parts: list, later: bool) -> list[dict]:
                                "refund": "Pick the purchase it refunds."}.get(kind,
                                                                              "Pick the expense it reimburses."))
             detail["charge"] = charge.fingerprint
+            if kind == "refund" and p.get("share"):
+                # TEST-31 Money back: the part is money back on her share (S-11w).
+                detail["share"] = True
+            elif kind == "refund" and p.get("person"):
+                # TEST-31 Money back, decision 2 (2026-11-14): a refund bigger
+                # than her share can count toward what someone on the split
+                # still owes ("Part of Sam's share", S-11m).
+                from .splits import UNSURE
+                split = st.splits().get(charge.fingerprint) or {}
+                person = " ".join(str(p.get("person")).split())[:40]
+                if split.get("mode") == UNSURE or person not in [q.get("name") for q in split.get("people") or []]:
+                    raise Problem("Pick someone on this split.")
+                # Up to what they still owe; Pearl asks about the rest (S-11m).
+                from .splits import people_status
+                status = people_status(charge, split, list(by_id.values()), st.payback_people())
+                owes = next((q["owes"] for q in status if q["name"] == person), 0.0)
+                if amount > owes + 0.005:
+                    raise Problem(f"{person} owes ${owes:,.2f}. Make it ${owes:,.2f} or less.")
+                detail["person"] = person
         if kind in ("payback", "overpaid"):
             person = " ".join(str(p.get("person") or "").split())[:40]
             if kind == "overpaid" and not person:
@@ -210,6 +229,8 @@ def apply(st, deposit: Transaction, parts: list, later: bool = False, replace: b
             # SPLIT-C decision 4: linking to a closed split opens it again.
             from .splits import reopen_closed
             reopen_closed(st, d["charge"], reopened)
+        elif p["kind"] == "refund" and (d.get("share") or d.get("person")):
+            _your_share_part(st, d["charge"], cid, d.get("person"))
         elif p["kind"] == "refund":
             st.link_refund(cid, d["charge"])
         elif p["kind"] == "reimbursement":
@@ -234,6 +255,16 @@ def apply(st, deposit: Transaction, parts: list, later: bool = False, replace: b
     if reopened:
         out["reopened"] = reopened["split_closed"]
     return out
+
+
+def _your_share_part(st, charge_id: str, part_id: str, person: str | None = None) -> None:
+    """TEST-31 Money back: a part of a deposit that's money back on her own
+    share of a split purchase, linked for her as work paying her share is;
+    or, with `person`, toward what they still owe (decision 2)."""
+    from .marks import REFUND_SHARE
+    from .splits import ME
+    st.link_payback(charge_id, part_id, person or ME)
+    st.set_payback_kind(part_id, REFUND_SHARE)
 
 
 def _reimburse(st, charge: Transaction, part_id: str, amount: float, detail: dict) -> None:

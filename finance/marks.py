@@ -43,6 +43,10 @@ def waiting_reimbursed(reason: str | None) -> bool:
     return r.startswith(WORK_REASON.lower()) or r.startswith(OLD_WORK_PREFIX)
 NOT_MINE = "Not mine"
 REIMBURSEMENT = "reimbursement"
+# TEST-31 Money back (product owner, 2026-11-14): a refund of her own share
+# of a split purchase. Linked like work paying her share (person "me"), so
+# it counts for her alone, never shrinks Sam's part.
+REFUND_SHARE = "refund_share"
 # How far back a refund or a reimbursement looks for the purchase it is of.
 REFUND_DAYS = 120
 
@@ -190,10 +194,33 @@ def _days(a: str, b: str) -> int:
     return (date.fromisoformat(a[:10]) - date.fromisoformat(b[:10])).days
 
 
+def _your_share(inflow: Transaction, c: Transaction, txns: list[Transaction], splits: dict | None,
+                payer: dict | None, names: dict[str, str] | None, got: float,
+                **extra) -> tuple[dict, list[str]] | None:
+    """TEST-31: "Your share of <purchase>" as a match of its own (`share`,
+    `left` her share less what already came back for it, `whole`,
+    `split_with`), or None when she isn't in a split with shares on it or
+    nothing of her share is left. Also the names, for the whole purchase's
+    row ("all of it · Your share and Sam's")."""
+    from .splits import your_share_left
+    split = (splits or {}).get(c.fingerprint)
+    mine = your_share_left(c, split, txns, payer or {}, inflow) if split else None
+    if mine is None or mine < 0.005:
+        return None
+    others = [p.get("name") for p in split.get("people") or [] if p.get("name")]
+    return (dict(_brief(c, names), exact=abs(mine - got) < 0.01, left=mine, share=True,
+                 whole=round(c.amount, 2), split_with=others, **extra), others)
+
+
 def refund_candidates(inflow: Transaction, txns: list[Transaction],
-                      names: dict[str, str] | None = None) -> list[dict]:
+                      names: dict[str, str] | None = None,
+                      splits: dict | None = None, payer: dict | None = None) -> list[dict]:
     """Purchases this money might be a refund of: the same merchant first,
-    then the same amount, within the last few months."""
+    then the same amount, within the last few months.
+
+    TEST-31 Money back (2026-11-14): on a split she's in, "Your share of
+    <purchase>" is its own match beside the whole purchase, as for work
+    paying her back (`_your_share`)."""
     got = round(-inflow.amount, 2)
     key = _key(inflow.merchant)
     out = []
@@ -207,12 +234,18 @@ def refund_candidates(inflow: Transaction, txns: list[Transaction],
             continue
         same_name = _key(c.merchant) == key
         same_amount = abs(round(c.amount, 2) - got) < 0.01
+        mine = _your_share(inflow, c, txns, splits, payer, names, got)
+        if mine is not None and (same_name or mine[0]["exact"]):
+            out.append(((0 if mine[0]["exact"] else 1, gap), mine[0]))
+            out.append(((0 if same_amount else 2, gap),
+                        dict(_brief(c, names), exact=same_amount, split_with=mine[1])))
+            continue
         if not (same_name or same_amount):
             continue
         out.append(((0 if same_name and same_amount else 1 if same_name else 2, gap),
                     dict(_brief(c, names), exact=same_amount)))
     out.sort(key=lambda r: r[0])
-    return [r for _, r in out[:6]]
+    return [r for _, r in out[:8]]
 
 
 def reimbursement_candidates(inflow: Transaction, txns: list[Transaction],
@@ -226,7 +259,6 @@ def reimbursement_candidates(inflow: Transaction, txns: list[Transaction],
     $60.00", `share`), matched against her share less what already
     reimbursed it; the whole purchase stays beside it ("all of it", decision
     2), with `split_with` naming the others."""
-    from .splits import your_share_left
     got = round(-inflow.amount, 2)
     out = []
     for c in txns:
@@ -242,17 +274,12 @@ def reimbursement_candidates(inflow: Transaction, txns: list[Transaction],
         if left <= 0.005:
             continue
         same_amount = abs(left - got) < 0.01
-        split = (splits or {}).get(c.fingerprint)
-        mine = your_share_left(c, split, txns, payer or {}, inflow) if split else None
-        if mine is not None and mine >= 0.005:
-            others = [p.get("name") for p in split.get("people") or [] if p.get("name")]
-            exact = abs(mine - got) < 0.01
-            out.append(((0 if exact else 1, gap),
-                        dict(_brief(c, names), exact=exact, work=work, left=mine, share=True,
-                             whole=round(c.amount, 2), split_with=others)))
+        mine = _your_share(inflow, c, txns, splits, payer, names, got, work=work)
+        if mine is not None:
+            out.append(((0 if mine[0]["exact"] else 1, gap), mine[0]))
             out.append(((0 if same_amount else 2, gap),
                         dict(_brief(c, names), exact=same_amount, work=work, left=left,
-                             split_with=others)))
+                             split_with=mine[1])))
             continue
         if not (work or same_amount):
             continue
@@ -459,7 +486,8 @@ def current_case(t: Transaction, store_refunds: dict[str, str],
             return None
         return "spending"
     if t.repays:
-        return "reimbursement" if payback_kinds.get(t.fingerprint) == REIMBURSEMENT else "payback"
+        kind = payback_kinds.get(t.fingerprint)
+        return "reimbursement" if kind == REIMBURSEMENT else "refund" if kind == REFUND_SHARE else "payback"
     if cat == "Income":
         return "pay"
     if cat == "Transfers":
@@ -577,7 +605,7 @@ def cases(store, t: Transaction, txns: list[Transaction]) -> dict:
             item["candidates"] = reimbursement_candidates(t, txns, names, store.splits(),
                                                           store.payback_people())
         elif c["needs"] == "refund":
-            item["candidates"] = refund_candidates(t, txns, names)
+            item["candidates"] = refund_candidates(t, txns, names, store.splits(), store.payback_people())
         items.append(item)
     current = current_case(t, refunds, kinds)
     from .etransfers import memo as etransfer_memo
@@ -1011,28 +1039,8 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
             # counts for her alone (person "me"), never for Sam; what's more
             # than her share is asked about (S-11w, `extra`); less stays hers
             # (decision 3).
-            if mine_left is None:
-                raise Problem(f"You’re not in the split on {charge.merchant}.")
-            if mine_left <= 0.005:
-                raise Problem(f"Your share of {charge.merchant} is already reimbursed.")
-            un_exclude()
-            whole = round(-t.amount, 2)
-            use = round(min(whole, mine_left), 2)
-            marks.setdefault("paybacks", {})[t.fingerprint] = {
-                "charge": t.repays, "kind": store.payback_kinds().get(t.fingerprint),
-                "person": payer_map.get(t.fingerprint), "amount": t.repays_amount}
-            marks.setdefault("payback_more", {})[t.fingerprint] = store.payback_more(t.fingerprint)
-            _drop_made_split(store, t, marks)
-            store.link_payback(charge_id, t.fingerprint, sp.ME, None if abs(use - whole) < 0.005 else use)
-            store.set_payback_kind(t.fingerprint, REIMBURSEMENT)
-            title = f"Reimbursed your share of {charge.merchant}."
-            if use < mine_left - 0.005:
-                detail = f"${mine_left - use:,.2f} of your share stays yours."
-            if whole - use > 0.005:
-                extra = {"amount": round(whole - use, 2), "whole": whole, "share": use,
-                         "charge": charge_id, "merchant": charge.merchant}
-                detail = f"${use:,.2f} pays back your share of {charge.merchant}."
-            share_extra = extra if whole - use > 0.005 else None
+            title, detail, share_extra = _link_your_share(store, t, charge, mine_left, REIMBURSEMENT, marks,
+                                                          un_exclude)
         else:
             un_exclude()
             # Many to many (2026-10-29): the deposit gives what's unpaid on the
@@ -1074,6 +1082,24 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
                           "reimbursed.")
             if whole - use > 0.005:
                 detail = f"The other ${whole - use:,.2f} of this deposit counts as money in."
+    elif case == "refund" and body.get("share"):
+        # TEST-31 Money back (2026-11-14): a refund of her own share of a
+        # split purchase, with the same rules as work paying her share.
+        charge_id = str(body.get("charge") or "")
+        everything = store.all_transactions()
+        charge = next((x for x in everything if x.fingerprint == charge_id), None)
+        if charge is None or charge.amount <= 0:
+            raise Problem("Pick the purchase it refunds.")
+        from . import splits as sp
+        mine_left = sp.your_share_left(charge, store.splits().get(charge_id), everything,
+                                       store.payback_people(), t)
+        def unrefund():
+            un_exclude()
+            marks.setdefault("refunds", {})[t.fingerprint] = store.refunds().get(t.fingerprint)
+            store.link_refund(t.fingerprint, None)
+        title, detail, share_extra = _link_your_share(store, t, charge, mine_left, REFUND_SHARE, marks,
+                                                      unrefund)
+        recat(charge.category or "Other")
     elif case == "refund":
         charge_id = str(body.get("charge") or "")
         charge = next((x for x in store.all_transactions() if x.fingerprint == charge_id),
@@ -1083,6 +1109,14 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
         un_exclude()
         cat = charge.category if charge else _category(body)
         marks.setdefault("refunds", {})[t.fingerprint] = store.refunds().get(t.fingerprint)
+        if t.repays:
+            # Once a payback (or her share's money back): a refund now.
+            marks.setdefault("paybacks", {})[t.fingerprint] = {
+                "charge": t.repays, "kind": store.payback_kinds().get(t.fingerprint),
+                "person": store.payback_people().get(t.fingerprint), "amount": t.repays_amount}
+            marks.setdefault("payback_more", {})[t.fingerprint] = store.payback_more(t.fingerprint)
+            store.unlink_payback(t.fingerprint)
+            store.set_payback_kind(t.fingerprint, None)
         store.link_refund(t.fingerprint, charge.fingerprint if charge else None)
         recat(cat)
         title = (f"Refund of {charge.merchant}. Comes off {cat}." if charge
@@ -1404,6 +1438,43 @@ def _reimbursed_by(store, charge: Transaction, inflow_ids, marks: dict) -> tuple
         detail = (f"${used:,.2f} of it was reimbursed; the other ${left:,.2f} stays left out "
                   "until it’s reimbursed.")
     return title, detail
+
+
+def _link_your_share(store, t: Transaction, charge: Transaction, mine_left: float | None, kind: str,
+                     marks: dict, before=lambda: None) -> tuple[str, str, dict | None]:
+    """TEST-31: deposit `t` pays her own share of split purchase `charge`
+    (person "me"): work paying her back (REIMBURSEMENT) or money back on
+    her part (REFUND_SHARE). Up to her share left; less stays hers (decision
+    3); more is returned as `extra` for "What's the extra?" (S-11w). It
+    counts for her at once (decision 5). Returns (title, detail, extra)."""
+    from . import splits as sp
+    if mine_left is None:
+        raise Problem(f"You’re not in the split on {charge.merchant}.")
+    if mine_left <= 0.005:
+        raise Problem(f"Your share of {charge.merchant} is already "
+                      + ("reimbursed." if kind == REIMBURSEMENT else "paid back."))
+    # Only once it can be saved: what the answer undoes first (a left-out row, a refund link).
+    before()
+    whole = round(-t.amount, 2)
+    use = round(min(whole, mine_left), 2)
+    marks.setdefault("paybacks", {})[t.fingerprint] = {
+        "charge": t.repays, "kind": store.payback_kinds().get(t.fingerprint),
+        "person": store.payback_people().get(t.fingerprint), "amount": t.repays_amount}
+    marks.setdefault("payback_more", {})[t.fingerprint] = store.payback_more(t.fingerprint)
+    _drop_made_split(store, t, marks)
+    store.link_payback(charge.fingerprint, t.fingerprint, sp.ME, None if abs(use - whole) < 0.005 else use)
+    store.set_payback_kind(t.fingerprint, kind)
+    # The Money back words wait for designBOT's frames; these say what happened.
+    title = (f"Reimbursed your share of {charge.merchant}." if kind == REIMBURSEMENT
+             else f"Money back on your share of {charge.merchant}.")
+    detail, extra = "", None
+    if use < mine_left - 0.005:
+        detail = f"${mine_left - use:,.2f} of your share stays yours."
+    if whole - use > 0.005:
+        extra = {"amount": round(whole - use, 2), "whole": whole, "share": use,
+                 "charge": charge.fingerprint, "merchant": charge.merchant}
+        detail = f"${use:,.2f} pays back your share of {charge.merchant}."
+    return title, detail, extra
 
 
 def _payback_part(t: Transaction, body: dict) -> float | None:
