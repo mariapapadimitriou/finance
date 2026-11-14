@@ -1023,7 +1023,8 @@ struct TransactionsView: View {
 
     /// "Paid back · Sushi Nami": the charge a payback is for, when it's in view.
     private func paidBack(for t: Transaction) -> String? {
-        guard let id = t.repays else { return nil }
+        // TEST-31 Money back: her share's refund reads "Refund · <shop>".
+        guard let id = t.repays, t.refundOf == nil else { return nil }
         return (rows + (results ?? [])).first { $0.id == id }?.merchant
     }
 

@@ -609,6 +609,9 @@ struct Transaction: Decodable, Identifiable, Hashable {
         let merchant: String
         let date: String
         let amount: Double
+        /// TEST-31 Money back (T-41m): a refund of her share of it, and how much.
+        var share: Bool? = nil
+        var paid: Double? = nil
         /// On the purchase's REFUNDED BY row: its S-05o and Unlink refund? (SPLIT-25).
         var link: LinkInfo? = nil
     }
@@ -749,6 +752,10 @@ struct Transaction: Decodable, Identifiable, Hashable {
             let on: String?
             let stays: Double
             var links: [LinkInfo]? = nil
+            /// TEST-31 Money back (S-04m): "refund" when a shop refund covered
+            /// it ("✓ Refunded"), else "reimbursement" (work).
+            var kind: String? = nil
+            var refunded: Bool { kind == "refund" }
             /// Reimbursed in full.
             var full: Bool { stays < 0.005 }
         }
@@ -1721,6 +1728,13 @@ struct MarkReply: Decodable {
         let share: Double
         let charge: String
         let merchant: String
+        /// S-11m: on a refund, who still owes on the split, in its order.
+        var people: [Owing]? = nil
+
+        struct Owing: Decodable, Hashable {
+            let name: String
+            let owes: Double
+        }
     }
 }
 

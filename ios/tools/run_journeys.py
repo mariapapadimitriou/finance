@@ -114,6 +114,13 @@ def seed(db_path: str) -> None:
     pai = next(t for t in store.all_transactions() if t.description == "PAI NORTHERN THAI")
     store.set_split(pai.fingerprint, "even", [{"name": "Sam", "amount": 60.0}], True)
     store.set_share(pai.fingerprint, 60.0)
+    # TEST-31 Money back: Joey King St $90.00 split with Priya ($45.00 each),
+    # and the restaurant's $45.00 back on her part, not linked yet.
+    load([(day(3), "JOEY KING ST", 90.00, None)], "amex_1004", "American Express ••1004", "credit")
+    load([(day(1), "JOEY KING ST REFUND", -45.00, None)], "amex_1004", "American Express ••1004", "credit")
+    joey = next(t for t in store.all_transactions() if t.description == "JOEY KING ST")
+    store.set_split(joey.fingerprint, "even", [{"name": "Priya", "amount": 45.0}], True)
+    store.set_share(joey.fingerprint, 45.0)
     store.set_setting("monthly_income", 5200.0)
     store.set_setting("savings_target", 900.0)
     # Today's Quick sort offer already used, so it doesn't open on launch

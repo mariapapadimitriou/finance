@@ -81,6 +81,8 @@ struct AnswerSheet: View {
     @State private var rememberInto = true
     /// What "What did this pay back?" is answering: nil works it out.
     @State private var chargeCase: String?
+    /// TEST-31 Money back (T-09rs): the purchase list is for a refund.
+    @State private var refunding = false
     @State private var splitting = false
     /// T-06jr (JOINT-B): Whose was it? on a joint purchase, beside Split my part.
     @State private var whosing = false
@@ -251,11 +253,15 @@ struct AnswerSheet: View {
             if let held = heldShareReply { heldShareReply = nil; onAnswer(.done(held)) }
         }) { ask in
             // TEST-31 S-11w (1294:2157): "What's the extra $15.00?" with the
-            // shared tiles; her share is the part already sorted.
+            // shared tiles; her share is the part already sorted. S-11m
+            // (1302:3494) for a refund: THE EXTRA's tiles, with a "Part of
+            // <name>'s share" tile for each person who still owes.
             PartsSheet(deposit: PartsDeposit(id: t.id, name: who, amount: t.amount, date: t.date), api: api,
-                       credited: [PartsSheet.Part(kind: "reimbursement", amount: ask.extra.share,
-                                                  charge: ask.extra.charge, merchant: ask.extra.merchant)],
-                       shareLine: "\(Format.amount(ask.extra.share)) pays back your share of \(ask.extra.merchant).") { reply in
+                       credited: [PartsSheet.Part(kind: refunding ? "refund" : "reimbursement", amount: ask.extra.share,
+                                                  charge: ask.extra.charge, merchant: ask.extra.merchant,
+                                                  share: refunding)],
+                       shareLine: "\(Format.amount(ask.extra.share)) \(refunding ? "refunds" : "pays back") your share of \(ask.extra.merchant).",
+                       shareOwing: refunding ? (ask.extra.people ?? []) : nil) { reply in
                 heldShareReply = nil
                 shareExtra = nil
                 onAnswer(.done(reply))
@@ -572,9 +578,11 @@ struct AnswerSheet: View {
             parting = true
         case "refund":                                 // T-09: what it paid back
             chargeCase = nil
+            refunding = true
             go(.charges)
         case "reimbursement":
             chargeCase = key
+            refunding = false
             go(.charges)
         case "own": onAnswer(.mark(t.id, ["case": "own", "remember": learnable && rememberInto]))
         case "loan": onAnswer(.mark(t.id, ["case": "borrowed"]))
@@ -818,7 +826,8 @@ struct AnswerSheet: View {
         switch step {
         case .out, .into: return "What was this?"
         case .accounts: return "Where did it go?"
-        case .charges: return "What did this pay back?"
+        // T-09rs (1302:2312): a refund keeps T-09r's title.
+        case .charges: return refunding ? "What was this a refund for?" : "What did this pay back?"
         case .kinds, .otherKinds: return "What kind of income?"
         case .cadence: return "How often is this pay?"
         case .joint: return "Whose pay is this?"
@@ -921,6 +930,8 @@ struct AnswerSheet: View {
     private var footer: String? {
         switch step {
         case .accounts where !rememberAnswer: return nil
+        // T-09rs: no "Pearl will remember" on a refund, as T-09r has none.
+        case .charges where refunding: return nil
         case .accounts, .joint, .charges: return "Pearl will remember this for \(who)."
         case .cadence where choice != nil && choice != "once": return "Pearl will count every deposit from \(who) as pay."
         default: return nil
@@ -1031,13 +1042,15 @@ struct AnswerSheet: View {
         }
     }
 
-    /// TEST-31 T-09w: work paid her share. Saved here so S-11w can follow
-    /// when more than her share came in; otherwise it's answered as any mark.
+    /// TEST-31 T-09w / T-09rs: work paid her share, or the shop refunded it.
+    /// Saved here so S-11w / S-11m can follow when more than her share came
+    /// in; otherwise it's answered as any mark.
     private func saveShare(_ charge: String) {
         Task {
             do {
                 let reply: MarkReply = try await api.post("api/transactions/\(t.id)/mark",
-                                                          ["case": "reimbursement", "charge": charge, "share": true])
+                                                          ["case": refunding ? "refund" : "reimbursement",
+                                                           "charge": charge, "share": true])
                 if let extra = reply.extra {
                     shareExtra = ShareExtraAsk(reply: reply, extra: extra)
                 } else {
@@ -1057,7 +1070,7 @@ struct AnswerSheet: View {
             return
         }
         if let reply: Reply = try? await api.get("api/transactions/\(t.id)/charges",
-                                                      query: ["q": q, "case": chargeCase ?? ""]) {
+                                                      query: ["q": q, "case": chargeCase ?? (refunding ? "refund" : "")]) {
             charges = reply.charges.compactMap { $0.value }
         }
     }

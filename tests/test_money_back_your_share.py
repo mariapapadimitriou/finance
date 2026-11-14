@@ -241,3 +241,10 @@ def test_her_row_says_refunded(client):
     client.post(f"/api/transactions/{i['NORTHWIND LTD PAYROLL']}/mark",
                 json={"case": "reimbursement", "charge": tid, "share": True})
     assert splitting(client, tid)["mine"]["kind"] == "reimbursement"
+
+
+def test_from_the_refund_page(client):
+    """T-09rs from the deposit's own page: likely matches first."""
+    i = dinner(client, tx("PAI NORTHERN THAI REFUND", -60.0, merchant="Pai Northern Thai"))
+    got = client.get(f"/api/transactions/{i['PAI NORTHERN THAI REFUND']}/charges?q=&case=refund").get_json()
+    assert got["charges"][0]["share"] and got["charges"][0]["left"] == 60.0
