@@ -35,7 +35,8 @@ REST = "Left to sort"
 KINDS = ("payback", "gift", "income", "moved", "savings", "cash", "refund",
          "category", "overpaid", "reimbursement", "loan", "lent_back", "rest", "not_mine")
 # TEST-31 Money back, S-11m (product owner, 2026-11-14): Not mine is a tile
-# for the extra on a refund of her share, so it's a part there: left out.
+# for the extra on a refund of her share, so it's a part there (only there):
+# left out.
 NOT_MINE = "Not mine"
 # The kinds income can be (finance/income.py).
 INCOME_KINDS = ("salary", "bonus", "interest", "gifts", "government", "tax_refund", "other")
@@ -69,8 +70,12 @@ def _clean(st, deposit: Transaction, parts: list, later: bool) -> list[dict]:
     by_id = {t.fingerprint: t for t in st.all_transactions()}
     cash = {c["id"]: c for c in st.split_cash()}
     out = []
+    # SPLIT-04: Not mine is not a part, except for the extra on a refund of
+    # her share (S-11m, product owner 2026-11-14).
+    refund_share = any(isinstance(p, dict) and p.get("kind") == "refund" and p.get("share") for p in parts)
     for p in parts:
-        if not isinstance(p, dict) or p.get("kind") not in KINDS or p.get("kind") == "rest":
+        if not isinstance(p, dict) or p.get("kind") not in KINDS or p.get("kind") == "rest" \
+                or (p.get("kind") == "not_mine" and not refund_share):
             raise Problem("Say what each part is.")
         try:
             amount = round(float(p.get("amount")), 2)
