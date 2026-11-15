@@ -370,6 +370,8 @@ struct Home: Decodable {
     let reviewCount: Int
     /// How many Pearl sorted without asking, shown so it isn't silent.
     var pearlSorted: Int? = nil
+    /// AI-01: how many Pearl sorted from her own answers in the last 7 days.
+    var patternWeek: Int? = nil
     /// A month with a third paycheque: a note, nothing to do.
     var paychequeNote: Review.PayMonth? = nil
     let snapshot: Snapshot?
@@ -380,6 +382,7 @@ struct Home: Decodable {
         case today, month, snapshot, connections
         case reviewCount = "review_count"
         case pearlSorted = "pearl_sorted"
+        case patternWeek = "pattern_week"
         case paychequeNote = "paycheque_note"
         case safeToSpend = "safe_to_spend"
     }
@@ -1425,6 +1428,8 @@ struct Review: Decodable {
         /// nobody still owed on, so the whole amount is extra. Its "What was
         /// this?" opens S-11x.
         var extra: Extra? = nil
+        /// AI-07: why Pearl won't sort this one by itself.
+        var unsure: Unsure? = nil
 
         struct Extra: Decodable, Hashable {
             /// Every purchase it was linked to: "extra on Loblaws".
@@ -1450,6 +1455,29 @@ struct Review: Decodable {
             var isPart: Bool { !(credited ?? []).isEmpty }
         }
 
+        /// AI-07 (designBOT, 2026-11-15): the first case that applies.
+        struct Unsure: Decodable, Hashable {
+            let `case`: String
+            var k: Int? = nil
+            let n: Int
+            var category: String? = nil
+            var name: String? = nil
+
+            /// Line 1, in ink.
+            var line: String {
+                let k = self.k ?? 0
+                switch `case` {
+                case "category":
+                    return "Pearl’s not sure: \(k) of your last \(n) here \(k == 1 ? "was" : "were") \(category ?? "something else")."
+                case "split": return "Pearl’s not sure: you split \(k) of your last \(n) here."
+                case "person":
+                    let who = name ?? "them"
+                    return "Pearl’s not sure: \(k) of the last \(n) from \(who) were \(possessive(who)) share."
+                default: return "Pearl’s not sure: you’ve sorted only \(n) here so far."
+                }
+            }
+        }
+
         struct Credit: Decodable, Hashable {
             /// Every purchase it paid back: "paid back Loblaws".
             let paidBack: [String]
@@ -1470,7 +1498,7 @@ struct Review: Decodable {
 
         enum CodingKeys: String, CodingKey {
             case key, txn, reason, skipped, from, guess, label, people, candidates, series, rest, share, twin
-            case siblings, pair, credit, extra
+            case siblings, pair, credit, extra, unsure
             case guessLabel = "guess_label"
         }
 
@@ -1507,6 +1535,7 @@ struct Review: Decodable {
             pair = opt(Pair.self, .pair)
             credit = opt(Credit.self, .credit)
             extra = opt(Extra.self, .extra)
+            unsure = opt(Unsure.self, .unsure)
         }
 
         static func == (a: Item, b: Item) -> Bool {
@@ -1712,6 +1741,8 @@ struct SortedRow: Decodable, Identifiable {
     let amount: Double
     let line: String
     let undo: JSONValue?
+    /// AI-02: a row Pearl sorted from her own answers; it opens AI-03.
+    var record: String? = nil
 }
 
 /// The answer to sorting one transaction: what changed, and how to undo it.

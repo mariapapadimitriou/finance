@@ -106,6 +106,7 @@ def patterns(st, txns: list[Transaction] | None = None) -> dict[str, dict]:
     confirmed = st.confirmed_categories()
     answers: dict[str, list] = defaultdict(list)
     days: dict[str, list] = defaultdict(list)
+    seen: dict[str, list] = defaultdict(list)
     meta: dict[str, dict] = {}
     for t in sorted(txns, key=lambda x: x.date):
         if t.fingerprint in pearl or t.excluded:
@@ -121,6 +122,7 @@ def patterns(st, txns: list[Transaction] | None = None) -> dict[str, dict]:
             pid = _pattern_id("category", key)
             answers[pid].append(cat)
             days[pid].append(t.date[:10])
+            seen[pid].append(t.fingerprint)
             meta[pid] = {"kind": "category", "key": key, "merchant": t.merchant}
         elif t.amount < 0 and t.joint and t.joint_from:
             from .joint import THEM
@@ -130,16 +132,21 @@ def patterns(st, txns: list[Transaction] | None = None) -> dict[str, dict]:
             pid = _pattern_id("joint", t.account_id or "", sender)
             answers[pid].append(t.joint_person if t.joint_from == THEM and t.joint_person else "")
             days[pid].append(t.date[:10])
+            seen[pid].append(t.fingerprint)
+            from .etransfers import party
             meta[pid] = {"kind": "joint", "key": sender, "account_id": t.account_id,
-                         "account": t.account_name or t.joint, "merchant": t.merchant}
+                         "account": t.account_name or t.joint, "joint": t.joint,
+                         "merchant": (party(t) or {}).get("name") or t.merchant}
     out = {}
     state = _state(st)
     for pid, said in answers.items():
         m = meta[pid]
         s = state.get(pid) or {}
+        answered = seen[pid]
         if s.get("forgot"):
             # Forget: learned again only from answers after it was forgotten.
-            said = [a for a, d in zip(said, days[pid]) if d > s["forgot"]]
+            keep = [i for i, d in enumerate(days[pid]) if d > s["forgot"]]
+            said, answered = [said[i] for i in keep], [answered[i] for i in keep]
             if not said:
                 continue
         first = said[0]
@@ -149,7 +156,7 @@ def patterns(st, txns: list[Transaction] | None = None) -> dict[str, dict]:
         # Stopped (AI-04) is never learned again.
         usable = agree and bool(first) and len(said) >= need and not s.get("stopped_at")
         out[pid] = {**m, "id": pid, "answer": first, "count": len(said), "agree": agree, "need": need,
-                    "ready": usable, "answers": said, "days": days[pid]}
+                    "ready": usable, "answers": said, "days": days[pid], "answered": answered}
     return out
 
 
@@ -368,7 +375,8 @@ def learned(st) -> list[dict]:
         mine = [r for r in log if r["pattern"] == pid and not r.get("undone")]
         out.append({"id": pid, "kind": p["kind"], "merchant": p["merchant"], "answer": p["answer"],
                     "label": label(p), "count": p["count"], "account": p.get("account"),
-                    "rhythm": rhythm(p["days"]),
+                    "joint": p.get("joint"),
+                    "rhythm": rhythm(p["days"]), "answered": p["answered"],
                     "on": enabled(st, pid), "sorted": [r["txn"] for r in mine]})
     return sorted(out, key=lambda r: (r["merchant"] or "").lower())
 

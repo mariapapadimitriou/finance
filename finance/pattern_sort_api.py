@@ -127,8 +127,9 @@ def pattern_sort_one(rid: str):
     pat = ps.patterns(st).get(rec["pattern"]) or {}
     same = [r["txn"] for r in ps.records(st) if r["pattern"] == rec["pattern"]]
     return jsonify({**_row(st, rec), "label": ps.label(pat) if pat else rec["answer"],
-                    "account": pat.get("account"), "sorted_by_pattern": same,
-                    "pattern_count": pat.get("count", rec["count"])})
+                    "account": pat.get("account"), "joint": pat.get("joint"), "sorted_by_pattern": same,
+                    "pattern_count": pat.get("count", rec["count"]), "answered": pat.get("answered", []),
+                    "pattern_merchant": pat.get("merchant"), "learned": bool(pat.get("ready"))})
 
 
 @bp.post("/pattern-sort/<rid>/undo")

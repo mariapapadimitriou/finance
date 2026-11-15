@@ -44,6 +44,10 @@ struct HomeView: View {
                         NeedsALookCard(count: home.reviewCount, pearlSorted: home.pearlSorted ?? 0,
                                        busy: opening) { Task { await sortNow() } }
                     }
+                    if let week = home.patternWeek, week > 0 {
+                        // AI-01: what Pearl sorted from her own answers this week.
+                        PearlSortedCard(count: week)
+                    }
                     // H-00n (SPLIT-13, THL-291): under Needs a look, once a share is a week old.
                     if let owed = owed, let line = OwedNudgeCard.line(owed, today: home.today) {
                         OwedNudgeCard(line: line)
@@ -135,6 +139,10 @@ struct HomeView: View {
     }
 
     private func load() async {
+        // Pearl sorts for you (P1a): what can be sorted from her own answers,
+        // before Home counts what's left. Off, it does nothing.
+        struct Ran: Decodable { let sorted: Int }
+        _ = try? await app.api.post("api/pattern-sort/run", [:]) as Ran
         do {
             home = try await app.api.get("api/home")
             setup = try? await app.api.get("api/setup-again")
