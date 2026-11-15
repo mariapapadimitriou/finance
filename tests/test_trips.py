@@ -186,3 +186,5 @@ def test_two_currencies_are_totalled_apart(client):
     ids = [rows[k].fingerprint for k in ("HOTEL A", "DINER B", "MUSEUM C")]
     trip = client.post("/api/trips", json={"ids": ids, "name": "Boston"}).get_json()["trip"]
     assert trip["totals"] == [{"currency": "CAD", "amount": 300.0}, {"currency": "USD", "amount": 65.0}]
+    page = client.get(f"/api/trips/{trip['id']}").get_json()
+    assert {r["merchant"]: r["currency"] for r in page["rows"]}["Diner B"] == "USD"
