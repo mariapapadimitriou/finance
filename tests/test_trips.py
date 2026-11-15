@@ -177,6 +177,61 @@ class TestMakingAndChanging:
         r = client.put(f"/api/trips/{trip['id']}", json={"remove": r["trip"]["ids"]}).get_json()
         assert r == {"ok": True, "ended": True}
 
+    def test_undo_after_make_a_trip_doesnt_skip_its_dates(self, client):
+        """TR-02c: Undo on "… made" takes the trip and its tag away, and Pearl
+        may still ask about those dates."""
+        trip, rows = self.make(client)
+        assert client.delete(f"/api/trips/{trip['id']}?undo=1").get_json() == {"ok": True, "count": 2}
+        assert trips.all_trips(client.st) == {}
+        assert not any("Cottage weekend" in ts for ts in client.st.tags().values())
+        assert trips._skipped(client.st) == []
+        assert client.post(f"/api/trips/{trip['id']}/restore").status_code == 404
+
+    def test_not_a_trip_skips_its_dates(self, client):
+        trip, _ = self.make(client)
+        client.delete(f"/api/trips/{trip['id']}")
+        assert trips._skipped(client.st) == [[trip["start"], trip["end"]]]
+
+    def test_undo_not_a_trip_puts_it_back_exactly(self, client):
+        """TR-13's Undo: the same id, name, rows, maker and tag, and the dates
+        are no longer skipped."""
+        trip, rows = self.make(client)
+        before = trips.all_trips(client.st)[trip["id"]]
+        client.delete(f"/api/trips/{trip['id']}")
+        r = client.post(f"/api/trips/{trip['id']}/restore")
+        assert r.status_code == 200, r.get_json()
+        assert trips.all_trips(client.st)[trip["id"]] == before
+        assert r.get_json()["trip"]["count"] == 2
+        assert all("Cottage weekend" in client.st.tags().get(i, []) for i in trip["ids"])
+        assert trips._skipped(client.st) == []
+        assert client.post(f"/api/trips/{trip['id']}/restore").status_code == 404
+
+    def test_undo_not_a_trip_keeps_dates_skipped_before(self, client):
+        """Dates she had already skipped stay skipped after Undo."""
+        trip, _ = self.make(client)
+        trips._skip_dates(client.st, trip["start"], trip["end"])
+        client.delete(f"/api/trips/{trip['id']}")
+        assert client.post(f"/api/trips/{trip['id']}/restore").status_code == 200
+        assert trips._skipped(client.st) == [[trip["start"], trip["end"]]]
+
+    def test_undo_not_a_trip_after_its_rows_joined_another(self, client):
+        trip, rows = self.make(client)
+        client.delete(f"/api/trips/{trip['id']}")
+        client.post("/api/trips", json={"ids": [rows["SIMONS"].fingerprint], "name": "Shopping day"})
+        r = client.post(f"/api/trips/{trip['id']}/restore")
+        assert r.status_code == 400 and "already in a trip" in r.get_json()["error"]
+
+    def test_undo_add_and_remove(self, client):
+        """TR-11 / TR-12's Undo is the same change the other way."""
+        trip, rows = self.make(client)
+        cafe = rows["CAFE OLIMPICO"].fingerprint
+        url = f"/api/trips/{trip['id']}"
+        assert client.put(url, json={"add": [cafe]}).get_json()["trip"]["count"] == 3
+        assert client.put(url, json={"remove": [cafe]}).get_json()["trip"]["count"] == 2
+        assert "Cottage weekend" not in client.st.tags().get(cafe, [])
+        assert client.put(url, json={"remove": [rows["SIMONS"].fingerprint]}).get_json()["trip"]["count"] == 1
+        assert client.put(url, json={"add": [rows["SIMONS"].fingerprint]}).get_json()["trip"]["count"] == 2
+
 
 def test_two_currencies_are_totalled_apart(client):
     """No conversion anywhere: "$1,240 CAD + $310 USD"."""

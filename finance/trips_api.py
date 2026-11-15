@@ -5,6 +5,8 @@
 * GET    /api/trips/<id>               the trip's page (TR-02, TR-03): totals, months, categories, rows
 * PUT    /api/trips/<id>               Rename {name} (renames its tag too) · Add {add} · Remove some {remove}
 * DELETE /api/trips/<id>               It wasn't a trip: the trip and its tag go, the rows stay
+                                        (?undo=1: Undo after Make a trip; its dates aren't skipped)
+* POST   /api/trips/<id>/restore       Undo on "Not a trip" (TR-13): the same trip back, dates unskipped
 * GET    /api/trips/asks               TR-01: likely trips Pearl asks about (two signals agree)
 * POST   /api/trips/asks/<id>/yes      Yes: one trip, named for its place
 * POST   /api/trips/asks/<id>/skip     Skip: never asked about those dates again
@@ -106,7 +108,21 @@ def trips_change(trip_id: str):
 @bp.delete("/trips/<trip_id>")
 def trips_end(trip_id: str):
     st = store()
-    trip = trips.end(st, trip_id)
+    # TR-02c: Undo on "Trip to Montréal made" takes back only what she just did.
+    undo = request.args.get("undo") in ("1", "true")
+    trip = trips.end(st, trip_id, skip=not undo)
     if trip is None:
         return jsonify({"error": "That trip isn’t there any more."}), 404
     return jsonify({"ok": True, "count": len(trip["ids"])})
+
+
+@bp.post("/trips/<trip_id>/restore")
+def trips_restore(trip_id: str):
+    st = store()
+    try:
+        trip = trips.restore(st, trip_id)
+    except trips.Problem as exc:
+        return jsonify({"error": str(exc)}), 400
+    if trip is None:
+        return jsonify({"error": "There’s nothing to put back."}), 404
+    return jsonify({"ok": True, "trip": trips.summary(st, trip)})
