@@ -459,15 +459,16 @@ struct CalendarCard: View {
         }
     }
 
-    /// "Mar 4–9   Trip to Montréal   −$1,284.60"; TR-10b's day row
-    /// "Trip   Trip to Lisbon · Oct 29 – Nov 2   −$2,140.00".
+    /// "Mar 4–9   Trip to Montréal   $1,284.60"; TR-10b's day row
+    /// "Trip   Trip to Lisbon · Oct 29 – Nov 2   $2,140.00".
     private func tripLine(lead: String, name: String, totals: [MoneyTotal]) -> some View {
         HStack(spacing: 12) {
             Text(lead).foregroundColor(Pearl.muted).fixedSize()
             Text(name).foregroundColor(Pearl.ink).frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
-            // Spent, so signed as a row is; in two currencies each is its own (TR-02m).
-            Text(totals.mixed ? totals.shown : "\u{2212}" + totals.shown)
+            // A trip's total is a total, like a category's: no minus, in one
+            // currency or several (TR-02m; note 1329:69536, Wording).
+            Text(totals.shown)
                 .foregroundColor(Pearl.ink).monospacedDigit().pearlAmountFit()
         }
         .font(Nacre.body)

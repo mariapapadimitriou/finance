@@ -1349,6 +1349,9 @@ struct TransactionRow: View {
 struct Initials: View {
     let name: String
     var size: CGFloat = 40
+    /// A trip's avatar: always two letters, "MO" for Montréal, "QC" for
+    /// Québec City (note 1329:69536, Wording). Other avatars are unchanged.
+    var trip = false
 
     var body: some View {
         Text(letters)
@@ -1361,6 +1364,7 @@ struct Initials: View {
 
     private var letters: String {
         let words = name.split { !$0.isLetter && !$0.isNumber }.prefix(2)
+        if trip, words.count == 1, let w = words.first { return String(w.prefix(2)).uppercased() }
         let out = words.compactMap { $0.first.map(String.init) }.joined().uppercased()
         return out.isEmpty ? "·" : out
     }

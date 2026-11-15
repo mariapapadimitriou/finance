@@ -488,7 +488,7 @@ struct QuickSortView: View {
         VStack(spacing: 8) {
             Text("A TRIP?")
                 .font(Nacre.caption2).tracking(0.78).foregroundColor(Pearl.action)
-            Initials(name: t.place ?? "Trip", size: 64)
+            Initials(name: t.place ?? "Trip", size: 64, trip: true)
             if let place = t.place {
                 Text(place).font(Nacre.headline).foregroundColor(Pearl.ink)
                     .multilineTextAlignment(.center).lineLimit(2)
