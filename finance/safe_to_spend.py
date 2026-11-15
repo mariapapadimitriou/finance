@@ -767,7 +767,8 @@ def compute(transactions: list[Transaction], today: date, *,
             entered_income: float = 0.0, told_income: float = 0.0,
             told_rent: float = 0.0, overridden: bool = False,
             debt_bills: dict | None = None, confirm: dict | None = None,
-            carry: dict | None = None, moved_to_savings: float | None = None) -> dict:
+            carry: dict | None = None, moved_to_savings: float | None = None,
+            plan: dict[str, float] | None = None) -> dict:
     """Safe to spend this month and the four rows behind it.
 
     `debt_bills` (from `debts.bills`) adds this month's debt minimums: the
@@ -780,7 +781,11 @@ def compute(transactions: list[Transaction], today: date, *,
     `moved_to_savings` is what she actually moved to savings this month
     (THL-230: transfers marked Saved, less any taken back out; chests fill
     from her Anchor, not from the month), worked out here from the ledger
-    when the caller doesn't have it."""
+    when the caller doesn't have it.
+    `plan` is Your plan while it's in use ({category: amount a month},
+    `your_plan.in_use`; YP-02): each category's amount, less what's been
+    spent on it this month, is set aside in a "plan" row, as a bill is. With
+    no plan in use nothing here changes."""
     month = today.strftime("%Y-%m")
     left = days_left(today)
     income = income_this_month(transactions, today, entered_income,
@@ -834,6 +839,13 @@ def compute(transactions: list[Transaction], today: date, *,
     saved_c = max(_cents(moved_to_savings if moved_to_savings is not None
                          else invested_in(transactions, month)), 0)
     rows.append({"key": "saved", "amount_c": saved_c, "lines": []})
+    # Your plan, once she uses it (YP-02, YP-03): the rest of each planned
+    # category's amount this month is held back, so the Allowance follows it.
+    if plan:
+        from .your_plan import set_aside
+        held = set_aside(transactions, today, plan, bill_charges(transactions, today))
+        if held:
+            rows.append({"key": "plan", "amount_c": held["amount_c"], "lines": held["lines"]})
 
     total_c = rows[0]["amount_c"] - sum(r["amount_c"] for r in rows[1:])
     # From last month (decision 4): pay that came early for this month, and
