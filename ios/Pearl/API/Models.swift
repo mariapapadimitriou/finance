@@ -1472,7 +1472,8 @@ struct Review: Decodable {
                 case "split": return "Pearl’s not sure: you split \(k) of your last \(n) here."
                 case "person":
                     let who = name ?? "them"
-                    return "Pearl’s not sure: \(k) of the last \(n) from \(who) were \(possessive(who)) share."
+                    let whose = who.lowercased().hasSuffix("s") ? "\(who)’" : "\(who)’s"
+                    return "Pearl’s not sure: \(k) of the last \(n) from \(who) were \(whose) share."
                 default: return "Pearl’s not sure: you’ve sorted only \(n) here so far."
                 }
             }
