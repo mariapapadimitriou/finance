@@ -140,9 +140,9 @@ struct ConsentView: View {
         .reloads { await load() }
         .docSheet($doc)
         .sheet(isPresented: $askingAIOff) {
-            // CN-05r (TEST-06): a Pearl sheet, not a stock alert.
-            PearlConfirmSheet(overline: "Sort with AI", title: "Turn off AI sorting?",
-                              message: "Pearl will use your bank’s categories and your rules. You can turn it back on any time.",
+            // CN-05r (TEST-06, reworded for P1a in AI-02b): a Pearl sheet, not a stock alert.
+            PearlConfirmSheet(overline: "Pearl sorts for you", title: "Stop Pearl sorting for you?",
+                              message: "New ones wait for you in Quick sort. What Pearl already sorted, and your own rules, stay. You can turn it back on any time.",
                               primary: "Turn off", busyLabel: "Turning off…", secondary: "Keep it on",
                               failure: "Couldn’t turn it off. Nothing changed. Try again.",
                               onClose: { askingAIOff = false }) {
