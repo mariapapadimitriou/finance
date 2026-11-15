@@ -512,6 +512,12 @@ def mixed_merchants(transactions: list[Transaction], confirmed: dict[str, str]) 
 def for_store(st, today: str | None = None) -> dict:
     """The review as every screen sees it: one call, so one number."""
     found_on = {k: v["found_on"] for k, v in st.duplicates().items()}
+    # AI only detects; she confirms (2026-11-15): once, rows P1a sorted
+    # before it asked come back here to be asked about.
+    from . import pattern_sort
+    if pattern_sort.migrate(st):
+        from .pipeline import classify_ledger
+        classify_ledger(st)
     txns = st.all_transactions()
     # Her pay into a joint account is hers (2026-10-29): deposits a pay rule
     # made before that rule claimed them aren't asked "Who put this in?".
@@ -577,6 +583,11 @@ def for_store(st, today: str | None = None) -> dict:
     review["count"] += len(review["checks"])
     review["open"] += open_checks
     review["skipped"] += len(review["checks"]) - open_checks
+    # AI-18: one Quick sort card for each pattern Pearl asks about first.
+    review["pattern_asks"] = pattern_sort.pending(st, today or core_api._today_iso(), txns) \
+        if pattern_sort.is_on(st) else []
+    review["count"] += len(review["pattern_asks"])
+    review["open"] += len(review["pattern_asks"])
     from . import sorted_log
     from . import api as core
     day = today or core._today_iso()

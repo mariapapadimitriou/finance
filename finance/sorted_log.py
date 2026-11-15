@@ -124,15 +124,19 @@ def pearl_rows(st, review: dict, today: str, ids_in) -> list[dict]:
             if t.date[:10] >= since and t.fingerprint not in asked and t.fingerprint not in confirmed
             and t.category_source != "user" and not (is_others(t) and not t.excluded)]
     rows.sort(key=lambda t: t.date, reverse=True)
-    # AI-02 (AI-02b): rows her own rules sorted go together under FROM YOUR
-    # RULES, after Pearl's sorts; the rest follow, as before.
+    # AI-02 (AI-03c): after Pearl's sorts, FROM YOUR RULES (what she set),
+    # then NOT CHECKED BY YOU (what nobody asked her about).
     mine = [t for t in rows if from_her_rule(t)]
     rest = [t for t in rows if not from_her_rule(t)]
     return [{"id": t.fingerprint, "date": t.date[:10], "merchant": t.merchant or t.description,
-             "amount": t.amount, "line": reason(t), "group": "rules" if from_her_rule(t) else None}
+             "amount": t.amount, "line": reason(t), "group": "rules" if from_her_rule(t) else "unchecked"}
             for t in mine + rest]
 
 
+# What she set: a merchant rule, her pay, where these go, dates she sorted.
+HER_RULES = ("merchant_override", "pay_rule", "destination", "range")
+
+
 def from_her_rule(t: Transaction) -> bool:
-    """Sorted by a rule she saved: a merchant rule, or her pay."""
-    return not t.excluded and t.category_source in ("merchant_override", "pay_rule")
+    """Sorted by something she set. A row she left out is hers too."""
+    return bool(t.excluded) or t.category_source in HER_RULES

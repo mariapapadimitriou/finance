@@ -9,9 +9,9 @@
 * PUT    /api/pattern-sort/rules/<id>          AI-06's switch {on}
 * POST   /api/pattern-sort/rules/<id>/stop     AI-04 Stop sorting like this (undoes every row), with Undo
 * POST   /api/pattern-sort/rules/<id>/restart  Stop's Undo
-* GET    /api/pattern-sort/asks                patterns Pearl found and asks about first (pending)
+* GET    /api/pattern-sort/asks                AI-18: patterns Pearl found, asked about first (pending)
 * POST   /api/pattern-sort/asks/<id>/yes       Yes {how}: Pearl may sort new ones from now on
-* POST   /api/pattern-sort/asks/<id>/not-now   Not now: ask again after ask_again_days
+* POST   /api/pattern-sort/asks/<id>/skip      Skip: ask again after n more answers; twice, never
 """
 
 from __future__ import annotations
@@ -32,6 +32,14 @@ def _consented() -> bool:
     return bool((users.effective_consents(user).get("ai_sort") or {}).get("value"))
 
 
+def migrated(st) -> int:
+    """Rows P1a sorted before it asked go back to Needs a look, once."""
+    back = ps.migrate(st)
+    if back:
+        core._reclassify(st)
+    return len(back)
+
+
 def _row(st, rec: dict) -> dict:
     t = st.get_transaction(rec["txn"])
     return {"id": rec["id"], "txn": rec["txn"], "pattern": rec["pattern"], "kind": rec["kind"],
@@ -43,6 +51,7 @@ def _row(st, rec: dict) -> dict:
 @bp.post("/pattern-sort/run")
 def pattern_sort_run():
     st = store()
+    migrated(st)
     if not _consented():
         return jsonify({"sorted": 0, "on": False})
     if not ps.is_on(st):
@@ -57,6 +66,7 @@ def pattern_sort_run():
 @bp.get("/pattern-sort")
 def pattern_sort_list():
     st = store()
+    migrated(st)
     today = core._today_iso()
     return jsonify({"on": _consented(), "week": ps.this_week(st, today),
                     "rows": [_row(st, r) for r in ps.records(st)]})
@@ -125,8 +135,8 @@ def pattern_sort_restart(pid: str):
 def pattern_sort_asks():
     """AI only detects; she confirms. Nothing to ask while the switch is off."""
     st = store()
-    asks = ps.pending(st, core._today_iso()) if _consented() else []
-    return jsonify({"asks": asks, "ask_again_days": ps.ask_again_days(st)})
+    migrated(st)
+    return jsonify({"asks": ps.pending(st, core._today_iso()) if _consented() else []})
 
 
 @bp.post("/pattern-sort/asks/<path:pid>/yes")
@@ -142,12 +152,13 @@ def pattern_sort_yes(pid: str):
     return jsonify({"ok": True, "confirmed": yes, "rule": rule})
 
 
-@bp.post("/pattern-sort/asks/<path:pid>/not-now")
-def pattern_sort_not_now(pid: str):
+@bp.post("/pattern-sort/asks/<path:pid>/skip")
+def pattern_sort_skip(pid: str):
     st = store()
-    if not ps.not_now(st, pid, core._today_iso()):
+    out = ps.skip(st, pid)
+    if out is None:
         return jsonify({"error": "Nothing to ask about."}), 404
-    return jsonify({"ok": True, "ask_again_days": ps.ask_again_days(st)})
+    return jsonify({"ok": True, **out})
 
 
 @bp.get("/pattern-sort/<rid>")

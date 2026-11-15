@@ -32,16 +32,18 @@ AI only detects; she confirms (product owner, 2026-11-15):
 
 * A pattern strong enough to sort is only **pending** until she says Yes to
   it, once. A pending pattern sorts nothing. `pending()` lists the asks.
-* **Yes** (`confirm`) records when and from where she said it
-  (`state[pid]["confirmed"] = {"at", "day", "how"}`, for "You said yes on …"),
-  and from then on the rules above apply to new matches only: the rows that
-  matched when she said Yes are left for her (`state[pid]["before"]`).
-* **Not now** (`not_now`) records the day; Pearl may ask again after
-  `ask_again_days()` (`ASK_AGAIN_KEY`, default `ASK_AGAIN_DAYS`; designBOT
-  picks the interval).
-* Migration: patterns that sorted before this rule were never confirmed, so
-  they are pending like any other. The rows they already sorted stay sorted,
-  in Pearl sorted with Undo, and Stop still undoes them all.
+* It asks with one Quick sort card for the pattern (AI-18, designBOT).
+* **Yes** (`confirm`) records when, from where, and after how many of her
+  answers (`state[pid]["confirmed"] = {"at", "day", "how", "count"}`, for
+  "You said yes on Nov 10, after sorting 5 yourself"). From then on the
+  rules above apply to new matches only: the rows that matched when she said
+  Yes are left for her (`state[pid]["before"]`), so nothing already in Needs
+  a look is sorted by the Yes.
+* **Skip** (`skip`) asks again after `need` more agreeing answers (5, or 8
+  between people). A second Skip and Pearl never asks about it again.
+  Forget clears both, so it may be asked about again.
+* Migration (product owner, 2026-11-15, no exceptions): rows P1a sorted
+  before she was asked go back to Needs a look, once (`migrate`).
 """
 
 from __future__ import annotations
@@ -64,8 +66,8 @@ BASELINE_KEY = "pattern_sort_baseline"   # {"at": iso, "known": [ids]}
 LOG_KEY = "pattern_sort_log"             # [record]
 STATE_KEY = "pattern_sort_state"         # {pattern id: {"on": bool, "stopped_at": iso}}
 NEVER_KEY = "pattern_sort_never"         # [txn ids she undid]
-ASK_AGAIN_KEY = "pattern_sort_ask_again_days"   # days after Not now before Pearl asks again
-ASK_AGAIN_DAYS = 30                      # until designBOT picks the interval
+MIGRATED_KEY = "pattern_sort_asks_first"      # set once rows sorted without asking are back
+SKIPS_MAX = 2                            # a second Skip and Pearl never asks again
 HOW = re.compile(r"[a-z0-9_-]{1,32}")    # where she said Yes ("ask", or the screen code); designBOT picks the places
 
 
@@ -194,16 +196,20 @@ def confirmed(st, pid: str) -> dict | None:
     return c if isinstance(c, dict) else None
 
 
-def ask_again_days(st) -> int:
-    try:
-        n = int(st.setting(ASK_AGAIN_KEY) or ASK_AGAIN_DAYS)
-    except (TypeError, ValueError):
-        n = ASK_AGAIN_DAYS
-    return max(0, n)
-
-
-def set_ask_again_days(st, days: int) -> None:
-    st.set_setting(ASK_AGAIN_KEY, str(max(0, int(days))))
+def migrate(st) -> list[dict]:
+    """Once: every row P1a sorted for a pattern she never said Yes to goes
+    back to Needs a look (product owner, 2026-11-15). Pearl won't sort those
+    rows again: a later Yes only sorts new matches. Returns what went back."""
+    if st.setting(MIGRATED_KEY):
+        return []
+    log = _log(st)
+    back = [r for r in log if not r.get("undone") and not confirmed(st, r["pattern"])]
+    for r in back:
+        _undo(st, r)
+    if back:
+        _save(st, LOG_KEY, log)
+    st.set_setting(MIGRATED_KEY, datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    return back
 
 
 # ── Sorting ────────────────────────────────────────────────────────────────
@@ -378,30 +384,33 @@ def restart(st, pid: str, records: list[str]) -> None:
 
 # ── Asking first ───────────────────────────────────────────────────────────
 
-def _waiting(st, pid: str, today: str) -> bool:
-    """Not now: still inside the interval before Pearl may ask again."""
-    said = (_state(st).get(pid) or {}).get("not_now")
-    if not said:
-        return False
-    return date.fromisoformat(today) < date.fromisoformat(said) + timedelta(days=ask_again_days(st))
+def _held(st, p: dict) -> bool:
+    """Skipped: never after SKIPS_MAX, else until `need` more agreeing answers."""
+    s = _state(st).get(p["id"]) or {}
+    skips = int(s.get("skips") or 0)
+    if skips >= SKIPS_MAX:
+        return True
+    return bool(skips) and p["count"] < int(s.get("skipped_at") or 0) + p["need"]
 
 
 def pending(st, today: str, txns: list[Transaction] | None = None) -> list[dict]:
-    """The asks: patterns strong enough to sort that she hasn't said Yes to,
-    not stopped, and not inside a Not now. Each says how many rows it already
-    sorted before this rule (they stay, with Undo)."""
+    """The asks (AI-18): patterns strong enough to sort that she hasn't said
+    Yes to, not stopped, and not held by a Skip."""
     txns = st.all_transactions() if txns is None else txns
-    log = _log(st)
+    by_id = {t.fingerprint: t for t in txns}
     out = []
     for pid, p in patterns(st, txns).items():
-        if not p["ready"] or confirmed(st, pid) or _waiting(st, pid, today):
+        if not p["ready"] or confirmed(st, pid) or _held(st, p):
             continue
-        before = [r["txn"] for r in log if r["pattern"] == pid and not r.get("undone")]
-        out.append({"id": pid, "kind": p["kind"], "merchant": p["merchant"], "answer": p["answer"],
-                    "label": label(p), "count": p["count"], "account": p.get("account"),
-                    "joint": p.get("joint"), "rhythm": rhythm(p["days"]), "answered": p["answered"],
-                    "sorted_before": before,
-                    "not_now": (_state(st).get(pid) or {}).get("not_now")})
+        amounts = sorted(round(abs(by_id[i].amount), 2) for i in p["answered"] if i in by_id)
+        out.append({"id": pid, "key": "pat:" + pid, "kind": p["kind"], "merchant": p["merchant"],
+                    "answer": p["answer"], "label": label(p), "count": p["count"], "need": p["need"],
+                    "account": p.get("account"), "joint": p.get("joint"), "rhythm": rhythm(p["days"]),
+                    "answered": p["answered"],
+                    # AI-18: the usual amount, and whether every one was the same.
+                    "amount": amounts[len(amounts) // 2] if amounts else None,
+                    "same_amount": len(set(amounts)) == 1,
+                    "skips": int((_state(st).get(pid) or {}).get("skips") or 0)})
     return sorted(out, key=lambda r: (r["merchant"] or "").lower())
 
 
@@ -418,23 +427,26 @@ def confirm(st, pid: str, today: str, how: str = "ask", txns: list[Transaction] 
     prior = s.get(pid) or {}
     if prior.get("confirmed"):
         return prior["confirmed"]
-    yes = {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "day": today, "how": how}
+    yes = {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "day": today, "how": how,
+           "count": p["count"]}
     before = sorted(t.fingerprint for t in txns if _match(t, {pid: p}) is p)
-    s[pid] = {**{k: v for k, v in prior.items() if k != "not_now"},
+    s[pid] = {**{k: v for k, v in prior.items() if k not in ("skips", "skipped_at")},
               "on": True, "confirmed": yes, "before": before}
     _save(st, STATE_KEY, s)
     return yes
 
 
-def not_now(st, pid: str, today: str) -> bool:
-    """Not now: ask again after ask_again_days(). False when nothing's pending."""
+def skip(st, pid: str) -> dict | None:
+    """Skip on AI-18: ask again after `need` more agreeing answers; after a
+    second Skip, never. None when there's nothing to skip."""
     p = patterns(st).get(pid)
-    if p is None or not p["ready"] or confirmed(st, pid):
-        return False
+    if p is None or not p["ready"] or confirmed(st, pid) or _held(st, p):
+        return None
     s = _state(st)
-    s[pid] = {**(s.get(pid) or {}), "not_now": today}
+    skips = int((s.get(pid) or {}).get("skips") or 0) + 1
+    s[pid] = {**(s.get(pid) or {}), "skips": skips, "skipped_at": p["count"]}
     _save(st, STATE_KEY, s)
-    return True
+    return {"skips": skips, "never": skips >= SKIPS_MAX, "again_after": None if skips >= SKIPS_MAX else p["need"]}
 
 
 # ── What the app shows ─────────────────────────────────────────────────────

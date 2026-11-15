@@ -177,7 +177,7 @@ class TestSortedLists:
         assert [r["merchant"] for r in mine] == ["Corner Gym", "City Parking"]
         assert [r["line"] for r in mine] == ["Fitness · your rule", "Transport · your rule"]
         loblaws = next(r for r in rows if r["merchant"] == "Loblaws")
-        assert loblaws.get("group") is None and rows.index(loblaws) > rows.index(mine[-1])
+        assert loblaws["group"] == "unchecked" and rows.index(loblaws) > rows.index(mine[-1])
 
     def test_her_pay_rule_reads_as_her_rule(self):
         from finance.models import Transaction

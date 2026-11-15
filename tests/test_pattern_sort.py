@@ -297,7 +297,7 @@ def test_rhythm():
 
 
 class TestAskFirst:
-    """AI only detects; she confirms (product owner, 2026-11-15)."""
+    """AI only detects; she confirms (product owner, 2026-11-15; AI-18)."""
 
     def asks(self, c):
         return c.get("/api/pattern-sort/asks").get_json()["asks"]
@@ -308,14 +308,24 @@ class TestAskFirst:
         add(client, tx("NORTHSIDE PANTRY", 61.40, day(1)))
         [ask] = self.asks(client)
         assert ask["kind"] == "category" and ask["answer"] == "Groceries" and ask["count"] == 5
-        assert ask["label"] == "Groceries" and ask["sorted_before"] == [] and ask["not_now"] is None
+        assert ask["label"] == "Groceries" and ask["need"] == 5 and ask["skips"] == 0
+        assert ask["amount"] == 42.0 and ask["same_amount"] is False      # 40..44, the middle one
         assert run(client)["sorted"] == 0
         # Not a learned rule until she says Yes.
         assert client.get("/api/pattern-sort/rules").get_json()["rules"] == []
 
+    def test_the_ask_is_a_quick_sort_question(self, client):
+        farm_boy_history(client)
+        ps.switched_on(client.st)
+        review = client.get("/api/review").get_json()
+        [ask] = review["pattern_asks"]
+        prompt = client.get("/api/quick-sort?all=1").get_json()
+        assert ask["key"] in prompt["keys"] and prompt["count"] == review["count"]
+
     def test_no_asks_while_the_switch_is_off(self, client):
         farm_boy_history(client)
         assert self.asks(client) == []
+        assert client.get("/api/review").get_json()["pattern_asks"] == []
         pid = next(iter(ps.patterns(client.st)))
         assert client.post(f"/api/pattern-sort/asks/{pid}/yes").status_code == 409
 
@@ -324,25 +334,26 @@ class TestAskFirst:
         ps.switched_on(client.st)
         assert self.asks(client) == []
 
-    def test_yes_records_when_and_how_and_sorts_only_new_matches(self, client):
+    def test_yes_records_when_how_and_count_and_sorts_only_new_matches(self, client):
         farm_boy_history(client)
         ps.switched_on(client.st)
-        add(client, tx("NORTHSIDE PANTRY", 61.40, day(1)))      # matched before her Yes
+        add(client, tx("NORTHSIDE PANTRY", 61.40, day(1)))      # waiting in Needs a look
         waiting = [t for t in ids(client, "NORTHSIDE PANTRY")
                    if client.st.get_transaction(t).category_source != "user"
                    and t not in client.st.confirmed_categories()]
         [ask] = self.asks(client)
-        r = client.post(f"/api/pattern-sort/asks/{ask['id']}/yes", json={"how": "ai01"}).get_json()
-        assert r["confirmed"]["how"] == "ai01" and r["confirmed"]["day"] == TODAY.isoformat()
-        assert r["confirmed"]["at"] and r["rule"]["confirmed"] == r["confirmed"]
+        r = client.post(f"/api/pattern-sort/asks/{ask['id']}/yes", json={"how": "ai18"}).get_json()
+        assert r["confirmed"]["how"] == "ai18" and r["confirmed"]["day"] == TODAY.isoformat()
+        assert r["confirmed"]["count"] == 5 and r["confirmed"]["at"]
+        assert r["rule"]["confirmed"] == r["confirmed"]
         assert self.asks(client) == []
-        assert run(client)["sorted"] == 0                        # the one she hadn't sorted stays hers
+        assert run(client)["sorted"] == 0                        # the Yes sorts nothing already waiting
         assert client.st.get_transaction(waiting[0]).category_source != "pattern"
         add(client, tx("NORTHSIDE PANTRY", 70.00, day(0)))
         body = run(client)
         assert body["sorted"] == 1 and body["rows"][0]["txn"] not in waiting
         detail = client.get(f"/api/pattern-sort/{body['rows'][0]['id']}").get_json()
-        assert detail["learned"] is True and detail["confirmed"]["how"] == "ai01"
+        assert detail["learned"] is True and detail["confirmed"]["count"] == 5
 
     def test_a_strange_how_is_kept_as_ask(self, client):
         farm_boy_history(client)
@@ -351,49 +362,57 @@ class TestAskFirst:
         r = client.post(f"/api/pattern-sort/asks/{ask['id']}/yes", json={"how": "<script>"}).get_json()
         assert r["confirmed"]["how"] == "ask"
 
-    def test_yes_to_nothing(self, client):
+    def test_yes_or_skip_to_nothing(self, client):
         ps.switched_on(client.st)
         assert client.post("/api/pattern-sort/asks/category:nope/yes").status_code == 404
-        assert client.post("/api/pattern-sort/asks/category:nope/not-now").status_code == 404
+        assert client.post("/api/pattern-sort/asks/category:nope/skip").status_code == 404
 
-    def test_not_now_waits_the_interval_then_asks_again(self, client, monkeypatch):
+    def more(self, c, n, start):
+        rows = [tx("NORTHSIDE PANTRY", 30.0 + start + i, day(20 - start - i)) for i in range(n)]
+        add(c, *rows)
+        for t in c.st.all_transactions():
+            if t.description == "NORTHSIDE PANTRY" and t.category_source != "user":
+                answer(c, t.fingerprint, "Groceries")
+
+    def test_skip_asks_again_after_n_more_then_never(self, client):
         farm_boy_history(client)
         ps.switched_on(client.st)
         [ask] = self.asks(client)
-        r = client.post(f"/api/pattern-sort/asks/{ask['id']}/not-now").get_json()
-        assert r["ok"] and r["ask_again_days"] == ps.ASK_AGAIN_DAYS
+        r = client.post(f"/api/pattern-sort/asks/{ask['id']}/skip").get_json()
+        assert r == {"ok": True, "skips": 1, "never": False, "again_after": 5}
         assert self.asks(client) == []
-        add(client, tx("NORTHSIDE PANTRY", 61.40, day(0)))
-        assert run(client)["sorted"] == 0
-        ps.set_ask_again_days(client.st, 7)
-        from finance import api as core
-        later = (TODAY + timedelta(days=7)).isoformat()
-        monkeypatch.setattr(core, "_today_iso", lambda: later)
+        self.more(client, 4, 0)
+        assert self.asks(client) == []                           # 4 more isn't 5
+        self.more(client, 1, 4)
         [again] = self.asks(client)
-        assert again["id"] == ask["id"] and again["not_now"] == TODAY.isoformat()
-        monkeypatch.setattr(core, "_today_iso", lambda: (TODAY + timedelta(days=6)).isoformat())
-        assert self.asks(client) == []
+        assert again["id"] == ask["id"] and again["count"] == 10 and again["skips"] == 1
+        r = client.post(f"/api/pattern-sort/asks/{ask['id']}/skip").get_json()
+        assert r == {"ok": True, "skips": 2, "never": True, "again_after": None}
+        self.more(client, 6, 5)
+        assert self.asks(client) == []                           # never again
+        assert client.post(f"/api/pattern-sort/asks/{ask['id']}/skip").status_code == 404
 
-    def test_the_interval_is_configurable(self, client):
-        assert ps.ask_again_days(client.st) == ps.ASK_AGAIN_DAYS
-        ps.set_ask_again_days(client.st, 14)
-        assert client.get("/api/pattern-sort/asks").get_json()["ask_again_days"] == 14
-        client.st.set_setting(ps.ASK_AGAIN_KEY, "soon")
-        assert ps.ask_again_days(client.st) == ps.ASK_AGAIN_DAYS
+    def test_forget_makes_it_askable_again(self, client):
+        """Forget clears her Yes and any Skips: relearned from new answers, asked again."""
+        farm_boy_history(client)
+        on(client)
+        pid = client.get("/api/pattern-sort/rules").get_json()["rules"][0]["id"]
+        client.post(f"/api/pattern-sort/rules/{pid}/forget")
+        assert ps.confirmed(client.st, pid) is None and self.asks(client) == []
+        s = ps._state(client.st)
+        s[pid]["forgot"] = day(30)                              # forgotten a while ago
+        ps._save(client.st, ps.STATE_KEY, s)
+        self.more(client, 5, 0)
+        [ask] = self.asks(client)
+        assert ask["id"] == pid and ask["count"] == 5
 
     def test_joint_asks_after_eight(self, client):
         TestJoint().history(client, 8)
         ps.switched_on(client.st)
         [ask] = self.asks(client)
         assert ask["kind"] == "joint" and ask["label"] == "Ana’s share" and ask["count"] == 8
-
-    def test_forget_asks_again(self, client):
-        """Forget takes her Yes with the rule: relearned, it's asked about again."""
-        farm_boy_history(client)
-        on(client)
-        pid = client.get("/api/pattern-sort/rules").get_json()["rules"][0]["id"]
-        client.post(f"/api/pattern-sort/rules/{pid}/forget")
-        assert ps.confirmed(client.st, pid) is None
+        assert ask["need"] == 8 and ask["amount"] == 400.0 and ask["same_amount"] is True
+        assert ask["rhythm"] == "about every 2 weeks"
 
     def test_stops_undo_keeps_her_yes(self, client):
         farm_boy_history(client)
@@ -410,13 +429,14 @@ class TestAskFirst:
 
 
 class TestMigration:
-    """Patterns P1a sorted before it asked: pending again; their rows stay sorted, with Undo."""
+    """Rows P1a sorted before it asked go back to Needs a look (product owner, 2026-11-15)."""
 
     def sorted_before_the_rule(self, c):
         farm_boy_history(c)
         ps.switched_on(c.st)
         add(c, *[tx("NORTHSIDE PANTRY", 61.40 + i, day(1)) for i in range(2)])
         # What #341 did: no Yes in the state, rows sorted by the pattern.
+        c.st.set_setting(ps.MIGRATED_KEY, "")
         pid = next(iter(ps.patterns(c.st)))
         p = ps.patterns(c.st)[pid]
         log = []
@@ -426,25 +446,29 @@ class TestMigration:
         ps._save(c.st, ps.LOG_KEY, log)
         return pid, log
 
-    def test_pending_with_its_rows_still_sorted_and_undoable(self, client):
+    def test_rows_go_back_to_needs_a_look_once(self, client):
         pid, log = self.sorted_before_the_rule(client)
-        [ask] = client.get("/api/pattern-sort/asks").get_json()["asks"]
-        assert ask["id"] == pid and sorted(ask["sorted_before"]) == sorted(r["txn"] for r in log)
-        assert client.get("/api/pattern-sort/rules").get_json()["rules"] == []
-        rows = client.get("/api/review/sorted?view=pearl").get_json()["rows"]
-        assert {r["record"] for r in rows if r.get("record")} == {r["id"] for r in log}
-        detail = client.get(f"/api/pattern-sort/{log[0]['id']}").get_json()
-        assert detail["learned"] is False and detail["confirmed"] is None
-        assert client.post(f"/api/pattern-sort/{log[0]['id']}/undo").status_code == 200
-        # Stop still undoes the rest.
-        assert client.post(f"/api/pattern-sort/rules/{pid}/stop").get_json()["undone"] == 1
+        review = client.get("/api/review").get_json()
+        back = {r["txn"] for r in log}
+        assert back <= {i["txn"]["id"] for i in review["unsure_category"]}
+        assert all(client.st.get_transaction(t).category_source != "pattern" for t in back)
         assert client.get("/api/pattern-sort").get_json()["rows"] == []
+        assert [a["id"] for a in review["pattern_asks"]] == [pid]
+        assert ps.migrate(client.st) == []                     # once
 
-    def test_it_sorts_nothing_more_until_yes(self, client):
-        pid, _ = self.sorted_before_the_rule(client)
-        add(client, tx("NORTHSIDE PANTRY", 80.0, day(0)))
-        assert run(client)["sorted"] == 0
+    def test_a_confirmed_patterns_rows_stay(self, client):
+        pid, log = self.sorted_before_the_rule(client)
+        s = ps._state(client.st)
+        s[pid] = {"on": True, "confirmed": {"at": "x", "day": TODAY.isoformat(), "how": "ask", "count": 5}}
+        ps._save(client.st, ps.STATE_KEY, s)
+        assert ps.migrate(client.st) == []
+        assert len(client.get("/api/pattern-sort").get_json()["rows"]) == 2
+
+    def test_a_yes_after_migration_sorts_only_new_ones(self, client):
+        pid, log = self.sorted_before_the_rule(client)
+        run(client)                                            # migrates
         client.post(f"/api/pattern-sort/asks/{pid}/yes")
+        assert run(client)["sorted"] == 0                      # the ones that went back stay hers
         add(client, tx("NORTHSIDE PANTRY", 81.0, day(0)))
         body = run(client)
         assert body["sorted"] == 1 and client.st.get_transaction(body["rows"][0]["txn"]).amount == 81.0
