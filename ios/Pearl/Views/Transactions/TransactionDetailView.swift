@@ -970,7 +970,8 @@ struct TransactionDetailView: View {
         } else if !t.inflow && t.splitsMyPart {
             lead = "Your part \(Format.amount(t.splitBase))"
         }
-        return [lead, when, t.account].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+        // TR-06 (1327:6382): "Thu, Mar 5 · TD Visa ••9021 · Trip to Montréal".
+        return [lead, when, t.account, t.trip?.name].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     // MARK: What it counts as
@@ -1976,6 +1977,15 @@ struct TransactionDetailView: View {
                 }
             }
             .buttonStyle(.plain)
+            if let trip = t.trip {
+                // TR-06 (1327:6382): the trip it's in, which opens the trip's page (TR-02).
+                RowSeparator()
+                NavigationLink { TripPage(id: trip.id) } label: {
+                    row(title: "\(trip.name) · \(Format.span(trip.start, trip.end))", chevron: true, icon: "tag")
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens the trip")
+            }
             // A refund's tags are its purchase's (T-41), and income has none (T-37).
             if Features.tags && t.refundOf == nil && !isIncome {
                 RowSeparator()
