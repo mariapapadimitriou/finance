@@ -91,7 +91,7 @@ struct LivePearlBrain: PearlBrain {
         She says what she did (went out, bought, paid): tellPearl.
         She asks what she spent: spending.
         Subscriptions: subscriptions. Trips: trips.\(plans ? " A plan or budget for a category: plan." : "")
-        Reply in one or two short, plain sentences. Say "Allowance", never "safe to spend". Don't give advice.
+        Reply in one or two short, plain sentences. Call what she has left to spend her "Allowance", and use no other name for it. Don't give advice.
         """
     }
 
