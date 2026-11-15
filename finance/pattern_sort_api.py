@@ -12,6 +12,7 @@
 * GET    /api/pattern-sort/asks                AI-18: patterns Pearl found, asked about first (pending)
 * POST   /api/pattern-sort/asks/<id>/yes       Yes {how}: Pearl may sort new ones from now on
 * POST   /api/pattern-sort/asks/<id>/skip      Skip: ask again after n more answers; twice, never
+* POST   /api/pattern-sort/asks/<id>/undo      AI-18y's Undo: takes the Yes back
 """
 
 from __future__ import annotations
@@ -150,6 +151,16 @@ def pattern_sort_yes(pid: str):
         return jsonify({"error": "Nothing to say yes to."}), 404
     rule = next((r for r in ps.learned(st) if r["id"] == pid), None)
     return jsonify({"ok": True, "confirmed": yes, "rule": rule})
+
+
+@bp.post("/pattern-sort/asks/<path:pid>/undo")
+def pattern_sort_unyes(pid: str):
+    """AI-18y's Undo: takes the Yes back; Pearl may ask about it again."""
+    st = store()
+    if not ps.unconfirm(st, pid):
+        return jsonify({"error": "Nothing to undo."}), 404
+    core._reclassify(st)
+    return jsonify({"ok": True})
 
 
 @bp.post("/pattern-sort/asks/<path:pid>/skip")

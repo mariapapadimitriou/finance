@@ -600,6 +600,17 @@ struct Transaction: Decodable, Identifiable, Hashable {
     let repaidBy: [Brief]
     @Boxed var transfer: Transfer?
     @Boxed var repaysCharge: Brief?
+    /// TR-05 / TR-06: the trip it's in ("Shopping · Trip to Montréal"),
+    /// boxed so Transaction stays small (Boxed.swift).
+    @Boxed var trip: TripRef?
+
+    /// A trip, as a row names it (finance/api.py `_with_trip`).
+    struct TripRef: Decodable, Hashable {
+        let id: String
+        let name: String
+        let start: String
+        let end: String
+    }
 
     struct Chip: Decodable, Hashable {
         let label: String?
@@ -922,6 +933,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         case leftToSort = "left_to_sort"
         case repaidBy = "repaid_by"
         case repaysCharge = "repays_charge"
+        case trip
     }
 
     init(from decoder: Decoder) throws {
@@ -984,6 +996,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         repaidBy = opt([Brief].self, .repaidBy) ?? []
         transfer = opt(Transfer.self, .transfer)
         repaysCharge = opt(Brief.self, .repaysCharge)
+        trip = opt(TripRef.self, .trip)
     }
 
     /// The name to show: the merchant, else the bank's description.
@@ -1015,6 +1028,8 @@ struct Transaction: Decodable, Identifiable, Hashable {
             // and SwiftUI skips a redraw when the new value compares equal.
             // A split saved, closed or paid back changes only these.
             && a.split == b.split && a.splitting == b.splitting
+            // TR-05: made into a trip, renamed, or taken out of one.
+            && a.trip == b.trip
     }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
@@ -1343,6 +1358,8 @@ struct Review: Decodable {
     let threePayMonth: [PayMonth]
     /// AI-18: patterns Pearl asks about once, before it sorts any (Quick sort).
     var patternAsks: [PatternAsk] = []
+    /// TR-01: likely trips Pearl asks about, one card each (Quick sort).
+    var tripAsks: [TripAsk] = []
     /// Answers given today, and rows Pearl sorted without asking.
     var sortedToday: Int = 0
     var pearlSorted: Int = 0
@@ -1373,6 +1390,7 @@ struct Review: Decodable {
         case sortedToday = "sorted_today"
         case pearlSorted = "pearl_sorted"
         case patternAsks = "pattern_asks"
+        case tripAsks = "trip_asks"
     }
 
     init(from decoder: Decoder) throws {
@@ -1395,6 +1413,8 @@ struct Review: Decodable {
         sortedToday = (try? c.decodeIfPresent(Int.self, forKey: .sortedToday)) ?? 0
         pearlSorted = (try? c.decodeIfPresent(Int.self, forKey: .pearlSorted)) ?? 0
         patternAsks = (try? c.decodeIfPresent([Lenient<PatternAsk>].self, forKey: .patternAsks))?
+            .compactMap { $0.value } ?? []
+        tripAsks = (try? c.decodeIfPresent([Lenient<TripAsk>].self, forKey: .tripAsks))?
             .compactMap { $0.value } ?? []
         threePayMonth = (try? c.decodeIfPresent([Lenient<PayMonth>].self, forKey: .threePayMonth))?
             .compactMap { $0.value } ?? []
@@ -1751,25 +1771,150 @@ struct PatternAsk: Decodable, Identifiable, Hashable {
     var account: String? = nil
     var joint: String? = nil
     var rhythm: String? = nil
+    /// The usual (median) amount.
     var amount: Double? = nil
+    /// AI-18b: the smallest and largest, and whether every one is within $1.
+    var low: Double? = nil
+    var high: Double? = nil
+    var sameAmount: Bool? = nil
+    /// AI-18: every joint deposit was an e-Transfer.
+    var etransfers: Bool? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case id, kind, merchant, answer, label, count, need, account, joint, rhythm, amount, low, high, etransfers
+        case sameAmount = "same_amount"
+    }
 
     var isJoint: Bool { kind == "joint" }
     var name: String { merchant ?? answer }
+    var firstName: String { answer.split(separator: " ").first.map(String.init) ?? answer }
 
-    /// "e-Transfers from Ana Ruiz", "Farm Boy".
-    var who: String { isJoint ? "e-Transfers from \(name)" : name }
-    /// "Each one · into Joint · every 2 weeks".
+    /// AI-18: "e-Transfers from Ana Ruiz" only when every one was; else
+    /// "Deposits from Ana Ruiz". AI-18b: "Purchases at Farm Boy".
+    var who: String {
+        isJoint ? "\(etransfers == true ? "e-Transfers" : "Deposits") from \(name)" : "Purchases at \(name)"
+    }
+    /// AI-18b: the amounts vary by more than $1, so the card shows their range.
+    var varies: Bool {
+        guard sameAmount != true, let low = low, let high = high else { return false }
+        return high - low > 1
+    }
+    /// "$400.00", or AI-18b's "$12–$48" (whole dollars).
+    var shownAmount: String? {
+        if varies, let low = low, let high = high { return Format.whole(low) + "\u{2013}" + Format.whole(high) }
+        return amount.map(Format.amount)
+    }
+    /// "Each one · into Joint · every 2 weeks"; AI-18b "Usually $27 · about every week".
     var each: String {
-        (["Each one", isJoint ? "into \(joint ?? account ?? "the joint account")" : nil,
-          rhythm.map { $0.replacingOccurrences(of: "about ", with: "") }] as [String?])
+        if varies {
+            return ([amount.map { "Usually \(Format.whole($0))" }, rhythm] as [String?])
+                .compactMap { $0 }.joined(separator: " · ")
+        }
+        return (["Each one", isJoint ? "into \(joint ?? account ?? "the joint account")" : nil,
+                 rhythm.map { $0.replacingOccurrences(of: "about ", with: "") }] as [String?])
             .compactMap { $0 }.joined(separator: " · ")
     }
-    /// "Always Ana's share?", "Always Groceries at Farm Boy?".
-    var question: String { isJoint ? "Always \(label)?" : "Always \(label) at \(name)?" }
-    /// "You sorted the last 8 as Ana's share."
-    var because: String { "You sorted the last \(count) as \(label)." }
+    /// "Always Ana's share?", AI-18b "Always Groceries?".
+    var question: String { "Always \(label)?" }
+    /// "You sorted the last 8 as Ana's share."; AI-18b "You sorted the last 5
+    /// at Farm Boy as Groceries."
+    var because: String {
+        isJoint ? "You sorted the last \(count) as \(label)." : "You sorted the last \(count) at \(name) as \(label)."
+    }
     /// "Yes sorts new ones for you. Skip asks again after 8 more."
     var yesSkip: String { "Yes sorts new ones for you. Skip asks again after \(need) more." }
+    /// AI-18y's toast names it as AI-06 does (LearnedRule.title): "Ana's
+    /// deposits", "Farm Boy".
+    var title: String {
+        guard isJoint else { return name }
+        return (firstName.lowercased().hasSuffix("s") ? "\(firstName)\u{2019}" : "\(firstName)\u{2019}s") + " deposits"
+    }
+}
+
+/// An amount in one billing currency. Pearl converts nothing, so a trip
+/// across currencies has one of these for each (finance/trips.py).
+struct MoneyTotal: Decodable, Hashable {
+    let currency: String
+    let amount: Double
+}
+
+extension Array where Element == MoneyTotal {
+    /// "$1,284.60"; with more than one currency "$1,240 CAD + $310 USD" (TR-02m).
+    var shown: String { Format.totals(map { ($0.currency, $0.amount) }) }
+    var mixed: Bool { count > 1 }
+}
+
+/// TR-01: a likely trip Pearl asks about, from GET /api/review's `trip_asks`.
+struct TripAsk: Decodable, Identifiable, Hashable {
+    /// "2026-03-04:2026-03-09".
+    let id: String
+    let key: String
+    let ids: [String]
+    let start: String
+    let end: String
+    let days: Int
+    var place: String? = nil
+    var flight: Bool? = nil
+    var hotel: Bool? = nil
+    var fees: Bool? = nil
+    /// "Trip to Montréal", or "" with no place.
+    var name: String? = nil
+    let count: Int
+    let totals: [MoneyTotal]
+    var monthNames: [String]? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case id, key, ids, start, end, days, place, flight, hotel, fees, name, count, totals
+        case monthNames = "month_names"
+    }
+
+    /// "Mar 4–9 · 23 transactions".
+    var line: String { "\(Format.span(start, end)) · \(count) transaction\(count == 1 ? "" : "s")" }
+
+    /// TR-01's caption: "A flight, a hotel, then 5 days in Montréal." With
+    /// no place it ends "then 5 days." (engBOT's wording, no frame for it).
+    var story: String {
+        let lead = [flight == true ? "a flight" : nil, hotel == true ? "a hotel" : nil].compactMap { $0 }
+        let stay = "\(days) day\(days == 1 ? "" : "s")" + (place.map { " in \($0)" } ?? "")
+        let text = lead.isEmpty ? stay : lead.joined(separator: ", ") + ", then " + stay
+        return text.prefix(1).uppercased() + text.dropFirst() + "."
+    }
+
+    /// "March", "March and April".
+    var months: String { Format.andList(monthNames ?? [Format.monthName(String(start.prefix(7)))]) }
+}
+
+/// A trip (finance/trips.py `summary`): its name, rows, dates, totals per
+/// currency, the months its rows count in, and its categories (TR-02–TR-04).
+struct Trip: Decodable, Identifiable, Hashable {
+    let id: String
+    let name: String
+    let ids: [String]
+    let start: String
+    let end: String
+    var place: String? = nil
+    /// "pearl" (she said yes to TR-01) or "you" (Select › Make a trip).
+    var by: String? = nil
+    var day: String? = nil
+    let count: Int
+    let totals: [MoneyTotal]
+    var monthNames: [String]? = nil
+    var categories: [Category]? = nil
+
+    struct Category: Decodable, Hashable {
+        let category: String
+        let count: Int
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, ids, start, end, place, by, day, count, totals, categories
+        case monthNames = "month_names"
+    }
+
+    /// "Mar 4–9 · 23 transactions".
+    var line: String { "\(Format.span(start, end)) · \(count) transaction\(count == 1 ? "" : "s")" }
+    /// "March", "March and April".
+    var months: String { Format.andList(monthNames ?? [Format.monthName(String(start.prefix(7)))]) }
 }
 
 /// A row in Sorted today or Pearl sorted: who, how much, and why it's sorted.

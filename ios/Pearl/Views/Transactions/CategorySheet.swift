@@ -380,6 +380,9 @@ struct CaseTile: Identifiable, Hashable {
         CaseTile(key: "not_mine", label: "Not mine", symbol: "person.crop.circle.badge.xmark"),
     ]
 
+    /// TR-07: Leave out, under Mark as… when Confirm takes its place on Select's bar.
+    static let leaveOut = CaseTile(key: "leave_out", label: "Leave out", symbol: "eye.slash")
+
     /// T-12: money in that isn't income.
     static let notIncome: [CaseTile] = [
         CaseTile(key: "paid_back", label: "Paying me back", symbol: "person.2"),

@@ -239,6 +239,32 @@ def reason(state: str, day: int, st_by_day: dict[int, str], rows: list[dict]) ->
     return "Spending was still ahead of your usual pace at the end of this day."
 
 
+def trip_spans(st, first: str, last: str, month: str) -> list[dict]:
+    """TR-10: each trip that touches the grid, with its whole span, the part
+    on the grid (`first`, `last`) and the days of this month it covers."""
+    from . import trips
+    out = []
+    for t in sorted(trips.all_trips(st).values(), key=lambda t: t["start"]):
+        if t["start"] > last or t["end"] < first:
+            continue
+        a, b = max(t["start"], first), min(t["end"], last)
+        span = [date.fromisoformat(a) + timedelta(days=i)
+                for i in range((date.fromisoformat(b) - date.fromisoformat(a)).days + 1)]
+        out.append({"id": t["id"], "name": t["name"], "start": t["start"], "end": t["end"],
+                    "first": a, "last": b, "totals": trips.summary(st, t)["totals"],
+                    "days": [d.day for d in span if d.strftime("%Y-%m") == month]})
+    return out
+
+
+def trips_on(st, iso: str) -> list[dict]:
+    """TR-10b: the trips a day is part of, for the row that starts its list."""
+    from . import trips
+    return [{"id": t["id"], "name": t["name"], "start": t["start"], "end": t["end"],
+             "totals": trips.summary(st, t)["totals"]}
+            for t in sorted(trips.all_trips(st).values(), key=lambda t: t["start"])
+            if t["start"] <= iso <= t["end"]]
+
+
 def month_view(st, transactions: list[Transaction], today: date, month: str,
                sts: dict | None = None) -> dict:
     from . import api as core
@@ -280,6 +306,7 @@ def month_view(st, transactions: list[Transaction], today: date, month: str,
     from . import ranges as sorted_ranges
     every = sorted_ranges.listed(st, transactions)
     return {
+        "trips": trip_spans(st, grid_start.isoformat(), grid_end.isoformat(), month),
         "ranges": every,
         "bands": [r for r in every
                   if r["first"] <= grid_end.isoformat() and r["last"] >= grid_start.isoformat()],
@@ -323,6 +350,7 @@ def day_view(st, transactions: list[Transaction], today: date, iso: str,
         due = [i for i in due_items(st, transactions, today, sts, date.fromisoformat(iso))
                if i["date"] == iso]
     return {
+        "trips": trips_on(st, iso),
         "date": iso, "label": long_day(iso), "state": state,
         "reason": reason(state, day, st_by_day, rows),
         "spent": rows, "spent_total": round(sum(r["amount"] for r in rows), 2),

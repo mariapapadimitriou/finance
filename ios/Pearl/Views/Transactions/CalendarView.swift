@@ -8,10 +8,25 @@ struct CalendarMonth: Decodable {
     let label: String
     let cells: [Cell]
     let bands: [SortedRange]
+    /// TR-10: the trips that touch the grid (finance/calendar_view.py `trip_spans`).
+    let trips: [Trip]
     let prev: Step?
     let next: Step?
 
     struct Step: Decodable { let month: String }
+
+    /// A trip on the month: its whole span, and the part of it on the grid.
+    struct Trip: Decodable, Identifiable, Hashable {
+        let id: String
+        let name: String
+        let start: String
+        let end: String
+        let first: String
+        let last: String
+        let totals: [MoneyTotal]
+
+        func contains(_ day: String) -> Bool { day >= start && day <= end }
+    }
 
     struct Cell: Decodable, Identifiable, Hashable {
         let date: String
@@ -29,12 +44,13 @@ struct CalendarMonth: Decodable {
     }
 
     init(from decoder: Decoder) throws {
-        enum Keys: String, CodingKey { case month, label, cells, bands, prev, next }
+        enum Keys: String, CodingKey { case month, label, cells, bands, trips, prev, next }
         let c = try decoder.container(keyedBy: Keys.self)
         month = try c.decode(String.self, forKey: .month)
         label = (try? c.decode(String.self, forKey: .label)) ?? month
         cells = (try? c.decode([Lenient<Cell>].self, forKey: .cells))?.compactMap { $0.value } ?? []
         bands = (try? c.decode([Lenient<SortedRange>].self, forKey: .bands))?.compactMap { $0.value } ?? []
+        trips = (try? c.decode([Lenient<Trip>].self, forKey: .trips))?.compactMap { $0.value } ?? []
         prev = try? c.decodeIfPresent(Step.self, forKey: .prev)
         next = try? c.decodeIfPresent(Step.self, forKey: .next)
     }
@@ -75,6 +91,16 @@ struct CalendarDay: Decodable {
     let spent: [Spent]
     let spentTotal: Double?
     let due: [Due]
+    /// TR-10b: the trips this day is part of (finance/calendar_view.py `trips_on`).
+    var trips: [DayTrip] = []
+
+    struct DayTrip: Decodable, Hashable {
+        let id: String
+        let name: String
+        let start: String
+        let end: String
+        let totals: [MoneyTotal]
+    }
 
     struct Spent: Decodable, Hashable {
         let merchant: String
@@ -84,8 +110,19 @@ struct CalendarDay: Decodable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case label, reason, past, spent, due
+        case label, reason, past, spent, due, trips
         case spentTotal = "spent_total"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        label = try c.decode(String.self, forKey: .label)
+        reason = try c.decodeIfPresent(String.self, forKey: .reason)
+        past = try c.decodeIfPresent(Bool.self, forKey: .past)
+        spent = try c.decode([Spent].self, forKey: .spent)
+        spentTotal = try c.decodeIfPresent(Double.self, forKey: .spentTotal)
+        due = try c.decode([Due].self, forKey: .due)
+        trips = (try? c.decodeIfPresent([Lenient<DayTrip>].self, forKey: .trips))?.compactMap { $0.value } ?? []
     }
 }
 
@@ -188,6 +225,7 @@ struct CalendarCard: View {
                 Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
             }
             legend
+            tripsThisMonth
             comingUp
             shownDayList
             sortedTogether
@@ -288,6 +326,8 @@ struct CalendarCard: View {
                 HStack(spacing: 6) {
                     ForEach(row) { cell in dayCell(cell) }
                 }
+                // TR-10: each trip's band in the 6 pt gap under its days.
+                .overlay(alignment: .bottomLeading) { tripBands(row) }
             }
         }
     }
@@ -359,7 +399,81 @@ struct CalendarCard: View {
         }
         if !cell.due.isEmpty { parts.append("\(cell.due.count) due") }
         if let band = band { parts.append("sorted together as \(band.name ?? band.category)") }
+        // TR-10: "…, part of Trip to Montréal".
+        for trip in (data?.trips ?? []) where trip.contains(cell.date) { parts.append("part of \(trip.name)") }
         return parts.joined(separator: ", ")
+    }
+
+    // MARK: Trips (TR-10, TR-10b)
+
+    /// TR-10 (1339:8555) / TR-10b (1339:9245): a 6 pt Nacre band under a
+    /// trip's days in this week, in the gap below the row, so it never
+    /// covers a number or a mark. Rounded where the trip starts and ends,
+    /// flat and running to the edge where it carries on into the next week
+    /// or month, or in from the last. Two trips close together are two
+    /// bands. Not a tap target: the day or the Trips card opens the trip.
+    private func tripBands(_ row: [CalendarMonth.Cell]) -> some View {
+        GeometryReader { g in
+            let gap: CGFloat = 6
+            let w = (g.size.width - gap * 6) / 7
+            ForEach(data?.trips ?? []) { trip in
+                let cols = row.indices.filter { row[$0].inMonth && trip.contains(row[$0].date) }
+                if let a = cols.first, let b = cols.last {
+                    let roundStart = row[a].date == trip.start
+                    let roundEnd = row[b].date == trip.end
+                    let x0 = roundStart ? CGFloat(a) * (w + gap) : 0
+                    let x1 = roundEnd ? CGFloat(b) * (w + gap) + w : g.size.width
+                    TripBandShape(roundStart: roundStart, roundEnd: roundEnd)
+                        .fill(LinearGradient(colors: [Color(hex: 0xFFD6E0), Color(hex: 0xE3D4FF), Color(hex: 0xCFF3EE)],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: max(x1 - x0, 6), height: 6)
+                        .offset(x: x0, y: g.size.height)
+                }
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    /// TR-10: "Trips this month", one row a trip, each opening its page (TR-02).
+    @ViewBuilder private var tripsThisMonth: some View {
+        let month = data?.month ?? self.month
+        let trips = (data?.trips ?? []).filter { String($0.start.prefix(7)) <= month && String($0.end.prefix(7)) >= month }
+        if !trips.isEmpty {
+            GlassCard {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Trips this month").font(Pearl.heading(22, relativeTo: .title2)).foregroundColor(Pearl.ink)
+                        .accessibilityAddTraits(.isHeader)
+                        .padding(.bottom, 8)
+                    ForEach(Array(trips.enumerated()), id: \.element.id) { i, trip in
+                        if i > 0 { Rectangle().fill(Pearl.border).frame(height: 1) }
+                        NavigationLink { TripPage(id: trip.id) } label: {
+                            tripLine(lead: Format.span(trip.start, trip.end), name: trip.name, totals: trip.totals)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Opens the trip")
+                    }
+                }
+                .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 8)
+            }
+        }
+    }
+
+    /// "Mar 4–9   Trip to Montréal   −$1,284.60"; TR-10b's day row
+    /// "Trip   Trip to Lisbon · Oct 29 – Nov 2   −$2,140.00".
+    private func tripLine(lead: String, name: String, totals: [MoneyTotal]) -> some View {
+        HStack(spacing: 12) {
+            Text(lead).foregroundColor(Pearl.muted).fixedSize()
+            Text(name).foregroundColor(Pearl.ink).frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            // Spent, so signed as a row is; in two currencies each is its own (TR-02m).
+            Text(totals.mixed ? totals.shown : "\u{2212}" + totals.shown)
+                .foregroundColor(Pearl.ink).monospacedDigit().pearlAmountFit()
+        }
+        .font(Nacre.body)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: Under the grid (T-49, T-68)
@@ -399,6 +513,21 @@ struct CalendarCard: View {
             Text("\(Format.weekdayDay(day).uppercased())\(d.spentTotal.map { " · \(Format.whole($0)) SPENT" } ?? "")\(pace)")
                 .font(Nacre.caption1).foregroundColor(Pearl.ink).padding(.leading, 16).padding(.top, 4)
                 .accessibilityAddTraits(.isHeader)
+            if !d.trips.isEmpty {
+                // TR-10b (1339:9245): a day inside a trip starts with the trip, which opens TR-02.
+                GlassCard {
+                    ForEach(Array(d.trips.enumerated()), id: \.element.id) { i, trip in
+                        if i > 0 { RowSeparator() }
+                        NavigationLink { TripPage(id: trip.id) } label: {
+                            tripLine(lead: "Trip", name: "\(trip.name) · \(Format.span(trip.start, trip.end))",
+                                     totals: trip.totals)
+                                .padding(.horizontal, 16)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Opens the trip")
+                    }
+                }
+            }
             if d.spent.isEmpty {
                 ProfileNote(d.past == false ? "Nothing spent yet." : "Nothing was spent.")
             } else {
@@ -464,6 +593,7 @@ struct CalendarCard: View {
     }
 
     private var legend: some View {
+        VStack(spacing: 2) {
         HStack(spacing: 14) {
             Label { Text("Over your usual pace") } icon: {
                 Image(systemName: "triangle.fill").font(.system(size: 7)).foregroundColor(Pearl.moneyOut.opacity(0.8))
@@ -476,6 +606,10 @@ struct CalendarCard: View {
         .font(Nacre.footnote).foregroundColor(Pearl.ink)
         .labelStyle(TightLabel())
         .frame(maxWidth: .infinity)
+        // TR-10: the band's line, under the rest; the dashed outline still means days sorted together.
+        Text("The band under days: a trip").font(Nacre.footnote).foregroundColor(Pearl.ink)
+            .frame(maxWidth: .infinity)
+        }
         .accessibilityElement(children: .combine)
     }
 
@@ -855,5 +989,30 @@ extension Array {
     /// [1…14] into rows of 7.
     func chunked(_ size: Int) -> [[Element]] {
         stride(from: 0, to: count, by: size).map { Array(self[$0..<Swift.min($0 + size, count)]) }
+    }
+}
+
+/// TR-10: a trip band's shape, rounded (3 pt) only at the trip's own start
+/// and end; flat where it carries on (iOS 16 has no UnevenRoundedRectangle).
+struct TripBandShape: Shape {
+    let roundStart: Bool
+    let roundEnd: Bool
+
+    func path(in r: CGRect) -> Path {
+        let rad = min(3, r.height / 2)
+        let a = roundStart ? rad : 0
+        let b = roundEnd ? rad : 0
+        var p = Path()
+        p.move(to: CGPoint(x: r.minX + a, y: r.minY))
+        p.addLine(to: CGPoint(x: r.maxX - b, y: r.minY))
+        if b > 0 { p.addArc(tangent1End: CGPoint(x: r.maxX, y: r.minY), tangent2End: CGPoint(x: r.maxX, y: r.maxY), radius: b) }
+        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY - b))
+        if b > 0 { p.addArc(tangent1End: CGPoint(x: r.maxX, y: r.maxY), tangent2End: CGPoint(x: r.minX, y: r.maxY), radius: b) }
+        p.addLine(to: CGPoint(x: r.minX + a, y: r.maxY))
+        if a > 0 { p.addArc(tangent1End: CGPoint(x: r.minX, y: r.maxY), tangent2End: CGPoint(x: r.minX, y: r.minY), radius: a) }
+        p.addLine(to: CGPoint(x: r.minX, y: r.minY + a))
+        if a > 0 { p.addArc(tangent1End: CGPoint(x: r.minX, y: r.minY), tangent2End: CGPoint(x: r.maxX, y: r.minY), radius: a) }
+        p.closeSubpath()
+        return p
     }
 }

@@ -407,9 +407,14 @@ def pending(st, today: str, txns: list[Transaction] | None = None) -> list[dict]
                     "answer": p["answer"], "label": label(p), "count": p["count"], "need": p["need"],
                     "account": p.get("account"), "joint": p.get("joint"), "rhythm": rhythm(p["days"]),
                     "answered": p["answered"],
-                    # AI-18: the usual amount, and whether every one was the same.
+                    # AI-18 / AI-18b: the usual amount; "$12–$48" unless every
+                    # one is within $1 of the others.
                     "amount": amounts[len(amounts) // 2] if amounts else None,
-                    "same_amount": len(set(amounts)) == 1,
+                    "low": amounts[0] if amounts else None, "high": amounts[-1] if amounts else None,
+                    "same_amount": bool(amounts) and amounts[-1] - amounts[0] <= 1.0,
+                    # AI-18: "e-Transfers from Ana Ruiz" only when every one was one.
+                    "etransfers": p["kind"] == "joint" and bool(p["answered"])
+                    and all(i in by_id and _is_etransfer(by_id[i]) for i in p["answered"]),
                     "skips": int((_state(st).get(pid) or {}).get("skips") or 0)})
     return sorted(out, key=lambda r: (r["merchant"] or "").lower())
 
@@ -434,6 +439,28 @@ def confirm(st, pid: str, today: str, how: str = "ask", txns: list[Transaction] 
               "on": True, "confirmed": yes, "before": before}
     _save(st, STATE_KEY, s)
     return yes
+
+
+def _is_etransfer(t: Transaction) -> bool:
+    from .etransfers import is_etransfer
+    return is_etransfer(t)
+
+
+def unconfirm(st, pid: str) -> bool:
+    """Undo on AI-18y's toast: the Yes is taken back before anything was
+    sorted by it, and the pattern may be asked about again."""
+    s = _state(st)
+    prior = s.get(pid) or {}
+    if not prior.get("confirmed"):
+        return False
+    log = _log(st)
+    for r in log:
+        if r["pattern"] == pid and not r.get("undone"):
+            _undo(st, r)
+    _save(st, LOG_KEY, log)
+    s[pid] = {k: v for k, v in prior.items() if k not in ("confirmed", "before")}
+    _save(st, STATE_KEY, s)
+    return True
 
 
 def skip(st, pid: str) -> dict | None:

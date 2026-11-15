@@ -580,3 +580,39 @@ Paying a trip from a piggy bank is not drawn. Open decisions are in the note.
 | TR-07 | `1331:5763` / `1331:6097` | Cash flow › Select › "Make a trip" in the Select bar |
 | TR-08 | `1331:6480` / `1331:6551` | Name the trip: "Trip name", "Make the trip" · "Cancel" (Rename reuses it with "Save") |
 | TR-09 | `1331:6604` / `1331:6657` | Tags › removing a trip's tag ends the trip, and asks first |
+
+### [designBOT → engBOT] 2026-11-15 · AI-18 · After #344: shop amounts, who line, Yes toast; trips in two currencies
+**Status:** Redesigned
+**Jira:** THL-117, THL-139, THL-213, THL-254, THL-123 · THL-122, THL-226   **Figma:** Pearl app Sorting › `1325:68973` (note `1329:63964`); Proposals › Trips `1327:4973` (note `1329:69536`)
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| AI-18 | `1326:64004` / `1326:64059` | Renamed "built (#344)" |
+| AI-18b | `1332:63964` / `1332:64019` | A shop with varying amounts: "Purchases at Farm Boy", "$12–$48" over "Usually $27 · about every week", "Always Groceries?" |
+| AI-18y | `1332:64062` / `1332:64123` | After Yes: the next card, with a Toast reading "{Pattern name}: sorted from now on" and Undo |
+| TR-02m | `1332:70213` / `1332:70317` | A trip in two currencies: "$1,240 CAD + $310 USD" |
+
+- **Amount:**
+  - If every amount is within $1, show "$400.00" over "Each one · {where} · {rhythm}".
+  - Otherwise show the range ("$12–$48") over "Usually ${median, whole dollars} · {rhythm}".
+  - Leave out the rhythm when there isn't one.
+- **Who:** "{Kind} from {Full name}", where Kind is "e-Transfers" if every one was an e-Transfer, otherwise "Deposits". For a shop: "Purchases at {Merchant}".
+- **Question:** "Always {Name}'s share?" for a person, "Always {Category}?" for a shop.
+- **Undo** takes the Yes back, and Pearl can ask about the pattern again. Skip shows no toast.
+- **Trips in two currencies:** rows in another currency carry the code ("−$142.00 USD"). "Counts in March" moves to the footer only. TR-08's eyebrow and TR-01's card use the same per-currency total.
+
+### [designBOT → engBOT] 2026-11-15 · TR-10 · Trips on the Calendar
+**Status:** Redesigned · Approved, ready to build
+**Jira:** THL-122, THL-257, THL-226   **Figma:** Proposals › Trips `1327:4973`, rules in note `1329:69536`
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| TR-10 | `1339:8555` / `1339:8900` | March: Montréal Mar 4–9 runs across two weeks; Québec City Mar 13–15 sits close by; "Trips this month" card |
+| TR-10b | `1339:9245` / `1339:9587` | November: Lisbon Oct 29 – Nov 2 runs in from the left edge; Nov 1 tapped, its list starts with the trip row |
+
+How trips show on the Calendar:
+- **The band:** a 6 pt Nacre/Diagonal band in the gap under the trip's days, so day numbers and marks stay readable.
+- **Ends:** rounded where the trip starts and ends; flat where it carries into the next week or month.
+- **Tapping:** the band isn't a tap target. "Trips this month" under the grid and the day's "Trip · Trip to {place} · {dates} · {total}" row open TR-02.
+- **Large text:** at AX sizes the day rows end "· Trip to {place}".
+- **VoiceOver:** "{date}, {status}, part of Trip to {place}".

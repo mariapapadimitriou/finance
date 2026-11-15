@@ -25,6 +25,8 @@ struct HomeView: View {
     @State private var quickSortNames: [String] = []
     /// AI-18: patterns Pearl asks about once, first in Quick sort.
     @State private var quickSortPatterns: [PatternAsk] = []
+    /// TR-01: likely trips, after the patterns.
+    @State private var quickSortTrips: [TripAsk] = []
     @State private var opening = false
 
     var body: some View {
@@ -83,12 +85,14 @@ struct HomeView: View {
         .fullScreenCover(item: $askingToNotify) { quiet in
             TurnOnNotificationsView(quiet: quiet)
         }
-        .fullScreenCover(isPresented: Binding(get: { !quickSort.isEmpty || !quickSortPatterns.isEmpty },
-                                              set: { if !$0 { quickSort = []; quickSortPatterns = [] } })) {
+        .fullScreenCover(isPresented: Binding(get: { !quickSort.isEmpty || !quickSortPatterns.isEmpty
+                                                     || !quickSortTrips.isEmpty },
+                                              set: { if !$0 { quickSort = []; quickSortPatterns = []; quickSortTrips = [] } })) {
             QuickSortView(asks: quickSort, categories: app.categories, names: quickSortNames,
-                          patterns: quickSortPatterns) {
+                          patterns: quickSortPatterns, trips: quickSortTrips) {
                 quickSort = []
                 quickSortPatterns = []
+                quickSortTrips = []
                 Task { await load() }
             }
         }
@@ -104,6 +108,7 @@ struct HomeView: View {
             let prompt: QuickSortPrompt = try await app.api.get("api/quick-sort", query: ["all": "1"])
             quickSortNames = prompt.review?.people ?? []
             quickSortPatterns = prompt.patterns
+            quickSortTrips = prompt.trips
             quickSort = prompt.asks
         } catch {
             self.error = app.handle(error)

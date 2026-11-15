@@ -416,7 +416,7 @@ def test_tags_group_rows_without_moving_them(client):
     assert by_desc(listing(client))["FLIGHTS"]["tags"] == ["Ibiza", "Work"]
     tags = client.get("/api/tags").get_json()["tags"]
     assert tags[0] == {"tag": "Ibiza", "count": 2, "spent": 940, "first": in_month(1),
-                       "last": in_month(3)}
+                       "last": in_month(3), "trip": None}      # TR-09: not a trip's tag
     # Across every month, with a tag, the total is the tag's whole total.
     assert listing(client, month="all", tag="Ibiza")["focus"]["usual"] is None
     # Rename, then take it off.

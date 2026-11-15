@@ -148,6 +148,8 @@ struct MainTabs: View {
     @State private var quickSortNames: [String] = []
     /// AI-18: patterns Pearl asks about once, first in Quick sort.
     @State private var quickSortPatterns: [PatternAsk] = []
+    /// TR-01: likely trips, after the patterns.
+    @State private var quickSortTrips: [TripAsk] = []
     @State private var offered = false
     /// SEC-10: another device asking to sign in as her, and the ones she's seen.
     @State private var approval: Approval?
@@ -178,9 +180,11 @@ struct MainTabs: View {
         }
         // Part of this screen, not presented over it: nothing dismissed inside can close it.
         .overlay {
-            if !quickSort.isEmpty || !quickSortPatterns.isEmpty {
+            if !quickSort.isEmpty || !quickSortPatterns.isEmpty || !quickSortTrips.isEmpty {
                 QuickSortView(asks: quickSort, categories: app.categories, names: quickSortNames,
-                              patterns: quickSortPatterns) { quickSort = []; quickSortPatterns = [] }
+                              patterns: quickSortPatterns, trips: quickSortTrips) {
+                    quickSort = []; quickSortPatterns = []; quickSortTrips = []
+                }
             }
         }
     }
@@ -203,9 +207,10 @@ struct MainTabs: View {
         guard !offered else { return }
         offered = true
         guard let prompt: QuickSortPrompt = try? await app.api.get("api/quick-sort"),
-              prompt.show, !(prompt.asks.isEmpty && prompt.patterns.isEmpty) else { return }
+              prompt.show, !(prompt.asks.isEmpty && prompt.patterns.isEmpty && prompt.trips.isEmpty) else { return }
         quickSortNames = prompt.review?.people ?? []
         quickSortPatterns = prompt.patterns
+        quickSortTrips = prompt.trips
         quickSort = prompt.asks
     }
 
@@ -214,7 +219,7 @@ struct MainTabs: View {
     private func page<Content: View>(_ which: Tab, @ViewBuilder content: () -> Content) -> some View {
         NavigationStack {
             content().toolbar(app.hidesTabBar ? .hidden : .visible, for: .tabBar)
-                .accessibilityHidden(!quickSort.isEmpty || !quickSortPatterns.isEmpty)
+                .accessibilityHidden(!quickSort.isEmpty || !quickSortPatterns.isEmpty || !quickSortTrips.isEmpty)
         }
         .tabItem {
             // TEST-14: VoiceOver hears the badge's count ("6 to sort").
