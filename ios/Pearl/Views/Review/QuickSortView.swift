@@ -11,6 +11,8 @@ struct QuickSortPrompt: Decodable {
     var asks: [Ask] { review?.asks.filter { !$0.skipped } ?? [] }
     /// AI-18: the patterns Pearl asks about once, first in the deck.
     var patterns: [PatternAsk] { review?.patternAsks ?? [] }
+    /// TR-01: likely trips Pearl asks about, after the patterns.
+    var trips: [TripAsk] { review?.tripAsks ?? [] }
 
     init(from decoder: Decoder) throws {
         enum Keys: String, CodingKey { case show, review }
@@ -64,6 +66,8 @@ struct QuickSortView: View {
     var names: [String] = []
     /// AI-18: one card for each pattern Pearl asks about, before the rest.
     var patterns: [PatternAsk] = []
+    /// TR-01: one card for each likely trip, after the patterns.
+    var trips: [TripAsk] = []
     let onClose: () -> Void
 
     /// The cards, less the ones sorted along with another (T-86).
@@ -71,6 +75,10 @@ struct QuickSortView: View {
     @State private var index = 0
     /// How many of `patterns` have been answered; they come first.
     @State private var patternAt = 0
+    /// How many of `trips` have been answered; they come next.
+    @State private var tripAt = 0
+    /// AI-18y: the pattern just said Yes to, for the toast's Undo.
+    @State private var undoPattern: PatternAsk?
     @State private var drag: CGSize = .zero
     /// The card flying off, and which way.
     @State private var leaving: Bool?
@@ -103,11 +111,12 @@ struct QuickSortView: View {
     private let threshold: CGFloat = 110
 
     init(asks: [Ask], categories: [CategoryList.Category], names: [String] = [],
-         patterns: [PatternAsk] = [], onClose: @escaping () -> Void) {
+         patterns: [PatternAsk] = [], trips: [TripAsk] = [], onClose: @escaping () -> Void) {
         self.asks = asks
         self.categories = categories
         self.names = names
         self.patterns = patterns
+        self.trips = trips
         self.onClose = onClose
         _deck = State(initialValue: asks)
     }
@@ -128,6 +137,17 @@ struct QuickSortView: View {
                         .multilineTextAlignment(.center).padding(.horizontal, 32)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(pattern.yesSkip)
+                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                        .multilineTextAlignment(.center).padding(.horizontal, 32)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 2)
+                } else if let trip = trip {
+                    // TR-01 (1327:4974): what Pearl saw, in ink; what Yes does, muted.
+                    Text("Did you go on a trip here? " + trip.story)
+                        .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                        .multilineTextAlignment(.center).padding(.horizontal, 32)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Yes groups them as one trip. They stay in \(trip.months).")
                         .font(Nacre.footnote).foregroundColor(Pearl.muted)
                         .multilineTextAlignment(.center).padding(.horizontal, 32)
                         .fixedSize(horizontal: false, vertical: true)
@@ -163,7 +183,7 @@ struct QuickSortView: View {
                 }
                 // T-95: the buttons rise into the hint's place, clear of the toast.
                 buttons.padding(.top, 20).padding(.bottom, 40)
-                    .padding(.bottom, toast == nil ? 0 : 28)
+                    .padding(.bottom, toast == nil && undoPattern == nil ? 0 : 28)
             }
         }
         .nacreScreen()
@@ -172,6 +192,12 @@ struct QuickSortView: View {
                 // Stays until the next answer, so a mis-tap can still be taken back.
                 UndoToast(text: toast.text, undo: toast.undo == nil ? nil : { Task { await undo(toast) } }, stays: true) {
                     withAnimation { if self.toast?.id == toast.id { self.toast = nil } }
+                }
+                .padding(.bottom, 8)
+            } else if let p = undoPattern, done == nil {
+                // AI-18y (1332:64062): the next card is up; Undo brings this one back.
+                UndoToast(text: "\(p.title): sorted from now on", undo: { Task { await undoYes(p) } }, stays: true) {
+                    withAnimation { if undoPattern == p { undoPattern = nil } }
                 }
                 .padding(.bottom, 8)
             }
@@ -251,13 +277,18 @@ struct QuickSortView: View {
     /// AI-18: the pattern on top, while there is one; the deck waits under it.
     private var pattern: PatternAsk? { patternAt < patterns.count ? patterns[patternAt] : nil }
 
-    private var current: Ask? { pattern == nil && index < deck.count ? deck[index] : nil }
+    /// TR-01: a likely trip, once the patterns are answered.
+    private var trip: TripAsk? { pattern == nil && tripAt < trips.count ? trips[tripAt] : nil }
+
+    private var current: Ask? { pattern == nil && trip == nil && index < deck.count ? deck[index] : nil }
 
     /// Every question Quick sort walks: Needs a look's.
     private var total: Int { deck.count }
 
-    /// What's still to sort, patterns too.
-    private var remaining: Int { max(patterns.count - patternAt, 0) + max(total - index, 0) }
+    /// What's still to sort, patterns and trips too.
+    private var remaining: Int {
+        max(patterns.count - patternAt, 0) + max(trips.count - tripAt, 0) + max(total - index, 0)
+    }
 
     private func isGuess(_ ask: Ask) -> Bool { ask.isGuess(accounts) }
 
@@ -342,6 +373,17 @@ struct QuickSortView: View {
                     .accessibilityHint(pattern.yesSkip)
                     .accessibilityIdentifier("quick-sort-pattern")
                     .id(pattern.id)
+            } else if let trip = trip {
+                tripCard(trip)
+                    .offset(x: offsetX, y: drag.height * 0.2)
+                    .rotationEffect(.degrees(Double(offsetX / 18)))
+                    .gesture(swipe)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAction(named: "Yes") { right() }
+                    .accessibilityAction(named: "Skip") { tripSkip(trip) }
+                    .accessibilityHint("Yes groups them as one trip. They stay in \(trip.months).")
+                    .accessibilityIdentifier("quick-sort-trip")
+                    .id(trip.key)
             } else if let ask = current {
                 card(ask)
                     .onTapGesture {
@@ -422,8 +464,10 @@ struct QuickSortView: View {
             Initials(name: p.name, size: 64)
             Text(p.who).font(Nacre.headline).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center).lineLimit(2)
-            if let amount = p.amount {
-                Text(Format.amount(amount))
+            // AI-18b (1332:63964): "$12–$48" over "Usually $27 · about every week"
+            // unless every one is within $1.
+            if let amount = p.shownAmount {
+                Text(amount)
                     .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
                     .foregroundColor(Pearl.ink).lineLimit(1).minimumScaleFactor(0.6)
             }
@@ -432,6 +476,31 @@ struct QuickSortView: View {
             Text(p.question)
                 .font(Nacre.title).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center).lineLimit(3).minimumScaleFactor(0.7)
+                .padding(.top, 8)
+        }
+        .modifier(CardFace())
+        .overlay(alignment: .topLeading) { stamp(guessing: true) }
+    }
+
+    /// TR-01 (1327:4974): one card for the whole trip: the place, what it
+    /// came to (per currency, TR-02m), its dates and count, "A trip?".
+    private func tripCard(_ t: TripAsk) -> some View {
+        VStack(spacing: 8) {
+            Text("A TRIP?")
+                .font(Nacre.caption2).tracking(0.78).foregroundColor(Pearl.action)
+            Initials(name: t.place ?? "Trip", size: 64)
+            if let place = t.place {
+                Text(place).font(Nacre.headline).foregroundColor(Pearl.ink)
+                    .multilineTextAlignment(.center).lineLimit(2)
+            }
+            Text(t.totals.shown)
+                .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
+                .foregroundColor(Pearl.ink).lineLimit(1).minimumScaleFactor(0.5)
+            Text(t.line).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                .multilineTextAlignment(.center).lineLimit(2)
+            Text("A trip?")
+                .font(Nacre.title).foregroundColor(Pearl.ink)
+                .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.7)
                 .padding(.top, 8)
         }
         .modifier(CardFace())
@@ -493,7 +562,7 @@ struct QuickSortView: View {
                 .accessibilityHint(current.flatMap { ask in drafts[ask.id].flatMap { d in
                     d.split != nil ? "Saves the split and \(splitCategory(ask, d)), for this one." : nil } } ?? "")
         }
-        .disabled((current == nil && pattern == nil) || leaving != nil)
+        .disabled((current == nil && pattern == nil && trip == nil) || leaving != nil)
     }
 
     private func roundButton(symbol: String, label: String, filled: Bool,
@@ -555,6 +624,10 @@ struct QuickSortView: View {
     private func right() {
         if let pattern = pattern {
             patternYes(pattern)
+            return
+        }
+        if let trip = trip {
+            tripYes(trip)
             return
         }
         guard let ask = current, leaving == nil else { return }
@@ -629,16 +702,74 @@ struct QuickSortView: View {
     }
 
     private func answerPattern(_ p: PatternAsk, _ answer: String) async {
+        undoPattern = nil
         busy = true
         defer { busy = false }
         do {
             let _: OK = try await app.api.post("api/pattern-sort/asks/\(p.id)/\(answer)",
                                                answer == "yes" ? ["how": "ai18"] : [:])
             error = nil
-            withAnimation { toast = nil }
+            withAnimation {
+                toast = nil
+                // AI-18y: Yes says so, with Undo; Skip says nothing.
+                undoPattern = answer == "yes" ? p : nil
+            }
             drag = .zero
             leaving = nil
             patternAt += 1
+            if remaining == 0 { await finish() }
+        } catch {
+            self.error = app.handle(error)
+            withAnimation(.spring()) { leaving = nil; drag = .zero }
+        }
+    }
+
+    /// AI-18y's Undo: the Yes is taken back and the pattern's card comes
+    /// back on top. The toast goes at the next answer, so nothing after it
+    /// has been answered yet.
+    private func undoYes(_ p: PatternAsk) async {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
+        withAnimation { undoPattern = nil }
+        do {
+            let _: OK = try await app.api.post("api/pattern-sort/asks/\(p.id)/undo", [:])
+            error = nil
+            if let at = patterns.firstIndex(of: p), at < patternAt {
+                withAnimation(.spring()) { patternAt = at }
+            }
+        } catch {
+            self.error = app.handle(error)
+        }
+    }
+
+    // MARK: TR-01, a trip
+
+    /// Yes: the rows become one trip, named for its place. They stay in their months.
+    private func tripYes(_ t: TripAsk) {
+        guard leaving == nil, !busy else { return }
+        withAnimation(.easeIn(duration: 0.25)) { leaving = true }
+        Task { await answerTrip(t, "yes") }
+    }
+
+    /// Skip: Pearl never asks about those dates again.
+    private func tripSkip(_ t: TripAsk) {
+        guard leaving == nil, !busy else { return }
+        withAnimation(.easeIn(duration: 0.25)) { leaving = false }
+        Task { await answerTrip(t, "skip") }
+    }
+
+    private func answerTrip(_ t: TripAsk, _ answer: String) async {
+        busy = true
+        defer { busy = false }
+        let id = t.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? t.id
+        do {
+            let _: OK = try await app.api.post("api/trips/asks/\(id)/\(answer)", [:])
+            error = nil
+            withAnimation { toast = nil; undoPattern = nil }
+            drag = .zero
+            leaving = nil
+            tripAt += 1
             if remaining == 0 { await finish() }
         } catch {
             self.error = app.handle(error)
@@ -650,6 +781,10 @@ struct QuickSortView: View {
     private func left() {
         if let pattern = pattern {
             patternSkip(pattern)
+            return
+        }
+        if let trip = trip {
+            tripSkip(trip)
             return
         }
         guard let ask = current, leaving == nil else { return }
@@ -682,6 +817,7 @@ struct QuickSortView: View {
     /// The question's sheet did the work; the batch notes what it said, for
     /// the done screen. Skip in the sheet moves it to Skipped too.
     private func answered(_ ask: Ask, _ answer: ReviewAnswer, always: String? = nil) async {
+        undoPattern = nil
         busy = true
         withAnimation(.easeIn(duration: 0.25)) { leaving = true }
         do {
@@ -719,6 +855,7 @@ struct QuickSortView: View {
 
     private func step(_ ask: Ask, _ body: [String: Any], said: String? = nil, always: String? = nil,
                       quiet: Bool = false) async {
+        undoPattern = nil
         busy = true
         defer { busy = false }
         do {

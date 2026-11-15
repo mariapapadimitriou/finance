@@ -66,7 +66,7 @@ struct ReviewView: View {
         .overlay {
             if sorting {
                 QuickSortView(asks: quick, categories: categories, names: recentNames,
-                              patterns: review?.patternAsks ?? []) {
+                              patterns: review?.patternAsks ?? [], trips: review?.tripAsks ?? []) {
                     sorting = false
                     Task { await load() }
                 }
@@ -225,9 +225,12 @@ struct ReviewView: View {
                     }
                 }
             }
-            if !showingSkipped && !showingSorted && !(quick.isEmpty && (review?.patternAsks ?? []).isEmpty) {
-                // T-10; REFRESH-03's P1 took "Tap one to sort it." out.
-                QuickSortCard(count: quick.count + (review?.patternAsks.count ?? 0)) { sorting = true }
+            if !showingSkipped && !showingSorted
+                && !(quick.isEmpty && (review?.patternAsks ?? []).isEmpty && (review?.tripAsks ?? []).isEmpty) {
+                // T-10; REFRESH-03's P1 took "Tap one to sort it." out. AI-18 and TR-01 count too.
+                QuickSortCard(count: quick.count + (review?.patternAsks.count ?? 0) + (review?.tripAsks.count ?? 0)) {
+                    sorting = true
+                }
             }
             if let error = error, review != nil {
                 Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)

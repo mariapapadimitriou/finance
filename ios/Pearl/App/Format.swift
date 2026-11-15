@@ -39,6 +39,24 @@ enum Format {
         wholeMoney.string(from: NSNumber(value: abs(value))) ?? "$\(Int(abs(value)))"
     }
 
+    /// A total in each billing currency (trips; Pearl converts nothing):
+    /// "$1,284.60" in one, "$1,240 CAD + $310 USD" in several (TR-02m), the
+    /// biggest first as the server sends them.
+    static func totals(_ parts: [(currency: String, amount: Double)]) -> String {
+        if parts.count <= 1 { return amount(parts.first?.amount ?? 0) }
+        return parts.map { "\(whole($0.amount)) \($0.currency)" }.joined(separator: " + ")
+    }
+
+    /// "Mar 4–9", "Mar 28–Apr 2", "Mar 4" (a trip's dates).
+    static func span(_ start: String, _ end: String) -> String {
+        guard let a = date(start), let b = date(end) else { return start }
+        if start.prefix(10) == end.prefix(10) { return shortDay.string(from: a) }
+        let sameMonth = start.prefix(7) == end.prefix(7)
+        return shortDay.string(from: a) + "\u{2013}" + (sameMonth ? dayOnly.string(from: b) : shortDay.string(from: b))
+    }
+
+    private static let dayOnly = formatter("d")
+
     /// "+$5,850.00" for money in, "$22.57" for money out.
     static func signed(_ value: Double, inflow: Bool) -> String {
         inflow ? "+" + amount(value) : amount(value)
