@@ -384,13 +384,19 @@ def transactions_list():
     from .transfers import transfer_pairs
     pairs = transfer_pairs(st.all_transactions(), today=_today_iso())
     every = chosen      # the totals keep both ends: money moved, nothing counted
-    chosen = txlist.collapse_transfers(chosen, pairs)
+    merged: list = []
+    chosen = txlist.collapse_transfers(chosen, pairs, merged)
     filters.pop("ids", None)
+    on_page = {t.fingerprint for t, _ in chosen[offset:offset + limit]}
     by = a.get("by") or "day"
     if by not in ("day", "merchant", "category"):
         return jsonify({"error": "by is day, merchant or category."}), 400
     out = {
         "transactions": _with_rules(st, chosen[offset:offset + limit]) if by == "day" else [],
+        # The arrivals merged into those lines (2026-11-15), for a filter on
+        # the phone that keeps the arrival's end and not the line's.
+        "merged": (_with_rules(st, [(t, r) for t, r in merged if r["merged_into"] in on_page])
+                   if by == "day" else []),
         "owed": owed,
         "total": len(chosen),
         "totals": txlist.totals(every),

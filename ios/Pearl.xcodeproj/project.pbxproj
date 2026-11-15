@@ -60,6 +60,7 @@
 		4872AAE25E28798D24E870B2 /* SplitMenus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 558170EF44F3D7B55B10E732 /* SplitMenus.swift */; };
 		014ED45326E8880E7B9F694D /* TransactionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63873676D9EA2C177703422C /* TransactionDetailView.swift */; };
 		8DAA91D1295F238D6858DE8F /* TransactionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4941CABD801BD86FF3E85FC7 /* TransactionsView.swift */; };
+		989AD22CC505E0EC02856A44 /* TransferEnds.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C19363BFB6849DFF4CC728C /* TransferEnds.swift */; };
 		0B21B527094F58824BC48B0F /* TripViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3143EA4F2320C86462000D37 /* TripViews.swift */; };
 		A28FEF7ABDE1D9915D1327D2 /* WhoSentSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DBC32D7A675A5534FC82999 /* WhoSentSheet.swift */; };
 		88E0E90CB8A80DB0A704C6FE /* WhoseAnswer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF77AEC87D7E5FA1818B6268 /* WhoseAnswer.swift */; };
@@ -154,6 +155,7 @@
 		558170EF44F3D7B55B10E732 /* SplitMenus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitMenus.swift; sourceTree = "<group>"; };
 		63873676D9EA2C177703422C /* TransactionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionDetailView.swift; sourceTree = "<group>"; };
 		4941CABD801BD86FF3E85FC7 /* TransactionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionsView.swift; sourceTree = "<group>"; };
+		2C19363BFB6849DFF4CC728C /* TransferEnds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferEnds.swift; sourceTree = "<group>"; };
 		3143EA4F2320C86462000D37 /* TripViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripViews.swift; sourceTree = "<group>"; };
 		1DBC32D7A675A5534FC82999 /* WhoSentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhoSentSheet.swift; sourceTree = "<group>"; };
 		AF77AEC87D7E5FA1818B6268 /* WhoseAnswer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhoseAnswer.swift; sourceTree = "<group>"; };
@@ -371,6 +373,7 @@
 				558170EF44F3D7B55B10E732 /* SplitMenus.swift */,
 				63873676D9EA2C177703422C /* TransactionDetailView.swift */,
 				4941CABD801BD86FF3E85FC7 /* TransactionsView.swift */,
+				2C19363BFB6849DFF4CC728C /* TransferEnds.swift */,
 				3143EA4F2320C86462000D37 /* TripViews.swift */,
 				AF77AEC87D7E5FA1818B6268 /* WhoseAnswer.swift */,
 				1DBC32D7A675A5534FC82999 /* WhoSentSheet.swift */,
@@ -535,6 +538,7 @@
 				4872AAE25E28798D24E870B2 /* SplitMenus.swift in Sources */,
 				014ED45326E8880E7B9F694D /* TransactionDetailView.swift in Sources */,
 				8DAA91D1295F238D6858DE8F /* TransactionsView.swift in Sources */,
+				989AD22CC505E0EC02856A44 /* TransferEnds.swift in Sources */,
 				0B21B527094F58824BC48B0F /* TripViews.swift in Sources */,
 				A28FEF7ABDE1D9915D1327D2 /* WhoSentSheet.swift in Sources */,
 				88E0E90CB8A80DB0A704C6FE /* WhoseAnswer.swift in Sources */,

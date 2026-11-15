@@ -734,14 +734,23 @@ def still_asking(row: dict, money_in: set[str]) -> dict:
 
 
 def collapse_transfers(rows: list[tuple[Transaction, dict]],
-                       pairs: dict[str, str]) -> list[tuple[Transaction, dict]]:
+                       pairs: dict[str, str],
+                       merged: list[tuple[Transaction, dict]] | None = None
+                       ) -> list[tuple[Transaction, dict]]:
     """One line per transfer between her own accounts (2026-10-22).
 
     `pairs` is {departure: arrival} (finance/transfers.transfer_pairs). When
     both ends are among `rows` and both read as a Transfer, the arrival is
     dropped and the departure says where the money went: "TD Chequing ··4417
     → Visa ··1203". When only one end is in view — a filter on one account —
-    that end stays as it is. Neither end counts, so no total changes."""
+    that end stays as it is. Neither end counts, so no total changes.
+
+    2026-11-15: the phone filters by account, category and type itself, on
+    the month the server sent. Filtered to the arrival's account, the line
+    (the departure's row) was filtered out and the arrival was already gone,
+    so a transfer she marked vanished. Each arrival dropped here is put in
+    `merged`, when given, with `merged_into` naming its line, so the phone
+    can show it where the line isn't (TransferEnds.swift)."""
     by_id = {t.fingerprint: (t, r) for t, r in rows}
     # Either end counts as nothing (moved between accounts, or put into or
     # taken out of savings), and neither was left out (2026-10-22).
@@ -752,8 +761,11 @@ def collapse_transfers(rows: list[tuple[Transaction, dict]],
               and is_transfer(by_id[out][1]) and is_transfer(by_id[arr][1])}
     hidden = set(joined.values())
     kept = []
+    into = {arr: out for out, arr in joined.items()}
     for t, r in rows:
         if t.fingerprint in hidden:
+            if merged is not None:
+                merged.append((t, {**r, "merged_into": into[t.fingerprint]}))
             continue
         arr = joined.get(t.fingerprint)
         if arr:

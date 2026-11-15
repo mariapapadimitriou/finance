@@ -457,6 +457,9 @@ struct SetupAgain: Decodable {
 
 struct TransactionList: Decodable {
     let transactions: [Transaction]
+    /// Arrivals merged into a transfer line in `transactions` (2026-11-15),
+    /// shown only when a filter keeps them and not their line (TransferEnds).
+    let merged: [Transaction]
     let total: Int
     let monthTotals: Totals?
     /// Who owes her for splits, and the rows behind it ("Owed to you").
@@ -469,7 +472,7 @@ struct TransactionList: Decodable {
     let tags: [String]
 
     enum CodingKeys: String, CodingKey {
-        case transactions, total, owed, tags
+        case transactions, total, owed, tags, merged
         case monthTotals = "month_totals"
     }
 
@@ -483,6 +486,8 @@ struct TransactionList: Decodable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         transactions = try c.decode([Lenient<Transaction>].self, forKey: .transactions).compactMap { $0.value }
+        merged = ((try? c.decodeIfPresent([Lenient<Transaction>].self, forKey: .merged)) ?? nil)?
+            .compactMap { $0.value } ?? []
         total = try c.decodeIfPresent(Int.self, forKey: .total) ?? transactions.count
         monthTotals = try? c.decodeIfPresent(Totals.self, forKey: .monthTotals)
         let owed = (try? c.decodeIfPresent(Owed.self, forKey: .owed)) ?? nil
@@ -599,6 +604,10 @@ struct Transaction: Decodable, Identifiable, Hashable {
     @Boxed var oneOffLine: OneOffLine?
     let repaidBy: [Brief]
     @Boxed var transfer: Transfer?
+    /// The transfer line this arrival was merged into (2026-11-15): sent
+    /// apart, in TransactionList.merged, for a filter that keeps only this
+    /// end (TransferEnds).
+    var mergedInto: String? = nil
     @Boxed var repaysCharge: Brief?
     /// TR-05 / TR-06: the trip it's in ("Shopping · Trip to Montréal"),
     /// boxed so Transaction stays small (Boxed.swift).
@@ -933,6 +942,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         case leftToSort = "left_to_sort"
         case repaidBy = "repaid_by"
         case repaysCharge = "repays_charge"
+        case mergedInto = "merged_into"
         case trip
     }
 
@@ -996,6 +1006,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         repaidBy = opt([Brief].self, .repaidBy) ?? []
         transfer = opt(Transfer.self, .transfer)
         repaysCharge = opt(Brief.self, .repaysCharge)
+        mergedInto = opt(String.self, .mergedInto)
         trip = opt(TripRef.self, .trip)
     }
 
