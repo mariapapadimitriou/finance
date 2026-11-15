@@ -472,3 +472,32 @@ class TestMigration:
         add(client, tx("NORTHSIDE PANTRY", 81.0, day(0)))
         body = run(client)
         assert body["sorted"] == 1 and client.st.get_transaction(body["rows"][0]["txn"]).amount == 81.0
+
+
+class TestAI18b:
+    """AI-18b / AI-18y (designBOT, 2026-11-15)."""
+
+    def test_a_shop_shows_its_range_unless_within_a_dollar(self, client):
+        farm_boy_history(client)                                   # 40..44
+        ps.switched_on(client.st)
+        [ask] = client.get("/api/pattern-sort/asks").get_json()["asks"]
+        assert (ask["low"], ask["high"], ask["amount"], ask["same_amount"]) == (40.0, 44.0, 42.0, False)
+        assert ask["etransfers"] is False
+
+    def test_joint_says_e_transfers_only_when_every_one_was(self, client):
+        TestJoint().history(client, 8)
+        ps.switched_on(client.st)
+        [ask] = client.get("/api/pattern-sort/asks").get_json()["asks"]
+        assert ask["same_amount"] is True
+        assert ask["etransfers"] is True
+
+    def test_undo_takes_the_yes_back_and_it_is_asked_again(self, client):
+        farm_boy_history(client)
+        ps.switched_on(client.st)
+        [ask] = client.get("/api/pattern-sort/asks").get_json()["asks"]
+        client.post(f"/api/pattern-sort/asks/{ask['id']}/yes")
+        assert client.get("/api/pattern-sort/asks").get_json()["asks"] == []
+        assert client.post(f"/api/pattern-sort/asks/{ask['id']}/undo").status_code == 200
+        assert ps.confirmed(client.st, ask["id"]) is None
+        assert [a["id"] for a in client.get("/api/pattern-sort/asks").get_json()["asks"]] == [ask["id"]]
+        assert client.post(f"/api/pattern-sort/asks/{ask['id']}/undo").status_code == 404

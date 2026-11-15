@@ -150,12 +150,22 @@ def _txlist_rows(st, excluded: bool = False, joint: bool = False, everything: bo
         rows = txlist.theirs(txns)
     else:
         rows = txlist.visible(txns)
+    from . import trips as _trips
+    in_trip = _trips.trip_of(st)
+
+    def _with_trip(t, r):
+        # TR-05 / TR-06: which trip a row is in ("Shopping · Trip to Montréal").
+        trip = in_trip.get(t.fingerprint)
+        if trip is not None:
+            r["trip"] = {"id": trip["id"], "name": trip["name"], "start": trip["start"], "end": trip["end"]}
+        return r
     if only is not None:
         # One transaction's page (2026-11-08): describing every row to show
         # one was most of the time it took to open. The rest are described
         # when asked for (the other end of a transfer).
-        return [(t, _Lazy(t, ctx) if t.fingerprint != only else txlist.describe(t, ctx)) for t in rows]
-    return [(t, txlist.describe(t, ctx)) for t in rows]
+        return [(t, _Lazy(t, ctx) if t.fingerprint != only else _with_trip(t, txlist.describe(t, ctx)))
+                for t in rows]
+    return [(t, _with_trip(t, txlist.describe(t, ctx))) for t in rows]
 
 
 def _splitting(t, split: dict, txns, payer) -> dict:
@@ -3412,4 +3422,5 @@ from . import income_bills_api, insights_api, privacy_api, profile_api  # noqa: 
 from . import marks_api, ranges_api, transactions_extras_api  # noqa: E402,F401
 from . import calendar_api, parts_api, quick_sort_api  # noqa: E402,F401
 from . import pattern_sort_api  # noqa: E402,F401
+from . import trips_api  # noqa: E402,F401
 from . import recurring_api  # noqa: E402,F401

@@ -588,6 +588,12 @@ def for_store(st, today: str | None = None) -> dict:
         if pattern_sort.is_on(st) else []
     review["count"] += len(review["pattern_asks"])
     review["open"] += len(review["pattern_asks"])
+    # TR-01: one Quick sort card for each likely trip, behind the same switch.
+    from . import trips
+    review["trip_asks"] = trips.candidates(st, txns, today or core_api._today_iso()) \
+        if pattern_sort.is_on(st) else []
+    review["count"] += len(review["trip_asks"])
+    review["open"] += len(review["trip_asks"])
     from . import sorted_log
     from . import api as core
     day = today or core._today_iso()

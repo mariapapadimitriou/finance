@@ -242,7 +242,9 @@ def map_plaid_transaction(item: dict, accounts: dict | None = None) -> Transacti
              "logo_url": _logo(item),
              "merchant_entity_id": item.get("merchant_entity_id") or "",
              "category_confidence": str(plaid_cat.get("confidence_level") or ""),
-             "pending_id": item.get("pending_transaction_id") or ""},
+             "pending_id": item.get("pending_transaction_id") or "",
+             # Trips (TR-01): the city, when Plaid knows where it was.
+             "city": str(((item.get("location") or {}).get("city")) or "").strip()},
     )
 
 

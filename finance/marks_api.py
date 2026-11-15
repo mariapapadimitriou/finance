@@ -336,8 +336,15 @@ def batch_tags():
 @bp.get("/tags")
 def list_tags():
     from . import txlist
-    rows = core._txlist_rows(store(), everything=True)
-    return jsonify({"tags": txlist.tag_totals(rows)})
+    from . import trips
+    st = store()
+    rows = core._txlist_rows(st, everything=True)
+    groups = txlist.tag_totals(rows)
+    for g in groups:
+        # TR-09: a trip's tag; removing it ends the trip, and asks first.
+        trip = trips.by_tag(st, g["tag"])
+        g["trip"] = trip["id"] if trip else None
+    return jsonify({"tags": groups})
 
 
 @bp.put("/tags/<path:tag>")
@@ -355,8 +362,21 @@ def rename_tag(tag: str):
         if not cleaned:
             return jsonify({"error": "Type a name."}), 400
         name = cleaned[0]
+    # A trip's tag (TR-09): renaming it renames the trip; removing it ends the trip.
+    from . import trips
+    trip = trips.by_tag(st, tag)
+    if trip is not None:
+        try:
+            if name is None:
+                trips.end(st, trip["id"])
+            else:
+                trips.rename(st, trip["id"], name)
+        except trips.Problem as exc:
+            return jsonify({"error": str(exc)}), 400
+        if name is not None:
+            return jsonify({"ok": True, "rows": len(trip["ids"]), "tag": name, "trip": trip["id"]})
     n = st.rename_tag(tag, name)
-    return jsonify({"ok": True, "rows": n, "tag": name})
+    return jsonify({"ok": True, "rows": n, "tag": name, "trip": trip["id"] if trip else None})
 
 
 # ── Merchant names ───────────────────────────────────────────────────────
