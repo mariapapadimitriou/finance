@@ -112,10 +112,26 @@ def test_unsure_and_other_categories(client):
     assert q["unsure_category"][0]["guess"] == "Other"
 
 
+def _three_pay_anchor():
+    """The 1st of a month three or four months back, never February, so pay
+    on the 1st, 15th and 29th lands three times in it whatever today is.
+    Pay every 14 days from today only holds a third paycheque about twice a
+    year, and on 2026-11-15 the last six months held none."""
+    y, m = TODAY.year, TODAY.month - 3
+    if m < 1:
+        y, m = y - 1, m + 12
+    return date(y, 1 if m == 2 else m, 1)
+
+
 def test_income_type_guesses_and_three_paycheque_months(client):
-    first = TODAY - timedelta(days=14 * 13)
+    anchor = _three_pay_anchor()
+    start, k = TODAY - timedelta(days=182), 0
+    while anchor - timedelta(days=14 * (k + 1)) >= start:
+        k += 1
+    first = anchor - timedelta(days=14 * k)
     pays = [row(-2400, "PAYROLL ACME", when=(first + timedelta(days=14 * i)).isoformat(),
-                category="Income") for i in range(14)]
+                category="Income")
+            for i in range(14) if first + timedelta(days=14 * i) <= TODAY - timedelta(days=3)]
     load(client.st, *pays, row(-60, "ODD DEPOSIT", when=day(2), category="Income"))
     q = queue(client)
     assert [i["txn"]["description"] for i in q["income_type"]] == ["ODD DEPOSIT"]

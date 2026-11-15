@@ -65,6 +65,15 @@ class TestCadence:
         assert pay["three_pay_months"] == sorted(m for m, n in months.items()
                                                  if n == 3 and m >= "2026-04")
 
+    def test_a_month_the_window_cuts_into_keeps_its_third_paycheque(self):
+        # Sundays from January 11: May 3, 17 and 31. On November 15 the six
+        # months start May 16, but May still held three paycheques.
+        rows = [t for t in biweekly(date(2026, 1, 11), 24) if t.date[:10] <= "2026-11-15"]
+        pay = income.cadence(rows, today="2026-11-15")
+        assert pay["three_pay_months"] == ["2026-05"]
+        # Cadence and paydays still come from the last six months only.
+        assert pay["paydays"][0] == "2026-05-17"
+
     def test_monthly(self):
         rows = [row(-5200, "PAYROLL ACME", f"2026-0{m}-25", category="Income")
                 for m in range(4, 10)]
