@@ -105,6 +105,7 @@ def reason(t: Transaction) -> str:
         return f"Left out · {t.excluded}"
     return {
         "merchant_override": f"{category} · your rule",
+        "pay_rule": f"{category} · your rule",
         "transfer_match": "Moved between your accounts",
         "destination": f"{category} · where you said these go",
         "range": f"{category} · dates you sorted",
@@ -123,5 +124,15 @@ def pearl_rows(st, review: dict, today: str, ids_in) -> list[dict]:
             if t.date[:10] >= since and t.fingerprint not in asked and t.fingerprint not in confirmed
             and t.category_source != "user" and not (is_others(t) and not t.excluded)]
     rows.sort(key=lambda t: t.date, reverse=True)
+    # AI-02 (AI-02b): rows her own rules sorted go together under FROM YOUR
+    # RULES, after Pearl's sorts; the rest follow, as before.
+    mine = [t for t in rows if from_her_rule(t)]
+    rest = [t for t in rows if not from_her_rule(t)]
     return [{"id": t.fingerprint, "date": t.date[:10], "merchant": t.merchant or t.description,
-             "amount": t.amount, "line": reason(t)} for t in rows]
+             "amount": t.amount, "line": reason(t), "group": "rules" if from_her_rule(t) else None}
+            for t in mine + rest]
+
+
+def from_her_rule(t: Transaction) -> bool:
+    """Sorted by a rule she saved: a merchant rule, or her pay."""
+    return not t.excluded and t.category_source in ("merchant_override", "pay_rule")
