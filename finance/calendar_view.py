@@ -251,9 +251,18 @@ def trip_spans(st, first: str, last: str, month: str) -> list[dict]:
         span = [date.fromisoformat(a) + timedelta(days=i)
                 for i in range((date.fromisoformat(b) - date.fromisoformat(a)).days + 1)]
         out.append({"id": t["id"], "name": t["name"], "start": t["start"], "end": t["end"],
-                    "first": a, "last": b,
+                    "first": a, "last": b, "totals": trips.summary(st, t)["totals"],
                     "days": [d.day for d in span if d.strftime("%Y-%m") == month]})
     return out
+
+
+def trips_on(st, iso: str) -> list[dict]:
+    """TR-10b: the trips a day is part of, for the row that starts its list."""
+    from . import trips
+    return [{"id": t["id"], "name": t["name"], "start": t["start"], "end": t["end"],
+             "totals": trips.summary(st, t)["totals"]}
+            for t in sorted(trips.all_trips(st).values(), key=lambda t: t["start"])
+            if t["start"] <= iso <= t["end"]]
 
 
 def month_view(st, transactions: list[Transaction], today: date, month: str,
@@ -341,6 +350,7 @@ def day_view(st, transactions: list[Transaction], today: date, iso: str,
         due = [i for i in due_items(st, transactions, today, sts, date.fromisoformat(iso))
                if i["date"] == iso]
     return {
+        "trips": trips_on(st, iso),
         "date": iso, "label": long_day(iso), "state": state,
         "reason": reason(state, day, st_by_day, rows),
         "spent": rows, "spent_total": round(sum(r["amount"] for r in rows), 2),

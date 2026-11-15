@@ -201,3 +201,7 @@ def test_the_calendar_gives_each_trips_days_per_month(client):
     assert [t["id"] for t in march] == [trip["id"]] and march[0]["days"] == [30, 31]
     assert april[0]["days"] == [1, 2] and april[0]["start"] == "2026-03-30"
     assert client.get("/api/calendar?month=2026-06").get_json()["trips"] == []
+    assert march[0]["totals"] == [{"currency": "CAD", "amount": 340.0}]      # the whole trip
+    day = client.get("/api/calendar/day/2026-03-31").get_json()["trips"]
+    assert [t["name"] for t in day] == ["Easter"]
+    assert client.get("/api/calendar/day/2026-03-28").get_json()["trips"] == []
