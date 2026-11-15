@@ -47,12 +47,13 @@ enum Format {
         return parts.map { "\(whole($0.amount)) \($0.currency)" }.joined(separator: " + ")
     }
 
-    /// "Mar 4–9", "Mar 28–Apr 2", "Mar 4" (a trip's dates).
+    /// "Mar 4–9", "Oct 29 – Nov 2" (TR-10b), "Mar 4" (a trip's dates).
     static func span(_ start: String, _ end: String) -> String {
         guard let a = date(start), let b = date(end) else { return start }
         if start.prefix(10) == end.prefix(10) { return shortDay.string(from: a) }
         let sameMonth = start.prefix(7) == end.prefix(7)
-        return shortDay.string(from: a) + "\u{2013}" + (sameMonth ? dayOnly.string(from: b) : shortDay.string(from: b))
+        return sameMonth ? shortDay.string(from: a) + "\u{2013}" + dayOnly.string(from: b)
+            : shortDay.string(from: a) + " \u{2013} " + shortDay.string(from: b)
     }
 
     private static let dayOnly = formatter("d")
