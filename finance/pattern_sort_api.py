@@ -98,6 +98,17 @@ def pattern_sort_stop(pid: str):
                     "undo": {"pattern": pid, "records": [r["id"] for r in undone]}})
 
 
+@bp.post("/pattern-sort/rules/<path:pid>/forget")
+def pattern_sort_forget(pid: str):
+    """AI-06 Forget this rule (asks first in the app): the rule goes; what it
+    sorted stays; Pearl may learn it again from new answers."""
+    st = store()
+    if pid not in ps.patterns(st):
+        return jsonify({"error": "No such rule."}), 404
+    ps.forget(st, pid, core._today_iso())
+    return jsonify({"ok": True, "title": "Forgotten"})
+
+
 @bp.post("/pattern-sort/rules/<path:pid>/restart")
 def pattern_sort_restart(pid: str):
     st = store()

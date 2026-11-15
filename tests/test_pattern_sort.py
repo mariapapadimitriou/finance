@@ -166,8 +166,8 @@ class TestUndo:
         assert client.get("/api/pattern-sort").get_json()["rows"] == []
         add(client, tx("NORTHSIDE PANTRY", 70.0, day(0)))
         assert run(client)["sorted"] == 0
-        rule = client.get(f"/api/pattern-sort/rules/{pid}").get_json()["rule"]
-        assert rule["on"] is False
+        # Stopped: gone from the rules, never learned again (until Undo).
+        assert client.get(f"/api/pattern-sort/rules/{pid}").status_code == 404
         assert client.post(f"/api/pattern-sort/rules/{pid}/restart", json=body["undo"]).status_code == 200
         assert len(client.get("/api/pattern-sort").get_json()["rows"]) == 3
 
@@ -256,3 +256,33 @@ class TestCaptions:
         review = client.get("/api/review").get_json()
         it = next(i for i in review["unsure_category"] if i["txn"]["merchant"] == "Northside Pantry")
         assert it["unsure"]["case"] in ("few", "category")
+
+
+class TestForget:
+    def test_forget_keeps_the_rows_and_relearns_from_new_answers(self, client):
+        farm_boy_history(client)
+        ps.switched_on(client.st)
+        add(client, tx("NORTHSIDE PANTRY", 61.40, day(1)))
+        row = run(client)["rows"][0]
+        pid = client.get("/api/pattern-sort/rules").get_json()["rules"][0]["id"]
+        assert client.post(f"/api/pattern-sort/rules/{pid}/forget").status_code == 200
+        assert client.get("/api/pattern-sort/rules").get_json()["rules"] == []
+        assert client.get("/api/pattern-sort").get_json()["rows"][0]["id"] == row["id"]   # the row stays
+        add(client, tx("NORTHSIDE PANTRY", 70.0, day(0)))
+        assert run(client)["sorted"] == 0
+
+    def test_stopped_is_never_learned_again(self, client):
+        farm_boy_history(client)
+        ps.switched_on(client.st)
+        pid = next(iter(ps.patterns(client.st)))
+        client.post(f"/api/pattern-sort/rules/{pid}/stop")
+        add(client, *[tx("NORTHSIDE PANTRY", 30.0 + i, day(0)) for i in range(6)])
+        for t in client.st.all_transactions():
+            if t.date == day(0):
+                answer(client, t.fingerprint, "Groceries")
+        assert client.get("/api/pattern-sort/rules").get_json()["rules"] == []
+
+
+def test_rhythm():
+    assert ps.rhythm(["2026-09-01", "2026-09-15", "2026-09-29", "2026-10-13"]) == "about every 2 weeks"
+    assert ps.rhythm(["2026-09-01", "2026-09-03", "2026-10-20", "2026-10-21"]) is None

@@ -105,6 +105,7 @@ def patterns(st, txns: list[Transaction] | None = None) -> dict[str, dict]:
     pearl = {r["txn"] for r in _log(st) if not r.get("undone")}
     confirmed = st.confirmed_categories()
     answers: dict[str, list] = defaultdict(list)
+    days: dict[str, list] = defaultdict(list)
     meta: dict[str, dict] = {}
     for t in sorted(txns, key=lambda x: x.date):
         if t.fingerprint in pearl or t.excluded:
@@ -119,6 +120,7 @@ def patterns(st, txns: list[Transaction] | None = None) -> dict[str, dict]:
                 continue
             pid = _pattern_id("category", key)
             answers[pid].append(cat)
+            days[pid].append(t.date[:10])
             meta[pid] = {"kind": "category", "key": key, "merchant": t.merchant}
         elif t.amount < 0 and t.joint and t.joint_from:
             from .joint import THEM
@@ -127,18 +129,27 @@ def patterns(st, txns: list[Transaction] | None = None) -> dict[str, dict]:
                 continue
             pid = _pattern_id("joint", t.account_id or "", sender)
             answers[pid].append(t.joint_person if t.joint_from == THEM and t.joint_person else "")
+            days[pid].append(t.date[:10])
             meta[pid] = {"kind": "joint", "key": sender, "account_id": t.account_id,
                          "account": t.account_name or t.joint, "merchant": t.merchant}
     out = {}
+    state = _state(st)
     for pid, said in answers.items():
         m = meta[pid]
+        s = state.get(pid) or {}
+        if s.get("forgot"):
+            # Forget: learned again only from answers after it was forgotten.
+            said = [a for a, d in zip(said, days[pid]) if d > s["forgot"]]
+            if not said:
+                continue
         first = said[0]
         agree = all(a == first for a in said)
         need = PEOPLE_MIN if m["kind"] == "joint" else CATEGORY_MIN
         # A joint pattern is only "theirs, the same person"; hers isn't one.
-        usable = agree and bool(first) and len(said) >= need
+        # Stopped (AI-04) is never learned again.
+        usable = agree and bool(first) and len(said) >= need and not s.get("stopped_at")
         out[pid] = {**m, "id": pid, "answer": first, "count": len(said), "agree": agree, "need": need,
-                    "ready": usable, "answers": said}
+                    "ready": usable, "answers": said, "days": days[pid]}
     return out
 
 
@@ -287,6 +298,14 @@ def stop(st, pid: str) -> list[dict]:
     return undone
 
 
+def forget(st, pid: str, today: str) -> None:
+    """AI-06 Forget this rule: it goes, the rows it sorted stay as they are,
+    and Pearl may learn it again from answers she gives after today."""
+    s = _state(st)
+    s[pid] = {"on": True, "forgot": today}
+    _save(st, STATE_KEY, s)
+
+
 def restart(st, pid: str, records: list[str]) -> None:
     """Undo for Stop: the pattern is on again and its rows sorted again."""
     log = _log(st)
@@ -300,7 +319,9 @@ def restart(st, pid: str, records: list[str]) -> None:
             if fresh:
                 r.update(undone=False, was=fresh.get("was"))
     _save(st, LOG_KEY, log)
-    set_enabled(st, pid, True)
+    s = _state(st)
+    s[pid] = {"on": True}
+    _save(st, STATE_KEY, s)
 
 
 # ── What the app shows ─────────────────────────────────────────────────────
@@ -317,6 +338,25 @@ def this_week(st, today: str) -> int:
     return len(records(st, since))
 
 
+def rhythm(days: list[str]) -> str | None:
+    """"about every 2 weeks", "about every month", or None with no rhythm:
+    the middle gap between her answers, when most gaps are near it."""
+    ds = sorted(date.fromisoformat(d) for d in days)
+    gaps = [(b - a).days for a, b in zip(ds, ds[1:]) if (b - a).days > 0]
+    if len(gaps) < 3:
+        return None
+    mid = sorted(gaps)[len(gaps) // 2]
+    if sum(1 for g in gaps if abs(g - mid) <= 3) < len(gaps) * 0.7:
+        return None
+    if 6 <= mid <= 8:
+        return "about every week"
+    if 12 <= mid <= 16:
+        return "about every 2 weeks"
+    if 27 <= mid <= 33:
+        return "about every month"
+    return None
+
+
 def learned(st) -> list[dict]:
     """AI-05: the patterns strong enough to sort, with whether they're on and
     how many rows each has sorted."""
@@ -328,6 +368,7 @@ def learned(st) -> list[dict]:
         mine = [r for r in log if r["pattern"] == pid and not r.get("undone")]
         out.append({"id": pid, "kind": p["kind"], "merchant": p["merchant"], "answer": p["answer"],
                     "label": label(p), "count": p["count"], "account": p.get("account"),
+                    "rhythm": rhythm(p["days"]),
                     "on": enabled(st, pid), "sorted": [r["txn"] for r in mine]})
     return sorted(out, key=lambda r: (r["merchant"] or "").lower())
 
