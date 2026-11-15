@@ -2985,6 +2985,8 @@ def home():
         "data_state": state,
         "review_count": review.get("count", 0),
         "pearl_sorted": review.get("pearl_sorted", 0),
+        # AI-01 (Pearl sorts for you, P1a): how many it sorted in the last 7 days.
+        "pattern_week": __import__("finance.pattern_sort", fromlist=["this_week"]).this_week(st, today.isoformat()),
         # A note on Home, not a question (the redesign, decision 8).
         "paycheque_note": next((it for it in review.get("three_pay_month") or [] if not it.get("skipped")), None),
         "savings": savings.this_month(st, txns, today),
@@ -3409,4 +3411,5 @@ def skip_review():
 from . import income_bills_api, insights_api, privacy_api, profile_api  # noqa: E402,F401,I001
 from . import marks_api, ranges_api, transactions_extras_api  # noqa: E402,F401
 from . import calendar_api, parts_api, quick_sort_api  # noqa: E402,F401
+from . import pattern_sort_api  # noqa: E402,F401
 from . import recurring_api  # noqa: E402,F401

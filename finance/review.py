@@ -544,6 +544,16 @@ def for_store(st, today: str | None = None) -> dict:
         # guesses, except where the merchant doesn't sort one way.
         it["siblings"] = ([] if key in mixed or not it["txn"].get("learnable") else
                           [o["txn"] for o in by_merchant.get(key, []) if o is not it])
+    # AI-07 (Pearl sorts for you, P1a): why Pearl won't sort a row by itself.
+    from . import pattern_sort
+    if pattern_sort.is_on(st):
+        by_id = {t.fingerprint: t for t in txns}
+        for part in ("unsure_category", "joint_in"):
+            for it in review.get(part) or []:
+                t = by_id.get(it["txn"]["id"])
+                why = pattern_sort.caption(st, t, txns) if t else None
+                if why:
+                    it["unsure"] = why
     from .etransfers import canonical_names
     canon = canonical_names(txns)
     for part in ("money_in", "who_sent", "joint_in", "income_type"):
@@ -571,7 +581,8 @@ def for_store(st, today: str | None = None) -> dict:
     from . import api as core
     day = today or core._today_iso()
     review["sorted_today"] = sorted_log.count_today(st, day)
-    review["pearl_sorted"] = len(sorted_log.pearl_rows(st, review, day, ids_in))
+    review["pearl_sorted"] = len(sorted_log.pearl_rows(st, review, day, ids_in)) \
+        + len(pattern_sort.records(st))
     return review
 
 
@@ -580,7 +591,15 @@ def sorted_view(st, view: str, today: str) -> list[dict]:
     from . import sorted_log
     if view == "today":
         return sorted_log.today_rows(st, today)
-    return sorted_log.pearl_rows(st, for_store(st, today), today, ids_in)
+    # AI-02: what Pearl sorted from her own answers first, each opening AI-03.
+    from . import pattern_sort
+    learned = []
+    for r in pattern_sort.records(st):
+        t = st.get_transaction(r["txn"])
+        if t is not None:
+            learned.append({"id": t.fingerprint, "date": t.date[:10], "merchant": t.merchant or t.description,
+                            "amount": t.amount, "line": r["line"], "record": r["id"]})
+    return learned + sorted_log.pearl_rows(st, for_store(st, today), today, ids_in)
 
 
 def _me() -> str | None:

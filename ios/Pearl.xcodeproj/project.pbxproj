@@ -44,6 +44,7 @@
 		96BB57CFA23EE730CDB16CE8 /* StartOverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2ADEFD24047E445C0F974C8F /* StartOverView.swift */; };
 		1B5B689F266EAA4C32E801A7 /* YourDataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8D4F8532A209DD7AFB203DF /* YourDataView.swift */; };
 		5A36E4EB024471EF85DA99C8 /* AnswerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4499405DBDB62F2EAAD28248 /* AnswerSheet.swift */; };
+		9AE5C83C5CCEC70675E5888D /* PearlSortsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B2032969BE8CD59277925BA /* PearlSortsViews.swift */; };
 		5A97F97C51EB0251937EA8B1 /* QuickSortView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF92F0A38EF8C1E53492329D /* QuickSortView.swift */; };
 		5D995D92A0DA70EDA7064263 /* ReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02873771C6DC13EA678089B1 /* ReviewView.swift */; };
 		34A16AC5952E1BD17120E015 /* AddToBillsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02346AA6F4126970E9F1AAF8 /* AddToBillsSheet.swift */; };
@@ -135,6 +136,7 @@
 		2ADEFD24047E445C0F974C8F /* StartOverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartOverView.swift; sourceTree = "<group>"; };
 		A8D4F8532A209DD7AFB203DF /* YourDataView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YourDataView.swift; sourceTree = "<group>"; };
 		4499405DBDB62F2EAAD28248 /* AnswerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnswerSheet.swift; sourceTree = "<group>"; };
+		8B2032969BE8CD59277925BA /* PearlSortsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlSortsViews.swift; sourceTree = "<group>"; };
 		CF92F0A38EF8C1E53492329D /* QuickSortView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickSortView.swift; sourceTree = "<group>"; };
 		02873771C6DC13EA678089B1 /* ReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewView.swift; sourceTree = "<group>"; };
 		02346AA6F4126970E9F1AAF8 /* AddToBillsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddToBillsSheet.swift; sourceTree = "<group>"; };
@@ -342,6 +344,7 @@
 			isa = PBXGroup;
 			children = (
 				4499405DBDB62F2EAAD28248 /* AnswerSheet.swift */,
+				8B2032969BE8CD59277925BA /* PearlSortsViews.swift */,
 				CF92F0A38EF8C1E53492329D /* QuickSortView.swift */,
 				02873771C6DC13EA678089B1 /* ReviewView.swift */,
 			);
@@ -510,6 +513,7 @@
 				96BB57CFA23EE730CDB16CE8 /* StartOverView.swift in Sources */,
 				1B5B689F266EAA4C32E801A7 /* YourDataView.swift in Sources */,
 				5A36E4EB024471EF85DA99C8 /* AnswerSheet.swift in Sources */,
+				9AE5C83C5CCEC70675E5888D /* PearlSortsViews.swift in Sources */,
 				5A97F97C51EB0251937EA8B1 /* QuickSortView.swift in Sources */,
 				5D995D92A0DA70EDA7064263 /* ReviewView.swift in Sources */,
 				34A16AC5952E1BD17120E015 /* AddToBillsSheet.swift in Sources */,

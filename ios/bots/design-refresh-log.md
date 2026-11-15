@@ -425,3 +425,80 @@ Open for the product owner:
   - The extra goes toward what that person still owes, up to that amount. It counts as a payment from them, so Unlink is on their •••.
   - If the extra is more than they still owe, they're paid in full and Pearl asks once more about what's left, without that person's tile. It never spreads an extra across people by itself.
 - **Bars:** the part-paid bars in S-04w2 and S-04m2 (light and dark) now use the same rose part bar as the built S-04r v3, instead of yellow Caution.
+
+### [designBOT → engBOT] 2026-11-14 · AI-01 · AI in Pearl, phase 1 screens and phase 2 sketches
+**Status:** Redesigned · Awaiting product owner
+**Jira:** THL-117, THL-139, THL-213, THL-254, THL-123, THL-127, THL-45, THL-198, THL-295, THL-125   **Figma:** Proposals `1284:99` › section "AI · Awaiting product owner" `1313:3507`, note `1316:5612`
+On-device Apple Intelligence. Every frame extends a screen the app already has (H-00r, T-107 "Pearl sorted", S-40 sheets, CR-00x, CR-00, CN-04, T-93o, T-01r, T-02, T-46, IB-01), built from library parts, in light and dark:
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| AI-01 | `1313:3508` / `1313:3567` | Home card "Pearl sorted 12 for you this week · See them" |
+| AI-02 | `1313:3611` / `1313:3813` | Needs a look › Pearl sorted, one row per transaction with its reason |
+| AI-03 | `1313:4078` / `1313:4198` | Why: Undo this one, Stop sorting like this |
+| AI-04 | `1313:4306` / `1313:4359` | Stop sorting Ana's deposits? |
+| AI-05 | `1313:4400` / `1313:4509` | Learned rules beside yours in Categories and rules |
+| AI-06 | `1313:4615` / `1313:4735` | A learned rule's page, with its off switch |
+| AI-07 | `1315:4227` / `1315:4282` | Quick sort AI guess with its reason, still Skip or Yes |
+| AI-08 | `1313:4855` / `1313:4951` | Privacy: "On this iPhone · nothing leaves it" |
+| AI-10 | `1315:4325` / `1315:4424` | "Search or ask Pearl" in Cash flow |
+| AI-11 | `1315:4511` / `1315:4727` | Ask Pearl with suggestions |
+| AI-12 | `1315:4924` / `1315:5112` | The answer, with the transactions behind it |
+| AI-13 | `1315:5295` / `1315:5379` | Working |
+| AI-14 | `1315:5462` / `1315:5545` | Nothing found |
+| AI-15 | `1315:5628` / `1315:5711` | Apple Intelligence not available |
+
+Phase 2 sketches, light only:
+- AI-20 `1316:5243`: one insight at a time on Home.
+- AI-21 `1316:5302`: Insights.
+- AI-22 `1316:5400`: Your plan, a realistic month built on Income and bills.
+
+Nothing to build until the product owner picks. The open decisions are in the note.
+- **Approved (product owner, 2026-11-15).** Phase 1 frames are now "Approved, ready to build"; the decisions are in note `1316:5612`. The phase 2 sketches (AI-20 to AI-22) are not part of this approval.
+  1. Pearl sorts by itself after 5 earlier answers that agree, or 8 for money between people.
+  2. P1a sorts categories and joint "theirs" deposits only, up to 20 a day, new transactions only.
+  3. The summary is the Home card plus the Pearl sorted filter. No notifications.
+  4. "Stop sorting like this" asks first.
+  5. Learned rules sit alongside the user's own.
+  6. "Pearl sorts for you" and "Ask Pearl" each get their own switch.
+  7. Ask Pearl gets a Home button.
+  8. Suggestions are labelled. "Use this plan" replaces the numbers in Income and bills.
+- **New frames:**
+  - AI-16 `1320:5509` / `1320:5539`: Home with a 44 pt Glass button, sparkle icon, VoiceOver "Ask Pearl".
+  - AI-17 `1320:5576` / `1320:5732`: the answer with a "Suggestion" Callout ("Nothing changes unless you set it.").
+  - AI-03b `1321:5770` / `1321:5892`: Farm Boy → Groceries, "Like your last 5 at Farm Boy" over "All sorted as Groceries by you", with the same actions.
+- **Changed frames:**
+  - AI-08: two switches.
+  - AI-02: the 20-a-day line. The rent and pay rows are swapped for Coffee and Health, because P1a sorts no transfers. Ana now shows 8.
+  - AI-03: Ana now shows 8.
+  - AI-06: "Tell me each time" is removed.
+  - AI-07: the category caption.
+- **P1a wording:** the server matches your own past answers, so P1a can't say "on this iPhone".
+  - AI-08: "Up to 20 new ones a day · learns from your own answers"
+  - AI-02: "Sorted from your own past answers, up to 20 a day. Tap one to see why or undo it."
+  - AI-06: "Pearl learned this from 8 you sorted. Nothing new is shared."
+
+  When the Apple Intelligence phase ships, these three switch to "on this iPhone" (exact strings in the note). Ask Pearl keeps "on this iPhone", since it only ships on-device.
+- **AI-07 caption strings:** line 1 is the first case that applies.
+  1. "Pearl's not sure: {k} of your last {n} here were {Category}." With k = 1: "…{k} of your last {n} here was {Category}."
+  2. "Pearl's not sure: you split {k} of your last {n} here."
+  3. "Pearl's not sure: {k} of the last {n} from {Name} were {Name}'s share."
+  4. "Pearl's not sure: you've sorted only {n} here so far."
+
+  Line 2 is always: "Yes sorts it as {Guess}. Tap the card for more."
+- **Three controls, three outcomes (product owner, 2026-11-15).**
+  - **Switch "Pearl sorts these":** off sends new matches to Quick sort. The rule and the rows it already sorted stay. Sub: "Off: new ones go to Quick sort. What it sorted stays."
+  - **"Stop sorting like this":** asks first, undoes every row it sorted, and the pattern is never relearned.
+    - AI-03 sub: "Asks first · undoes the 6 and won't learn it again"
+    - AI-03b sub: "Asks first · undoes the 3 and won't learn it again"
+    - AI-04 body: "The 6 Pearl sorted this way go back to Needs a look, and Pearl won't learn this again. New ones from Ana go to Quick sort."
+  - **"Forget this rule":** asks first in the new AI-04f `1322:6047` / `1322:6100`, removes the rule and keeps what it sorted.
+    - Title: "Forget Farm Boy?"
+    - Eyebrow: "LEARNED BY PEARL"
+    - Body: "What Pearl already sorted stays. Pearl may learn it again once you've sorted Farm Boy the same way 5 more times."
+    - Buttons: "Forget" · "Keep it"
+- **New AI-06b** `1322:5853` / `1322:5950`: the category version of the learned rule page, in the same layout as AI-06.
+  - Title: "Farm Boy"
+  - Top line: "Pearl learned this from 5 you sorted. Nothing new is shared."
+  - WHAT PEARL DOES: "Sorts them as Groceries" over "Any card or account", and "Purchases at Farm Boy" over "Any amount". Add ", about every 2 weeks" (or every week / every month) only when the past answers have a regular rhythm.
+  - Then the switch, "See the 3 it sorted" and "Forget this rule".

@@ -25,6 +25,14 @@ struct ReviewView: View {
     @State private var toast: Toast?
     @State private var busy = false
     @State private var error: String?
+    /// AI-03: why Pearl sorted this row, from Pearl sorted.
+    @State private var why: WhyID?
+
+    struct WhyID: Identifiable { let id: String }
+
+    init(startFilter: String = "all") {
+        _filter = State(initialValue: startFilter)
+    }
 
     struct Toast: Equatable {
         let title: String
@@ -69,7 +77,23 @@ struct ReviewView: View {
         // The tab holding this screen decides the bar: tell it, so Quick sort has the whole screen.
         .onChange(of: sorting) { on in app.hidesTabBar = on }
         .onDisappear { app.hidesTabBar = false }
-        .task { await load() }
+        .task {
+            await load()
+            // AI-01's See them opens on Pearl sorted.
+            if showingSorted && sortedRows == nil { await loadSorted() }
+        }
+        .sheet(item: $why) { w in
+            PatternWhySheet(recordID: w.id, onClose: { why = nil }) { title in
+                why = nil
+                withAnimation { toast = Toast(title: title, undo: nil) }
+                Task {
+                    await load()
+                    await loadSorted()
+                }
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
         .fullScreenCover(item: Binding(get: { asking.flatMap { $0.opensPage(accounts) ? $0 : nil } },
                                        set: { asking = $0 })) { ask in
             GuessPage(actions: GuessActions(
@@ -304,12 +328,28 @@ struct ReviewView: View {
                     .frame(maxWidth: .infinity).padding(.vertical, 32)
                     .listRowBackground(Color.clear).listRowSeparator(.hidden)
             }
+            if filter == "pearl" && rows.contains(where: { $0.record != nil }) {
+                // AI-02: what these are, and that each can be taken back.
+                Text("Sorted from your own past answers, up to 20 a day. Tap one to see why or undo it.")
+                    .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    .listRowBackground(Color.clear).listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 4, trailing: 16))
+            }
             Section {
                 ForEach(rows) { row in
-                    NavigationLink {
-                        TransactionByID(id: row.id, categories: categories)
-                    } label: {
-                        sortedRow(row)
+                    Group {
+                        if let record = row.record {
+                            // AI-02: a row Pearl sorted from her answers opens AI-03.
+                            Button { why = WhyID(id: record) } label: { sortedRow(row) }
+                                .buttonStyle(.plain)
+                                .accessibilityHint("Shows why Pearl sorted it, and Undo")
+                        } else {
+                            NavigationLink {
+                                TransactionByID(id: row.id, categories: categories)
+                            } label: {
+                                sortedRow(row)
+                            }
+                        }
                     }
                     .listRowBackground(Nacre.glass)
                     .listRowSeparatorTint(Nacre.separator)

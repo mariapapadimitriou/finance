@@ -25,6 +25,8 @@ struct CategoriesRulesView: View {
 
     @State private var tab = Tab.rules
     @State private var book: RulesBook?
+    /// AI-05: rules Pearl learned from what she sorted, beside hers.
+    @State private var learned: [LearnedRule] = []
     @State private var categories: [CategoryList.Category] = []
     @State private var error: String?
     @State private var toast: Toast?
@@ -211,7 +213,7 @@ struct CategoriesRulesView: View {
 
     /// CR-00: every rule she saved.
     @ViewBuilder private func rules(_ rules: [RulesBook.Rule]) -> some View {
-        if rules.isEmpty {
+        if rules.isEmpty && learned.isEmpty {
             empty("No saved rules yet",
                   "Change a transaction’s category and choose “Do the same for every…”, and the rule shows up here.")
         } else {
@@ -226,13 +228,21 @@ struct CategoriesRulesView: View {
                             }
                         }
                     }
-                    .cardRow(first: i == 0, last: i == rules.count - 1)
+                    .cardRow(first: i == 0, last: i == rules.count + learned.count - 1)
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button("Delete") { delete(rule) }.tint(Pearl.moneyOut)
                     }
                 }
+                // AI-05 (1313:4400): learned by Pearl, each opening AI-06.
+                ForEach(Array(learned.enumerated()), id: \.element.id) { i, rule in
+                    NavigationLink { LearnedRuleView(id: rule.id) } label: {
+                        CardRow(title: rule.name, sub: rule.words) { RingInitials(name: rule.name) }
+                    }
+                    .cardRow(first: rules.isEmpty && i == 0, last: i == learned.count - 1)
+                }
             } footer: {
-                CardNote("Swipe left on a rule to delete it.")
+                CardNote(learned.isEmpty ? "Swipe left on a rule to delete it."
+                         : "“Learned by Pearl” came from what you sorted. Tap one to see it or turn it off.")
             }
         }
     }
@@ -378,6 +388,9 @@ struct CategoriesRulesView: View {
     private func load() async {
         do {
             let rules: RulesBook = try await app.api.get("api/rules")
+            struct Learned: Decodable { let rules: [Lenient<LearnedRule>] }
+            let got: Learned? = try? await app.api.get("api/pattern-sort/rules")
+            learned = got?.rules.compactMap { $0.value } ?? []
             // Together, so a row can't open before its categories are here.
             if let list: CategoryList = try? await app.api.get("api/categories") {
                 categories = list.categories

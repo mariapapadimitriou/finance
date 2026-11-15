@@ -114,6 +114,18 @@ struct QuickSortView: View {
                 Spacer(minLength: 12)
                 stack.padding(.horizontal, 32)
                 Spacer(minLength: 16)
+                if let ask = current, drafts[ask.id] == nil, let unsure = ask.item.unsure {
+                    // AI-07 (1315:4227): why Pearl isn't sure, in ink; then
+                    // what Yes does, muted. Still Skip or Yes.
+                    Text(unsure.line)
+                        .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                        .multilineTextAlignment(.center).padding(.horizontal, 32)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Yes sorts it as \(guess(ask)). Tap the card for more.")
+                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                        .multilineTextAlignment(.center).padding(.horizontal, 32)
+                        .padding(.top, 2)
+                } else {
                 Text(hint)
                     .font(Nacre.footnote).foregroundColor(Pearl.ink)
                     .multilineTextAlignment(.center).padding(.horizontal, 32)
@@ -126,6 +138,7 @@ struct QuickSortView: View {
                         .font(Nacre.footnote).foregroundColor(Pearl.muted)
                         .padding(.top, 2)
                         .accessibilityHidden(true)
+                }
                 }
                 if let error = error {
                     Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).padding(.top, 6)

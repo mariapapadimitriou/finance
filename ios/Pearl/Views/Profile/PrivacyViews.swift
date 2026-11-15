@@ -6,7 +6,7 @@ import UserNotifications
 // and THL-139): CN-04 Privacy and consent, CN-05 Turn off AI sorting?, N-01
 // Turn on notifications and N-02 Notifications.
 
-private let cardRadius: CGFloat = 22
+let cardRadius: CGFloat = 22
 
 /// A line icon in a rose-washed circle: 34pt in a row, 72pt over N-01.
 private struct RoseBubble: View {
@@ -24,7 +24,7 @@ private struct RoseBubble: View {
 }
 
 /// "NEEDED FOR PEARL": the caption over a card.
-private struct CardCaption: View {
+struct CardCaption: View {
     let text: String
 
     init(_ text: String) { self.text = text }
@@ -39,7 +39,7 @@ private struct CardCaption: View {
 }
 
 /// The page's Fraunces title and the line under it.
-private struct PageTitle: View {
+struct PageTitle: View {
     let title: String
     let line: String
 
@@ -51,7 +51,7 @@ private struct PageTitle: View {
 }
 
 /// One row: an optional icon, a title, a line under it, and what sits at the end.
-private struct PrivacyRow<Trailing: View>: View {
+struct PrivacyRow<Trailing: View>: View {
     var symbol: String? = nil
     let title: String
     var sub: String? = nil
@@ -78,7 +78,7 @@ private struct PrivacyRow<Trailing: View>: View {
 }
 
 /// A row with a switch. VoiceOver reads the switch, with the line as its hint.
-private struct SwitchRow: View {
+struct SwitchRow: View {
     var symbol: String? = nil
     let title: String
     var sub: String? = nil
@@ -98,7 +98,7 @@ private struct SwitchRow: View {
     }
 }
 
-private struct RowChevron: View {
+struct RowChevron: View {
     var body: some View {
         Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
             .foregroundColor(Pearl.muted)
@@ -172,7 +172,9 @@ struct ConsentView: View {
 
         CardCaption("Your choice")
         GlassCard(radius: cardRadius) {
-            SwitchRow(symbol: "sparkle", title: "Sort with AI", sub: "Merchant, amount and date only",
+            // AI-08 (1313:4855): Pearl sorts for you, P1a. Ask Pearl's switch comes later.
+            SwitchRow(symbol: "sparkle", title: "Pearl sorts for you",
+                      sub: "Up to 20 new ones a day · learns from your own answers",
                       isOn: isOn("ai_sort"), disabled: busy == "ai_sort") { on in
                 if on { Task { await change("ai_sort", to: true) } } else { askingAIOff = true }
             }
