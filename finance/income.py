@@ -170,15 +170,22 @@ def cadence(transactions: list[Transaction], today: str | None = None) -> dict |
     from .analytics import _mine, is_others
     end = date.fromisoformat(today) if today else date.today()
     start = end - timedelta(days=183)
+    # Third paycheques are counted over whole months: a month the window cuts
+    # into keeps the paydays before the cut, or May 3, 17 and 31 read as two
+    # once May 3 is more than six months old.
+    whole = start.replace(day=1).isoformat()
     # Paycheques on the same day (a split deposit) count as one.
     by_day: dict[str, float] = {}
     pay = [t for t in transactions
-           if is_income(t) and kind_of(t) == "salary" and t.date[:10] >= start.isoformat()
+           if is_income(t) and kind_of(t) == "salary" and t.date[:10] >= whole
            # Someone else's pay into a shared account isn't her schedule, and
            # pay that's both of theirs is planned at her share (gap 2).
            and not is_others(t)]
     for t in _main_pay(pay):
         by_day[t.date[:10]] = by_day.get(t.date[:10], 0.0) - _mine(t)
+    every = sorted(by_day)
+    # Cadence and paycheque still come from the last six months only.
+    by_day = {d: v for d, v in by_day.items() if d >= start.isoformat()}
     days = sorted(by_day)
     if len(days) < 3:
         return None
@@ -198,7 +205,7 @@ def cadence(transactions: list[Transaction], today: str | None = None) -> dict |
     else:
         kind, per_month = "irregular", None
     counts: dict[str, int] = {}
-    for d in days:
+    for d in every:
         counts[d[:7]] = counts.get(d[:7], 0) + 1
     three = sorted(m for m, n in counts.items() if n >= 3) if kind == "biweekly" else []
     return {"cadence": kind, "paycheque": paycheque,
