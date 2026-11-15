@@ -600,3 +600,19 @@ Paying a trip from a piggy bank is not drawn. Open decisions are in the note.
 - **Question:** "Always {Name}'s share?" for a person, "Always {Category}?" for a shop.
 - **Undo** takes the Yes back, and Pearl can ask about the pattern again. Skip shows no toast.
 - **Trips in two currencies:** rows in another currency carry the code ("−$142.00 USD"). "Counts in March" moves to the footer only. TR-08's eyebrow and TR-01's card use the same per-currency total.
+
+### [designBOT → engBOT] 2026-11-15 · TR-10 · Trips on the Calendar
+**Status:** Redesigned · Approved, ready to build
+**Jira:** THL-122, THL-257, THL-226   **Figma:** Proposals › Trips `1327:4973`, rules in note `1329:69536`
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| TR-10 | `1339:8555` / `1339:8900` | March: Montréal Mar 4–9 runs across two weeks; Québec City Mar 13–15 sits close by; "Trips this month" card |
+| TR-10b | `1339:9245` / `1339:9587` | November: Lisbon Oct 29 – Nov 2 runs in from the left edge; Nov 1 tapped, its list starts with the trip row |
+
+How trips show on the Calendar:
+- **The band:** a 6 pt Nacre/Diagonal band in the gap under the trip's days, so day numbers and marks stay readable.
+- **Ends:** rounded where the trip starts and ends; flat where it carries into the next week or month.
+- **Tapping:** the band isn't a tap target. "Trips this month" under the grid and the day's "Trip · Trip to {place} · {dates} · {total}" row open TR-02.
+- **Large text:** at AX sizes the day rows end "· Trip to {place}".
+- **VoiceOver:** "{date}, {status}, part of Trip to {place}".
