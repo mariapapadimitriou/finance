@@ -27,6 +27,8 @@ struct CategoriesRulesView: View {
     @State private var book: RulesBook?
     /// AI-05: rules Pearl learned from what she sorted, beside hers.
     @State private var learned: [LearnedRule] = []
+    /// TR-09: her trips by name; a trip's tag has the trip's name.
+    @State private var trips: [String: Trip] = [:]
     @State private var categories: [CategoryList.Category] = []
     @State private var error: String?
     @State private var toast: Toast?
@@ -146,6 +148,20 @@ struct CategoriesRulesView: View {
             }
         }
         .sheet(item: $removingTag) { tag in
+            if let trip = trips[tag.tag] {
+                // TR-09 (1331:6604): a trip's tag; removing it ends the trip, so it asks first.
+                PearlConfirmSheet(overline: "Tags · A trip", title: "Remove \(tag.tag)?",
+                                  message: "This tag belongs to a trip, so the trip ends too. The \(trip.count) transaction\(trip.count == 1 ? "" : "s") \(trip.count == 1 ? "stays as it is" : "stay as they are"), in \(trip.months).",
+                                  primary: "Remove the trip and tag", busyLabel: "Removing…", secondary: "Keep it",
+                                  failure: "Couldn’t remove the tag. Nothing changed. Try again.",
+                                  onClose: { removingTag = nil }) {
+                    let _: OK = try await app.api.put("api/tags/\(tag.tag)", ["name": NSNull()])
+                    removingTag = nil
+                    withAnimation { toast = Toast(text: "\(tag.tag) removed.") }
+                    app.changed()
+                    await load()
+                }
+            } else {
             // CR-10x (TEST-06).
             PearlConfirmSheet(overline: "Tags", title: "Take \(tag.tag) off \(transactions(tag.count))?",
                               message: "The transactions stay as they are. Only the tag comes off.",
@@ -157,6 +173,7 @@ struct CategoriesRulesView: View {
                 withAnimation { toast = Toast(text: "\(tag.tag) removed.") }
                 app.changed()
                 await load()
+            }
             }
         }
     }
@@ -391,6 +408,10 @@ struct CategoriesRulesView: View {
             struct Learned: Decodable { let rules: [Lenient<LearnedRule>] }
             let got: Learned? = try? await app.api.get("api/pattern-sort/rules")
             learned = got?.rules.compactMap { $0.value } ?? []
+            struct Trips: Decodable { let trips: [Lenient<Trip>] }
+            let gotTrips: Trips? = try? await app.api.get("api/trips")
+            trips = Dictionary((gotTrips?.trips.compactMap { $0.value } ?? []).map { ($0.name, $0) },
+                               uniquingKeysWith: { a, _ in a })
             // Together, so a row can't open before its categories are here.
             if let list: CategoryList = try? await app.api.get("api/categories") {
                 categories = list.categories
