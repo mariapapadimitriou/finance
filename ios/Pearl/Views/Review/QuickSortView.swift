@@ -9,6 +9,8 @@ struct QuickSortPrompt: Decodable {
 
     /// The open questions, skipped ones left where they are.
     var asks: [Ask] { review?.asks.filter { !$0.skipped } ?? [] }
+    /// AI-18: the patterns Pearl asks about once, first in the deck.
+    var patterns: [PatternAsk] { review?.patternAsks ?? [] }
 
     init(from decoder: Decoder) throws {
         enum Keys: String, CodingKey { case show, review }
@@ -60,11 +62,15 @@ struct QuickSortView: View {
     let asks: [Ask]
     let categories: [CategoryList.Category]
     var names: [String] = []
+    /// AI-18: one card for each pattern Pearl asks about, before the rest.
+    var patterns: [PatternAsk] = []
     let onClose: () -> Void
 
     /// The cards, less the ones sorted along with another (T-86).
     @State private var deck: [Ask]
     @State private var index = 0
+    /// How many of `patterns` have been answered; they come first.
+    @State private var patternAt = 0
     @State private var drag: CGSize = .zero
     /// The card flying off, and which way.
     @State private var leaving: Bool?
@@ -97,10 +103,11 @@ struct QuickSortView: View {
     private let threshold: CGFloat = 110
 
     init(asks: [Ask], categories: [CategoryList.Category], names: [String] = [],
-         onClose: @escaping () -> Void) {
+         patterns: [PatternAsk] = [], onClose: @escaping () -> Void) {
         self.asks = asks
         self.categories = categories
         self.names = names
+        self.patterns = patterns
         self.onClose = onClose
         _deck = State(initialValue: asks)
     }
@@ -114,7 +121,18 @@ struct QuickSortView: View {
                 Spacer(minLength: 12)
                 stack.padding(.horizontal, 32)
                 Spacer(minLength: 16)
-                if let ask = current, drafts[ask.id] == nil, let unsure = ask.item.unsure {
+                if let pattern = pattern {
+                    // AI-18 (1326:64004): what she did, in ink; what Yes and Skip do, muted.
+                    Text(pattern.because)
+                        .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                        .multilineTextAlignment(.center).padding(.horizontal, 32)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(pattern.yesSkip)
+                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                        .multilineTextAlignment(.center).padding(.horizontal, 32)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 2)
+                } else if let ask = current, drafts[ask.id] == nil, let unsure = ask.item.unsure {
                     // AI-07 (1315:4227): why Pearl isn't sure, in ink; then
                     // what Yes does, muted. Still Skip or Yes.
                     Text(unsure.line)
@@ -230,10 +248,16 @@ struct QuickSortView: View {
         }
     }
 
-    private var current: Ask? { index < deck.count ? deck[index] : nil }
+    /// AI-18: the pattern on top, while there is one; the deck waits under it.
+    private var pattern: PatternAsk? { patternAt < patterns.count ? patterns[patternAt] : nil }
+
+    private var current: Ask? { pattern == nil && index < deck.count ? deck[index] : nil }
 
     /// Every question Quick sort walks: Needs a look's.
     private var total: Int { deck.count }
+
+    /// What's still to sort, patterns too.
+    private var remaining: Int { max(patterns.count - patternAt, 0) + max(total - index, 0) }
 
     private func isGuess(_ ask: Ask) -> Bool { ask.isGuess(accounts) }
 
@@ -271,7 +295,7 @@ struct QuickSortView: View {
             VStack(spacing: 4) {
                 Text("Quick sort").font(Nacre.headline).foregroundColor(Pearl.ink)
                 // Counts down as she answers: what's still to sort.
-                Text("\(max(total - index, 0)) left")
+                Text("\(remaining) left")
                     .font(Nacre.footnote).foregroundColor(Pearl.ink)
             }
             .accessibilityElement(children: .combine)
@@ -297,7 +321,7 @@ struct QuickSortView: View {
         ZStack {
             // The cards still to come, peeking out underneath.
             ForEach((1...2).reversed(), id: \.self) { depth in
-                if index + depth < total {
+                if depth < remaining {
                     // T-93r dark (1077:1477): --surface-card with a --border edge (TEST-01).
                     RoundedRectangle(cornerRadius: 28, style: .continuous)
                         .fill(scheme == .dark ? Pearl.card : Color.white.opacity(0.55))
@@ -307,7 +331,18 @@ struct QuickSortView: View {
                         .offset(y: CGFloat(depth) * 10)
                 }
             }
-            if let ask = current {
+            if let pattern = pattern {
+                patternCard(pattern)
+                    .offset(x: offsetX, y: drag.height * 0.2)
+                    .rotationEffect(.degrees(Double(offsetX / 18)))
+                    .gesture(swipe)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAction(named: "Yes") { right() }
+                    .accessibilityAction(named: "Skip") { patternSkip(pattern) }
+                    .accessibilityHint(pattern.yesSkip)
+                    .accessibilityIdentifier("quick-sort-pattern")
+                    .id(pattern.id)
+            } else if let ask = current {
                 card(ask)
                     .onTapGesture {
                         guard leaving == nil else { return }
@@ -378,6 +413,31 @@ struct QuickSortView: View {
         .overlay(alignment: .topLeading) { stamp(guessing: hasYes(ask)) }
     }
 
+    /// AI-18 (1326:64004): one card for the whole pattern. It shows "Each one"
+    /// and a rhythm where a transaction shows its date and card.
+    private func patternCard(_ p: PatternAsk) -> some View {
+        VStack(spacing: 8) {
+            Text("A PATTERN")
+                .font(Nacre.caption2).tracking(0.78).foregroundColor(Pearl.action)
+            Initials(name: p.name, size: 64)
+            Text(p.who).font(Nacre.headline).foregroundColor(Pearl.ink)
+                .multilineTextAlignment(.center).lineLimit(2)
+            if let amount = p.amount {
+                Text(Format.amount(amount))
+                    .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
+                    .foregroundColor(Pearl.ink).lineLimit(1).minimumScaleFactor(0.6)
+            }
+            Text(p.each).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                .multilineTextAlignment(.center).lineLimit(2)
+            Text(p.question)
+                .font(Nacre.title).foregroundColor(Pearl.ink)
+                .multilineTextAlignment(.center).lineLimit(3).minimumScaleFactor(0.7)
+                .padding(.top, 8)
+        }
+        .modifier(CardFace())
+        .overlay(alignment: .topLeading) { stamp(guessing: true) }
+    }
+
     /// YES or SKIP as a guess leans one way (T-64, T-65); ANSWER or SKIP for a
     /// question.
     @ViewBuilder private func stamp(guessing: Bool) -> some View {
@@ -433,7 +493,7 @@ struct QuickSortView: View {
                 .accessibilityHint(current.flatMap { ask in drafts[ask.id].flatMap { d in
                     d.split != nil ? "Saves the split and \(splitCategory(ask, d)), for this one." : nil } } ?? "")
         }
-        .disabled(current == nil || leaving != nil)
+        .disabled((current == nil && pattern == nil) || leaving != nil)
     }
 
     private func roundButton(symbol: String, label: String, filled: Bool,
@@ -493,6 +553,10 @@ struct QuickSortView: View {
 
     /// Yes to a guess, or open a question.
     private func right() {
+        if let pattern = pattern {
+            patternYes(pattern)
+            return
+        }
         guard let ask = current, leaving == nil else { return }
         if hasYes(ask) {
             yes(ask)
@@ -548,8 +612,46 @@ struct QuickSortView: View {
         Task { await answered(ask, .check(ask.item.key, yes: false)) }
     }
 
+    // MARK: AI-18, a pattern
+
+    /// Yes: Pearl sorts new ones like this from now on; nothing waiting is sorted.
+    private func patternYes(_ p: PatternAsk) {
+        guard leaving == nil, !busy else { return }
+        withAnimation(.easeIn(duration: 0.25)) { leaving = true }
+        Task { await answerPattern(p, "yes") }
+    }
+
+    /// Skip: Pearl asks again after `need` more answers; a second Skip, never.
+    private func patternSkip(_ p: PatternAsk) {
+        guard leaving == nil, !busy else { return }
+        withAnimation(.easeIn(duration: 0.25)) { leaving = false }
+        Task { await answerPattern(p, "skip") }
+    }
+
+    private func answerPattern(_ p: PatternAsk, _ answer: String) async {
+        busy = true
+        defer { busy = false }
+        do {
+            let _: OK = try await app.api.post("api/pattern-sort/asks/\(p.id)/\(answer)",
+                                               answer == "yes" ? ["how": "ai18"] : [:])
+            error = nil
+            withAnimation { toast = nil }
+            drag = .zero
+            leaving = nil
+            patternAt += 1
+            if remaining == 0 { await finish() }
+        } catch {
+            self.error = app.handle(error)
+            withAnimation(.spring()) { leaving = nil; drag = .zero }
+        }
+    }
+
     /// Skip, for a guess or a question: it stays in Needs a look.
     private func left() {
+        if let pattern = pattern {
+            patternSkip(pattern)
+            return
+        }
         guard let ask = current, leaving == nil else { return }
         // T-98s: Skip forgets a held split.
         if drafts[ask.id]?.split != nil {

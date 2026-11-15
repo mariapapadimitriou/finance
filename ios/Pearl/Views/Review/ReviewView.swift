@@ -65,7 +65,8 @@ struct ReviewView: View {
         // page closing together took a presented Quick sort with them.
         .overlay {
             if sorting {
-                QuickSortView(asks: quick, categories: categories, names: recentNames) {
+                QuickSortView(asks: quick, categories: categories, names: recentNames,
+                              patterns: review?.patternAsks ?? []) {
                     sorting = false
                     Task { await load() }
                 }
@@ -224,9 +225,9 @@ struct ReviewView: View {
                     }
                 }
             }
-            if !showingSkipped && !showingSorted && !quick.isEmpty {
+            if !showingSkipped && !showingSorted && !(quick.isEmpty && (review?.patternAsks ?? []).isEmpty) {
                 // T-10; REFRESH-03's P1 took "Tap one to sort it." out.
-                QuickSortCard(count: quick.count) { sorting = true }
+                QuickSortCard(count: quick.count + (review?.patternAsks.count ?? 0)) { sorting = true }
             }
             if let error = error, review != nil {
                 Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
@@ -330,24 +331,26 @@ struct ReviewView: View {
             }
             if filter == "pearl" && rows.contains(where: { $0.record != nil }) {
                 // AI-02: what these are, and that each can be taken back.
-                Text("Sorted from your own past answers, up to 20 a day. Tap one to see why or undo it.")
+                Text("Sorted the ways you said yes to, up to 20 a day. Tap one to see why or undo it.")
                     .font(Nacre.footnote).foregroundColor(Pearl.ink)
                     .listRowBackground(Color.clear).listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 4, trailing: 16))
             }
             if filter == "pearl" {
-                // AI-02 (AI-02b): Pearl's sorts first, then FROM YOUR RULES,
-                // then anything else Pearl sorted, as before.
+                // AI-02 (1313:3611, AI-03c): Pearl's sorts, the ways she said
+                // yes to; then FROM YOUR RULES (what she set); then NOT CHECKED
+                // BY YOU (what nobody asked her about). 2 and 3 open the page.
                 let ruled = rows.filter { $0.record == nil && $0.group == "rules" }
                 let rest = rows.filter { $0.record == nil && $0.group != "rules" }
                 sortedSection(rows.filter { $0.record != nil })
                 if !ruled.isEmpty {
-                    PearlSectionLabel(text: "From your rules")
-                        .listRowBackground(Color.clear).listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 0, trailing: 16))
+                    sectionHeading("From your rules")
                     sortedSection(ruled)
                 }
-                sortedSection(rest)
+                if !rest.isEmpty {
+                    sectionHeading("Not checked by you · Tap one to check it")
+                    sortedSection(rest)
+                }
             } else {
                 sortedSection(rows)
             }
@@ -355,6 +358,12 @@ struct ReviewView: View {
             ProgressView().frame(maxWidth: .infinity).padding(.vertical, 32)
                 .listRowBackground(Color.clear).listRowSeparator(.hidden)
         }
+    }
+
+    private func sectionHeading(_ text: String) -> some View {
+        PearlSectionLabel(text: text)
+            .listRowBackground(Color.clear).listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 0, trailing: 16))
     }
 
     @ViewBuilder private func sortedSection(_ rows: [SortedRow]) -> some View {

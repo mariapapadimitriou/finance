@@ -23,6 +23,8 @@ struct HomeView: View {
     /// H-00r's Sort now: Quick sort, straight from Home (TEST-04).
     @State private var quickSort: [Ask] = []
     @State private var quickSortNames: [String] = []
+    /// AI-18: patterns Pearl asks about once, first in Quick sort.
+    @State private var quickSortPatterns: [PatternAsk] = []
     @State private var opening = false
 
     var body: some View {
@@ -81,9 +83,12 @@ struct HomeView: View {
         .fullScreenCover(item: $askingToNotify) { quiet in
             TurnOnNotificationsView(quiet: quiet)
         }
-        .fullScreenCover(isPresented: Binding(get: { !quickSort.isEmpty }, set: { if !$0 { quickSort = [] } })) {
-            QuickSortView(asks: quickSort, categories: app.categories, names: quickSortNames) {
+        .fullScreenCover(isPresented: Binding(get: { !quickSort.isEmpty || !quickSortPatterns.isEmpty },
+                                              set: { if !$0 { quickSort = []; quickSortPatterns = [] } })) {
+            QuickSortView(asks: quickSort, categories: app.categories, names: quickSortNames,
+                          patterns: quickSortPatterns) {
                 quickSort = []
+                quickSortPatterns = []
                 Task { await load() }
             }
         }
@@ -98,6 +103,7 @@ struct HomeView: View {
         do {
             let prompt: QuickSortPrompt = try await app.api.get("api/quick-sort", query: ["all": "1"])
             quickSortNames = prompt.review?.people ?? []
+            quickSortPatterns = prompt.patterns
             quickSort = prompt.asks
         } catch {
             self.error = app.handle(error)

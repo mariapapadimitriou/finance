@@ -2,9 +2,11 @@ import SwiftUI
 
 // Pearl sorts for you, P1a (product owner, 2026-11-15; ios/bots/ai-plan.md;
 // Figma Proposals 1313:3507, note 1316:5612). Python only: Pearl answers new
-// rows the way she always has, says so, and each can be undone.
+// rows the way she always has, says so, and each can be undone. AI only
+// detects; she confirms (AI-03c, note 1329:63964): Pearl asks once for each
+// pattern (AI-18, in Quick sort) before it sorts anything.
 //
-// AI-01  Home: "Pearl sorted 12 for you this week …" · See them
+// AI-01  Home: "Pearl sorted 12 this week, the ways you said yes to …" · See them
 // AI-02  Needs a look › Pearl sorted (ReviewView): each row with its reason
 // AI-03  Why Pearl sorted this (joint) · AI-03b (a category, 1321:5770)
 // AI-04  Stop sorting like this? · AI-04f Forget this rule? (1322:6047)
@@ -12,6 +14,18 @@ import SwiftUI
 // AI-06  A learned rule (joint) · AI-06b (a category, 1322:5853)
 // AI-07  Quick sort's caption when Pearl isn't sure (QuickSortView)
 // AI-08  Privacy: "Pearl sorts for you" (PrivacyViews)
+// AI-18  Quick sort: one card for a pattern, "Always Ana's share?" (QuickSortView)
+
+/// When she said Yes to a pattern, and after how many of her own answers.
+struct PatternYes: Decodable, Hashable {
+    let day: String
+    var count: Int? = nil
+
+    /// "You said yes on Nov 10, after sorting 5 yourself".
+    var line: String {
+        "You said yes on \(Format.short(day))" + (count.map { ", after sorting \($0) yourself" } ?? "")
+    }
+}
 
 /// One row Pearl sorted, as AI-03 shows it.
 struct PatternRecord: Decodable, Identifiable, Hashable {
@@ -33,9 +47,11 @@ struct PatternRecord: Decodable, Identifiable, Hashable {
     var sortedByPattern: [String]? = nil
     var answered: [String]? = nil
     var learned: Bool? = nil
+    var confirmed: PatternYes? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, txn, pattern, kind, line, answer, merchant, amount, date, day, label, account, joint, answered, learned
+        case confirmed
         case patternCount = "pattern_count"
         case patternMerchant = "pattern_merchant"
         case sortedByPattern = "sorted_by_pattern"
@@ -59,13 +75,14 @@ struct LearnedRule: Decodable, Identifiable, Hashable {
     let on: Bool
     let sorted: [String]
     var answered: [String]? = nil
+    var confirmed: PatternYes? = nil
 
     var isJoint: Bool { kind == "joint" }
     var name: String { merchant ?? answer }
     var firstName: String { answer.split(separator: " ").first.map(String.init) ?? answer }
-    /// The rules list's line: "Ana's share of Joint · learned by Pearl", "Groceries · learned by Pearl".
+    /// The rules list's line (AI-05): "Ana's share of Joint · you said yes", "Groceries · you said yes".
     var words: String {
-        (isJoint ? "\(label) of \(joint ?? account ?? "the joint account")" : label) + " · learned by Pearl"
+        (isJoint ? "\(label) of \(joint ?? account ?? "the joint account")" : label) + " · you said yes"
     }
     /// AI-06's title: "Ana's deposits", "Farm Boy".
     var title: String { isJoint ? "\(possessive(firstName)) deposits" : name }
@@ -75,7 +92,7 @@ struct LearnedRule: Decodable, Identifiable, Hashable {
 
 // MARK: - AI-01
 
-/// "Pearl sorted 12 for you this week, the way you usually do. Undo any you like." · See them.
+/// "Pearl sorted 12 this week, the ways you said yes to. Undo any you like." · See them.
 struct PearlSortedCard: View {
     let count: Int
 
@@ -85,7 +102,7 @@ struct PearlSortedCard: View {
         } label: {
             PearlCard(spacing: 8) {
                 HStack(alignment: .center, spacing: 12) {
-                    Text("Pearl sorted \(count) for you this week, the way you usually do. Undo any you like.")
+                    Text("Pearl sorted \(count) this week, the ways you said yes to. Undo any you like.")
                         .font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.ink)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
@@ -162,8 +179,9 @@ struct PatternWhySheet: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(r.isJoint ? "Like the last \(n) from \(r.firstName)" : "Like your last \(n) at \(r.patternMerchant ?? r.merchant)")
                         .font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                    Text(r.isJoint ? "All into \(r.account ?? "the joint account"), all sorted as \(r.label ?? r.answer) by you"
-                         : "All sorted as \(r.answer) by you")
+                    // AI-03 / AI-03b (AI-03c): when she said yes, after how many of her own.
+                    Text(r.confirmed?.line ?? (r.isJoint ? "All into \(r.account ?? "the joint account"), all sorted as \(r.label ?? r.answer) by you"
+                         : "All sorted as \(r.answer) by you"))
                         .font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
                 }
                 .fixedSize(horizontal: false, vertical: true)
@@ -284,7 +302,7 @@ struct ForgetRuleSheet: View {
     var body: some View {
         let name = rule.isJoint ? rule.firstName : rule.name
         PearlConfirmSheet(overline: "Learned by Pearl", title: "Forget \(name)?",
-                          message: "What Pearl already sorted stays. Pearl may learn it again once you’ve sorted \(name) the same way \(rule.need) more times.",
+                          message: "What Pearl already sorted stays. Pearl may ask you again once you’ve sorted \(name) the same way \(rule.need) more times.",
                           primary: "Forget", busyLabel: "Forgetting…", secondary: "Keep it",
                           failure: "Couldn’t forget it. Nothing changed. Try again.", onClose: onClose) {
             let _: OK = try await app.api.post("api/pattern-sort/rules/\(rule.id)/forget", [:])
@@ -310,8 +328,9 @@ struct LearnedRuleView: View {
         ProfilePage {
             VStack(alignment: .leading, spacing: 12) {
                 if let rule = rule {
+                    // AI-06 / AI-06b (AI-03c): when she said yes, then "Nothing new is shared."
                     PageTitle(title: rule.title,
-                              line: "Pearl learned this from \(rule.count) you sorted. Nothing new is shared.")
+                              line: (rule.confirmed.map { $0.line + ". " } ?? "") + "Nothing new is shared.")
                     CardCaption("What Pearl does")
                     GlassCard(radius: cardRadius) {
                         PrivacyRow(symbol: "building.columns", title: "Sorts them as \(rule.label)",

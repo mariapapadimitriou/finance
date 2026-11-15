@@ -172,9 +172,9 @@ struct ConsentView: View {
 
         CardCaption("Your choice")
         GlassCard(radius: cardRadius) {
-            // AI-08 (1313:4855): Pearl sorts for you, P1a. Ask Pearl's switch comes later.
+            // AI-08 (1313:4855, AI-03c): Pearl sorts for you, asking first. Ask Pearl's switch comes later.
             SwitchRow(symbol: "sparkle", title: "Pearl sorts for you",
-                      sub: "Up to 20 new ones a day · learns from your own answers",
+                      sub: "Asks you once for each pattern · up to 20 a day",
                       isOn: isOn("ai_sort"), disabled: busy == "ai_sort") { on in
                 if on { Task { await change("ai_sort", to: true) } } else { askingAIOff = true }
             }

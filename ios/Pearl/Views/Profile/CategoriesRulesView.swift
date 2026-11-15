@@ -233,7 +233,7 @@ struct CategoriesRulesView: View {
                         Button("Delete") { delete(rule) }.tint(Pearl.moneyOut)
                     }
                 }
-                // AI-05 (1313:4400): learned by Pearl, each opening AI-06.
+                // AI-05 (1313:4400, AI-03c): rules she said yes to, each opening AI-06.
                 ForEach(Array(learned.enumerated()), id: \.element.id) { i, rule in
                     NavigationLink { LearnedRuleView(id: rule.id) } label: {
                         CardRow(title: rule.name, sub: rule.words) { RingInitials(name: rule.name) }
@@ -242,7 +242,7 @@ struct CategoriesRulesView: View {
                 }
             } footer: {
                 CardNote(learned.isEmpty ? "Swipe left on a rule to delete it."
-                         : "“Learned by Pearl” came from what you sorted. Tap one to see it or turn it off.")
+                         : "“You said yes” rules came from a pattern Pearl spotted and you confirmed. Tap one to see it or turn it off.")
             }
         }
     }
