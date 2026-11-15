@@ -74,7 +74,9 @@ struct SplitSheet: View {
     /// The "left · stays yours" line, scrolled to while typing (TEST-16).
     private static let statusID = "split-status"
 
-    init(t: Transaction, api: APIClient, recent: [String], with names: [String]? = nil,
+    /// `startOnWho`: Pearl chat's Maybe split (PC-06) opens Who was it with?
+    /// with `names` ticked, rather than skipping to how to split.
+    init(t: Transaction, api: APIClient, recent: [String], with names: [String]? = nil, startOnWho: Bool = false,
          title: String? = nil, saveTitle: String = "Save",
          onHold: (([String: Any], Double, Double) -> Void)? = nil, onSaved: @escaping (String) -> Void,
          onRemoved: ((String, JSONValue?) -> Void)? = nil,
@@ -101,7 +103,7 @@ struct SplitSheet: View {
         self.onHold = onHold
         let existing = t.splitting?.people.map(\.name) ?? []
         _people = State(initialValue: names ?? existing)
-        _step = State(initialValue: names == nil && focus == nil ? 0 : 1)
+        _step = State(initialValue: (names == nil || startOnWho) && focus == nil ? 0 : 1)
         // Her own share as the split was made: a let go made it bigger since.
         // JOINT-B: of her part of a joint purchase.
         let whole = t.splitBase
