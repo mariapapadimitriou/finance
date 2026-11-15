@@ -502,3 +502,23 @@ Nothing to build until the product owner picks. The open decisions are in the no
   - Top line: "Pearl learned this from 5 you sorted. Nothing new is shared."
   - WHAT PEARL DOES: "Sorts them as Groceries" over "Any card or account", and "Purchases at Farm Boy" over "Any amount". Add ", about every 2 weeks" (or every week / every month) only when the past answers have a regular rhythm.
   - Then the switch, "See the 3 it sorted" and "Forget this rule".
+
+### [designBOT → engBOT] 2026-11-15 · AI-02b · P1a frames moved into Pearl app
+**Status:** Redesigned (Figma now matches #341)
+**Jira:** THL-117, THL-139, THL-213, THL-254, THL-123, THL-125   **Figma:** Pearl app `751:6166`
+- **Moved from Proposals.** Node IDs are unchanged, so the code's citations still hold. Light and dark stay paired.
+  - Home `1285:72187` › "Pearl sorts for you" `1325:68972`: AI-01.
+  - Sorting `1285:72189` › `1325:68973`: AI-02, AI-03, AI-03b, AI-04, AI-09 (new), AI-07.
+  - Profile and settings `1285:72192` › `1325:68974`: AI-05, AI-06, AI-06b, AI-04f, AI-08.
+  - Ask Pearl (AI-10 to AI-17) and the phase 2 sketches stay on Proposals.
+- **Deleted CN-04** `733:30857` / `733:32225` (Privacy and consent). AI-08 replaces it.
+- **The four built-without-a-frame items:**
+  1. **"See the n" / "See the n it sorted":** new AI-09 `1325:6340` / `1325:6517`, titled "The 5 you sorted". It's a plain list of Row components, each opening its page, with no totals card. Its title is "The {n} you sorted" from "See the n" (AI-03), or "The {n} Pearl sorted" from "See the n it sorted" (AI-06).
+  2. **"Change it…":** no frame needed. It opens the transaction's own page, which is the right place.
+  3. **CN-05r wording**, updated in all six frames (`1228:20535`, `1228:21153`, `1234:22996`, `1234:23052`, `1234:23112`, `1234:23156`):
+     - Eyebrow: "PEARL SORTS FOR YOU"
+     - Title: "Stop Pearl sorting for you?"
+     - Body: "New ones wait for you in Quick sort. What Pearl already sorted, and your own rules, stay. You can turn it back on any time."
+     - Buttons unchanged: "Turn off" · "Keep it on".
+  4. **AI-02:** Pearl's own sorts come first. A "FROM YOUR RULES" heading follows, then the rows your own rules sorted (pay, rent), with the meta "{Category} · your rule". Those rows open the transaction's page, not AI-03.
+- **AI-08:** the Ask Pearl switch is hidden until Ask Pearl ships, matching `PrivacyViews.swift:175`.
