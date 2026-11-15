@@ -128,7 +128,8 @@ struct PatternWhySheet: View {
                 }
             }
             .navigationDestination(isPresented: Binding(get: { showing != nil }, set: { if !$0 { showing = nil } })) {
-                PatternRowsView(ids: showing ?? [])
+                // AI-09 from AI-03: her own answers behind the pattern.
+                PatternRowsView(title: "The \((showing ?? []).count) you sorted", ids: showing ?? [])
             }
             .navigationDestination(isPresented: Binding(get: { opening != nil }, set: { if !$0 { opening = nil } })) {
                 if let id = opening { TransactionByID(id: id, categories: app.categories) }
@@ -211,9 +212,12 @@ struct PatternWhySheet: View {
     }
 }
 
-/// See the n / See the n it sorted: those transactions, each opening its page.
+/// AI-09 (`1325:6340` / `1325:6517`): See the n / See the n it sorted, a
+/// plain list of those transactions, each opening its page, no totals card.
 struct PatternRowsView: View {
     @EnvironmentObject private var app: AppModel
+    /// "The 5 you sorted" from AI-03, "The 5 Pearl sorted" from AI-06.
+    let title: String
     let ids: [String]
     @State private var rows: [Transaction] = []
 
@@ -231,6 +235,8 @@ struct PatternRowsView: View {
             .padding(.horizontal, Pearl.gutter).padding(.vertical, 16)
         }
         .nacreScreen()
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
         .task {
             var out: [Transaction] = []
             for id in ids {
@@ -323,7 +329,7 @@ struct LearnedRuleView: View {
                     }
                     CardCaption("What it sorted")
                     GlassCard(radius: cardRadius) {
-                        NavigationLink { PatternRowsView(ids: rule.sorted) } label: {
+                        NavigationLink { PatternRowsView(title: "The \(rule.sorted.count) Pearl sorted", ids: rule.sorted) } label: {
                             PrivacyRow(title: "See the \(rule.sorted.count) it sorted") { RowChevron() }
                         }
                         .buttonStyle(.plain)
