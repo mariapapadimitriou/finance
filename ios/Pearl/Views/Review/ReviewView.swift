@@ -335,6 +335,30 @@ struct ReviewView: View {
                     .listRowBackground(Color.clear).listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 4, trailing: 16))
             }
+            if filter == "pearl" {
+                // AI-02 (AI-02b): Pearl's sorts first, then FROM YOUR RULES,
+                // then anything else Pearl sorted, as before.
+                let ruled = rows.filter { $0.record == nil && $0.group == "rules" }
+                let rest = rows.filter { $0.record == nil && $0.group != "rules" }
+                sortedSection(rows.filter { $0.record != nil })
+                if !ruled.isEmpty {
+                    PearlSectionLabel(text: "From your rules")
+                        .listRowBackground(Color.clear).listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 0, trailing: 16))
+                    sortedSection(ruled)
+                }
+                sortedSection(rest)
+            } else {
+                sortedSection(rows)
+            }
+        } else {
+            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 32)
+                .listRowBackground(Color.clear).listRowSeparator(.hidden)
+        }
+    }
+
+    @ViewBuilder private func sortedSection(_ rows: [SortedRow]) -> some View {
+        if !rows.isEmpty {
             Section {
                 ForEach(rows) { row in
                     Group {
@@ -344,6 +368,7 @@ struct ReviewView: View {
                                 .buttonStyle(.plain)
                                 .accessibilityHint("Shows why Pearl sorted it, and Undo")
                         } else {
+                            // A rule's row (or any other) opens its own page, not AI-03.
                             NavigationLink {
                                 TransactionByID(id: row.id, categories: categories)
                             } label: {
@@ -360,9 +385,6 @@ struct ReviewView: View {
                     }
                 }
             }
-        } else {
-            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 32)
-                .listRowBackground(Color.clear).listRowSeparator(.hidden)
         }
     }
 

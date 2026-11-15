@@ -1744,6 +1744,8 @@ struct SortedRow: Decodable, Identifiable {
     let undo: JSONValue?
     /// AI-02: a row Pearl sorted from her own answers; it opens AI-03.
     var record: String? = nil
+    /// AI-02b: "rules" for a row her own rule sorted, listed under FROM YOUR RULES.
+    var group: String? = nil
 }
 
 /// The answer to sorting one transaction: what changed, and how to undo it.

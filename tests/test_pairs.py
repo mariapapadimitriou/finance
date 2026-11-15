@@ -167,6 +167,26 @@ class TestSortedLists:
         assert "your bank said so" in row["line"]
         assert review(client)["pearl_sorted"] == len(rows)
 
+    def test_rows_her_rules_sorted_come_together_after_the_rest_is_kept(self, client):
+        # AI-02b: FROM YOUR RULES groups what her own rules sorted, each "· your rule".
+        ledger(client, [tx("2026-10-09", "Loblaws", 40.00, "Groceries", category_source="issuer"),
+                        tx("2026-10-08", "Corner Gym", 55.00, "Fitness", category_source="merchant_override"),
+                        tx("2026-10-07", "City Parking", 18.00, "Transport", category_source="merchant_override")])
+        rows = client.get("/api/review/sorted?view=pearl").get_json()["rows"]
+        mine = [r for r in rows if r.get("group") == "rules"]
+        assert [r["merchant"] for r in mine] == ["Corner Gym", "City Parking"]
+        assert [r["line"] for r in mine] == ["Fitness · your rule", "Transport · your rule"]
+        loblaws = next(r for r in rows if r["merchant"] == "Loblaws")
+        assert loblaws.get("group") is None and rows.index(loblaws) > rows.index(mine[-1])
+
+    def test_her_pay_rule_reads_as_her_rule(self):
+        from finance.models import Transaction
+        from finance.sorted_log import from_her_rule, reason
+        t = Transaction(date="2026-10-07", description="NORTHWIND LTD", amount=-2150.0,
+                        account_id="chq", account_name="chq", category="Income",
+                        category_source="pay_rule")
+        assert reason(t) == "Income · your rule" and from_her_rule(t)
+
     def test_a_row_she_was_asked_about_is_not_in_pearl_sorted(self, client):
         ledger(client, [unsure("2026-10-08", "Bistro Nine", 30.00, "Dining")])
         rows = client.get("/api/review/sorted?view=pearl").get_json()["rows"]
