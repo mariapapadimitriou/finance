@@ -112,7 +112,11 @@ def reason(t: Transaction) -> str:
         "issuer": f"{category} · your bank said so",
         "rule": f"{category} · from its name",
         "card_inflow": "A payment to your card",
-    }.get(t.category_source or "", f"{category} · Pearl’s best match")
+        "pattern": f"{category} · you said yes",
+        # Nothing Pearl guessed: every guess has a source above. A row with
+        # none (from before sources were kept) says only that she hasn't
+        # checked it, never that Pearl matched it (product owner, 2026-11-15).
+    }.get(t.category_source or "", f"{category} · not checked by you")
 
 
 def pearl_rows(st, review: dict, today: str, ids_in) -> list[dict]:

@@ -187,6 +187,13 @@ class TestSortedLists:
                         category_source="pay_rule")
         assert reason(t) == "Income · your rule" and from_her_rule(t)
 
+    def test_a_row_with_no_source_never_claims_pearl_matched_it(self):
+        from finance.models import Transaction
+        from finance.sorted_log import from_her_rule, reason
+        t = Transaction(date="2026-10-07", description="OLD ROW", amount=12.0,
+                        account_id="chq", account_name="chq", category="Shopping", category_source=None)
+        assert reason(t) == "Shopping · not checked by you" and not from_her_rule(t)
+
     def test_a_row_she_was_asked_about_is_not_in_pearl_sorted(self, client):
         ledger(client, [unsure("2026-10-08", "Bistro Nine", 30.00, "Dining")])
         rows = client.get("/api/review/sorted?view=pearl").get_json()["rows"]
