@@ -1341,6 +1341,8 @@ struct Review: Decodable {
     /// T-74: months that held a third paycheque. No transaction to sort;
     /// "Got it" dismisses one.
     let threePayMonth: [PayMonth]
+    /// AI-18: patterns Pearl asks about once, before it sorts any (Quick sort).
+    var patternAsks: [PatternAsk] = []
     /// Answers given today, and rows Pearl sorted without asking.
     var sortedToday: Int = 0
     var pearlSorted: Int = 0
@@ -1370,6 +1372,7 @@ struct Review: Decodable {
         case threePayMonth = "three_pay_month"
         case sortedToday = "sorted_today"
         case pearlSorted = "pearl_sorted"
+        case patternAsks = "pattern_asks"
     }
 
     init(from decoder: Decoder) throws {
@@ -1391,6 +1394,8 @@ struct Review: Decodable {
         checks = items(.checks)
         sortedToday = (try? c.decodeIfPresent(Int.self, forKey: .sortedToday)) ?? 0
         pearlSorted = (try? c.decodeIfPresent(Int.self, forKey: .pearlSorted)) ?? 0
+        patternAsks = (try? c.decodeIfPresent([Lenient<PatternAsk>].self, forKey: .patternAsks))?
+            .compactMap { $0.value } ?? []
         threePayMonth = (try? c.decodeIfPresent([Lenient<PayMonth>].self, forKey: .threePayMonth))?
             .compactMap { $0.value } ?? []
     }
@@ -1744,7 +1749,8 @@ struct SortedRow: Decodable, Identifiable {
     let undo: JSONValue?
     /// AI-02: a row Pearl sorted from her own answers; it opens AI-03.
     var record: String? = nil
-    /// AI-02b: "rules" for a row her own rule sorted, listed under FROM YOUR RULES.
+    /// AI-02: "rules" for a row something she set sorted (FROM YOUR RULES),
+    /// "unchecked" for the rest (NOT CHECKED BY YOU).
     var group: String? = nil
 }
 
