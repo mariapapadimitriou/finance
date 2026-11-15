@@ -77,6 +77,8 @@ struct QuickSortView: View {
     @State private var patternAt = 0
     /// How many of `trips` have been answered; they come next.
     @State private var tripAt = 0
+    /// TR-14: the trip card was tapped; its rows, before she answers.
+    @State private var seeingTrip: TripAsk?
     /// AI-18y: the pattern just said Yes to, for the toast's Undo.
     @State private var undoPattern: PatternAsk?
     @State private var drag: CGSize = .zero
@@ -203,6 +205,24 @@ struct QuickSortView: View {
             }
         }
         .task { await begin() }
+        .fullScreenCover(item: $seeingTrip) { t in
+            // TR-14 (1347:75265): AI-09's plain list, "Montréal · Mar 4–9 · 23",
+            // each row opening its page; Back returns to the card.
+            NavigationStack {
+                PatternRowsView(title: [t.place, Format.span(t.start, t.end), "\(t.count)"]
+                                    .compactMap { $0 }.joined(separator: " · "),
+                                ids: t.ids)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarLeading) {
+                            Button { seeingTrip = nil } label: {
+                                Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
+                                    .foregroundColor(Pearl.ink)
+                            }
+                            .accessibilityLabel("Back")
+                        }
+                    }
+            }
+        }
         .fullScreenCover(item: Binding(get: { asking.flatMap { $0.opensPage(accounts) ? $0 : nil } },
                                        set: { asking = $0 }), onDismiss: comeBack) { ask in
             GuessPage(actions: GuessActions(
@@ -375,12 +395,18 @@ struct QuickSortView: View {
                     .id(pattern.id)
             } else if let trip = trip {
                 tripCard(trip)
+                    // TR-14 (1347:75265): tapping the card shows its rows.
+                    .onTapGesture {
+                        guard leaving == nil else { return }
+                        seeingTrip = trip
+                    }
                     .offset(x: offsetX, y: drag.height * 0.2)
                     .rotationEffect(.degrees(Double(offsetX / 18)))
                     .gesture(swipe)
                     .accessibilityElement(children: .combine)
                     .accessibilityAction(named: "Yes") { right() }
                     .accessibilityAction(named: "Skip") { tripSkip(trip) }
+                    .accessibilityAction(named: "See the \(trip.count)") { seeingTrip = trip }
                     .accessibilityHint("Yes groups them as one trip. They stay in \(trip.months).")
                     .accessibilityIdentifier("quick-sort-trip")
                     .id(trip.key)
