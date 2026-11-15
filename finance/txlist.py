@@ -267,6 +267,12 @@ def describe(t: Transaction, ctx: Context) -> dict:
     elif cat == "Unsorted transfers":
         chip, counts = "Not sorted yet", "spending"
         note, note_link = "Saved or spent? Tell us", True
+        # It counts as spent until she answers, so the row shows what counts:
+        # on a joint account split 50/50, half (finance/joint.py, AM-04). A
+        # bill payment Plaid calls LOAN_PAYMENTS or TRANSFER_OUT lands here,
+        # and showed the whole payment as hers though the totals counted
+        # half (2026-11-15).
+        amount = abs(share_amount(t))
     elif cat == "Transfers":
         chip, structural = "Transfer", True
         note = ("Transfer · card payment · the purchases already counted" if _is_card_payment(t)

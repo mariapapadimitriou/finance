@@ -2659,11 +2659,12 @@ struct WhoseSheet: View {
         // JOINT-B: on a split purchase the row's amount is her share of the
         // split; her answer here is her part, before the split.
         let mine = t.splitting != nil ? (t.jointPart ?? t.amount) : t.amount
-        let theirs = t.shareSet && mine < 0.005
-        let isPart = !theirs && abs(mine - full) >= 0.005
-        _mode = State(initialValue: theirs ? "theirs" : isPart ? "part" : "mine")
-        _part = State(initialValue: isPart ? String(format: "%.2f", mine) : "")
-        _splitAlways = State(initialValue: t.jointShare != nil || !isPart)
+        // 2026-11-15: Part of it starts at her share, not an empty field
+        // that kept Save off (WhoseAnswer).
+        let start = WhoseAnswer.start(mine: mine, full: full, shareSet: t.shareSet, share: t.jointShare)
+        _mode = State(initialValue: start.mode)
+        _part = State(initialValue: start.part)
+        _splitAlways = State(initialValue: t.jointShare != nil || start.mode != "part")
     }
 
     private var full: Double { t.fullAmount ?? t.amount }
@@ -2676,8 +2677,8 @@ struct WhoseSheet: View {
         }
         return "On a joint account, spending is yours unless you say otherwise. Only your part counts."
     }
-    private var amount: Double? { Double(part.replacingOccurrences(of: "$", with: "").replacingOccurrences(of: ",", with: "")) }
-    private var ready: Bool { mode != "part" || (amount.map { $0 > 0 && $0 <= full } ?? false) }
+    private var amount: Double? { WhoseAnswer.amount(part) }
+    private var ready: Bool { WhoseAnswer.ready(mode: mode, typed: part, full: full) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -2707,7 +2708,7 @@ struct WhoseSheet: View {
                         ChoiceLine(title: "Part of it", sub: "Say how much was yours", selected: mode == "part") { mode = "part" }
                     }
                     if mode == "part" {
-                        FieldRow(label: "Your part", text: $part, prompt: Format.amount(full / 2))
+                        FieldRow(label: "Your part", text: $part, prompt: Format.amount(WhoseAnswer.suggested(full: full, share: t.jointShare)))
                             .keyboardType(.decimalPad)
                             .sheetCard()
                         Toggle("Always split \(t.merchant) like this", isOn: $splitAlways)
