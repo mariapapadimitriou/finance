@@ -1915,6 +1915,14 @@ struct Trip: Decodable, Identifiable, Hashable {
     struct Category: Decodable, Hashable {
         let category: String
         let count: Int
+        /// Currency → what the category came to in it (TR-03); Pearl converts nothing.
+        var totals: [String: Double]? = nil
+
+        /// The biggest first, as the trip's own totals.
+        var money: [MoneyTotal] {
+            (totals ?? [:]).map { MoneyTotal(currency: $0.key, amount: $0.value) }
+                .sorted { (abs($0.amount), $1.currency) > (abs($1.amount), $0.currency) }
+        }
     }
 
     enum CodingKeys: String, CodingKey {

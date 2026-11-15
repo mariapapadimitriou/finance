@@ -64,6 +64,25 @@ struct TransactionsView: View {
     /// T-23: adding one by hand.
     @State private var adding = false
 
+    /// TR-11 / TR-12: Select for one trip, opened from its options (TR-04);
+    /// nil for Cash flow itself.
+    let tripPick: TripPick?
+    @Environment(\.dismiss) private var dismiss
+    /// TR-12 with every row picked ends the trip, so TR-13 asks first.
+    @State private var endingTrip = false
+    /// TR-02c: the trip just made; its page opens once TR-08 has gone.
+    @State private var madeTrip: String?
+    @State private var openTrip: String?
+
+    init(tripPick: TripPick? = nil) {
+        self.tripPick = tripPick
+        _selecting = State(initialValue: tripPick != nil)
+        // TR-11 / TR-12: the month the trip starts in, as its frames show.
+        _month = State(initialValue: tripPick.map { String($0.trip.start.prefix(7)) })
+    }
+
+    private var inTrip: Bool { tripPick != nil }
+
     enum Bulk: String, Identifiable {
         case category, tag, mark
         var id: String { rawValue }
@@ -91,12 +110,14 @@ struct TransactionsView: View {
                 if noTransactionsYet {
                     emptyLedger
                 } else {
-                    searchRow.padding(.top, 20)
+                    // TR-11 / TR-12: Cash flow as it is, but only the trip's
+                    // Select answers taps; search, the tabs and the month wait.
+                    searchRow.disabled(inTrip).padding(.top, 20)
                     // T-02, T-45: the tabs and the summary stay while searching.
-                    tabs.padding(.top, 14)
+                    tabs.disabled(inTrip).padding(.top, 14)
                     if filtersOn && !showCalendar && !inSearch { activeChips.padding(.top, 12) }
-                    summaryCard.padding(.top, 16)
-                    if !inSearch { bankState }
+                    summaryCard.allowsHitTesting(!inTrip).padding(.top, 16)
+                    if !inSearch && !inTrip { bankState }
                     if showCalendar && !inSearch {
                         CalendarCard(month: month ?? Format.thisMonth(), categories: categories) { m in
                             month = m
@@ -130,8 +151,9 @@ struct TransactionsView: View {
         }
         .nacreScreen()
         .navigationBarHidden(true)
-        .onChange(of: selecting) { on in app.hidesTabBar = on }
-        .onDisappear { app.hidesTabBar = false }
+        .onChange(of: selecting) { on in if !inTrip { app.hidesTabBar = on } }
+        .onDisappear { if !inTrip { app.hidesTabBar = false } }
+        .modifier(HidesTabBar(on: inTrip))
         .sheet(isPresented: $adding) {
             AddTransactionSheet(api: app.api, categories: categories) { said in
                 adding = false
@@ -207,23 +229,48 @@ struct TransactionsView: View {
                 leavingOut = false
             }
         }
-        .sheet(isPresented: $makingTrip) {
+        .sheet(isPresented: $makingTrip, onDismiss: {
+            // TR-02c: the new trip's page, under its toast.
+            if let id = madeTrip { madeTrip = nil; openTrip = id }
+        }) {
             // TR-08 (1331:6480) from TR-07's Make a trip.
             NameTripSheet(count: picked.count, dates: pickedDates,
                           total: pickedAmount.replacingOccurrences(of: "\u{2212}", with: ""),
                           months: pickedMonths, name: $tripName, onClose: { makingTrip = false }) { name in
-                let _: OK = try await app.api.post("api/trips", ["ids": Array(picked), "name": name])
+                let reply: TripReply = try await app.api.post("api/trips", ["ids": Array(picked), "name": name])
+                if let trip = reply.trip {
+                    // TR-02c (1347:74145): "Trip to Montréal made · 23 transactions" ·
+                    // Undo takes the trip and its tag away, and doesn't count
+                    // as skipping its dates (DELETE ?undo=1).
+                    let api = app.api, id = trip.id
+                    app.say("\(trip.name) made · \(trip.count) transaction\(trip.count == 1 ? "" : "s")") {
+                        let _: OK = try await api.delete("api/trips/\(id)", query: ["undo": "1"])
+                    }
+                    madeTrip = trip.id
+                }
                 makingTrip = false
                 endSelecting()
                 app.changed()
                 await reload()
             }
         }
+        .sheet(isPresented: $endingTrip) {
+            // TR-12 with every row picked: that's TR-13 (1347:75171).
+            if let p = tripPick {
+                NotATripSheet(trip: p.trip, onClose: { endingTrip = false }) {
+                    endingTrip = false
+                    dismiss()
+                }
+            }
+        }
+        .navigationDestination(isPresented: Binding(get: { openTrip != nil }, set: { if !$0 { openTrip = nil } })) {
+            if let id = openTrip { TripPage(id: id) }
+        }
         .navigationDestination(for: Transaction.self) { t in
             TransactionDetailView(transaction: t, categories: categories, siblings: rows)
         }
         .refreshable {
-            await runSync(force: true)
+            if !inTrip { await runSync(force: true) }
             await reload()
         }
         .reloads { await start() }
@@ -593,6 +640,21 @@ struct TransactionsView: View {
                 Spacer()
                 Button("Show all") { self.counts = nil }
                     .font(Nacre.body).foregroundColor(Pearl.action)
+            } else if let p = tripPick {
+                // TR-11 (1347:74377): "2 to add · Mar 1–12" · Cancel; TR-12
+                // (1347:74773): "2 selected · they stay in March" · Done.
+                switch p.kind {
+                case .add:
+                    Text("\(picked.count) to add · \(Format.span(p.window.start, p.window.end))")
+                    Spacer()
+                    Button("Cancel") { dismiss() }
+                        .font(Nacre.body).foregroundColor(Pearl.action)
+                case .remove:
+                    Text("\(picked.count) selected · they stay in \(picked.isEmpty ? p.trip.months : pickedMonths)")
+                    Spacer()
+                    Button("Done") { dismiss() }
+                        .font(Nacre.body).foregroundColor(Pearl.action)
+                }
             } else if selecting {
                 Text("\(picked.count) selected · \(pickedAmount.replacingOccurrences(of: "\u{2212}", with: ""))")
                 Spacer()
@@ -656,7 +718,7 @@ struct TransactionsView: View {
                             if selecting {
                                 Button { toggle(t) } label: {
                                     TransactionRow(t: t, paidBack: paidBack(for: t), picked: picked.contains(t.id),
-                                                   showsDay: !byDay)
+                                                   showsDay: !byDay, showsTrip: !inTrip)
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityAddTraits(picked.contains(t.id) ? .isSelected : [])
@@ -787,19 +849,28 @@ struct TransactionsView: View {
     /// Five don't fit at 393 pt (the labels come to 362 of 377 pt, with no
     /// room between them), so with Confirm on the bar Leave out moves under
     /// Mark as… (engBOT, Trips build).
+    ///
+    /// TR-15 (1347:75596): with guesses, Make a trip stays third and Confirm
+    /// comes last, as TR-07 has it (note 1329:69536); Leave out is the last
+    /// tile of Mark as…'s Not spending grid. TR-11 / TR-12: one action.
     private var selectionBar: some View {
         HStack(spacing: 0) {
-            barButton("Category") { bulk = .category }
-            barButton("Mark as…") { bulk = .mark }
-            if guesses > 0 {
-                barButton("Confirm \(guesses)") {
-                    let ids = pickedRows.filter(\.suggested).map(\.id)
-                    Task { await change(["ids": ids], path: "api/transactions/batch/confirm") }
+            if let p = tripPick {
+                barButton(p.kind == .add ? "Add \(picked.count) to the trip" : "Remove \(picked.count) from the trip") {
+                    tripChange(p)
                 }
-            }
-            barButton("Make a trip") { tripName = ""; makingTrip = true }
-            if guesses == 0 {
-                barButton("Leave out") { leavingOut = true }
+            } else {
+                barButton("Category") { bulk = .category }
+                barButton("Mark as…") { bulk = .mark }
+                barButton("Make a trip") { tripName = ""; makingTrip = true }
+                if guesses > 0 {
+                    barButton("Confirm \(guesses)") {
+                        let ids = pickedRows.filter(\.suggested).map(\.id)
+                        Task { await change(["ids": ids], path: "api/transactions/batch/confirm") }
+                    }
+                } else {
+                    barButton("Leave out") { leavingOut = true }
+                }
             }
         }
         .padding(.horizontal, 8).padding(.top, 14).padding(.bottom, 10)
@@ -915,6 +986,40 @@ struct TransactionsView: View {
         picked = []
     }
 
+    /// TR-11 / TR-12: add the picked rows to the trip, or take them out, then
+    /// back to its page with "Added 2 to Trip to Montréal" (or "Removed 2
+    /// from …") and an Undo that does the opposite. Picking every row of the
+    /// trip would end it, so that asks first, as TR-13.
+    private func tripChange(_ p: TripPick) {
+        let ids = Array(picked)
+        guard !ids.isEmpty, !busy else { return }
+        if p.kind == .remove && rows.allSatisfy({ picked.contains($0.id) }) {
+            endingTrip = true
+            return
+        }
+        Task {
+            busy = true
+            defer { busy = false }
+            let api = app.api, id = p.trip.id, name = p.trip.name, n = ids.count
+            do {
+                let _: TripReply = try await api.put("api/trips/\(id)", [p.kind == .add ? "add" : "remove": ids])
+                if p.kind == .add {
+                    app.say("Added \(n) to \(name)") {
+                        let _: TripReply = try await api.put("api/trips/\(id)", ["remove": ids])
+                    }
+                } else {
+                    app.say("Removed \(n) from \(name)") {
+                        let _: TripReply = try await api.put("api/trips/\(id)", ["add": ids])
+                    }
+                }
+                app.changed()
+                dismiss()
+            } catch {
+                if let words = app.handle(error) { app.say(words) }
+            }
+        }
+    }
+
     /// One change for every picked row; the server's words (or `say` and
     /// what it did to the Allowance) and its Undo.
     private func change(_ body: [String: Any], path: String, say: String? = nil) async {
@@ -1007,7 +1112,7 @@ struct TransactionsView: View {
 
     // MARK: What's shown
 
-    private var noTransactionsYet: Bool { loadedOnce && months.isEmpty && rows.isEmpty && error == nil }
+    private var noTransactionsYet: Bool { !inTrip && loadedOnce && months.isEmpty && rows.isEmpty && error == nil }
 
     private var shown: [Transaction] { visible(applying: filters) }
 
@@ -1105,6 +1210,10 @@ struct TransactionsView: View {
     /// The months, the count, the accounts and the list, asked for together
     /// (2026-11-08) instead of one after another before the list could start.
     private func start() async {
+        if inTrip {
+            await reload()
+            return
+        }
         let api = app.api
         async let summaryReply: Summary? = try? api.get("api/summary")
         async let reviewReply: Review? = try? api.get("api/review")
@@ -1137,6 +1246,10 @@ struct TransactionsView: View {
 
     private func reload() async {
         defer { loadedOnce = true }
+        if let p = tripPick {
+            await reloadTrip(p)
+            return
+        }
         var p = ["limit": "1000"]
         if let month = month { p["month"] = month }
         if filters.only.contains(.leftOut) { p["excluded"] = "1" }
@@ -1161,6 +1274,50 @@ struct TransactionsView: View {
         } catch {
             self.error = app.handle(error)
         }
+    }
+
+    /// TR-11: every row from the trip's dates ±3 days not already in a trip
+    /// (the trip's own are hidden; another trip's can't join this one).
+    /// TR-12: the trip's rows. The month card is the trip's first month.
+    private func reloadTrip(_ p: TripPick) async {
+        let api = app.api
+        async let reviewReply: Review? = try? api.get("api/review")
+        do {
+            switch p.kind {
+            case .add:
+                let w = p.window
+                var all: [Transaction] = []
+                var m = String(w.start.prefix(7))
+                let last = String(w.end.prefix(7))
+                while m <= last {
+                    let list: TransactionList = try await api.get("api/transactions/list",
+                                                                  query: ["month": m, "limit": "1000"])
+                    all += list.transactions
+                    if m == month { monthTotals = list.monthTotals }
+                    // The 1st plus 31 days is always in the next month.
+                    m = String(Format.shiftDay(m + "-01", by: 31).prefix(7))
+                }
+                let own = Set(p.trip.ids)
+                rows = all.filter {
+                    let day = String($0.date.prefix(10))
+                    return day >= w.start && day <= w.end && !own.contains($0.id) && $0.trip == nil
+                }
+                .sorted { $0.date > $1.date }
+            case .remove:
+                let d: TripDetail = try await api.get("api/trips/\(p.trip.id)")
+                rows = d.rows
+                if let month = month {
+                    let list: TransactionList? = try? await api.get("api/transactions/list",
+                                                                    query: ["month": month, "limit": "1"])
+                    monthTotals = list?.monthTotals
+                }
+            }
+            picked = picked.intersection(rows.map(\.id))
+            error = nil
+        } catch {
+            self.error = app.handle(error)
+        }
+        if let review = await reviewReply { reviewCount = review.open ?? review.count }
     }
 
     private func search() async {
@@ -2006,5 +2163,19 @@ struct MonthBar: View {
         }
         .frame(height: 8)
         .accessibilityHidden(true)
+    }
+}
+
+/// TR-11 / TR-12: Cash flow's Select pushed for a trip has its own bar where
+/// the tab bar is, as Cash flow's own Select does.
+private struct HidesTabBar: ViewModifier {
+    let on: Bool
+
+    func body(content: Content) -> some View {
+        if on {
+            content.toolbar(.hidden, for: .tabBar)
+        } else {
+            content
+        }
     }
 }
