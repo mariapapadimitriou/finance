@@ -1739,6 +1739,39 @@ extension Review {
     }
 }
 
+/// A pattern Pearl asks about first (AI-18): one Quick sort card for it.
+struct PatternAsk: Decodable, Identifiable, Hashable {
+    let id: String
+    let kind: String
+    let merchant: String?
+    let answer: String
+    let label: String
+    let count: Int
+    let need: Int
+    var account: String? = nil
+    var joint: String? = nil
+    var rhythm: String? = nil
+    var amount: Double? = nil
+
+    var isJoint: Bool { kind == "joint" }
+    var name: String { merchant ?? answer }
+
+    /// "e-Transfers from Ana Ruiz", "Farm Boy".
+    var who: String { isJoint ? "e-Transfers from \(name)" : name }
+    /// "Each one · into Joint · every 2 weeks".
+    var each: String {
+        (["Each one", isJoint ? "into \(joint ?? account ?? "the joint account")" : nil,
+          rhythm.map { $0.replacingOccurrences(of: "about ", with: "") }] as [String?])
+            .compactMap { $0 }.joined(separator: " · ")
+    }
+    /// "Always Ana's share?", "Always Groceries at Farm Boy?".
+    var question: String { isJoint ? "Always \(label)?" : "Always \(label) at \(name)?" }
+    /// "You sorted the last 8 as Ana's share."
+    var because: String { "You sorted the last \(count) as \(label)." }
+    /// "Yes sorts new ones for you. Skip asks again after 8 more."
+    var yesSkip: String { "Yes sorts new ones for you. Skip asks again after \(need) more." }
+}
+
 /// A row in Sorted today or Pearl sorted: who, how much, and why it's sorted.
 struct SortedRow: Decodable, Identifiable {
     let id: String
