@@ -276,9 +276,8 @@ enum Features {
     /// rules, no Tags filter. The server keeps them; turn this on to bring
     /// them back.
     static let tags = false
-    /// Pearl chat's plans (PC-12, PC-13) wait for somewhere to live: Set it
-    /// keeps the plan as a category budget, but Your plan in Income and bills
-    /// (AI-22, which PC-13's "See it in Your plan" opens) isn't approved or
-    /// built, so nothing on the iPhone would show it. Turn on with AI-22.
-    static let chatPlans = false
+    /// Pearl chat's plans (PC-12, PC-13): Set it adds the plan to Your plan
+    /// (YP-01 to YP-06, Profile › Income and bills › Your plan), which
+    /// PC-13's "See it in Your plan" opens.
+    static let chatPlans = true
 }
