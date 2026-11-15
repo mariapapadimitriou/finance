@@ -48,9 +48,11 @@ struct SortProposal: Decodable, Hashable, Identifiable {
     let was: String?
     /// PC-06: "Maybe split with Jo and Sam?", as a suggestion only.
     let splitWith: [String]
-    let txn: BriefTransaction
+    /// Boxed, as Transaction's big parts are (Boxed.swift): a card is passed
+    /// around a SwiftUI body and must stay small on the stack (check_stack.py).
+    @Boxed var txn: BriefTransaction
     /// The Needs a look question, for the card's What was this? (T-96).
-    let item: Review.Item?
+    @Boxed var item: Review.Item?
 
     enum CodingKeys: String, CodingKey {
         case id, key, category, was, txn, item
@@ -64,8 +66,8 @@ struct SortProposal: Decodable, Hashable, Identifiable {
         category = try c.decode(String.self, forKey: .category)
         was = try? c.decodeIfPresent(String.self, forKey: .was)
         splitWith = (try? c.decodeIfPresent([String].self, forKey: .splitWith)) ?? []
-        txn = try c.decode(BriefTransaction.self, forKey: .txn)
-        item = (try? c.decodeIfPresent(Review.Item.self, forKey: .item)) ?? nil
+        _txn = Boxed(wrappedValue: try c.decode(BriefTransaction.self, forKey: .txn))
+        _item = Boxed(wrappedValue: (try? c.decodeIfPresent(Review.Item.self, forKey: .item)) ?? nil)
     }
 }
 
@@ -204,8 +206,9 @@ struct ChatOK: Decodable {}
 // MARK: - Proposals
 
 /// Something Pearl proposes, held as a card in the chat. A value: holding one
-/// changes nothing. Only `ChatExecutor`, on her tap, acts on it.
-enum ProposedAction: Identifiable, Hashable {
+/// changes nothing. Only `ChatExecutor`, on her tap, acts on it. Indirect:
+/// its payloads live on the heap, so it's small on the stack.
+indirect enum ProposedAction: Identifiable, Hashable {
     /// PC-05 / PC-06: one transaction, sorted the way she said.
     case sort(SortProposal)
     /// PC-08: one card for the whole trip.
@@ -606,7 +609,7 @@ struct Deck {
 }
 
 /// What the chat shows: one exchange at a time, as the frames draw it.
-enum ChatScreen {
+indirect enum ChatScreen {
     /// PC-03.
     case start
     /// Her words, while Pearl works it out (no frame: a spinner under them).
