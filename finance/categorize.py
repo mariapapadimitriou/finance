@@ -577,8 +577,9 @@ def is_guess(t) -> bool:
 def apply_categories(transactions, overrides: dict[str, str] | None = None) -> None:
     """Categorize in place, leaving explicit user choices untouched."""
     for t in transactions:
-        # Hers: set by hand, or by a date range she sorted (finance/ranges.py).
-        if t.category and t.category_source in ("user", "range"):
+        # Hers: set by hand, or by a date range she sorted (finance/ranges.py);
+        # or Pearl's by a pattern of hers (finance/pattern_sort.py), until she undoes it.
+        if t.category and t.category_source in ("user", "range", "pattern"):
             continue
         # Money into a joint account from outside is "Whose?" until she says
         # (2026-10-23): no merchant rule answers that for her.

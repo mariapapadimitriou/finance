@@ -3409,4 +3409,5 @@ def skip_review():
 from . import income_bills_api, insights_api, privacy_api, profile_api  # noqa: E402,F401,I001
 from . import marks_api, ranges_api, transactions_extras_api  # noqa: E402,F401
 from . import calendar_api, parts_api, quick_sort_api  # noqa: E402,F401
+from . import pattern_sort_api  # noqa: E402,F401
 from . import recurring_api  # noqa: E402,F401

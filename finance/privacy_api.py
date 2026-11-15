@@ -91,7 +91,12 @@ def privacy_consent():
                                  "delete your account."}), 400
     if key not in users.OPTIONAL or not isinstance(body.get("value"), bool):
         return jsonify({"error": "Unknown consent."}), 400
+    was = bool((users.effective_consents(user).get(key) or {}).get("value"))
     user = users.record_consents(_base(), user.id, {key: body["value"]}, source="settings")
+    if key == "ai_sort" and body["value"] != was:
+        # Pearl sorts for you (P1a): only what arrives from now on (decision 3).
+        from . import pattern_sort
+        (pattern_sort.switched_on if body["value"] else pattern_sort.switched_off)(store())
     return jsonify(_privacy(user))
 
 
