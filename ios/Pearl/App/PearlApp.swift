@@ -213,6 +213,8 @@ struct MainTabs: View {
         .overlay(alignment: .top) {
             if let toast = app.toast {
                 UndoToast(text: toast.text, undo: toast.undo.map { run in {
+                    // Gone at once, so a second tap can't undo twice.
+                    withAnimation { app.toast = nil }
                     Task {
                         do {
                             try await run()
