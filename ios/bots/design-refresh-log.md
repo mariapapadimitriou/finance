@@ -616,3 +616,39 @@ How trips show on the Calendar:
 - **Tapping:** the band isn't a tap target. "Trips this month" under the grid and the day's "Trip · Trip to {place} · {dates} · {total}" row open TR-02.
 - **Large text:** at AX sizes the day rows end "· Trip to {place}".
 - **VoiceOver:** "{date}, {status}, part of Trip to {place}".
+
+### [designBOT → engBOT] 2026-11-15 · CHAT-01 · Pearl chat replaces Tell Pearl and Ask Pearl's entry points
+**Status:** Redesigned · Awaiting product owner
+**Jira:** THL-117, THL-139, THL-213, THL-254   **Figma:** Proposals › Pearl chat `1337:7559`, note `1340:8893`; Tell Pearl `1334:6451` renamed "Superseded by Pearl chat"
+
+**The Pearl button**
+- PB-01 `1337:7575`: built from library parts (a Glass button with Logo/Mark), because the library has no Pearl button.
+- It sits right of the tab bar, and the tab bar narrows to make room. It shows on the five tabs only. When Pearl has a suggestion, a Nacre ring shimmers once.
+- PC-01 `1337:7650` / `1337:7760` and PC-02 `1337:7855` / `1337:8012` show it on Home and Cash flow.
+
+**The chat** is a full-screen Pearl sheet:
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| PC-03 | `1338:7879` / `1338:8040` | Start, with starters |
+| PC-04 | `1338:8200` / `1338:8355` | An answer |
+| PC-05 | `1338:8507` / `1338:8574` | A told guess |
+| PC-06 | `1338:8629` / `1338:8698` | A split suggestion with who |
+| PC-07 | `1338:8755` / `1338:8875` | "Sorted 7. 2 left for later." |
+| PC-08 | `1338:8994` / `1338:9061` | One card for a trip |
+| PC-09 | `1338:9116` / `1338:9183` | One card for a pattern |
+| PC-10 | `1338:9238` / `1338:9356` | Nothing matched |
+| PC-11 | `1338:9474` / `1338:9587` | Unavailable |
+
+**TR-01 and AI-18:** keep both in Quick sort, and offer the same card in the chat as well.
+- **Product owner feedback (2026-11-15):**
+  - **The Pearl button** now floats above the tab bar at the bottom right (16 pt from the edge), and the tab bar keeps its full width. Updated frames: PC-01 `1337:7650` / `1337:7760`, PC-02 `1337:7855` / `1337:8012`, and PB-01 `1337:7575` renamed.
+    - It is always visible and never hides on scroll.
+    - Scrolling lists need bottom padding of tab bar + 56 + 16 pt, so the last row clears the button.
+    - It stays 56 pt at large text sizes. Bottom right is within reach of a thumb, with or without Reachability.
+  - **Nothing changes until you confirm**, for everything: sorting, trips, patterns, rules, splits, plans, renames.
+    - PC-12 `1344:8893` / `1344:9043`: a preview card, "Make a Dining out plan of $220 a month?", with "Set it" · "Not now".
+    - PC-13 `1344:9178` / `1344:9285`: "Done. Dining out plan set to $220 a month." and "See it in Your plan".
+    - After "Not now": "Okay, nothing changed."
+  - **Settled:** full screen, starts fresh each time, and trip and pattern questions show in both Quick sort and the chat. Note `1340:8893` is updated.
+- **Approved, ready to build (product owner, 2026-11-15):** the Pearl chat section `1337:7559`, its 27 frames and note `1340:8893`. engBOT builds it after trips. TR-01 to TR-10 move into Pearl app once the trips PR merges.
