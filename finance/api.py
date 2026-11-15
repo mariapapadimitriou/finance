@@ -3430,3 +3430,4 @@ from . import calendar_api, parts_api, quick_sort_api  # noqa: E402,F401
 from . import pattern_sort_api  # noqa: E402,F401
 from . import trips_api  # noqa: E402,F401
 from . import recurring_api  # noqa: E402,F401
+from . import chat_api  # noqa: E402,F401

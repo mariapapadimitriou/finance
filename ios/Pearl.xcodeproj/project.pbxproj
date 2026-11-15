@@ -13,6 +13,11 @@
 		447CDE89543B103ACD878613 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C5660576F12049C54E11ECA /* AppModel.swift */; };
 		320A0024BC90E91C1C716012 /* Format.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95910E98ECA767C288B13D6F /* Format.swift */; };
 		D10AA7E5417A8A26C680693D /* PearlApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 955CF69FC7C7C7429408F5FF /* PearlApp.swift */; };
+		A96C766E6CE8931AFDC871B6 /* ChatCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85A9D07F156259B0B94A3CAB /* ChatCards.swift */; };
+		FF32C180C18201A202569156 /* ChatCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20A0D0FD5A01727DA3F07F48 /* ChatCore.swift */; };
+		088D84ECF510C9FC9DB4B186 /* PearlBrainLive.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB90E2CB598406D79C7F278D /* PearlBrainLive.swift */; };
+		11CE36A0BC6A5ABB60A31933 /* PearlButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD3E58E4F26368D23F5F947F /* PearlButton.swift */; };
+		2A360C1D0A1AD308844AA631 /* PearlChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26786647CBF83A54D90263A5 /* PearlChatView.swift */; };
 		197D74CCEC857E06FD81CB2C /* Nacre.swift in Sources */ = {isa = PBXBuildFile; fileRef = A959B442690D5F84B1A63FFA /* Nacre.swift */; };
 		A77E60CDC6CED192D7867D14 /* PearlDust.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5463585836AEA99D74494F0C /* PearlDust.swift */; };
 		B4F50BD8435DEB237F51EFD7 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97809C6135186A3BD204F423 /* Theme.swift */; };
@@ -108,6 +113,11 @@
 		9C5660576F12049C54E11ECA /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		95910E98ECA767C288B13D6F /* Format.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Format.swift; sourceTree = "<group>"; };
 		955CF69FC7C7C7429408F5FF /* PearlApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlApp.swift; sourceTree = "<group>"; };
+		85A9D07F156259B0B94A3CAB /* ChatCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatCards.swift; sourceTree = "<group>"; };
+		20A0D0FD5A01727DA3F07F48 /* ChatCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatCore.swift; sourceTree = "<group>"; };
+		EB90E2CB598406D79C7F278D /* PearlBrainLive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlBrainLive.swift; sourceTree = "<group>"; };
+		FD3E58E4F26368D23F5F947F /* PearlButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlButton.swift; sourceTree = "<group>"; };
+		26786647CBF83A54D90263A5 /* PearlChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlChatView.swift; sourceTree = "<group>"; };
 		A959B442690D5F84B1A63FFA /* Nacre.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nacre.swift; sourceTree = "<group>"; };
 		5463585836AEA99D74494F0C /* PearlDust.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlDust.swift; sourceTree = "<group>"; };
 		97809C6135186A3BD204F423 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
@@ -226,6 +236,7 @@
 			children = (
 				265B72681C5FF6681EA44180 /* API */,
 				19B2223411966CF353BDA057 /* App */,
+				9D76D747570B5103168D9E7B /* Chat */,
 				3AA1CDF3F944EAFBBC8FA574 /* Fonts */,
 				A199E4A32186257ECD0BEBD8 /* Theme */,
 				3C6EFF52DDDC977F66941AB7 /* Views */,
@@ -253,6 +264,18 @@
 				955CF69FC7C7C7429408F5FF /* PearlApp.swift */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		9D76D747570B5103168D9E7B /* Chat */ = {
+			isa = PBXGroup;
+			children = (
+				85A9D07F156259B0B94A3CAB /* ChatCards.swift */,
+				20A0D0FD5A01727DA3F07F48 /* ChatCore.swift */,
+				EB90E2CB598406D79C7F278D /* PearlBrainLive.swift */,
+				FD3E58E4F26368D23F5F947F /* PearlButton.swift */,
+				26786647CBF83A54D90263A5 /* PearlChatView.swift */,
+			);
+			path = Chat;
 			sourceTree = "<group>";
 		};
 		3AA1CDF3F944EAFBBC8FA574 /* Fonts */ = {
@@ -491,6 +514,11 @@
 				447CDE89543B103ACD878613 /* AppModel.swift in Sources */,
 				320A0024BC90E91C1C716012 /* Format.swift in Sources */,
 				D10AA7E5417A8A26C680693D /* PearlApp.swift in Sources */,
+				A96C766E6CE8931AFDC871B6 /* ChatCards.swift in Sources */,
+				FF32C180C18201A202569156 /* ChatCore.swift in Sources */,
+				088D84ECF510C9FC9DB4B186 /* PearlBrainLive.swift in Sources */,
+				11CE36A0BC6A5ABB60A31933 /* PearlButton.swift in Sources */,
+				2A360C1D0A1AD308844AA631 /* PearlChatView.swift in Sources */,
 				197D74CCEC857E06FD81CB2C /* Nacre.swift in Sources */,
 				A77E60CDC6CED192D7867D14 /* PearlDust.swift in Sources */,
 				B4F50BD8435DEB237F51EFD7 /* Theme.swift in Sources */,

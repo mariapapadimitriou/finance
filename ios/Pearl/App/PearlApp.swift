@@ -154,6 +154,11 @@ struct MainTabs: View {
     /// SEC-10: another device asking to sign in as her, and the ones she's seen.
     @State private var approval: Approval?
     @State private var seenApprovals: Set<Int> = []
+    /// PB-01: Apple Intelligence can run Pearl chat here (PC-11: else no button).
+    @State private var chatReady = false
+    /// PB-01's "has a suggestion": a trip or pattern card is waiting.
+    @State private var chatSuggests = false
+    @State private var chatOpen = false
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -166,7 +171,23 @@ struct MainTabs: View {
             page(.profile) { ProfileView(tab: $tab) }
         }
         .tint(Pearl.action)
-        .task(id: app.version) { await loadCount() }
+        .task(id: app.version) {
+            await loadCount()
+            await lookForSuggestions()
+        }
+        .task(id: scenePhase) {
+            // Apple Intelligence can be turned on or finish downloading while Pearl is away.
+            if scenePhase == .active { chatReady = PearlIntelligence.available }
+        }
+        .fullScreenCover(isPresented: $chatOpen, onDismiss: { app.changed() }) {
+            PearlChatView(api: app.api, describe: { app.handle($0) ?? "Something went wrong. Try again." },
+                          onClose: { chatOpen = false },
+                          onSearch: {
+                              // PC-11's Search instead: Cash flow, where Search is.
+                              chatOpen = false
+                              tab = .cashFlow
+                          })
+        }
         .task { await offerQuickSort() }
         .task(id: scenePhase) { await lookForApprovals() }
         .sheet(item: $approval) { a in
@@ -219,6 +240,9 @@ struct MainTabs: View {
     private func page<Content: View>(_ which: Tab, @ViewBuilder content: () -> Content) -> some View {
         NavigationStack {
             content().toolbar(app.hidesTabBar ? .hidden : .visible, for: .tabBar)
+                // PB-01 (note 1340:8893): on the five tabs only, never on what's pushed over them;
+                // not while Select's bar has the tab bar's place.
+                .pearlButton(shown: chatReady && !app.hidesTabBar, suggest: chatSuggests) { chatOpen = true }
                 .accessibilityHidden(!quickSort.isEmpty || !quickSortPatterns.isEmpty || !quickSortTrips.isEmpty)
         }
         .tabItem {
@@ -227,6 +251,15 @@ struct MainTabs: View {
                 .accessibilityValue(which == .cashFlow && reviewCount > 0 ? "\(reviewCount) to sort" : "")
         }
         .tag(which)
+    }
+
+    /// PB-01's shimmer: a trip or pattern card waiting, the same ones Quick sort has.
+    private func lookForSuggestions() async {
+        chatReady = PearlIntelligence.available
+        guard chatReady else { return }
+        if let start: ChatStart = try? await app.api.get("api/chat") {
+            chatSuggests = start.suggest
+        }
     }
 
     private func loadCount() async {
