@@ -10,6 +10,8 @@ import SwiftUI
 //        pay to say yes or no to, and bills to confirm together
 // IB-03  her own amount a month, instead of Pearl's estimate
 // IB-04  "Are these your rent?": e-Transfers to one person that look like rent
+// Your plan (YP-01 to YP-06, YourPlanView.swift): a row of its own here, the
+//        way in PC-13's "It's in Profile › Income and bills › Your plan" names
 //
 // Every write returns the whole page again (finance/income_bills_api.py),
 // so nothing here adds anything up. A bill's tick saves at once once she has
@@ -173,6 +175,15 @@ struct IncomeBillsView: View {
                 }
             }
         }
+
+        // Your plan (note 1353:11493): Profile › Income and bills › Your plan.
+        GlassCard {
+            NavigationLink { YourPlanView() } label: {
+                ProfileRow(title: "Your plan")
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.top, 8)
 
         ProfileSection("Something changed?")
         ProfileNote("A new job, a new place, a bill that stopped. Check again with your latest transactions.")
