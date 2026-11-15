@@ -15,6 +15,9 @@ struct TransactionsView: View {
     @State private var month: String?
     /// The whole month (or what a server-side filter keeps), newest first.
     @State private var rows: [Transaction] = []
+    /// Arrivals merged into a transfer line in `rows`, for a filter that
+    /// keeps only that end (TransferEnds, 2026-11-15).
+    @State private var merged: [Transaction] = []
     @State private var monthTotals: TransactionList.Totals?
     @State private var owed: Set<String> = []
     /// "Sam and Dad · 2 · $106.06", over By category.
@@ -30,6 +33,7 @@ struct TransactionsView: View {
     @FocusState private var searching: Bool
     /// What the search found across every month; nil while not searching.
     @State private var results: [Transaction]?
+    @State private var resultsMerged: [Transaction] = []
 
     @State private var filters = TxFilters()
     /// T-67: Spent or Came in tapped, to see just those.
@@ -1011,8 +1015,13 @@ struct TransactionsView: View {
     /// month's, narrowed, then sorted.
     private func visible(applying f: TxFilters) -> [Transaction] {
         let base = inSearch ? (results ?? []) : rows
-        var out = base.filter { f.matches($0, owed: owed) }
-        if !inSearch, let counts = counts { out = out.filter { $0.counts == counts } }
+        let kept: (Transaction) -> Bool = { t in
+            f.matches(t, owed: owed) && (inSearch || counts == nil || t.counts == counts)
+        }
+        // A transfer's arrival, where the filter keeps it but not the line
+        // it was merged into ("Savings" kept, the line is Chequing's).
+        var out = TransferEnds.adding(inSearch ? resultsMerged : merged, to: base.filter(kept), keep: kept,
+                                       id: { $0.id }, line: { $0.mergedInto }, date: { $0.date })
         switch f.sort {
         case .largest: out.sort { $0.amount > $1.amount }
         case .category: out.sort { ($0.label, $1.date) < ($1.label, $0.date) }
@@ -1135,6 +1144,7 @@ struct TransactionsView: View {
         do {
             let list: TransactionList = try await app.api.get("api/transactions/list", query: p)
             rows = list.transactions
+            merged = list.merged
             owed = Set(list.owedIds)
             owedLine = list.owedTotal > 0.005
                 ? OwedLine(names: list.owedNames, count: list.owedCount, total: list.owedTotal) : nil
@@ -1165,6 +1175,7 @@ struct TransactionsView: View {
                                                                query: ["q": q, "limit": "200"]) {
             guard !Task.isCancelled else { return }
             results = list.transactions
+            resultsMerged = list.merged
         }
     }
 
