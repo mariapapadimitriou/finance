@@ -522,3 +522,61 @@ Nothing to build until the product owner picks. The open decisions are in the no
      - Buttons unchanged: "Turn off" · "Keep it on".
   4. **AI-02:** Pearl's own sorts come first. A "FROM YOUR RULES" heading follows, then the rows your own rules sorted (pay, rent), with the meta "{Category} · your rule". Those rows open the transaction's page, not AI-03.
 - **AI-08:** the Ask Pearl switch is hidden until Ask Pearl ships, matching `PrivacyViews.swift:175`.
+
+### [designBOT → engBOT] 2026-11-15 · AI-03c · AI detects, you confirm: ask once per pattern; Trips; AI-02 sections (#343)
+**Status:** Redesigned · AI-18 and Trips Awaiting product owner
+**Jira:** THL-117, THL-139, THL-213, THL-254, THL-123 (pattern ask) · THL-122, THL-123, THL-226 (Trips)   **Figma:** Pearl app Sorting › `1325:68973` (note `1329:63964`); Proposals › Trips `1327:4973` (note `1329:69536`)
+
+**Confirm once per pattern (changes P1a).**
+- **AI-18** `1326:64004` / `1326:64059`: one pattern card in Quick sort. It reads apart from a transaction card because it shows a rhythm ("Each one · into Joint · every 2 weeks") where a transaction shows its date and card.
+  - Eyebrow: "A pattern"
+  - Question: "Always Ana's share?"
+  - Caption line 1: "You sorted the last {n} as {Category | Name's share}."
+  - Caption line 2: "Yes sorts new ones for you. Skip asks again after {n} more."
+  - Answers: Skip or Yes.
+- **Skip:** Pearl asks again after {n} more agreeing answers. A second Skip stops it asking about that pattern.
+- **Yes:** starts the rule. It sorts nothing that's already in Needs a look.
+- **Copy updated in Pearl app frames:**
+  - AI-01 "the ways you said yes to"
+  - AI-02 "Sorted the ways you said yes to, up to 20 a day."
+  - AI-03/03b "You said yes on {date}, after sorting {n} yourself"
+  - AI-06/06b the same, plus "Nothing new is shared."
+  - AI-05 "· you said yes"
+  - AI-08 "Asks you once for each pattern · up to 20 a day"
+  - AI-04f "Pearl may ask you again once…"
+
+**AI-02 (#343)** `1313:3611` / `1313:3813`, three sections:
+1. Pearl's sorts, the ones you said yes to. These open AI-03.
+2. FROM YOUR RULES: your rule, where you said these go, dates you sorted.
+3. NOT CHECKED BY YOU · TAP ONE TO CHECK IT: your bank said so, from its name, Pearl's best match, moved between your accounts, a payment to your card.
+
+Rows in sections 2 and 3 open the transaction's page. Northwind reads "Income · your rule", because the line is always the category as the app names it.
+
+**Trips (design only)** on Proposals:
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| TR-01 | `1327:4974` / `1327:5035` | One Quick sort card for the whole trip, "A trip?" |
+| TR-02 | `1327:5084` / `1327:5267` | The trip page, "Counts in March" |
+| TR-03 | `1327:5447` / `1327:5671` | By category |
+| TR-04 | `1327:5894` / `1327:6011` | Options: add, remove, rename, it wasn't a trip |
+| TR-05 | `1327:6116` / `1327:6255` | Cash flow rows "{Category} · Trip to Montréal", kept in their days and month |
+| TR-06 | `1327:6382` / `1327:6536` | Transaction page line "… · Trip to Montréal" |
+
+Paying a trip from a piggy bank is not drawn. Open decisions are in the note.
+- **Approved (product owner, 2026-11-15).**
+  - Rows sorted only by "Pearl's best match" become Quick sort questions. AI-02's "Not checked by you" stays for rows already sorted that way.
+  - Two Skips and Pearl stops asking about a pattern.
+  - At migration, rows P1a sorted before asking go back to Needs a look. This is noted on `1329:63964`; no frame implied otherwise.
+  - Trips: asked in Quick sort. A trip is its own thing and adds a matching tag. After a Skip, Pearl never asks about those dates again. You can make a trip yourself.
+- **Trips are "Approved, ready to build"** (all 12 earlier frames and the section). The decisions and all strings are in note `1329:69536`.
+- **Tag link:**
+  - TR-02 has a footer: "Counts in March, as usual · Tagged “Trip to Montréal”".
+  - On TR-04, the trip card reads "They still count in March · tagged Trip to Montréal", and Rename's subtitle reads "Renames its tag too".
+- **New frames:**
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| TR-07 | `1331:5763` / `1331:6097` | Cash flow › Select › "Make a trip" in the Select bar |
+| TR-08 | `1331:6480` / `1331:6551` | Name the trip: "Trip name", "Make the trip" · "Cancel" (Rename reuses it with "Save") |
+| TR-09 | `1331:6604` / `1331:6657` | Tags › removing a trip's tag ends the trip, and asks first |
