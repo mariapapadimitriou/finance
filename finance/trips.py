@@ -34,6 +34,8 @@ from .models import Transaction
 
 TRIPS_KEY = "trips"                 # {id: trip}
 SKIPPED_KEY = "trip_skipped"        # [[start, end]] she skipped: never asked again
+ENDED_KEY = "trip_ended"            # {id: {trip, skipped}}: what Undo on TR-13 puts back
+ENDED_KEEP = 20                     # the last few ended trips, for Undo
 RUN_MIN = 4                         # first-time merchant rows in a run
 RUN_GAP = 2                         # days between them, at most
 RUN_SPAN = 21                       # a run this long isn't a trip
@@ -151,17 +153,56 @@ def change(st, trip_id: str, add: list[str] | None = None, remove: list[str] | N
     return trip
 
 
-def end(st, trip_id: str) -> dict | None:
+def end(st, trip_id: str, skip: bool = True) -> dict | None:
     """It wasn't a trip, or its tag was removed: the trip and its tag go; the
     transactions stay as they are, in their own months. Pearl won't ask about
-    those dates again."""
+    those dates again. Kept for Undo (TR-13), which puts it back exactly.
+
+    `skip=False` is Undo after Make a trip (TR-02c): she only just made it, so
+    its dates aren't marked as asked about, and there's nothing to put back."""
     trips = all_trips(st)
     trip = trips.pop(trip_id, None)
     if trip is None:
         return None
     st.tag_rows(trip["ids"], [], [trip["name"]])
     _save(st, TRIPS_KEY, trips)
-    _skip_dates(st, trip["start"], trip["end"])
+    if skip:
+        added = _skip_dates(st, trip["start"], trip["end"])
+        ended = _json(st, ENDED_KEY, {})
+        ended = ended if isinstance(ended, dict) else {}
+        ended[trip_id] = {"trip": trip, "skipped": added, "at": _now()}
+        keep = sorted(ended, key=lambda k: ended[k].get("at") or "")[-ENDED_KEEP:]
+        _save(st, ENDED_KEY, {k: ended[k] for k in keep})
+    return trip
+
+
+def restore(st, trip_id: str) -> dict | None:
+    """Undo on "Not a trip" (TR-13): the same trip back (its id, name, rows,
+    place, who made it and when) with its tag, and its dates no longer marked
+    as skipped unless they were before it ended. None if there's nothing to
+    put back."""
+    ended = _json(st, ENDED_KEY, {})
+    ended = ended if isinstance(ended, dict) else {}
+    entry = ended.get(trip_id)
+    if not isinstance(entry, dict) or trip_id in all_trips(st):
+        return None
+    trip = dict(entry["trip"])
+    taken = trip_of(st)
+    if any(i in taken for i in trip["ids"]):
+        raise Problem("Some of these are already in a trip.")
+    trip["ids"] = [i for i in trip["ids"] if st.get_transaction(i) is not None]
+    if not trip["ids"]:
+        raise Problem("Those transactions aren’t there any more.")
+    trip["name"] = _clean_name(st, trip["name"])
+    if entry.get("skipped"):
+        _unskip_dates(st, trip["start"], trip["end"])
+    trip["start"], trip["end"] = _spans(st, trip["ids"])
+    trips = all_trips(st)
+    trips[trip_id] = trip
+    _save(st, TRIPS_KEY, trips)
+    st.tag_rows(trip["ids"], [trip["name"]], [])
+    ended.pop(trip_id, None)
+    _save(st, ENDED_KEY, ended)
     return trip
 
 
@@ -202,10 +243,20 @@ def _skipped(st) -> list[list[str]]:
     return out if isinstance(out, list) else []
 
 
-def _skip_dates(st, start: str, end_: str) -> None:
+def _skip_dates(st, start: str, end_: str) -> bool:
+    """True if these dates weren't skipped already."""
     s = _skipped(st)
-    if [start, end_] not in s:
-        s.append([start, end_])
+    if [start, end_] in s:
+        return False
+    s.append([start, end_])
+    _save(st, SKIPPED_KEY, s)
+    return True
+
+
+def _unskip_dates(st, start: str, end_: str) -> None:
+    s = _skipped(st)
+    if [start, end_] in s:
+        s.remove([start, end_])
         _save(st, SKIPPED_KEY, s)
 
 

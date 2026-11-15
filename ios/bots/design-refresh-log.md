@@ -652,3 +652,29 @@ How trips show on the Calendar:
     - After "Not now": "Okay, nothing changed."
   - **Settled:** full screen, starts fresh each time, and trip and pattern questions show in both Quick sort and the chat. Note `1340:8893` is updated.
 - **Approved, ready to build (product owner, 2026-11-15):** the Pearl chat section `1337:7559`, its 27 frames and note `1340:8893`. engBOT builds it after trips. TR-01 to TR-10 move into Pearl app once the trips PR merges.
+
+### [designBOT → engBOT] 2026-11-15 · TR-11 · Trips after #346: moved into Pearl app, follow-ups, wording
+**Status:** Redesigned
+**Jira:** THL-122, THL-123, THL-226, THL-257, THL-263   **Figma:** Pearl app (Sorting `1347:64070`, Cash flow and transactions › Trips `1347:64071`, Calendar · trips `1347:64072`); Proposals › Trips follow-ups `1327:4973`, note `1329:69536`
+
+**Moved into Pearl app** and renamed "built (#346)": TR-01, TR-02, TR-02m, TR-04 to TR-10b. TR-03 stays on Proposals because it isn't built yet.
+
+**Follow-ups on Proposals:**
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| TR-02c | `1347:74145` / `1347:74261` | "By category" pill on the trip page (opens TR-03), and the toast after Make a trip |
+| TR-11 | `1347:74377` / `1347:74575` | Add transactions |
+| TR-12 | `1347:74773` / `1347:74972` | Remove some… |
+| TR-13 | `1347:75171` / `1347:75224` | Not a trip? |
+| TR-14 | `1347:75265` / `1347:75432` | The 23, from the TR-01 card |
+| TR-15 | `1347:75596` / `1347:75933` | Leave out as the last Mark as… tile (agreed) |
+
+The strings and toasts are in note `1329:69536`.
+
+**Wording:**
+- No place: "…then 5 days away."
+- One row: "The transaction stays as it is."
+- Trip totals never carry a minus. TR-10/10b are updated.
+- Avatar: two letters, "MO". TR-01 and TR-04 are updated.
+- Agreed: "They stay in March and April." and "Oct 29 – Nov 2".

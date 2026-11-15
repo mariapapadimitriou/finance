@@ -58,6 +58,14 @@ enum Format {
 
     private static let dayOnly = formatter("d")
 
+    /// "2026-03-04" moved by whole days ("2026-03-01" for −3): TR-11's window.
+    static func shiftDay(_ day: String, by days: Int) -> String {
+        guard let d = iso.date(from: String(day.prefix(10))) else { return day }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        return iso.string(from: cal.date(byAdding: .day, value: days, to: d) ?? d)
+    }
+
     /// "+$5,850.00" for money in, "$22.57" for money out.
     static func signed(_ value: Double, inflow: Bool) -> String {
         inflow ? "+" + amount(value) : amount(value)

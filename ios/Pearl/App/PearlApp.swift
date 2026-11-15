@@ -208,6 +208,28 @@ struct MainTabs: View {
                 }
             }
         }
+        // Trips (TR-02c, TR-11–TR-13): its toast stays while the trip's page
+        // opens or closes under it.
+        .overlay(alignment: .top) {
+            if let toast = app.toast {
+                UndoToast(text: toast.text, undo: toast.undo.map { run in {
+                    // Gone at once, so a second tap can't undo twice.
+                    withAnimation { app.toast = nil }
+                    Task {
+                        do {
+                            try await run()
+                            app.changed()
+                            app.say("Undone.")
+                        } catch {
+                            if let words = app.handle(error) { app.say(words) }
+                        }
+                    }
+                } }) {
+                    if app.toast == toast { withAnimation { app.toast = nil } }
+                }
+                .id(toast.id)
+            }
+        }
     }
 
     /// While Pearl is open, every 15 seconds: is another device waiting for

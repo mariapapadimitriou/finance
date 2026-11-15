@@ -47,6 +47,23 @@ final class AppModel: ObservableObject {
     @Published var contact: String?
     /// Cash flow's Select (T-19) puts its own bar where the tab bar is.
     @Published var hidesTabBar = false
+    /// A toast that outlives the screen it was said on, at the top of every
+    /// tab: Trips (TR-02c, TR-11–TR-13), where the trip's page may close or
+    /// open under it ("Trip to Montréal made · 23 transactions · Undo").
+    @Published var toast: AppToast?
+
+    struct AppToast: Identifiable, Equatable {
+        let id = UUID()
+        let text: String
+        /// Undo, when there is one; it says "Undone." once it has worked.
+        let undo: (() async throws -> Void)?
+
+        static func == (a: AppToast, b: AppToast) -> Bool { a.id == b.id }
+    }
+
+    func say(_ text: String, undo: (() async throws -> Void)? = nil) {
+        withAnimation { toast = AppToast(text: text, undo: undo) }
+    }
 
     let api = APIClient()
     private var leftAt: Date?

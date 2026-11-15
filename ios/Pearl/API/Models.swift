@@ -1883,10 +1883,10 @@ struct TripAsk: Decodable, Identifiable, Hashable {
     var line: String { "\(Format.span(start, end)) · \(count) transaction\(count == 1 ? "" : "s")" }
 
     /// TR-01's caption: "A flight, a hotel, then 5 days in Montréal." With
-    /// no place it ends "then 5 days." (engBOT's wording, no frame for it).
+    /// no place it ends "then 5 days away." (note 1329:69536, Wording).
     var story: String {
         let lead = [flight == true ? "a flight" : nil, hotel == true ? "a hotel" : nil].compactMap { $0 }
-        let stay = "\(days) day\(days == 1 ? "" : "s")" + (place.map { " in \($0)" } ?? "")
+        let stay = "\(days) day\(days == 1 ? "" : "s")" + (place.map { " in \($0)" } ?? " away")
         let text = lead.isEmpty ? stay : lead.joined(separator: ", ") + ", then " + stay
         return text.prefix(1).uppercased() + text.dropFirst() + "."
     }
@@ -1915,6 +1915,14 @@ struct Trip: Decodable, Identifiable, Hashable {
     struct Category: Decodable, Hashable {
         let category: String
         let count: Int
+        /// Currency → what the category came to in it (TR-03); Pearl converts nothing.
+        var totals: [String: Double]? = nil
+
+        /// The biggest first, as the trip's own totals.
+        var money: [MoneyTotal] {
+            (totals ?? [:]).map { MoneyTotal(currency: $0.key, amount: $0.value) }
+                .sorted { (abs($0.amount), $1.currency) > (abs($1.amount), $0.currency) }
+        }
     }
 
     enum CodingKeys: String, CodingKey {
@@ -1926,6 +1934,12 @@ struct Trip: Decodable, Identifiable, Hashable {
     var line: String { "\(Format.span(start, end)) · \(count) transaction\(count == 1 ? "" : "s")" }
     /// "March", "March and April".
     var months: String { Format.andList(monthNames ?? [Format.monthName(String(start.prefix(7)))]) }
+
+    /// TR-09, TR-13: "The 23 transactions stay as they are"; one row reads
+    /// "The transaction stays as it is" (note 1329:69536, Wording).
+    static func stayLine(_ n: Int) -> String {
+        n == 1 ? "The transaction stays as it is" : "The \(n) transactions stay as they are"
+    }
 }
 
 /// A row in Sorted today or Pearl sorted: who, how much, and why it's sorted.

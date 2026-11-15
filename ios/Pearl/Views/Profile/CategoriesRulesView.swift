@@ -151,7 +151,7 @@ struct CategoriesRulesView: View {
             if let trip = trips[tag.tag] {
                 // TR-09 (1331:6604): a trip's tag; removing it ends the trip, so it asks first.
                 PearlConfirmSheet(overline: "Tags · A trip", title: "Remove \(tag.tag)?",
-                                  message: "This tag belongs to a trip, so the trip ends too. The \(trip.count) transaction\(trip.count == 1 ? "" : "s") \(trip.count == 1 ? "stays as it is" : "stay as they are"), in \(trip.months).",
+                                  message: "This tag belongs to a trip, so the trip ends too. \(Trip.stayLine(trip.count)), in \(trip.months).",
                                   primary: "Remove the trip and tag", busyLabel: "Removing…", secondary: "Keep it",
                                   failure: "Couldn’t remove the tag. Nothing changed. Try again.",
                                   onClose: { removingTag = nil }) {
