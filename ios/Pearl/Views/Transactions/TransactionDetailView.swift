@@ -377,8 +377,11 @@ struct TransactionDetailView: View {
 
     var body: some View {
         ScrollView {
+            // 2026-11-14 (stack overflow on the product owner's iPhone): each
+            // section is built in its own body (OwnBody), so no one body's
+            // stack frame holds the whole page, and Transaction is small (Boxed).
             VStack(alignment: .leading, spacing: 8) {
-                header.padding(.bottom, 16)
+                OwnBody { header }.padding(.bottom, 16)
                     // S-04r v2s (TEST-09): once the hero scrolls under the bar,
                     // the bar takes the merchant's name.
                     .background(GeometryReader { g in
@@ -387,17 +390,15 @@ struct TransactionDetailView: View {
                             .onChange(of: g.frame(in: .global).maxY) { heroGone = $0 < 120 }
                     })
                 if let transfer = t.transfer, guessing == nil {
-                    transferLegs(transfer)
+                    OwnBody { transferLegs(transfer) }
                 } else {
-                    if let label = guessName { guessCard(label) }
-                    else if !t.parts.isEmpty { partsCard } else if jointAsks { jointGuessCard }
-                    else if t.asks { askingCard } else { categoryCard }
-                    linked
-                    jointRow
-                    splitPeople
-                    depositParts
-                    options
-                    details
+                    OwnBody { whatItIs }
+                    OwnBody { linked }
+                    OwnBody { jointRow }
+                    OwnBody { splitPeople }
+                    OwnBody { depositParts }
+                    OwnBody { options }
+                    OwnBody { details }
                 }
                 if let message = message {
                     Text(message).font(Nacre.footnote).foregroundColor(Pearl.ink)
@@ -408,7 +409,7 @@ struct TransactionDetailView: View {
                     Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
                         .padding(.horizontal, 16).padding(.top, 8)
                 }
-                footerAction
+                OwnBody { footerAction }
             }
             .padding(.horizontal, Pearl.gutter)
             .padding(.bottom, 32)
@@ -933,6 +934,14 @@ struct TransactionDetailView: View {
             return "\u{2212}" + Format.amount(full)
         }
         return Format.money(t)
+    }
+
+    /// The card that says what it is: Pearl's guess, its parts, a joint
+    /// deposit's question, Needs a look's question, or its category.
+    @ViewBuilder private var whatItIs: some View {
+        if let label = guessName { guessCard(label) }
+        else if !t.parts.isEmpty { partsCard } else if jointAsks { jointGuessCard }
+        else if t.asks { askingCard } else { categoryCard }
     }
 
     /// "Wed, Nov 11 · TD Chequing ••4417".
@@ -2784,4 +2793,14 @@ struct WhoseSheet: View {
             throw e
         }
     }
+}
+
+/// Builds `content` in its own body (2026-11-14). A section of a long page
+/// inlined into one body adds its whole stack frame to that body's; as its
+/// own view, SwiftUI builds it after the page's body has returned, so the
+/// deepest stack is one section, not the page.
+struct OwnBody<Content: View>: View {
+    let content: () -> Content
+    init(@ViewBuilder _ content: @escaping () -> Content) { self.content = content }
+    var body: Content { content() }
 }
