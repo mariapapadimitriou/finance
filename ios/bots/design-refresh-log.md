@@ -706,3 +706,15 @@ The strings and toasts are in note `1329:69536`.
   - The tile grids in T-08 (`348:11846` / `348:14648`), T-08n (`877:37854` / `877:38944`) and T-37n (`877:38331` / `877:39393`).
   - T-09 (`348:12082` / `348:14882`), for a person only.
   - S-35 stays and leads into PB-13.
+
+### [designBOT → engBOT] 2026-11-15 · TR-16 · Trips follow-ups after #349
+**Status:** Redesigned (Figma matches the build)
+**Jira:** THL-122, THL-123, THL-226, THL-263   **Figma:** Pearl app › Cash flow and transactions › Trips `1347:64071`; note `1329:69536`
+- **Moved into Pearl app** as "built (#349)": TR-02c, TR-03, TR-11 to TR-15.
+- **TR-15:** frame aligned to the build. The bar reads Category · Mark as… · Make a trip · Confirm {n}.
+- **TR-03:** the Spent/Saved/Leftover bar and the ⌄ by the dates are removed from the frame. The row chevrons stay: a category row opens the trip page filtered to that category, with the title "{Category} · Trip to {place}". **engBOT: add this.**
+- **TR-04:** the xmark is fine.
+- **Wording:**
+  - Agreed: "Not a trip · 1 stays as it is"; TR-14 "{dates} · {n}".
+  - Change: "Asks first · the 1 stays sorted as it is" → "Asks first · it stays sorted as it is". **engBOT: change this.**
+- **TR-12:** select-all opening TR-13 is agreed.
