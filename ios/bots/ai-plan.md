@@ -218,3 +218,20 @@ Each phase needs designBOT's frames and the product owner's pick, as usual.
 7. Credit cards: what does "track use" mean: balance, utilisation, due dates, interest, or spending per card?
 8. Budget and cash flow: may the model change the Allowance or plan, or only propose for her to accept?
 9. An on/off switch in Profile, and a short line saying data never leaves the iPhone for this?
+
+### Decided (product owner, 2026-11-15)
+1. **What Pearl may auto-sort:** categories, and joint "theirs" deposits (for example, the sister's deposits into the joint account). **Not** transfers or savings, for now.
+2. **Threshold and cap:**
+   - 5 earlier answers, all the same; for money between people, 8.
+   - At most **20 auto-sorts a day**.
+3. **Only new transactions** are auto-sorted. Past months are left alone.
+4. **Undo:** Undo on one row undoes only that row. "Stop sorting like this" turns the whole pattern off, after asking first (AI-04).
+5. **P1a ships first:** Python only, no Apple Intelligence.
+6. **Ask Pearl:** facts and summaries, plus suggestions that are clearly labelled as suggestions.
+7. **Budget and cash flow plan:** it only proposes. The Allowance changes only when she taps "Use this plan".
+8. **Switches and rules:**
+   - Auto-sort and Ask Pearl each have their own on/off switch.
+   - Learned rules sit beside her own rules (AI-05).
+   - There's an Ask Pearl button on Home, as well as the search field.
+   - No notifications for now.
+9. **Credit cards:** spending per card, how close each card is to its limit, and payment due dates.
