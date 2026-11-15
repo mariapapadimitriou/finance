@@ -27,11 +27,27 @@ Rules of the road:
   to Quick sort. Her own rules stay.
 * It never saves a rule ("always for …"), and never touches splits, shares
   or the Allowance by itself.
+
+AI only detects; she confirms (product owner, 2026-11-15):
+
+* A pattern strong enough to sort is only **pending** until she says Yes to
+  it, once. A pending pattern sorts nothing. `pending()` lists the asks.
+* **Yes** (`confirm`) records when and from where she said it
+  (`state[pid]["confirmed"] = {"at", "day", "how"}`, for "You said yes on …"),
+  and from then on the rules above apply to new matches only: the rows that
+  matched when she said Yes are left for her (`state[pid]["before"]`).
+* **Not now** (`not_now`) records the day; Pearl may ask again after
+  `ask_again_days()` (`ASK_AGAIN_KEY`, default `ASK_AGAIN_DAYS`; designBOT
+  picks the interval).
+* Migration: patterns that sorted before this rule were never confirmed, so
+  they are pending like any other. The rows they already sorted stay sorted,
+  in Pearl sorted with Undo, and Stop still undoes them all.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
@@ -48,6 +64,9 @@ BASELINE_KEY = "pattern_sort_baseline"   # {"at": iso, "known": [ids]}
 LOG_KEY = "pattern_sort_log"             # [record]
 STATE_KEY = "pattern_sort_state"         # {pattern id: {"on": bool, "stopped_at": iso}}
 NEVER_KEY = "pattern_sort_never"         # [txn ids she undid]
+ASK_AGAIN_KEY = "pattern_sort_ask_again_days"   # days after Not now before Pearl asks again
+ASK_AGAIN_DAYS = 30                      # until designBOT picks the interval
+HOW = re.compile(r"[a-z0-9_-]{1,32}")    # where she said Yes ("ask", or the screen code); designBOT picks the places
 
 
 def _json(st, key: str, default):
@@ -103,7 +122,7 @@ def patterns(st, txns: list[Transaction] | None = None) -> dict[str, dict]:
     yet: {id: {kind, key, answer, count, agree, label, …}}."""
     txns = st.all_transactions() if txns is None else txns
     pearl = {r["txn"] for r in _log(st) if not r.get("undone")}
-    confirmed = st.confirmed_categories()
+    hers = st.confirmed_categories()
     answers: dict[str, list] = defaultdict(list)
     days: dict[str, list] = defaultdict(list)
     seen: dict[str, list] = defaultdict(list)
@@ -113,7 +132,7 @@ def patterns(st, txns: list[Transaction] | None = None) -> dict[str, dict]:
             continue
         if t.amount > 0 and not t.joint_from:
             cat = t.category or "Other"
-            mine = t.category_source == "user" or confirmed.get(t.fingerprint) == cat
+            mine = t.category_source == "user" or hers.get(t.fingerprint) == cat
             if not mine or cat in NON_SPEND or cat in ("Unsorted transfers", "Other") or cat not in CATEGORIES:
                 continue
             key = merchant_key(t.merchant or "")
@@ -169,6 +188,24 @@ def enabled(st, pid: str) -> bool:
     return (_state(st).get(pid) or {}).get("on", True)
 
 
+def confirmed(st, pid: str) -> dict | None:
+    """{"at", "day", "how"} when she said Yes to this pattern, else None."""
+    c = (_state(st).get(pid) or {}).get("confirmed")
+    return c if isinstance(c, dict) else None
+
+
+def ask_again_days(st) -> int:
+    try:
+        n = int(st.setting(ASK_AGAIN_KEY) or ASK_AGAIN_DAYS)
+    except (TypeError, ValueError):
+        n = ASK_AGAIN_DAYS
+    return max(0, n)
+
+
+def set_ask_again_days(st, days: int) -> None:
+    st.set_setting(ASK_AGAIN_KEY, str(max(0, int(days))))
+
+
 # ── Sorting ────────────────────────────────────────────────────────────────
 
 def _match(t: Transaction, pats: dict[str, dict]) -> dict | None:
@@ -209,24 +246,28 @@ def run(st, today: str) -> list[dict]:
     never = set(_json(st, NEVER_KEY, []))
     sorted_ids = {r["txn"] for r in log}
     txns = st.all_transactions()
-    pats = {pid: p for pid, p in patterns(st, txns).items() if p["ready"] and enabled(st, pid)}
+    state = _state(st)
+    # Only what she said Yes to (AI only detects; she confirms).
+    pats = {pid: p for pid, p in patterns(st, txns).items()
+            if p["ready"] and enabled(st, pid) and confirmed(st, pid)}
     if not pats:
         return []
-    confirmed = st.confirmed_categories()
+    hers = st.confirmed_categories()
     new = []
     for t in sorted(txns, key=lambda x: (x.date, x.fingerprint)):
         if room <= 0:
             break
         if t.fingerprint in known or t.fingerprint in never or t.fingerprint in sorted_ids:
             continue
-        if t.amount > 0 and (t.category_source == "user" or t.fingerprint in confirmed
+        if t.amount > 0 and (t.category_source == "user" or t.fingerprint in hers
                              or (t.category or "Other") in NON_SPEND or t.split_mode or t.my_share is not None
                              or not is_guess(t)):
             # She answered it, a rule of hers did, or it's a transfer, savings
             # or a split: only what Needs a look would ask about is Pearl's.
             continue
         p = _match(t, pats)
-        if p is None:
+        if p is None or t.fingerprint in set((state.get(p["id"]) or {}).get("before") or []):
+            # Matched before she said Yes: hers to sort.
             continue
         rec = _apply(st, t, p, today)
         if rec:
@@ -300,14 +341,17 @@ def stop(st, pid: str) -> list[dict]:
         _undo(st, r)
     _save(st, LOG_KEY, log)
     s = _state(st)
-    s[pid] = {"on": False, "stopped_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    # Keeps her Yes, so Stop's Undo puts the pattern back as it was.
+    s[pid] = {**(s.get(pid) or {}), "on": False,
+              "stopped_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
     _save(st, STATE_KEY, s)
     return undone
 
 
 def forget(st, pid: str, today: str) -> None:
     """AI-06 Forget this rule: it goes, the rows it sorted stay as they are,
-    and Pearl may learn it again from answers she gives after today."""
+    and Pearl may learn it again from answers she gives after today, and asks
+    again before it sorts (her Yes goes with the rule)."""
     s = _state(st)
     s[pid] = {"on": True, "forgot": today}
     _save(st, STATE_KEY, s)
@@ -327,8 +371,70 @@ def restart(st, pid: str, records: list[str]) -> None:
                 r.update(undone=False, was=fresh.get("was"))
     _save(st, LOG_KEY, log)
     s = _state(st)
-    s[pid] = {"on": True}
+    s[pid] = {k: v for k, v in (s.get(pid) or {}).items() if k != "stopped_at"}
+    s[pid]["on"] = True
     _save(st, STATE_KEY, s)
+
+
+# ── Asking first ───────────────────────────────────────────────────────────
+
+def _waiting(st, pid: str, today: str) -> bool:
+    """Not now: still inside the interval before Pearl may ask again."""
+    said = (_state(st).get(pid) or {}).get("not_now")
+    if not said:
+        return False
+    return date.fromisoformat(today) < date.fromisoformat(said) + timedelta(days=ask_again_days(st))
+
+
+def pending(st, today: str, txns: list[Transaction] | None = None) -> list[dict]:
+    """The asks: patterns strong enough to sort that she hasn't said Yes to,
+    not stopped, and not inside a Not now. Each says how many rows it already
+    sorted before this rule (they stay, with Undo)."""
+    txns = st.all_transactions() if txns is None else txns
+    log = _log(st)
+    out = []
+    for pid, p in patterns(st, txns).items():
+        if not p["ready"] or confirmed(st, pid) or _waiting(st, pid, today):
+            continue
+        before = [r["txn"] for r in log if r["pattern"] == pid and not r.get("undone")]
+        out.append({"id": pid, "kind": p["kind"], "merchant": p["merchant"], "answer": p["answer"],
+                    "label": label(p), "count": p["count"], "account": p.get("account"),
+                    "joint": p.get("joint"), "rhythm": rhythm(p["days"]), "answered": p["answered"],
+                    "sorted_before": before,
+                    "not_now": (_state(st).get(pid) or {}).get("not_now")})
+    return sorted(out, key=lambda r: (r["merchant"] or "").lower())
+
+
+def confirm(st, pid: str, today: str, how: str = "ask", txns: list[Transaction] | None = None) -> dict | None:
+    """Yes: Pearl may sort this pattern's new matches from now on. The rows
+    that match it now stay hers. None when there's nothing to say Yes to."""
+    txns = st.all_transactions() if txns is None else txns
+    p = patterns(st, txns).get(pid)
+    if p is None or not p["ready"]:
+        return None
+    if not isinstance(how, str) or not HOW.fullmatch(how):
+        how = "ask"
+    s = _state(st)
+    prior = s.get(pid) or {}
+    if prior.get("confirmed"):
+        return prior["confirmed"]
+    yes = {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "day": today, "how": how}
+    before = sorted(t.fingerprint for t in txns if _match(t, {pid: p}) is p)
+    s[pid] = {**{k: v for k, v in prior.items() if k != "not_now"},
+              "on": True, "confirmed": yes, "before": before}
+    _save(st, STATE_KEY, s)
+    return yes
+
+
+def not_now(st, pid: str, today: str) -> bool:
+    """Not now: ask again after ask_again_days(). False when nothing's pending."""
+    p = patterns(st).get(pid)
+    if p is None or not p["ready"] or confirmed(st, pid):
+        return False
+    s = _state(st)
+    s[pid] = {**(s.get(pid) or {}), "not_now": today}
+    _save(st, STATE_KEY, s)
+    return True
 
 
 # ── What the app shows ─────────────────────────────────────────────────────
@@ -365,19 +471,21 @@ def rhythm(days: list[str]) -> str | None:
 
 
 def learned(st) -> list[dict]:
-    """AI-05: the patterns strong enough to sort, with whether they're on and
-    how many rows each has sorted."""
+    """AI-05: the patterns she said Yes to, with whether they're on, when
+    she said Yes, and how many rows each has sorted. Pending ones are asks
+    (`pending`), not rules."""
     log = _log(st)
     out = []
     for pid, p in patterns(st).items():
-        if not p["ready"]:
+        yes = confirmed(st, pid)
+        if not p["ready"] or not yes:
             continue
         mine = [r for r in log if r["pattern"] == pid and not r.get("undone")]
         out.append({"id": pid, "kind": p["kind"], "merchant": p["merchant"], "answer": p["answer"],
                     "label": label(p), "count": p["count"], "account": p.get("account"),
                     "joint": p.get("joint"),
                     "rhythm": rhythm(p["days"]), "answered": p["answered"],
-                    "on": enabled(st, pid), "sorted": [r["txn"] for r in mine]})
+                    "on": enabled(st, pid), "sorted": [r["txn"] for r in mine], "confirmed": yes})
     return sorted(out, key=lambda r: (r["merchant"] or "").lower())
 
 
@@ -394,7 +502,7 @@ def caption(st, t: Transaction, txns: list[Transaction] | None = None) -> dict |
     has never answered this pattern."""
     txns = st.all_transactions() if txns is None else txns
     pearl = {r["txn"] for r in _log(st) if not r.get("undone")}
-    confirmed = st.confirmed_categories()
+    hers = st.confirmed_categories()
     if t.amount < 0 and t.joint and not t.joint_from:
         from .joint import THEM
         sender = _sender(t)
@@ -419,7 +527,7 @@ def caption(st, t: Transaction, txns: list[Transaction] | None = None) -> dict |
     said = [x for x in sorted(txns, key=lambda x: x.date)
             if x.fingerprint not in pearl and x.fingerprint != t.fingerprint and x.amount > 0
             and not x.excluded and merchant_key(x.merchant or "") == key
-            and (x.category_source == "user" or confirmed.get(x.fingerprint) == (x.category or "Other"))]
+            and (x.category_source == "user" or hers.get(x.fingerprint) == (x.category or "Other"))]
     last = said[-CATEGORY_MIN:]
     if not last:
         return None

@@ -9,6 +9,9 @@
 * PUT    /api/pattern-sort/rules/<id>          AI-06's switch {on}
 * POST   /api/pattern-sort/rules/<id>/stop     AI-04 Stop sorting like this (undoes every row), with Undo
 * POST   /api/pattern-sort/rules/<id>/restart  Stop's Undo
+* GET    /api/pattern-sort/asks                patterns Pearl found and asks about first (pending)
+* POST   /api/pattern-sort/asks/<id>/yes       Yes {how}: Pearl may sort new ones from now on
+* POST   /api/pattern-sort/asks/<id>/not-now   Not now: ask again after ask_again_days
 """
 
 from __future__ import annotations
@@ -118,6 +121,35 @@ def pattern_sort_restart(pid: str):
     return jsonify({"ok": True})
 
 
+@bp.get("/pattern-sort/asks")
+def pattern_sort_asks():
+    """AI only detects; she confirms. Nothing to ask while the switch is off."""
+    st = store()
+    asks = ps.pending(st, core._today_iso()) if _consented() else []
+    return jsonify({"asks": asks, "ask_again_days": ps.ask_again_days(st)})
+
+
+@bp.post("/pattern-sort/asks/<path:pid>/yes")
+def pattern_sort_yes(pid: str):
+    st = store()
+    if not _consented():
+        return jsonify({"error": "Turn on Pearl sorts for you first."}), 409
+    body = request.get_json(silent=True) or {}
+    yes = ps.confirm(st, pid, core._today_iso(), how=body.get("how") or "ask")
+    if yes is None:
+        return jsonify({"error": "Nothing to say yes to."}), 404
+    rule = next((r for r in ps.learned(st) if r["id"] == pid), None)
+    return jsonify({"ok": True, "confirmed": yes, "rule": rule})
+
+
+@bp.post("/pattern-sort/asks/<path:pid>/not-now")
+def pattern_sort_not_now(pid: str):
+    st = store()
+    if not ps.not_now(st, pid, core._today_iso()):
+        return jsonify({"error": "Nothing to ask about."}), 404
+    return jsonify({"ok": True, "ask_again_days": ps.ask_again_days(st)})
+
+
 @bp.get("/pattern-sort/<rid>")
 def pattern_sort_one(rid: str):
     st = store()
@@ -129,7 +161,9 @@ def pattern_sort_one(rid: str):
     return jsonify({**_row(st, rec), "label": ps.label(pat) if pat else rec["answer"],
                     "account": pat.get("account"), "joint": pat.get("joint"), "sorted_by_pattern": same,
                     "pattern_count": pat.get("count", rec["count"]), "answered": pat.get("answered", []),
-                    "pattern_merchant": pat.get("merchant"), "learned": bool(pat.get("ready"))})
+                    "pattern_merchant": pat.get("merchant"),
+                    "learned": bool(pat.get("ready")) and ps.confirmed(st, rec["pattern"]) is not None,
+                    "confirmed": ps.confirmed(st, rec["pattern"])})
 
 
 @bp.post("/pattern-sort/<rid>/undo")
