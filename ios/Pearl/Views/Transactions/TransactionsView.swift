@@ -50,6 +50,11 @@ struct TransactionsView: View {
     /// T-77's Leave out: why, so she can tell later.
     @State private var leavingOut = false
     @State private var leaveReason = ""
+    /// Leave out picked from Mark as… (TR-07 with guesses): asked once that sheet has gone.
+    @State private var leaveOutNext = false
+    /// TR-07 › TR-08: Make a trip of the picked rows, and its name.
+    @State private var makingTrip = false
+    @State private var tripName = ""
     @State private var busy = false
     @State private var toast: Toast?
     /// T-23: adding one by hand.
@@ -130,7 +135,9 @@ struct TransactionsView: View {
                 app.changed()
             }
         }
-        .sheet(item: $bulk) { which in
+        .sheet(item: $bulk, onDismiss: {
+            if leaveOutNext { leaveOutNext = false; leavingOut = true }
+        }) { which in
             switch which {
             case .category:
                 CategorySheet(name: pickedTitle, amount: pickedAmount, tone: pickedTone, categories: categories,
@@ -151,9 +158,15 @@ struct TransactionsView: View {
                 CategorySheet(name: "\(picked.count) selected", amount: pickedNames, tone: pickedTone,
                               categories: categories, current: pickedCategory, mark: "\(picked.count)",
                               title: "Mark \(picked.count) as…",
-                              notSpending: deposits ? CaseTile.notIncomeTogether : CaseTile.notSpending,
+                              notSpending: (deposits ? CaseTile.notIncomeTogether : CaseTile.notSpending)
+                                  + (guesses > 0 ? [CaseTile.leaveOut] : []),
                               startNotSpending: true, onCase: { key, _ in
                     bulk = nil
+                    if key == CaseTile.leaveOut.key {
+                        // TR-07: with Confirm on the bar, Leave out moves under Mark as….
+                        leaveOutNext = true
+                        return
+                    }
                     let body: [String: Any]
                     switch key {
                     case "own": body = ["case": deposits ? "own" : "moved"]
@@ -188,6 +201,18 @@ struct TransactionsView: View {
                               onClose: { leavingOut = false; leaveReason = "" }) {
                 try await leaveOut()
                 leavingOut = false
+            }
+        }
+        .sheet(isPresented: $makingTrip) {
+            // TR-08 (1331:6480) from TR-07's Make a trip.
+            NameTripSheet(count: picked.count, dates: pickedDates,
+                          total: pickedAmount.replacingOccurrences(of: "\u{2212}", with: ""),
+                          months: pickedMonths, name: $tripName, onClose: { makingTrip = false }) { name in
+                let _: OK = try await app.api.post("api/trips", ["ids": Array(picked), "name": name])
+                makingTrip = false
+                endSelecting()
+                app.changed()
+                await reload()
             }
         }
         .navigationDestination(for: Transaction.self) { t in
@@ -754,7 +779,10 @@ struct TransactionsView: View {
 
     /// T-77: Category, Mark as…, Confirm (Pearl's guesses, when some are)
     /// and Leave out, where the tab bar was. Tag waits while tags are off
-    /// (THL-286), as on the web.
+    /// (THL-286), as on the web. TR-07 (1331:5763): Make a trip comes third.
+    /// Five don't fit at 393 pt (the labels come to 362 of 377 pt, with no
+    /// room between them), so with Confirm on the bar Leave out moves under
+    /// Mark as… (engBOT, Trips build).
     private var selectionBar: some View {
         HStack(spacing: 0) {
             barButton("Category") { bulk = .category }
@@ -765,7 +793,10 @@ struct TransactionsView: View {
                     Task { await change(["ids": ids], path: "api/transactions/batch/confirm") }
                 }
             }
-            barButton("Leave out") { leavingOut = true }
+            barButton("Make a trip") { tripName = ""; makingTrip = true }
+            if guesses == 0 {
+                barButton("Leave out") { leavingOut = true }
+            }
         }
         .padding(.horizontal, 8).padding(.top, 14).padding(.bottom, 10)
         .background(Pearl.bar.ignoresSafeArea(edges: .bottom))
@@ -820,6 +851,19 @@ struct TransactionsView: View {
         let names = pickedRows.prefix(3).map { $0.merchant.components(separatedBy: " ").prefix(2).joined(separator: " ") }
         let more = pickedRows.count > 3 ? " and \(pickedRows.count - 3) more" : ""
         return "\(pickedAmount) · \(names.joined(separator: ", "))\(more)"
+    }
+
+    /// TR-08's dates: "Mar 3–7".
+    private var pickedDates: String {
+        let days = pickedRows.map { String($0.date.prefix(10)) }.sorted()
+        guard let first = days.first, let last = days.last else { return "" }
+        return Format.span(first, last)
+    }
+
+    /// TR-08's "They still count in March" (and April…).
+    private var pickedMonths: String {
+        let months = Set(pickedRows.map { String($0.date.prefix(7)) }).sorted()
+        return Format.andList(months.map(Format.monthName))
     }
 
     private var pickedTitle: String { picked.count == 1 ? "1 transaction" : "\(picked.count) transactions" }
@@ -1191,6 +1235,10 @@ struct TransactionRow: View {
     var showsDay = true
     /// Tapping the dotted guess says it's right, without opening the row.
     var onConfirm: (() -> Void)? = nil
+    /// TR-05: "Shopping · Trip to Montréal"; not on the trip's own page.
+    var showsTrip = true
+    /// TR-02m: a row in a trip's other currency says so ("−$142.00 USD").
+    var currency: String? = nil
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
@@ -1246,8 +1294,10 @@ struct TransactionRow: View {
         if let note = splitNote { return note }
         // T-82 (THL-292): a transfer a recurring rule sorted says so.
         if t.recurring != nil, let note = t.note, note.hasPrefix("Recurring") { return note }
-        if t.suggested { return [when, t.pending ? "Pending" : nil].compactMap { $0 }.joined(separator: " · ") }
-        return [showsCategory ? t.label : nil, when, t.pending ? "Pending" : nil].compactMap { $0 }
+        let trip = showsTrip ? t.trip?.name : nil
+        if t.suggested { return [when, t.pending ? "Pending" : nil, trip].compactMap { $0 }.joined(separator: " · ") }
+        // TR-05 (1327:6116): "Shopping · Trip to Montréal", in its own day.
+        return [showsCategory ? t.label : nil, trip, when, t.pending ? "Pending" : nil].compactMap { $0 }
             .joined(separator: " · ")
     }
 
@@ -1266,7 +1316,7 @@ struct TransactionRow: View {
         if let note = splitNote, note.hasPrefix("Split "), let full = t.fullAmount {
             return "\u{2212}" + Format.amount(full)
         }
-        return Format.money(t)
+        return Format.money(t) + (currency.map { " \($0)" } ?? "")
     }
 
     /// "Your share of $86", "Refunded in full · Nov 10".

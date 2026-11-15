@@ -75,7 +75,9 @@ def trips_one(trip_id: str):
     trip = trips.all_trips(st).get(trip_id)
     if trip is None:
         return jsonify({"error": "That trip isn’t there any more."}), 404
-    rows = {t.fingerprint: r for t, r in core._txlist_rows(st, everything=True)}
+    # TR-02m: each row says its billing currency, so one in another reads "−$142.00 USD".
+    rows = {t.fingerprint: {**r, "currency": (t.currency or "").upper() or "CAD"}
+            for t, r in core._txlist_rows(st, everything=True)}
     return jsonify({"trip": trips.summary(st, trip),
                     "rows": sorted((rows[i] for i in trip["ids"] if i in rows),
                                    key=lambda r: r["date"], reverse=True)})
