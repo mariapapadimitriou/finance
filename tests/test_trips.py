@@ -188,3 +188,16 @@ def test_two_currencies_are_totalled_apart(client):
     assert trip["totals"] == [{"currency": "CAD", "amount": 300.0}, {"currency": "USD", "amount": 65.0}]
     page = client.get(f"/api/trips/{trip['id']}").get_json()
     assert {r["merchant"]: r["currency"] for r in page["rows"]}["Diner B"] == "USD"
+
+
+def test_the_calendar_gives_each_trips_days_per_month(client):
+    """TR-10: the month view marks a trip's days and spans months honestly."""
+    home(client)
+    rows = add(client, tx("HOTEL A", 300.0, "2026-03-30"), tx("DINER B", 40.0, "2026-04-02"))
+    trip = client.post("/api/trips", json={"ids": [rows["HOTEL A"].fingerprint, rows["DINER B"].fingerprint],
+                                           "name": "Easter"}).get_json()["trip"]
+    march = client.get("/api/calendar?month=2026-03").get_json()["trips"]
+    april = client.get("/api/calendar?month=2026-04").get_json()["trips"]
+    assert [t["id"] for t in march] == [trip["id"]] and march[0]["days"] == [30, 31]
+    assert april[0]["days"] == [1, 2] and april[0]["start"] == "2026-03-30"
+    assert client.get("/api/calendar?month=2026-06").get_json()["trips"] == []
