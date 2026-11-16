@@ -15,6 +15,17 @@ and this checks both, statically, with no simulator:
 
     python3 ios/tools/check_stack.py --build /tmp/dd   # builds Debug for device first
     python3 ios/tools/check_stack.py --dylib path/to/Pearl.debug.dylib
+    python3 ios/tools/check_stack.py --derived /tmp/dd  # newest Pearl.debug.dylib under it
+    python3 ios/tools/check_stack.py --sizes-only       # (2) only: frames NOT checked
+
+It fails closed (2026-11-16). Run bare, it used to check only (2) and still
+print OK, and TransactionDetailView.body.getter grew back to 40,960 bytes
+on main without anyone seeing. Now it needs one of --build, --dylib or
+--derived, and exits 2 without one. --sizes-only is the old bare run, and
+says that frames were not checked.
+
+A frame is every `sub sp, sp, #N` in the function's prologue added up: a
+big frame is `sub sp, sp, #0x9, lsl #12` then `sub sp, sp, #0x340`.
 """
 
 from __future__ import annotations
@@ -28,6 +39,9 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 IOS = os.path.dirname(HERE)
+DYLIB = "Pearl.debug.dylib"
+# How many instructions from a function's start count as its prologue.
+PROLOGUE = 16
 
 
 def frames(binary: str) -> dict[str, int]:
@@ -37,14 +51,19 @@ def frames(binary: str) -> dict[str, int]:
     sub = re.compile(r"\tsub\tsp, sp, #(0x[0-9a-f]+)(?:, lsl #(\d+))?")
     out: dict[str, int] = {}
     func = None
+    seen = 0
     for line in p.stdout:
         m = head.match(line)
         if m:
-            func = m.group(1)
+            func, seen = m.group(1), 0
             continue
+        if not func:
+            continue
+        seen += 1
         m = sub.search(line)
-        if m and func:
-            out[func] = max(out.get(func, 0), int(m.group(1), 16) << int(m.group(2) or 0))
+        # The prologue's subs, added up (a few saves come before them).
+        if m and seen <= PROLOGUE:
+            out[func] = out.get(func, 0) + (int(m.group(1), 16) << int(m.group(2) or 0))
     p.wait()
     return out
 
@@ -75,14 +94,48 @@ def sizes() -> dict[str, int]:
     return {k: int(v) for k, v in (l.rsplit(" ", 1) for l in out.splitlines())}
 
 
+def newest_dylib(derived: str) -> str | None:
+    """The most recently built Pearl.debug.dylib under a derivedData folder."""
+    found = []
+    for root, _, files in os.walk(derived):
+        if DYLIB in files and root.endswith("Pearl.app"):
+            path = os.path.join(root, DYLIB)
+            found.append((os.path.getmtime(path), path))
+    return max(found)[1] if found else None
+
+
 def main() -> int:
     a = argparse.ArgumentParser()
     a.add_argument("--build", help="derivedData folder: build Debug for device into it first")
     a.add_argument("--dylib", help="an already built Pearl.debug.dylib")
+    a.add_argument("--derived", help="derivedData folder: check the newest Pearl.debug.dylib in it")
+    a.add_argument("--sizes-only", action="store_true",
+                   help="only Transaction's size; stack frames are NOT checked")
     a.add_argument("--limit", type=int, default=32 * 1024)
     a.add_argument("--max-transaction", type=int, default=1024)
     a.add_argument("--top", type=int, default=15)
     args = a.parse_args()
+    dylib = args.dylib
+    if args.sizes_only and (args.build or dylib or args.derived):
+        print("check_stack: --sizes-only checks no frames; drop it, or drop --build/--dylib/--derived",
+              file=sys.stderr)
+        return 2
+    if not (args.sizes_only or args.build or dylib or args.derived):
+        print("check_stack: no frames to check. Pass --build <derivedData dir> to build Debug for device,\n"
+              "--dylib <path to Pearl.debug.dylib>, or --derived <derivedData dir> with a Debug\n"
+              "device build in it. (--sizes-only checks Transaction's size alone, not frames.)",
+              file=sys.stderr)
+        return 2
+    if args.derived and not args.build and not dylib:
+        dylib = newest_dylib(args.derived)
+        if not dylib:
+            print(f"check_stack: no Pearl.app/{DYLIB} under {args.derived}. Build Debug for device "
+                  "into it first, or pass --build or --dylib.", file=sys.stderr)
+            return 2
+        print(f"Checking {dylib}")
+    if dylib and not os.path.isfile(dylib):
+        print(f"check_stack: {dylib} doesn't exist", file=sys.stderr)
+        return 2
     failed = False
     s = sizes()
     for k, v in s.items():
@@ -90,7 +143,6 @@ def main() -> int:
     if s["Transaction"] > args.max_transaction:
         print(f"FAIL: Transaction is {s['Transaction']} bytes (limit {args.max_transaction})")
         failed = True
-    dylib = args.dylib
     if args.build:
         r = subprocess.run(["xcodebuild", "build", "-project", "Pearl.xcodeproj", "-scheme", "Pearl",
                             "-configuration", "Debug", "-sdk", "iphoneos", "-destination", "generic/platform=iOS",
@@ -109,6 +161,8 @@ def main() -> int:
         if over:
             print(f"FAIL: {len(over)} frame(s) over {args.limit:,} bytes")
             failed = True
+    else:
+        print("frames NOT checked (--sizes-only)")
     print("FAIL" if failed else "OK")
     return 1 if failed else 0
 
