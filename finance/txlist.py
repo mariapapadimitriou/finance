@@ -442,6 +442,10 @@ def describe(t: Transaction, ctx: Context) -> dict:
                          "amount": abs(r.amount)} for r in refunds_in] if not inflow else [],
         "reimbursement": ctx.payback_kinds.get(t.fingerprint) == "reimbursement",
         "chip": {"label": chip, "suggested": suggested},
+        # TC-A (THL-122, 2026-11-15): a Transfer that pays off a card. The
+        # phone shows a move between her accounts as "⇄ $500.00", and this
+        # as a plain amount.
+        "card_payment": chip == "Transfer" and _is_card_payment(t),
         "suggested": suggested,
         "amount": round(amount, 2),
         "full_amount": round(abs(t.amount), 2),
