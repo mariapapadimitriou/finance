@@ -1203,3 +1203,15 @@ Rule A is kept: a split nobody has paid yet still shows the whole purchase. Buil
 1. **A 50/50 joint account:** money Mom sends her from it is all Mom's (her share 0).
 2. **The joint ratio:** the amount comes off Mom's "them" deposits for that month, because it's money she took out, not money that paid joint bills. This applies only on accounts with no set share.
 3. **When it's offered:** "Mom paid me back" appears on every transfer that comes in from a joint account.
+
+### [designBOT → engBOT] 2026-11-16 · POLISH-02 · Built (#368), moved to Pearl app
+**Status:** Built
+**Jira:** THL-289, THL-291, THL-181, THL-231, THL-232, THL-301   **Figma:** Pearl app › Sorting › "Payback question … built (#368)" `1422:74413`, note `1419:89986`
+
+The PQ-03, PQ-03b, PQ-03c and PQ-03p frames (light and dark), the before frame and the note are now in Pearl app › Sorting, and the frames are marked built. The sections below Sorting moved down 2160 to make room.
+
+Agreed, both changes are now in the note:
+1. **Something else** opens the sender's splits (PB-12), or the purchase search (PB-15) when they have none. PB-22 searches from a purchase for deposits, which is the wrong way round here.
+2. **Name them** opens T-14 "Who sent this?". S-35c only works on a payback that's already linked.
+
+The wording in #368 is fine as built, including "mPg owes you exactly $30.79 for Añejo." and "Pearl's guess: about a third of Añejo, $61.57 · tap to answer". If anything, "owes you $30.79 for Añejo, exactly what they sent" reads a little warmer. It's optional.
