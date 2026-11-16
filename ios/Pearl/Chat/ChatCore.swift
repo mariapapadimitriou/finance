@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import os
 
 // Pearl chat (PC-01 to PC-13; note 1340:8893, THL-117, THL-139, THL-213,
 // THL-254): the logic, in plain types. No views, no UIKit and no
@@ -28,6 +29,10 @@ struct ChatStart: Decodable {
     let categories: [String]
     let people: [String]
     let today: String
+    /// The trip and pattern cards waiting (GET /api/chat/asks's), in the
+    /// same reply so opening the chat is one trip to the server (2026-11-15).
+    /// Nil from a server before that.
+    let asks: ChatAsks?
 }
 
 /// The days she meant: "from the weekend" (PC-05), "from Sat–Sun" (PC-10).
@@ -239,8 +244,46 @@ protocol ChatReading {
 /// The chat's reads, by name. Every path is under api/chat.
 struct ChatReader {
     private let io: ChatReading
+    /// What the server said to each read, for the chat's lifetime
+    /// (2026-11-15): the same question asked again isn't another trip. Gone
+    /// after any card changes something (`forget`).
+    private let memo = Memo()
 
     init(_ io: ChatReading) { self.io = io }
+
+    final class Memo: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [String: Any] = [:]
+
+        func get<T>(_ key: String) -> T? {
+            lock.lock(); defer { lock.unlock() }
+            return values[key] as? T
+        }
+
+        func set(_ key: String, _ value: Any) {
+            lock.lock(); defer { lock.unlock() }
+            values[key] = value
+        }
+
+        func clear() {
+            lock.lock(); defer { lock.unlock() }
+            values = [:]
+        }
+    }
+
+    /// A card changed something: what the server said before may be out of date.
+    func forget() { memo.clear() }
+
+    private func cached<T: Decodable>(_ path: String, _ body: [String: Any]?) async throws -> T {
+        let words = body.flatMap { try? JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]) }
+            .map { String(decoding: $0, as: UTF8.self) } ?? ""
+        let key = "\(T.self) \(path) \(words)"
+        if let hit: T = memo.get(key) { return hit }
+        let fresh: T
+        if let body = body { fresh = try await io.read(path, body) } else { fresh = try await io.get(path) }
+        memo.set(key, fresh)
+        return fresh
+    }
 
     func start() async throws -> ChatStart { try await io.get("api/chat") }
 
@@ -251,7 +294,7 @@ struct ChatReader {
         if let days = days, !days.isEmpty { body["days"] = days }
         if let people = people, !people.isEmpty { body["people"] = people }
         if let ids = ids, !ids.isEmpty { body["ids"] = ids }
-        return try await io.read("api/chat/tell", body)
+        return try await cached("api/chat/tell", body)
     }
 
     func spending(_ text: String, category: String? = nil, month: String? = nil,
@@ -260,17 +303,17 @@ struct ChatReader {
         if let category = category { body["category"] = category }
         if let month = month { body["month"] = month }
         if let merchant = merchant { body["merchant"] = merchant }
-        return try await io.read("api/chat/spending", body)
+        return try await cached("api/chat/spending", body)
     }
 
-    func subscriptions() async throws -> SubscriptionsAnswer { try await io.get("api/chat/subscriptions") }
+    func subscriptions() async throws -> SubscriptionsAnswer { try await cached("api/chat/subscriptions", nil) }
 
-    func asks() async throws -> ChatAsks { try await io.get("api/chat/asks") }
+    func asks() async throws -> ChatAsks { try await cached("api/chat/asks", nil) }
 
     func plan(_ text: String, category: String? = nil) async throws -> PlanProposal {
         var body: [String: Any] = ["text": text]
         if let category = category { body["category"] = category }
-        return try await io.read("api/chat/plan", body)
+        return try await cached("api/chat/plan", body)
     }
 }
 
@@ -282,6 +325,21 @@ struct ChatFindings {
     var trips: [TripAsk]?
     var patterns: [PatternAsk]?
     var plan: PlanProposal?
+
+    var isEmpty: Bool {
+        tell == nil && spending == nil && subscriptions == nil && trips == nil && patterns == nil && plan == nil
+    }
+
+    /// What ChatEngine.show makes cards or a plan of (PC-05 to PC-10, PC-12).
+    var showsCards: Bool {
+        if tell != nil { return true }
+        if !(patterns ?? []).isEmpty || !(trips ?? []).isEmpty { return true }
+        if let p = plan, !p.nothing { return true }
+        return false
+    }
+
+    /// What ChatEngine.show answers in words (PC-04), the model's or the server's.
+    var answers: Bool { !showsCards && (spending != nil || subscriptions != nil || trips != nil) }
 }
 
 /// The model's tools, and everything they can touch: a reader, and the
@@ -291,49 +349,100 @@ actor ChatTools {
     /// PC-12 is on with Your plan (Features.chatPlans).
     nonisolated let allowsPlans: Bool
     private(set) var found = ChatFindings()
+    /// The trip and pattern cards, read once when the chat opened (2026-11-15):
+    /// asking again is another trip to the server for the same answer.
+    private var asks: ChatAsks?
+    /// What the tools have found so far, as each one returns, so the chat
+    /// can show cards before the model has finished its sentence.
+    private let onFound: (@Sendable (ChatFindings) -> Void)?
 
-    init(reader: ChatReader, allowsPlans: Bool) {
+    init(reader: ChatReader, allowsPlans: Bool, asks: ChatAsks? = nil,
+         onFound: (@Sendable (ChatFindings) -> Void)? = nil) {
         self.reader = reader
         self.allowsPlans = allowsPlans
+        self.asks = asks
+        self.onFound = onFound
     }
 
     func tell(_ text: String, category: String? = nil, days: [String]? = nil, people: [String]? = nil,
               ids: [String]? = nil) async throws -> TellReply {
-        let reply = try await reader.tell(text, category: category, days: days, people: people, ids: ids)
+        let reply = try await ChatLog.time("tool tell") {
+            try await reader.tell(text, category: category, days: days, people: people, ids: ids)
+        }
         found.tell = reply
+        onFound?(found)
         return reply
     }
 
     func spending(_ text: String, category: String? = nil, month: String? = nil,
                   merchant: String? = nil) async throws -> SpendingAnswer {
-        let answer = try await reader.spending(text, category: category, month: month, merchant: merchant)
+        let answer = try await ChatLog.time("tool spending") {
+            try await reader.spending(text, category: category, month: month, merchant: merchant)
+        }
         found.spending = answer
+        onFound?(found)
         return answer
     }
 
     func subscriptions() async throws -> SubscriptionsAnswer {
-        let answer = try await reader.subscriptions()
+        let answer = try await ChatLog.time("tool subscriptions") { try await reader.subscriptions() }
         found.subscriptions = answer
+        onFound?(found)
         return answer
     }
 
     func trips() async throws -> [TripAsk] {
-        let asks = try await reader.asks()
+        let asks = try await cachedAsks()
         found.trips = asks.trips
+        onFound?(found)
         return asks.trips
     }
 
     func patterns() async throws -> [PatternAsk] {
-        let asks = try await reader.asks()
+        let asks = try await cachedAsks()
         found.patterns = asks.patterns
+        onFound?(found)
         return asks.patterns
     }
 
     func plan(_ text: String, category: String? = nil) async throws -> PlanProposal? {
         guard allowsPlans else { return nil }
-        let p = try await reader.plan(text, category: category)
+        let p = try await ChatLog.time("tool plan") { try await reader.plan(text, category: category) }
         found.plan = p
+        onFound?(found)
         return p
+    }
+
+    private func cachedAsks() async throws -> ChatAsks {
+        if let asks = asks { return asks }
+        let fresh = try await ChatLog.time("tool asks") { try await reader.asks() }
+        asks = fresh
+        return fresh
+    }
+}
+
+/// How long the chat takes, for Console on a Mac with her iPhone plugged in
+/// (subsystem "Pearl", category "chat") and Instruments' os_signpost lane
+/// (2026-11-15). Durations only: never her words or her numbers.
+enum ChatLog {
+    static let logger = Logger(subsystem: "Pearl", category: "chat")
+    static let signposter = OSSignposter(subsystem: "Pearl", category: "chat")
+
+    static func time<T>(_ what: StaticString, _ body: () async throws -> T) async throws -> T {
+        let id = signposter.makeSignpostID()
+        let state = signposter.beginInterval(what, id: id)
+        let start = DispatchTime.now().uptimeNanoseconds
+        defer {
+            signposter.endInterval(what, state)
+            note(what, since: start)
+        }
+        return try await body()
+    }
+
+    /// "<what> 412 ms", from `start` (DispatchTime's uptime nanoseconds).
+    static func note(_ what: StaticString, since start: UInt64) {
+        let ms = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
+        logger.notice("\(what, privacy: .public) \(Int(ms), privacy: .public) ms")
     }
 }
 
@@ -356,6 +465,26 @@ struct BrainReply {
 /// `tools` is all it gets.
 protocol PearlBrain {
     func respond(to text: String, mode: ChatMode?, tools: ChatTools) async throws -> BrainReply
+    /// The same, saying its answer so far as it comes (2026-11-15), so the
+    /// first words show at once.
+    func respond(to text: String, mode: ChatMode?, tools: ChatTools,
+                 partial: @escaping @Sendable (String) -> Void) async throws -> BrainReply
+    /// Load the model before her first words. Nothing off Apple Intelligence.
+    func prewarm()
+    /// A language model, worth asking when the server couldn't read her
+    /// words. The scripted brain only asks the server what it already asked.
+    var isModel: Bool { get }
+}
+
+extension PearlBrain {
+    func respond(to text: String, mode: ChatMode?, tools: ChatTools,
+                 partial: @escaping @Sendable (String) -> Void) async throws -> BrainReply {
+        try await respond(to: text, mode: mode, tools: tools)
+    }
+
+    func prewarm() {}
+
+    var isModel: Bool { false }
 }
 
 /// The deterministic model: routes her words to one tool and leaves the
@@ -646,6 +775,18 @@ final class ChatEngine: ObservableObject {
     private let allowsPlans: Bool
     private let describe: (Error) -> String
     private var said: String?
+    /// The trip and pattern cards, from opening (2026-11-15), for the tools;
+    /// read again after a card changes something.
+    private var asks: ChatAsks?
+    /// This turn, so a late word from an earlier one can't land on this one.
+    private var turn = 0
+    /// The turn still being worked out: its first findings and words show
+    /// as they come; once it's done, nothing late changes the screen.
+    private var working: Int?
+    /// What this turn's tools have found so far.
+    private var latest = ChatFindings()
+    /// This turn's cards are already on screen (shown when the tool found them).
+    private var shownEarly = false
 
     init(brain: PearlBrain, reader: ChatReader, executor: ChatExecutor, allowsPlans: Bool,
          describe: @escaping (Error) -> String = { $0.localizedDescription }) {
@@ -658,9 +799,20 @@ final class ChatEngine: ObservableObject {
 
     /// Opened: what Pearl has to suggest comes first (PB-01's shimmer), the
     /// same cards Quick sort has; else the starters.
+    ///
+    /// 2026-11-15: the model loads while the server answers, and the cards
+    /// come in GET /api/chat's own reply: one trip to the server, not two.
     func open() async {
-        guard let start = try? await reader.start(), start.suggest,
-              let asks = try? await reader.asks() else { return }
+        brain.prewarm()
+        let began = DispatchTime.now().uptimeNanoseconds
+        guard let start = try? await reader.start() else { return }
+        ChatLog.note("open", since: began)
+        if start.suggest, start.asks == nil, let more = try? await reader.asks() {
+            asks = more
+        } else {
+            asks = start.asks
+        }
+        guard start.suggest, let asks = asks else { return }
         let cards = asks.patterns.map(ProposedAction.pattern) + asks.trips.map(ProposedAction.trip)
         if !cards.isEmpty { screen = .cards(Deck(cards: cards, lead: nil, echo: nil)) }
     }
@@ -698,21 +850,124 @@ final class ChatEngine: ObservableObject {
         self.said = said
         error = nil
         screen = .thinking(said: said ?? text)
-        let tools = ChatTools(reader: reader, allowsPlans: allowsPlans)
+        turn += 1
+        let now = turn
+        working = now
+        latest = ChatFindings()
+        shownEarly = false
+        defer { if working == now { working = nil } }
+        let began = DispatchTime.now().uptimeNanoseconds
         var reply = BrainReply()
-        do {
-            reply = try await brain.respond(to: text, mode: mode, tools: tools)
-        } catch {
-            // Apple Intelligence couldn't (a guardrail, a refusal, a full
-            // context): the server reads her words instead.
-            do {
-                reply = try await ScriptedBrain().respond(to: text, mode: mode, tools: tools)
-            } catch {
-                screen = .reply(said: said, text: describe(error), answer: nil, rows: [])
+        // 2026-11-15: the server first. It reads her words itself and works
+        // out the answer (totals, the cards); when it could, that's the
+        // answer and the model isn't asked at all. The model is for words the
+        // server couldn't read, and for when it can't, what the server said stands.
+        let first = ChatTools(reader: reader, allowsPlans: allowsPlans, asks: asks)
+        let answered = await serverAnswered(text, mode, first)
+        if answered || !brain.isModel {
+            let f = await first.found
+            if !f.isEmpty {
+                ChatLog.note("turn (server)", since: began)
+                guard turn == now else { return }
+                working = nil
+                show(f, reply, said: said)
                 return
             }
         }
-        show(await tools.found, reply, said: said)
+        // The model's turn: what its tools find, and its words, show as they
+        // come, not once the whole answer is in.
+        let tools = ChatTools(reader: reader, allowsPlans: allowsPlans, asks: asks) { [weak self] f in
+            Task { @MainActor in self?.found(f, turn: now) }
+        }
+        do {
+            reply = try await brain.respond(to: text, mode: mode, tools: tools) { [weak self] words in
+                Task { @MainActor in self?.saying(words, turn: now) }
+            }
+            ChatLog.note("turn (model)", since: began)
+        } catch {
+            ChatLog.note("turn failed", since: began)
+            // Apple Intelligence couldn't (a guardrail, a refusal, a full
+            // context). What a tool already found stands; else the server's
+            // own reading, from above; else it reads her words again.
+            if (await tools.found).isEmpty {
+                let f = await first.found
+                if !f.isEmpty {
+                    guard turn == now else { return }
+                    working = nil
+                    show(f, BrainReply(), said: said)
+                    return
+                }
+                do {
+                    reply = try await ScriptedBrain().respond(to: text, mode: mode, tools: tools)
+                } catch {
+                    screen = .reply(said: said, text: describe(error), answer: nil, rows: [])
+                    return
+                }
+            } else {
+                reply = BrainReply()
+            }
+        }
+        guard turn == now else { return }
+        working = nil
+        var f = await tools.found
+        // The model used no tool: the server's own reading is the answer.
+        if f.isEmpty { f = await first.found }
+        if shownEarly {
+            // The cards went up when the tool found them. Until she has
+            // answered one, the whole answer replaces them: the model's echo
+            // of her words, and what the later tools found, as before.
+            if isUntouched { show(f, reply, said: said) }
+            return
+        }
+        show(f, reply, said: said)
+    }
+
+    /// The server's own reading of her words (ScriptedBrain's route): true
+    /// when that's an answer. Not when it couldn't tell which spending, or
+    /// when what she said fits none of the open ones she has.
+    private func serverAnswered(_ text: String, _ mode: ChatMode?, _ tools: ChatTools) async -> Bool {
+        do {
+            switch ScriptedBrain.route(text, mode, plans: allowsPlans) {
+            case .subscriptions: _ = try await tools.subscriptions(); return true
+            case .trips: _ = try await tools.trips(); return true
+            case .plan: return (try await tools.plan(text))?.category != nil
+            case .spending: return !(try await tools.spending(text)).nothing
+            case .tell:
+                let r = try await tools.tell(text)
+                return r.matched > 0 || r.open == 0
+            }
+        } catch {
+            return false
+        }
+    }
+
+    /// Cards or a plan she hasn't answered yet: a later answer may replace them.
+    private var isUntouched: Bool {
+        guard !busy else { return false }
+        switch screen {
+        case .cards(let d): return d.index == 0 && d.done.isEmpty
+        case .plan, .thinking: return true
+        default: return false
+        }
+    }
+
+    /// A tool returned. Cards show now: the model's sentence after them only
+    /// says her words back.
+    private func found(_ f: ChatFindings, turn now: Int) {
+        guard working == now, turn == now else { return }
+        latest = f
+        guard case .thinking = screen, f.showsCards else { return }
+        show(f, BrainReply(), said: said)
+        shownEarly = true
+    }
+
+    /// The model's answer so far, on PC-04 as it comes.
+    private func saying(_ words: String, turn now: Int) {
+        guard working == now, turn == now, !shownEarly, latest.answers else { return }
+        switch screen {
+        case .thinking, .reply: show(latest, BrainReply(text: words), said: said)
+        default: break
+        }
     }
 
     /// The findings, as the screen the frames draw for them.
@@ -758,6 +1013,10 @@ final class ChatEngine: ObservableObject {
         defer { busy = false }
         do {
             let did = try await executor.perform(decision, tap: tap)
+            // A trip made or a pattern answered: the cards waiting have changed,
+            // and what the server said before may be out of date.
+            asks = nil
+            reader.forget()
             error = nil
             advance(did)
         } catch {

@@ -23,18 +23,28 @@ func decode<T: Decodable>(_ json: String) throws -> T {
 /// The server, as fixtures. Records every read.
 final class FakeReader: ChatReading {
     var replies: [String: String] = [:]
+    /// Said once each, in order, before `replies` (the server's first reading, then the model's).
+    var first: [String: [String]] = [:]
     var reads: [(String, [String: Any])] = []
+
+    private func reply(_ path: String) throws -> String {
+        if var queue = first[path], !queue.isEmpty {
+            let json = queue.removeFirst()
+            first[path] = queue
+            return json
+        }
+        guard let json = replies[path] else { throw URLError(.fileDoesNotExist) }
+        return json
+    }
 
     func get<T: Decodable>(_ path: String) async throws -> T {
         reads.append((path, [:]))
-        guard let json = replies[path] else { throw URLError(.fileDoesNotExist) }
-        return try decode(json)
+        return try decode(try reply(path))
     }
 
     func read<T: Decodable>(_ path: String, _ body: [String: Any]) async throws -> T {
         reads.append((path, body))
-        guard let json = replies[path] else { throw URLError(.fileDoesNotExist) }
-        return try decode(json)
+        return try decode(try reply(path))
     }
 }
 
@@ -57,6 +67,7 @@ final class FakeWriter: ChatWriting {
 /// A model that calls every tool it has, whatever she said. It still can't
 /// change anything: tools are all it gets.
 struct GreedyBrain: PearlBrain {
+    var isModel: Bool { true }
     func respond(to text: String, mode: ChatMode?, tools: ChatTools) async throws -> BrainReply {
         _ = try? await tools.spending(text)
         _ = try? await tools.subscriptions()
@@ -69,6 +80,7 @@ struct GreedyBrain: PearlBrain {
 }
 
 struct BrokenBrain: PearlBrain {
+    var isModel: Bool { true }
     struct Refused: Error {}
     func respond(to text: String, mode: ChatMode?, tools: ChatTools) async throws -> BrainReply { throw Refused() }
 }
@@ -127,6 +139,52 @@ let spending = """
 {"nothing": false, "title": "Dining, October", "category": "Dining", "merchant": null, "month": "2026-10",
  "total": 286.0, "usual": 214.0, "count": 4, "rows": [\(brief("p1", "Pai Northern Thai", 120))],
  "line": "You spent $286 on Dining in October, $72 more than usual."}
+"""
+
+/// 2026-11-15 (speed): a model that's slow after its tool, as Apple
+/// Intelligence is while it writes its sentence. `look` runs while it's still
+/// "writing", to see what the chat shows by then.
+final class SlowBrain: PearlBrain, @unchecked Sendable {
+    var prewarmed = 0
+    let tool: (ChatTools) async throws -> Void
+    let words: [String]
+    let echo: String?
+    let fail: Bool
+    var look: (@MainActor () -> Void)?
+
+    init(words: [String] = [], echo: String? = nil, fail: Bool = false,
+         tool: @escaping (ChatTools) async throws -> Void) {
+        self.words = words
+        self.echo = echo
+        self.fail = fail
+        self.tool = tool
+    }
+
+    func prewarm() { prewarmed += 1 }
+
+    var isModel: Bool { true }
+
+    func respond(to text: String, mode: ChatMode?, tools: ChatTools) async throws -> BrainReply {
+        try await respond(to: text, mode: mode, tools: tools, partial: { _ in })
+    }
+
+    func respond(to text: String, mode: ChatMode?, tools: ChatTools,
+                 partial: @escaping @Sendable (String) -> Void) async throws -> BrainReply {
+        try await tool(tools)
+        for w in words {
+            partial(w)
+            try await Task.sleep(nanoseconds: 30_000_000)
+        }
+        try await Task.sleep(nanoseconds: 30_000_000)
+        if let look = look { await look() }
+        struct Refused: Error {}
+        if fail { throw Refused() }
+        return BrainReply(text: words.last, echo: echo)
+    }
+}
+
+let spendingNone = """
+{"nothing": true, "month": "2026-11", "line": "Pearl couldn’t tell which spending you meant."}
 """
 
 func server(suggest: Bool = false, trips: Bool = true, patterns: Bool = false) -> FakeReader {
@@ -222,9 +280,11 @@ struct ChatChecks {
             expect(w.writes.isEmpty, "and by its own page's request, not another")
         }
 
-        // A model that calls every tool still changes nothing.
+        // A model that calls every tool still changes nothing. (2026-11-15:
+        // the model is asked only when the server couldn't read her words.)
         do {
             let r = server(), w = FakeWriter()
+            r.first["api/chat/tell"] = [tellNone]
             let e = engine(r, w, brain: GreedyBrain())
             await e.send("went out with friends Saturday")
             expect(w.writes.isEmpty, "a greedy model writes nothing")
@@ -237,6 +297,15 @@ struct ChatChecks {
             let e = engine(r, w, brain: BrokenBrain())
             await e.send("went out with friends Saturday")
             expect(deck(e)?.cards.count == 3, "falls back to the scripted model")
+        }
+        // The server couldn't, and the model can't either: the server's reading stands.
+        do {
+            let r = server(), w = FakeWriter()
+            r.replies["api/chat/tell"] = tellNone
+            let e = engine(r, w, brain: BrokenBrain())
+            await e.send("went to the cottage")
+            if case .nothing = e.screen {} else { expect(false, "PC-10 from the server's reading") }
+            expect(r.reads.filter { $0.0 == "api/chat/tell" }.count == 1, "and it isn't asked twice")
         }
 
         // PC-10: nothing matched.
@@ -375,6 +444,132 @@ struct ChatChecks {
             let e = engine(r, w)
             await e.open()
             if case .start = e.screen {} else { expect(false, "PC-03 when nothing waits") }
+        }
+
+        // 2026-11-15, speed. Opening: the model loads, and the cards come in
+        // GET /api/chat's own reply, one read.
+        do {
+            let r = server(suggest: true, trips: true), w = FakeWriter()
+            r.replies["api/chat"] = """
+            {"suggest": true, "categories": ["Dining"], "people": ["Jo"], "today": "2026-11-15",
+             "asks": {"patterns": [], "trips": [\(trip)]}}
+            """
+            let b = SlowBrain { _ = try await $0.trips() }
+            let e = engine(r, w, brain: b)
+            await e.open()
+            expect(b.prewarmed == 1, "opening prewarms the model")
+            expect(r.reads.map(\.0) == ["api/chat"], "one read to open: \(r.reads.map(\.0))")
+            expect(deck(e)?.cards.count == 1, "the trip card from the one reply")
+            // Was this a trip? uses the cards already read, not another trip to the server.
+            e.restart()
+            await e.pick(.trips)
+            expect(!r.reads.map(\.0).contains("api/chat/asks"), "trips from what opening read")
+            // A Yes changes what's waiting: the next ask reads again.
+            w.replies["api/trips/asks/2026-03-04%3A2026-03-09/yes"] = """
+            {"ok": true, "trip": {"id": "tr1", "name": "Trip to Montréal", "ids": ["t1"], "start": "2026-03-04",
+             "end": "2026-03-09", "count": 23, "totals": [{"currency": "CAD", "amount": 1284.6}]}}
+            """
+            if let card = deck(e)?.current {
+                await e.decide(.yes(card), tap: UserTap("yes"))
+            } else {
+                expect(false, "the trip card again")
+            }
+            expect(w.writes.count == 1, "the Yes was sent")
+            await e.pick(.trips)
+            expect(r.reads.map(\.0).contains("api/chat/asks"), "after a Yes, asked again")
+        }
+        // An old server without asks in GET /api/chat: asked for them, as before.
+        do {
+            let r = server(suggest: true, trips: true), w = FakeWriter()
+            let e = engine(r, w)
+            await e.open()
+            expect(r.reads.map(\.0) == ["api/chat", "api/chat/asks"], "old server: two reads")
+            expect(deck(e)?.cards.count == 1, "old server: the trip card")
+        }
+        // Cards show when the tool finds them, while the model still writes;
+        // its echo comes in once it's done.
+        do {
+            let r = server(), w = FakeWriter()
+            r.first["api/chat/tell"] = [tellNone]
+            let b = SlowBrain(echo: "You said you went out Saturday.") {
+                _ = try await $0.tell("went out Saturday", category: "Dining")
+            }
+            let e = engine(r, w, brain: b)
+            var early: Deck?
+            b.look = { early = deck(e) }
+            await e.send("went out Saturday")
+            expect(early?.cards.count == 3, "the cards are up before the model is done")
+            expect(early?.echo == ChatWords.echo("went out Saturday") || early?.echo != nil, "with the server's echo meanwhile")
+            expect(deck(e)?.echo == "You said you went out Saturday.", "then the model's echo")
+            expect(w.writes.isEmpty, "showing early writes nothing")
+        }
+        // Words stream onto PC-04 as they come.
+        do {
+            let r = server(), w = FakeWriter()
+            r.first["api/chat/spending"] = [spendingNone]
+            let b = SlowBrain(words: ["You spent", "You spent $286 on Dining."]) {
+                _ = try await $0.spending("how much on dining?", category: "Dining")
+            }
+            let e = engine(r, w, brain: b)
+            var midway: String?
+            b.look = { if case .reply(_, let text, _, _) = e.screen { midway = text } }
+            await e.send("how much on dining?")
+            expect(midway == "You spent $286 on Dining.", "the words so far: \(midway ?? "none")")
+            if case .reply(_, let text, let a, _) = e.screen {
+                expect(text == "You spent $286 on Dining." && a?.total == 286, "then the whole answer")
+            } else { expect(false, "PC-04 after streaming") }
+        }
+        // The model fails after its tool found something: that stands, and
+        // the server isn't asked twice.
+        do {
+            let r = server(), w = FakeWriter()
+            r.first["api/chat/spending"] = [spendingNone]
+            let b = SlowBrain(fail: true) { _ = try await $0.spending("how much on dining?", category: "Dining") }
+            let e = engine(r, w, brain: b)
+            await e.send("how much on dining?")
+            expect(r.reads.filter { $0.0 == "api/chat/spending" }.count == 2, "the server's reading, then the model's")
+            if case .reply(_, let text, _, _) = e.screen {
+                expect(text == "You spent $286 on Dining in October, $72 more than usual.", "the server's line")
+            } else { expect(false, "PC-04 from what the tool found") }
+        }
+
+        // Simple questions skip the model: the starters, and words the server
+        // could read. One read each, no model.
+        do {
+            let r = server(), w = FakeWriter()
+            var asked = 0
+            let b = SlowBrain { _ in asked += 1 }
+            let e = engine(r, w, brain: b)
+            await e.pick(.subscriptions)
+            await e.send("how much on dining?")
+            e.restart()
+            await e.send("went out with friends Saturday")
+            expect(asked == 0, "the model wasn't asked: \(asked)")
+            expect(r.reads.map(\.0) == ["api/chat/subscriptions", "api/chat/spending", "api/chat/tell"],
+                   "one read each: \(r.reads.map(\.0))")
+            expect(deck(e)?.cards.count == 3, "the told guesses")
+            expect(deck(e)?.echo == ChatWords.echo("went out with friends Saturday"), "the server's echo")
+            // The same question again in this chat: no trip to the server.
+            e.restart()
+            await e.send("how much on dining?")
+            expect(r.reads.filter { $0.0 == "api/chat/spending" }.count == 1, "asked again: from the chat's memory")
+            if case .reply(_, let text, let a, _) = e.screen {
+                expect(text == "You spent $286 on Dining in October, $72 more than usual." && a?.total == 286,
+                       "the server's answer")
+            } else { expect(false, "PC-04") }
+        }
+        // Words the server can't read: then the model.
+        do {
+            let r = server(), w = FakeWriter()
+            r.first["api/chat/spending"] = [spendingNone]
+            var asked = 0
+            let b = SlowBrain(words: ["You spent $286 on Dining."]) {
+                asked += 1
+                _ = try await $0.spending("what about eating out", category: "Dining")
+            }
+            let e = engine(r, w, brain: b)
+            await e.send("what about eating out?")
+            expect(asked == 1, "the model, once")
         }
 
         print("\(checks) checks, \(failures) failed")
