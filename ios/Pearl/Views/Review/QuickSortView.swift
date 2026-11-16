@@ -132,54 +132,8 @@ struct QuickSortView: View {
                 Spacer(minLength: 12)
                 stack.padding(.horizontal, 32)
                 Spacer(minLength: 16)
-                if let pattern = pattern {
-                    // AI-18 (1326:64004): what she did, in ink; what Yes and Skip do, muted.
-                    Text(pattern.because)
-                        .font(Nacre.footnote).foregroundColor(Pearl.ink)
-                        .multilineTextAlignment(.center).padding(.horizontal, 32)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(pattern.yesSkip)
-                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                        .multilineTextAlignment(.center).padding(.horizontal, 32)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 2)
-                } else if let trip = trip {
-                    // TR-01 (1327:4974): what Pearl saw, in ink; what Yes does, muted.
-                    Text("Did you go on a trip here? " + trip.story)
-                        .font(Nacre.footnote).foregroundColor(Pearl.ink)
-                        .multilineTextAlignment(.center).padding(.horizontal, 32)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text("Yes groups them as one trip. They stay in \(trip.months).")
-                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                        .multilineTextAlignment(.center).padding(.horizontal, 32)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 2)
-                } else if let ask = current, drafts[ask.id] == nil, let unsure = ask.item.unsure {
-                    // AI-07 (1315:4227): why Pearl isn't sure, in ink; then
-                    // what Yes does, muted. Still Skip or Yes.
-                    Text(unsure.line)
-                        .font(Nacre.footnote).foregroundColor(Pearl.ink)
-                        .multilineTextAlignment(.center).padding(.horizontal, 32)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text("Yes sorts it as \(guess(ask)). Tap the card for more.")
-                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                        .multilineTextAlignment(.center).padding(.horizontal, 32)
-                        .padding(.top, 2)
-                } else {
-                Text(hint)
-                    .font(Nacre.footnote).foregroundColor(Pearl.ink)
-                    .multilineTextAlignment(.center).padding(.horizontal, 32)
-                    .accessibilityHidden(true)
-                if current.map(hasYes) == true, current.flatMap({ drafts[$0.id]?.split }) == nil {
-                    // T-98s (REFRESH-03): a held split's one line is `hint`; no second line.
-                    // T-93o (1284:103): on an Other guess, "Tap the card to pick something else."
-                    Text(current.map { $0.guessesOther && drafts[$0.id] == nil } == true
-                         ? "Tap the card to pick something else." : "Tap the card for other answers.")
-                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                        .padding(.top, 2)
-                        .accessibilityHidden(true)
-                }
-                }
+                // The lines under the card, in their own body (stack, 2026-11-16).
+                OwnBody { cardLines }
                 if let error = error {
                     Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).padding(.top, 6)
                 }
@@ -291,6 +245,81 @@ struct QuickSortView: View {
                     }
                 }
             }
+        }
+    }
+
+    // 2026-11-16 (stack check, closure #1 in QuickSortView.body.getter at
+    // 30,304 bytes in the Debug device build, near the 32 KB that crashed the
+    // product owner's iPhone in #340 and #364): the lines under the card are
+    // built here, in their own body (OwnBody), not in body's VStack, and each
+    // case in its own function, so no one Debug frame holds them all. Same
+    // views, same modifiers, same order.
+    /// What the card is about and what Yes and Skip do, under the card.
+    @ViewBuilder private var cardLines: some View {
+        if let pattern = pattern {
+            patternLines(pattern)
+        } else if let trip = trip {
+            tripLines(trip)
+        } else if let ask = current, drafts[ask.id] == nil, let unsure = ask.item.unsure {
+            unsureLines(ask, unsure)
+        } else {
+            hintLines
+        }
+    }
+
+    /// AI-18 (1326:64004): what she did, in ink; what Yes and Skip do, muted.
+    @ViewBuilder private func patternLines(_ pattern: PatternAsk) -> some View {
+        Text(pattern.because)
+            .font(Nacre.footnote).foregroundColor(Pearl.ink)
+            .multilineTextAlignment(.center).padding(.horizontal, 32)
+            .fixedSize(horizontal: false, vertical: true)
+        Text(pattern.yesSkip)
+            .font(Nacre.footnote).foregroundColor(Pearl.muted)
+            .multilineTextAlignment(.center).padding(.horizontal, 32)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.top, 2)
+    }
+
+    /// TR-01 (1327:4974): what Pearl saw, in ink; what Yes does, muted.
+    @ViewBuilder private func tripLines(_ trip: TripAsk) -> some View {
+        Text("Did you go on a trip here? " + trip.story)
+            .font(Nacre.footnote).foregroundColor(Pearl.ink)
+            .multilineTextAlignment(.center).padding(.horizontal, 32)
+            .fixedSize(horizontal: false, vertical: true)
+        Text("Yes groups them as one trip. They stay in \(trip.months).")
+            .font(Nacre.footnote).foregroundColor(Pearl.muted)
+            .multilineTextAlignment(.center).padding(.horizontal, 32)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.top, 2)
+    }
+
+    /// AI-07 (1315:4227): why Pearl isn't sure, in ink; then what Yes does,
+    /// muted. Still Skip or Yes.
+    @ViewBuilder private func unsureLines(_ ask: Ask, _ unsure: Review.Item.Unsure) -> some View {
+        Text(unsure.line)
+            .font(Nacre.footnote).foregroundColor(Pearl.ink)
+            .multilineTextAlignment(.center).padding(.horizontal, 32)
+            .fixedSize(horizontal: false, vertical: true)
+        Text("Yes sorts it as \(guess(ask)). Tap the card for more.")
+            .font(Nacre.footnote).foregroundColor(Pearl.muted)
+            .multilineTextAlignment(.center).padding(.horizontal, 32)
+            .padding(.top, 2)
+    }
+
+    /// What Yes does, and how to get the other answers.
+    @ViewBuilder private var hintLines: some View {
+        Text(hint)
+            .font(Nacre.footnote).foregroundColor(Pearl.ink)
+            .multilineTextAlignment(.center).padding(.horizontal, 32)
+            .accessibilityHidden(true)
+        if current.map(hasYes) == true, current.flatMap({ drafts[$0.id]?.split }) == nil {
+            // T-98s (REFRESH-03): a held split's one line is `hint`; no second line.
+            // T-93o (1284:103): on an Other guess, "Tap the card to pick something else."
+            Text(current.map { $0.guessesOther && drafts[$0.id] == nil } == true
+                 ? "Tap the card to pick something else." : "Tap the card for other answers.")
+                .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                .padding(.top, 2)
+                .accessibilityHidden(true)
         }
     }
 
