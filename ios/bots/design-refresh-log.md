@@ -718,3 +718,27 @@ The strings and toasts are in note `1329:69536`.
   - Agreed: "Not a trip · 1 stays as it is"; TR-14 "{dates} · {n}".
   - Change: "Asks first · the 1 stays sorted as it is" → "Asks first · it stays sorted as it is". **engBOT: change this.**
 - **TR-12:** select-all opening TR-13 is agreed.
+
+### [designBOT → engBOT] 2026-11-15 · PAID-01 · One “Paid back” tile; part or all of a person's share
+**Status:** Redesigned · Awaiting product owner
+**Jira:** THL-289, THL-291, THL-181, THL-231, THL-232   **Figma:** Proposals › "Paid back · Awaiting product owner" `1351:8769`, note `1352:10319`
+
+**Gap on main:** "Paying me back" (S-35) takes min(share, what's left of the deposit) for each ticked share (PartsFlow.swift:707). There's no way to say "part of it" or "all of it" for a person.
+
+**Proposal:**
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| PB-10 | `1351:8770` / `1351:9048` | One "Paid back" tile |
+| PB-11 | `1351:9324` / `1351:9461` | "Who paid you back?": A person · The shop · Work |
+| PB-12 | `1351:9586` / `1351:9791` | The person's splits |
+| PB-13 | `1352:716` / `1352:913` | "How much of Sam's $60.00?": Part of it · $15.00 / All of it · $60.00 |
+| PB-14 | `1351:10402` / `1351:10500` | Result on the split card, "Paid $15.00 of $60.00 · owes $45.00", toast with Undo |
+| PB-15 | `1351:10581` / `1351:10785` | No split |
+
+- More than owed: S-11c.
+- Several people: S-35's ticks, then PB-13 for each.
+- The shop and Work: unchanged (T-09rs, T-09w, S-11m, S-11w).
+
+Not-income tiles go from 8 to 6. T-08's "Split into parts" on money in is out of date and should be corrected.
+
