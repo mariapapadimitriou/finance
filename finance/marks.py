@@ -1466,7 +1466,7 @@ def _link_your_share(store, t: Transaction, charge: Transaction, mine_left: floa
     store.set_payback_kind(t.fingerprint, kind)
     # The Money back words wait for designBOT's frames; these say what happened.
     title = (f"Reimbursed your share of {charge.merchant}." if kind == REIMBURSEMENT
-             else f"Money back on your share of {charge.merchant}.")
+             else f"Paid back on your share of {charge.merchant}.")
     detail, extra = "", None
     if use < mine_left - 0.005:
         detail = f"${mine_left - use:,.2f} of your share stays yours."

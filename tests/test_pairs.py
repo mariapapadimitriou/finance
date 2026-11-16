@@ -89,7 +89,7 @@ class TestPairCards:
         ledger(client, [tx("2026-10-08", "Canada Computers", 129.99, "Shopping", category_source="issuer"),
                         inflow("2026-10-20", "Canada Computers", 129.99)])
         item = next(i for i in review(client)["money_in"] if i["txn"]["merchant"] == "Canada Computers")
-        assert item["pair"]["question"] == "Money back for Canada Computers?"
+        assert item["pair"]["question"] == "Paid back for Canada Computers?"
         out = client.post(f"/api/review/pair/{item['txn']['id']}").get_json()
         assert out["ok"] is True and out["also"] == []
         assert not [i for i in review(client)["money_in"] if i["txn"]["id"] == item["txn"]["id"]]
