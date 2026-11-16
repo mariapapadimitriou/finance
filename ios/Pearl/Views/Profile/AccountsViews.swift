@@ -580,7 +580,7 @@ struct AccountDetailView: View {
 
             GlassCard {
                 Button { removing = true } label: {
-                    ProfileRow(title: "Remove this account", tone: Pearl.moneyOut, chevron: false)
+                    ProfileRow(title: "Remove this account", tone: Pearl.danger, chevron: false)
                 }
                 .buttonStyle(.plain)
                 if sameBank.count > 1 {
@@ -588,7 +588,7 @@ struct AccountDetailView: View {
                     RowSeparator()
                     Button { removingBank = true } label: {
                         ProfileRow(title: "Remove \(AccountWords.bank(account)) entirely · \(sameBank.count == 2 ? "both accounts" : "all \(sameBank.count) accounts")",
-                                   tone: Pearl.moneyOut, chevron: false)
+                                   tone: Pearl.danger, chevron: false)
                     }
                     .buttonStyle(.plain)
                     .disabled(busy)
@@ -905,7 +905,7 @@ struct DisconnectedAccountView: View {
             }
             GlassCard {
                 Button { removing = true } label: {
-                    ProfileRow(title: "Remove it and its history", tone: Pearl.moneyOut, chevron: false)
+                    ProfileRow(title: "Remove it and its history", tone: Pearl.danger, chevron: false)
                 }
                 .buttonStyle(.plain)
             }
@@ -1049,7 +1049,7 @@ struct ManualAccountView: View {
             }
             GlassCard {
                 Button { removing = true } label: {
-                    ProfileRow(title: "Remove this account", tone: Pearl.moneyOut, chevron: false)
+                    ProfileRow(title: "Remove this account", tone: Pearl.danger, chevron: false)
                 }
                 .buttonStyle(.plain)
             }

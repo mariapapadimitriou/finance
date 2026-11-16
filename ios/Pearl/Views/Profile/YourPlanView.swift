@@ -421,7 +421,8 @@ private struct PlanAmountSheet: View {
 
 /// YP-08: Add a category. "NOT IN YOUR PLAN", one row a category, "{Category}
 /// · usual {$x}" (those with no spending last, at $0), one picked at a time
-/// with Pearl's tick, then Next.
+/// with Pearl's tick, then Next. Empty when every category is already in
+/// the plan (PLAN-03, note 1353:11493): "Everything’s in your plan" · Done.
 @MainActor
 private struct AddCategorySheet: View {
     @EnvironmentObject private var app: AppModel
@@ -462,20 +463,28 @@ private struct AddCategorySheet: View {
                             CategoryChoice(category: c, on: picked == c) { picked = c }
                         }
                     }
+                } else {
+                    EmptyStateBlock(title: "Everything\u{2019}s in your plan",
+                                    line: "Change any category from Your plan.", action: nil) {}
                 }
             } else if failed == nil {
                 ProgressView().frame(maxWidth: .infinity, minHeight: 120)
             }
             if let failed = failed { CautionBanner(text: failed) }
         } footer: {
-            VStack(spacing: 0) {
-                Text("Next: how much each month (starts at your usual).")
-                    .font(Pearl.text(.footnote)).foregroundColor(Pearl.ink)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 16)
-                PearlSheetButtons(primary: "Next", onPrimary: { if let p = picked { next(p) } })
-                    .disabled(picked == nil)
+            if categories?.isEmpty == true {
+                // YP-08 empty: nothing to add, so Done closes the sheet.
+                PearlSheetButtons(primary: "Done", onPrimary: close)
+            } else {
+                VStack(spacing: 0) {
+                    Text("Next: how much each month (starts at your usual).")
+                        .font(Pearl.text(.footnote)).foregroundColor(Pearl.ink)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 16)
+                    PearlSheetButtons(primary: "Next", onPrimary: { if let p = picked { next(p) } })
+                        .disabled(picked == nil)
+                }
             }
         }
         .task { await load() }

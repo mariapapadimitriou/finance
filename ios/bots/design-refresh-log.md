@@ -826,3 +826,76 @@ The strings are in the note.
 - **Large text:** dates wrap and rows grow.
 - **VoiceOver:** each row reads as one element ("Trip to Montréal, March 4 to 9, $1,284.60"). The card heading is a header.
 - **Approved (product owner, 2026-11-15):** TR-17, TR-17e and TR-18 are "Approved, ready to build". Note `1329:69536` is updated.
+
+### [designBOT → engBOT] 2026-11-15 · TRANSFER-01 · Transfers read differently from spending
+**Status:** Redesigned · Awaiting product owner
+**Jira:** THL-122, THL-123   **Figma:** Proposals › "Transfer colour" `1368:8299`, note `1368:10078`
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| TC-A (recommended) | `1368:8300` / `1368:8405` | "⇄ $500.00" in lagoon, no sign |
+| TC-B | `1368:8498` / `1368:8603` | ⇄ in muted grey |
+| TC-C | `1368:8696` / `1368:8803` | A "Transfer" chip |
+| TC-A on the Calendar day list | `1368:8898` / `1368:9189` | TC-A applied |
+| TC-A on a trip page | `1368:9480` / `1368:9628` | TC-A applied |
+
+- **Token:** repoint color/text/money-transfer from mist to lagoon/700 (light, 5.1:1 on the card) and lagoon/400 (dark, 8.9:1). No new token is needed.
+- **Other not-counted rows** stay muted, with no sign.
+
+### [designBOT] 2026-11-15 · CLEAN-01 · Handoff file: Pearl app = built, Proposals = not built
+**Status:** Done (product owner's rule, 2026-11-15)
+
+**Moved into Pearl app:**
+- New "Pearl chat" group, section `1369:70113`: PB-01 and PC-03 to PC-13 (light and dark), plus note `1340:8893`.
+- PC-01 → Home › `1369:70114`. PC-02 → Cash flow and transactions › `1369:70115`.
+- All marked "built (#348, #352)". PC-05/PC-06 now quote the user ("You said: “Out with friends Saturday.”"), as #352 built.
+- TEST-31 (built in #338): T-09w/rs, S-04w/w2/w3, S-04m/m2/m3/m4, S-40w/m, S-11w/m, T-41w/m, with notes `1294:2593` and `1303:3395` → Splits and paybacks › `1369:70116`.
+- S-06 v2/v3/v3a (still built and cited in SplitFlow) → Splits and paybacks › `1369:70117`.
+- The Paid back note `1352:10319` → Sorting › Paid back `1361:67898`.
+
+**Deleted:**
+- Ask Pearl AI-10 to AI-17. PC-12's preview card covers AI-17's suggestion.
+- AI-22.
+- The Tell Pearl section TP-01 to TP-09 and its note.
+- From To check:
+  - S-03 (covered by S-03r2 / S-03b v2)
+  - S-05, S-19, S-20 (covered by S-04r v2 / S-44)
+  - T-75 (covered by S-01jr)
+  - O-09c (covered by O-09cr)
+- The ticket tags and notes that belonged to those frames, and the now-empty sections To check, TEST-31, Paid back and Pearl chat on Proposals.
+
+**Left on Proposals:**
+- Deferred (recovery codes)
+- AI phase 2 sketches AI-20 and AI-21 (note rewritten)
+- Trips TR-17/TR-18 (approved, not built)
+- Your plan YP-07 to YP-09 (approved, not built)
+- Transfer colour (awaiting)
+- **TRANSFER-01 approved (product owner, 2026-11-15): TC-A.**
+  - The TC-A frames (Cash flow, Calendar day list, trip page) are "Approved, ready to build". TC-B and TC-C are deleted (`1368:8498`, `1368:8603`, `1368:8696`, `1368:8803`). Note `1368:10078` is updated.
+  - **Library:** `color/text/money-transfer` now points to lagoon/700 (light) and lagoon/400 (dark); it was mist/500 / mist/300. The library is not published yet; the product owner publishes it by hand.
+
+### [designBOT → engBOT] 2026-11-15 · PLAN-03 · Your plan follow-ups built (#354)
+**Status:** Redesigned (Figma matches the build)
+**Jira:** THL-127, THL-45, THL-198   **Figma:** Pearl app › Profile and settings › Your plan `1356:77254`, note `1353:11493`
+
+- **Moved:** YP-07, YP-08 and YP-09 are now in Pearl app, marked "built (#354)". The empty Proposals section is deleted.
+- **YP-08 rows:** one line, "{Category} · usual {$x}". The second lines are removed from the frame.
+- **YP-08 empty state:** "Everything's in your plan" / "Change any category from Your plan." with a Done button. **engBOT: add this.**
+- **Agreed:**
+  - YP-04 opened from YP-08 shows only "Add" and ✕.
+  - YP-08 leaves out rent and all-bill categories.
+  - YP-07 with no income: body "Your usual amounts come back. The plan stays here to use again." and toast "Plan stopped" · Undo.
+
+### [designBOT → engBOT] 2026-11-15 · TRANSFER-03 · Plum spending (SP-B), grey transfers
+**Status:** Redesigned · Approved, ready to build. The library is waiting for the product owner to publish.
+**Jira:** THL-122, THL-123   **Figma:** Proposals › "Transfer colour" `1368:8299`, note `1368:10078`; library `3fdfPDKIjhiluGHtXWSF32`
+
+- **Frames:** SP-B is approved: `1373:2613` / `1373:2752`, `1373:2879` / `1373:3219`, `1373:3559` / `1373:3707`. SP-A and SP-C are deleted.
+- **Library (not published):**
+  - `color/text/money-out` → lilac/900 / lilac/200.
+  - New `color/text/error` → red/700 / red/300.
+  - Amount field Over `298:728` → error.
+  - Transaction row Out amounts `91:819` / `91:830` → money-out.
+- **Handoff, after the publish:** move 1,144 spending amounts from primary to money-out, and the 25 over, error and destructive texts from money-out to error. Then screenshot T-46 in light and dark.
+- **Transfer subtitles:** keep engBOT's rule (the category, e.g. "Saved" / "Transfer"). "Moved to your savings" was sample wording only.
+- **Correction to TRANSFER-01 and CLEAN-01:** the lagoon transfer colour (TC-A, lagoon/700 / lagoon/400) was withdrawn the same day. Transfers are grey (mist/500 / mist/300). The library change to lagoon was reverted before any publish.

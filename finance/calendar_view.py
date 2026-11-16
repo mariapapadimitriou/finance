@@ -220,6 +220,28 @@ def spent_rows(transactions: list[Transaction], iso: str, names: dict | None = N
     return rows
 
 
+def moved_rows(st, iso: str) -> list[dict]:
+    """TC-A (THL-123, Figma 1368:8898): money she moved between her own
+    accounts on a day, into or out of savings included, for the day list's
+    "⇄ $500.00". Described and joined as the transactions list does, so a
+    transfer is one line on the day it left and a card payment, a row left
+    out or joint money that isn't hers is not here."""
+    from . import api as core, txlist
+    from .transfers import transfer_pairs
+    rows = txlist.collapse_transfers(core._txlist_rows(st),
+                                     transfer_pairs(st.all_transactions(), today=core._today_iso()))
+    out = []
+    for _, r in rows:
+        if (r["date"] != iso or r["excluded"] or r["counts"] != "none" or r.get("card_payment")
+                or (r.get("chip") or {}).get("label") not in ("Transfer", "Saved")):
+            continue
+        to = (r.get("transfer") or {}).get("to") or (r["account"] if r["inflow"] else r["merchant"])
+        out.append({"id": r["id"], "merchant": r["merchant"], "category": r["chip"]["label"],
+                    "amount": r["amount"], "inflow": r["inflow"], "to": to})
+    out.sort(key=lambda r: -r["amount"])
+    return out
+
+
 def reason(state: str, day: int, st_by_day: dict[int, str], rows: list[dict]) -> str:
     """One calm line on why a day is shaded (CAL-02, CAL-03)."""
     if state == "future":
@@ -373,6 +395,7 @@ def day_view(st, transactions: list[Transaction], today: date, iso: str,
         "date": iso, "label": long_day(iso), "state": state,
         "reason": reason(state, day, st_by_day, rows),
         "spent": rows, "spent_total": round(sum(r["amount"] for r in rows), 2),
+        "moved": moved_rows(st, iso) if iso <= today.isoformat() else [],
         "due": due, "past": iso < today.isoformat(), "today": iso == today.isoformat(),
     }
 

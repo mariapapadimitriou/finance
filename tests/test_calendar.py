@@ -104,6 +104,19 @@ class TestMonth:
 
 
 class TestDay:
+    def test_a_move_to_savings_is_on_its_day_and_a_card_payment_is_not(self, client):
+        """TC-A (THL-123, Figma 1368:8898): the day list shows money moved
+        between her accounts; a card payment stays off it, as before."""
+        client.st.add_transactions(history() + october())
+        saved = client.get("/api/calendar/day/2026-10-08").get_json()
+        assert [(m["merchant"], m["amount"], m["inflow"], m["category"]) for m in saved["moved"]] \
+            == [("To savings", 150.0, False, "Saved")]
+        assert saved["moved"][0]["to"] == "To savings"
+        assert all(s["merchant"] != "To savings" for s in saved["spent"])
+        card = client.get("/api/calendar/day/2026-10-07").get_json()
+        assert card["moved"] == []
+        assert client.get("/api/calendar/day/2026-10-12").get_json()["moved"] == []    # still to come
+
     def test_a_past_day(self, client):
         client.st.add_transactions(history() + october())
         body = client.get("/api/calendar/day/2026-10-03").get_json()

@@ -552,6 +552,10 @@ struct Transaction: Decodable, Identifiable, Hashable {
     /// "spending", "income" or "none".
     let counts: String
     let chip: Chip?
+    /// TC-A (THL-122): a Transfer that pays off a card, which reads as an
+    /// amount; a move between her own accounts reads "⇄ $500.00"
+    /// (`movedBetweenAccounts`).
+    var cardPayment = false
     /// What the Always switch needs, from the list (2026-11-08), so the page
     /// shows it as it opens.
     var rule: RuleFacts? = nil
@@ -929,6 +933,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         case id, date, description, amount, inflow, category, account, note, pending, excluded, chip
         case counts, suggested, split, repays, tags, kind, group, joint, manual, recurring, transfer, rule
         case incomeRule = "income_rule"
+        case cardPayment = "card_payment"
         case merchantName = "merchant"
         case accountId = "account_id"
         case countsToward = "counts_toward"
@@ -983,6 +988,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         countsToward = opt(String.self, .countsToward)
         counts = opt(String.self, .counts) ?? "spending"
         chip = opt(Chip.self, .chip)
+        cardPayment = opt(Bool.self, .cardPayment) ?? false
         rule = opt(RuleFacts.self, .rule)
         incomeRule = opt(IncomeRule.self, .incomeRule)
         suggested = opt(Bool.self, .suggested) ?? (chip?.suggested ?? false)
@@ -1042,13 +1048,31 @@ struct Transaction: Decodable, Identifiable, Hashable {
     /// Left out, a transfer, a repayment: shown, but not counted.
     var notCounted: Bool { !excluded.isEmpty || counts == "none" }
 
+    /// TC-A (THL-122, THL-123, Figma 1368:8300): money moved between her own
+    /// accounts, into or out of savings included. It didn't leave her, so it
+    /// reads "⇄ $500.00" in grey with no sign. A card payment, a row left
+    /// out and joint money that isn't hers don't count either: grey, no ⇄.
+    var movedBetweenAccounts: Bool {
+        excluded.isEmpty && counts == "none" && !cardPayment
+            && ["Transfer", "Saved"].contains(chip?.label ?? "")
+    }
+
+    /// TC-A: where it went, for VoiceOver's "Moved $500.00 to Tangerine
+    /// Savings": the other end when the server joined the two, else this
+    /// account for an arrival, else the payee.
+    var movedTo: String {
+        if let to = transfer?.to, !to.isEmpty { return to }
+        if inflow, let account = account, !account.isEmpty { return account }
+        return merchant
+    }
+
     /// Everything a row shows. SwiftUI skips redrawing a row that compares
     /// equal, so comparing less leaves old answers on the list: a Yes keeps the
     /// category and changes only the chip (the critics' stale rows, 2026-11-06).
     static func == (a: Transaction, b: Transaction) -> Bool {
         a.id == b.id && a.category == b.category && a.suggested == b.suggested && a.chip == b.chip
             && a.amount == b.amount && a.fullAmount == b.fullAmount && a.note == b.note && a.counts == b.counts
-            && a.excluded == b.excluded && a.pending == b.pending && a.oneOff == b.oneOff && a.tags == b.tags
+            && a.excluded == b.excluded && a.cardPayment == b.cardPayment && a.pending == b.pending && a.oneOff == b.oneOff && a.tags == b.tags
             && a.jointFrom == b.jointFrom && a.bankId == b.bankId && a.merchant == b.merchant
             // TEST-19 (round 2): the page holds its Transaction in @State,
             // and SwiftUI skips a redraw when the new value compares equal.

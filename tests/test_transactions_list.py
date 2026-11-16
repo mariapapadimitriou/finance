@@ -379,6 +379,34 @@ def test_transfers_net_however_they_were_sorted(client):
     assert "transfer" not in rows["GROCER"] and "E-TRANSFER RECEIVED" in rows
 
 
+def test_a_card_payment_says_so_and_a_move_between_accounts_does_not(client):
+    """TC-A (THL-122, 2026-11-15): the phone shows a move between her own
+    accounts as "⇄ $500.00" and a card payment as an amount, by `card_payment`."""
+    from datetime import timedelta
+    d = lambda n: (date.fromisoformat(in_month(10)) + timedelta(days=n)).isoformat()
+    load(client.st,
+         row(500, "TFR-TO SAVINGS", account="chq", when=d(0), category="Transfers"),
+         row(-500, "TFR-FROM CHEQUING", account="sav", when=d(1), category="Transfers"),
+         row(300, "WEALTHSIMPLE DEPOSIT", account="chq", when=d(2), category="Saved"),
+         row(612, "VISA PREAUTH PYMT", account="chq", when=d(4)),
+         row(-612, "PAYMENT THANK YOU", account="card", kind="credit", when=d(5)),
+         # A card payment with no other end in view.
+         row(-90, "PAYMENT RECEIVED", account="amex", kind="credit", when=d(6)),
+         # A bill paid to a card, sorted as Transfers since #355.
+         row(240, "BILL PAYMENT ROGERS MC", account="chq", when=d(6), category="Transfers"),
+         row(42, "GROCER", account="card", kind="credit", when=d(7), category="Groceries"))
+    rows = by_desc(listing(client))
+    assert rows["TFR-TO SAVINGS"]["card_payment"] is False
+    assert rows["TFR-TO SAVINGS"]["chip"]["label"] == "Transfer"
+    assert rows["WEALTHSIMPLE DEPOSIT"]["card_payment"] is False
+    assert rows["VISA PREAUTH PYMT"]["card_payment"] is True
+    assert rows["PAYMENT RECEIVED"]["chip"]["label"] == "Transfer"
+    assert rows["PAYMENT RECEIVED"]["card_payment"] is True
+    assert rows["BILL PAYMENT ROGERS MC"]["chip"]["label"] == "Transfer"
+    assert rows["BILL PAYMENT ROGERS MC"]["card_payment"] is True
+    assert rows["GROCER"]["card_payment"] is False
+
+
 def test_two_days_between_accounts_but_a_card_payment_may_take_longer(client):
     """2026-10-22: between her own accounts, two days at most; a payment
     arriving on a credit card may take up to four, as cards post slowly."""

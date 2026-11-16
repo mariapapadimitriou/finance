@@ -588,7 +588,7 @@ struct SplitSheet: View {
                                 // S-03e: what they've paid; S-15 v2 / S-18 v2: dollars and the odd cent.
                                 Text(line).font(Nacre.footnote)
                                     .foregroundColor(settling && (saved(key)?.paid ?? 0) >= 0.005 ? Pearl.action
-                                                     : overCents(key) > 0 ? Pearl.moneyOut : Pearl.muted)
+                                                     : overCents(key) > 0 ? Pearl.danger : Pearl.muted)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
@@ -1377,7 +1377,7 @@ struct SplitPeople: View {
             : "\(mine.refunded ? "Refunded" : "Reimbursed") \(Format.amount(mine.reimbursed)) of \(Format.amount(mine.amount)) · \(Format.amount(mine.stays)) stays yours"
         let shown = mine.full ? mine.reimbursed : mine.stays
         let amount = Text(Format.amount(shown)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
-            .foregroundColor(mine.full ? Pearl.moneyIn : Pearl.ink).pearlAmountFit()
+            .foregroundColor(mine.full ? Pearl.moneyIn : Pearl.moneyOut).pearlAmountFit()
         return VStack(spacing: 8) {
             HStack(spacing: 12) {
                 Button { mineOptions = true } label: {
@@ -1466,7 +1466,7 @@ struct SplitPeople: View {
 
     private var youAmount: some View {
         Text(Format.amount(split.you)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
-            .foregroundColor(Pearl.ink).pearlAmountFit()
+            .foregroundColor(Pearl.moneyOut).pearlAmountFit()
     }
 
     /// S-04u8 (note 1238:25742): everyone but you has a linked or cash
@@ -1477,7 +1477,7 @@ struct SplitPeople: View {
 
     private var leftAmount: some View {
         Text(Format.amount(split.still ?? split.you)).font(Pearl.text(.headline, .semibold))
-            .monospacedDigit().foregroundColor(Pearl.ink).pearlAmountFit()
+            .monospacedDigit().foregroundColor(Pearl.moneyOut).pearlAmountFit()
     }
 
     /// S-04u6: "You · Your share · not set yet", and S-40y from its •••.
@@ -2465,7 +2465,7 @@ struct SwipeToRemove<Content: View>: View {
                 Button(action: onRemove) {
                     Text("Remove").font(Nacre.footnote.weight(.semibold)).foregroundColor(.white)
                         .frame(width: max(-offset, 0)).frame(maxHeight: .infinity)
-                        .background(Pearl.moneyOut)
+                        .background(Pearl.danger)
                 }
                 .buttonStyle(.plain)
             }

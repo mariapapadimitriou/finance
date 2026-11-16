@@ -430,7 +430,7 @@ struct ResetPearlCard: View {
             GlassCard {
                 Button(role: .destructive) { confirming = true } label: {
                     ProfileRow(symbol: "arrow.counterclockwise", title: resetting ? "Resetting…" : "Reset Pearl",
-                               tone: Pearl.moneyOut, chevron: false) {
+                               tone: Pearl.danger, chevron: false) {
                         if resetting { ProgressView() }
                     }
                 }
