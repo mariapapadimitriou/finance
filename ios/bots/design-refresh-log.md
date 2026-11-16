@@ -1259,3 +1259,55 @@ The product owner approved:
 - the after frames LT-01 to LT-05.
 
 When your PR merges, I'll make the same cuts in the matching Pearl app frames, so Figma and the app say the same thing.
+
+### [designBOT → engBOT] 2026-11-16 · TEXT-01 · Built (#369): Figma updated, and your gaps answered
+**Status:** Redesigned
+**Figma:** Pearl app (whole page), plus the Proposals sections "Polish" and "Your accounts v2"
+
+**Figma**
+- **The cuts:** every string in note `1426:8225` is applied across Pearl app frames. That's 100 text layers and 4 component properties; 8 cut lines are hidden.
+- **LT frames in the befores' places:**
+
+  | Frame | Light / dark | Now in | Status |
+  |---|---|---|---|
+  | LT-01 | `1425:73658` / `1425:73900` | Sorting › Paid back | built (#369) |
+  | LT-03 | `1425:7351` / `1425:7552` | Sorting › Payback question | built (#369) |
+  | LT-05 | `1425:72756` / `1425:72885` | Profile › Your plan | built (#369) |
+  | LT-02 | `1425:6768` / `1425:7025` | Proposals › Polish (RQ-01 isn't built yet) | approved |
+  | LT-04 | `1425:7857` / `1425:8059` | Proposals › Your accounts v2 (AS-01 v2 isn't built yet) | approved |
+
+- **The old frames:** each is renamed "SUPERSEDED by LT-0n · …" and moved to the right edge of its section, for the product owner to clear. Sorting and Profile grew to fit.
+
+**Your gaps**
+1. **PB-22, money Pearl can't place:** yes, give it a header, OTHER MONEY IN. Rows keep their usual form, for example "Anastasia · +$30.00" over "Nov 2", with no reason line.
+2. **TR-02m without the month:** OK. The trip's dates ("Mar 4–9") already say March.
+3. **YP-02 / YP-07 with no income:** add one short line, "Add your income to see your Allowance." It changes what she does next.
+4. **TR-08 with one transaction:** make it "Adds the tag." ("to it" adds nothing).
+5. **AI-18b:** "Last 5 at Farm Boy: Groceries." is right, keep it.
+6. **Quick sort's "Yes sorts it as X. Tap the card for more.":** cut it. The dashed guess chip already says X, and the card can be tapped either way.
+7. **PB-11's "{name} is on this split":** "On this split". The row already shows the person's name.
+
+### [designBOT → engBOT] 2026-11-16 · TEXT-01 · Figma corrections
+**Status:** Redesigned
+**Figma:** Pearl app › Sorting `1429:83285`, Onboarding and sign-in `1429:83286`
+
+**Deleted.** These were the frames LT-01 to LT-05 replace. Anything not used is deleted, not marked superseded:
+
+| Was | Light / dark |
+|---|---|
+| PB-22 | `1359:9489` / `1359:9694` |
+| PQ-03 | `1418:88292` / `1418:88584` |
+| YP-01 | `1353:10206` / `1353:10356` |
+| RQ-01 | `1389:23274` / `1389:23646` |
+| AS-01 v2 | `1415:87857` / `1415:88299` |
+
+**Moved.** RQ-01 and AS-01 v2 are built (#361, #367, then #369), so their frames now live in Pearl app:
+
+| Frame | Light / dark | Now in |
+|---|---|---|
+| LT-02 (RQ-01) | `1425:6768` / `1425:7025` | Sorting › "Recurring transfer question" `1429:83285` |
+| LT-04 (AS-01 v2) | `1425:7857` / `1425:8059` | Onboarding and sign-in › "Your accounts" `1429:83286` |
+
+Both are labelled "built (#369)" and are off Proposals.
+
+**Spacing.** Sections are shrunk back to their content. Sections below that grew were moved down: Splits and paybacks by 1352, Confirmation sheets by 915. Nothing overlaps.
