@@ -29,7 +29,7 @@ from datetime import date
 
 from . import duplicates as dup
 from .analytics import _mine, counts_as_spending, is_others, share_amount, spend_amount
-from .categorize import CATEGORY_GROUPS, group_of, is_unsure
+from .categorize import CATEGORY_GROUPS, bill_category, group_of, is_unsure
 from .etransfers import memo as etransfer_memo, party
 from .income import is_income
 from .models import Transaction
@@ -71,7 +71,11 @@ def _is_card_payment(t: Transaction) -> bool:
         return True
     if str(raw.get("issuer_category", "")).lower().startswith("loan_payments_credit_card"):
         return True
-    return bool(_CARD_PAYMENT.search(f"{t.merchant} {t.description}"))
+    if _CARD_PAYMENT.search(f"{t.merchant} {t.description}"):
+        return True
+    # "BILL PAYMENT ROGERS MC" (2026-11-15): a bill paid to a card, which
+    # categorize sorts as Transfers, is a card payment too (TC-A keeps it grey).
+    return bill_category(t.merchant or "", t.description or "") == "Transfers"
 
 
 def _who(t: Transaction) -> str:

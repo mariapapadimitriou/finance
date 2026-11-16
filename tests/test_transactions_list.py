@@ -392,6 +392,8 @@ def test_a_card_payment_says_so_and_a_move_between_accounts_does_not(client):
          row(-612, "PAYMENT THANK YOU", account="card", kind="credit", when=d(5)),
          # A card payment with no other end in view.
          row(-90, "PAYMENT RECEIVED", account="amex", kind="credit", when=d(6)),
+         # A bill paid to a card, sorted as Transfers since #355.
+         row(240, "BILL PAYMENT ROGERS MC", account="chq", when=d(6), category="Transfers"),
          row(42, "GROCER", account="card", kind="credit", when=d(7), category="Groceries"))
     rows = by_desc(listing(client))
     assert rows["TFR-TO SAVINGS"]["card_payment"] is False
@@ -400,6 +402,8 @@ def test_a_card_payment_says_so_and_a_move_between_accounts_does_not(client):
     assert rows["VISA PREAUTH PYMT"]["card_payment"] is True
     assert rows["PAYMENT RECEIVED"]["chip"]["label"] == "Transfer"
     assert rows["PAYMENT RECEIVED"]["card_payment"] is True
+    assert rows["BILL PAYMENT ROGERS MC"]["chip"]["label"] == "Transfer"
+    assert rows["BILL PAYMENT ROGERS MC"]["card_payment"] is True
     assert rows["GROCER"]["card_payment"] is False
 
 
