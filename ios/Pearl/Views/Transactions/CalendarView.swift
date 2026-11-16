@@ -213,6 +213,11 @@ struct CalendarCard: View {
     let onMonth: (String) -> Void
 
     @State private var data: CalendarMonth?
+    /// `app.version` when the month last loaded, and whether the card is on
+    /// screen: a change elsewhere ("Not a trip", Make a trip, an Undo) reloads
+    /// the month, so the Trips card and the bands don't go stale.
+    @State private var loadedVersion: Int?
+    @State private var visible = false
     @State private var selecting = false
     @State private var first: String?
     @State private var last: String?
@@ -274,6 +279,13 @@ struct CalendarCard: View {
         }
         .task(id: month) { await load() }
         .task(id: shownDay) { await loadDay() }
+        // Back from a trip page after "Not a trip": reload once, not on every appear.
+        .onAppear {
+            visible = true
+            if let v = loadedVersion, v != app.version { Task { await load() } }
+        }
+        .onDisappear { visible = false }
+        .onChange(of: app.version) { _ in if visible { Task { await load() } } }
         .sheet(item: $bandAction) { band in
             // T-49b (TEST-06): Change and Remove as Option rows. Remove acts
             // at once; the toast's Undo puts the days back as they were.
@@ -767,6 +779,7 @@ struct CalendarCard: View {
     // MARK: Loading
 
     private func load() async {
+        loadedVersion = app.version
         do {
             data = try await app.api.get("api/calendar", query: ["month": month])
             error = nil
