@@ -317,10 +317,11 @@ struct MonthCard: View {
 }
 
 /// SU-01 Set Pearl up again (THL-300, THL-294): after Start over, what
-/// only she can tell Pearl, each step opening its page in the app: shared
-/// accounts (O-09b), Income and bills (IB-01), Accounts (AM-01) and Debts
-/// (DB-01). Opening Accounts or Debts is the step; sharing is done when she
-/// finishes O-09b; income when she confirms her income and bills.
+/// only she can tell Pearl, each step opening its page in the app: Check
+/// your accounts (AS-04, opening AS-01), Income and bills (IB-01) and Debts
+/// (DB-01). Accounts is done when she taps "These look right" or saves an
+/// account (the server marks that); Debts when she opens it; income when
+/// she confirms her income and bills.
 @MainActor
 struct SetupAgainCard: View {
     @EnvironmentObject private var app: AppModel
@@ -363,23 +364,20 @@ struct SetupAgainCard: View {
     @ViewBuilder
     private func destination(_ step: SetupAgain.Step) -> some View {
         switch step.key {
-        case "shared":
-            JointAccountsView(path: .constant([])) {
-                Task {
-                    await mark("shared")
-                }
-            }
+        case "accounts":
+            // AS-04 → AS-01: the same page as part 3, ending back here.
+            AccountSetupView(path: .constant([])) { await mark("accounts") }
         case "income":
             IncomeBillsView()
         case "debts":
             DebtsView().task { await mark("debts") }
         default:
-            AccountsView().task { await mark("accounts") }
+            AccountsView()
         }
     }
 
     private func symbol(_ key: String) -> String {
-        ["shared": "person.2", "income": "dollarsign.square", "accounts": "building.columns",
+        ["income": "dollarsign.square", "accounts": "building.columns",
          "debts": "creditcard"][key] ?? "checkmark.circle"
     }
 
