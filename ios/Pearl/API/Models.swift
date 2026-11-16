@@ -2003,13 +2003,13 @@ struct PatternAsk: Decodable, Identifiable, Hashable {
     }
     /// "Always Ana's share?", AI-18b "Always Groceries?".
     var question: String { "Always \(label)?" }
-    /// "You sorted the last 8 as Ana's share."; AI-18b "You sorted the last 5
-    /// at Farm Boy as Groceries."
+    /// "Last 8: Ana's share." (TEXT-01); AI-18b "Last 5 at Farm Boy:
+    /// Groceries."
     var because: String {
-        isJoint ? "You sorted the last \(count) as \(label)." : "You sorted the last \(count) at \(name) as \(label)."
+        isJoint ? "Last \(count): \(label)." : "Last \(count) at \(name): \(label)."
     }
-    /// "Yes sorts new ones for you. Skip asks again after 8 more."
-    var yesSkip: String { "Yes sorts new ones for you. Skip asks again after \(need) more." }
+    /// "Sort new ones the same way?" (TEXT-01).
+    var yesSkip: String { "Sort new ones the same way?" }
     /// AI-18y's toast names it as AI-06 does (LearnedRule.title): "Ana's
     /// deposits", "Farm Boy".
     var title: String {

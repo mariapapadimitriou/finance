@@ -41,12 +41,14 @@ struct CardCaption: View {
 /// The page's Fraunces title and the line under it.
 struct PageTitle: View {
     let title: String
-    let line: String
+    let line: String?
 
     var body: some View {
         Text(title).font(Nacre.title).tracking(0.4).foregroundColor(Pearl.ink)
             .accessibilityAddTraits(.isHeader)
-        Text(line).font(Nacre.footnote).foregroundColor(Pearl.ink)
+        if let line = line {
+            Text(line).font(Nacre.footnote).foregroundColor(Pearl.ink)
+        }
     }
 }
 
