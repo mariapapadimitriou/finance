@@ -5,7 +5,8 @@ import SwiftUI
 /// (T-06, T-08, T-12), and only the follow-up an answer needs: which account
 /// (T-07), which purchase (T-09), what kind of income (T-71), how often it
 /// pays (T-31), whose it is (T-13, T-60), who sent it (T-14), whether a
-/// transfer repeats (T-69) or someone is paying her back (T-70).
+/// transfer repeats (T-69) or someone is paying her back (PQ-03, which
+/// replaced T-70).
 ///
 /// The one page sorting happens on: Needs a look, Quick sort and a transaction
 /// all open it, so every answer in Figma's Outcome table and every option
@@ -162,12 +163,13 @@ struct AnswerSheet: View {
         // answers, so Paid back is there; only the money-out end asks T-06.
         case .transfer: first = ask.savedTo(accounts) != nil ? .guess : (ask.t.inflow ? .into : .out)
         case .moneyIn:
-            switch ask.item.guess?.action {
-            // A nameless e-Transfer isn't "Interac" paying her back, and a guess
-            // with nothing behind it isn't worth asking: the answers instead.
-            case "payback" where ask.item.guess?.charge != nil && ask.t.learnable != false: first = .payback
-            case "own": first = .guess
-            default: first = .into
+            // PQ-03 (Payback question): a likely purchase, on a split or not,
+            // asks "Is mPg paying you back?". A nameless e-Transfer isn't
+            // "Interac" paying her back: the server sends no question then.
+            if ask.item.payback != nil && (ask.t.learnable != false || ask.item.from != nil) {
+                first = .payback
+            } else {
+                first = ask.item.guess?.action == "own" ? .guess : .into
             }
         case .incomeType: first = .kinds
         case .joint: first = .joint
@@ -222,6 +224,8 @@ struct AnswerSheet: View {
                 }
             } else if step == .guess {
                 guessSheet
+            } else if step == .payback, let q = ask.item.payback {
+                paybackSheet(q)
             } else if step == .recurring || step == .joint || step == .cadence {
                 // RQ-01, PQ-01, PQ-02 (POLISH-01): why Pearl asks, the
                 // payments so far, and tiles that answer at once.
@@ -902,6 +906,32 @@ struct AnswerSheet: View {
         }
     }
 
+    // MARK: PQ-03 Is mPg paying you back? (Payback question)
+
+    /// PQ-03 / PQ-03b: why Pearl is asking and the likely purchases, in the
+    /// server's words; a tile answers at once, with the ink toast and Undo
+    /// (PQ-03c). The answer goes through the payback mark, as before.
+    private func paybackSheet(_ q: PaybackQuestion) -> some View {
+        VStack(spacing: 0) {
+            SheetTitle(title: title) { dismiss() }.sheetPart()
+            ScrollView {
+                PaybackQuestionBody(
+                    question: q, amount: amountText, date: t.date,
+                    onTile: { onAnswer(.payback(t.id, charge: $0.charge, toast: $0.toast)) },
+                    // "Find the purchase": PB-11's A person, with the sender
+                    // known: their splits (PB-12), or PB-15's purchase search.
+                    onElse: { paidBack(.person) },
+                    onNot: { go(.into) },
+                    // T-14 Who sent this?: the name is used from then on.
+                    onName: { go(.sender) })
+                    .padding(.horizontal, 16).padding(.bottom, 12)
+                    .sheetPart()
+            }
+        }
+        .background(SheetBackground())
+        .fitsContent()
+    }
+
     // MARK: A list of answers
 
     private struct Option: Identifiable {
@@ -999,9 +1029,9 @@ struct AnswerSheet: View {
     private func optionRow(_ o: Option) -> some View {
         Button {
             choice = o.id
-            // "Is Ben Tran paying you back?" and "Where did it go?" (POLISH-01
-            // audit 7) answer at once: no Save, then Continue.
-            if step == .payback || step == .accounts { primary() }
+            // "Where did it go?" (POLISH-01 audit 7) answers at once: no Save,
+            // then Continue. "Is mPg paying you back?" is tiles (PQ-03).
+            if step == .accounts { primary() }
         } label: {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -1140,7 +1170,7 @@ struct AnswerSheet: View {
         case .joint: return "Whose pay is this?"
         case .sender: return "Who sent this?"
         case .recurring: return "Is this a recurring transfer?"
-        case .payback: return "Is \(payer) paying you back?"
+        case .payback: return "Is \(ask.item.payback?.who ?? payer) paying you back?"
         case .guess, .category: return ""
         }
     }
@@ -1201,14 +1231,8 @@ struct AnswerSheet: View {
             let typed = text.trimmingCharacters(in: .whitespaces)
             return names.filter { typed.isEmpty || $0.localizedCaseInsensitiveContains(typed) }
                 .map { Option(id: "name:" + $0, label: $0) }
-        case .payback:
-            let c = ask.item.guess?.charge
-            return [Option(id: "this", label: "Yes, for \(c?.name ?? "that purchase") · \(c.map { Format.short($0.date) } ?? "")",
-                           detail: c.map { "\(Format.amount($0.amount)) on \($0.accountName ?? "your card")" }),
-                    Option(id: "other", label: "Yes, for something else", detail: "Pick the purchase"),
-                    Option(id: "no", label: "No, it isn’t a payback", detail: "Then we’ll ask if it’s income")]
-        // RQ-01, PQ-01 and PQ-02 are tiles (tilesSheet).
-        case .kinds, .otherKinds, .guess, .category, .cadence, .joint, .recurring:
+        // RQ-01, PQ-01 and PQ-02 are tiles (tilesSheet); PQ-03 too (paybackSheet).
+        case .kinds, .otherKinds, .guess, .category, .cadence, .joint, .recurring, .payback:
             return []
         }
     }
@@ -1232,7 +1256,7 @@ struct AnswerSheet: View {
     private var primaryLabel: String {
         switch (step, choice) {
         case (.out, "paid"), (.out, "moved"), (.into, "earned"), (.into, "back"), (.into, "else"), (.kinds, "regular"),
-             (.payback, "other"), (.payback, "no"), (.sender, _):
+             (.sender, _):
             return "Continue"
         default: return "Save"
         }
@@ -1295,21 +1319,12 @@ struct AnswerSheet: View {
             // PB-15: paid back by the person she named.
             if let payer = payerName { body["person"] = payer }
             onAnswer(.mark(t.id, body))
-        case .payback:
-            switch choice {
-            case "this":
-                if let charge = ask.item.guess?.charge {
-                    onAnswer(.mark(t.id, ["case": "payback", "charge": charge.id]))
-                }
-            case "other": parting = true
-            default: go(.into)
-            }
         case .sender:
             let name = choice.hasPrefix("name:") ? String(choice.dropFirst(5))
                 : text.trimmingCharacters(in: .whitespaces)
             guard !name.isEmpty else { return }
             onAnswer(.party(t.id, name: name))
-        case .guess, .category, .cadence, .joint, .recurring:
+        case .guess, .category, .cadence, .joint, .recurring, .payback:
             break
         }
     }

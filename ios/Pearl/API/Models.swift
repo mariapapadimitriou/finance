@@ -1629,6 +1629,10 @@ struct Review: Decodable {
         var extra: Extra? = nil
         /// AI-07: why Pearl won't sort this one by itself.
         var unsure: Unsure? = nil
+        /// PQ-03 (Payback question, note 1419:89986): "Is mPg paying you
+        /// back?" in the server's words, with the likely purchases as tiles.
+        /// Boxed so Item stays small (Boxed.swift; stack check).
+        @Boxed var payback: PaybackQuestion? = nil
 
         struct Extra: Decodable, Hashable {
             /// Every purchase it was linked to: "extra on Loblaws".
@@ -1698,7 +1702,7 @@ struct Review: Decodable {
 
         enum CodingKeys: String, CodingKey {
             case key, txn, reason, skipped, from, guess, label, people, candidates, series, rest, share, twin
-            case siblings, pair, credit, extra, unsure
+            case siblings, pair, credit, extra, unsure, payback
             case guessLabel = "guess_label"
         }
 
@@ -1736,6 +1740,7 @@ struct Review: Decodable {
             credit = opt(Credit.self, .credit)
             extra = opt(Extra.self, .extra)
             unsure = opt(Unsure.self, .unsure)
+            payback = opt(PaybackQuestion.self, .payback)
         }
 
         static func == (a: Item, b: Item) -> Bool {
@@ -2129,6 +2134,56 @@ struct SortedRow: Decodable, Identifiable {
 }
 
 /// The answer to sorting one transaction: what changed, and how to undo it.
+/// PQ-03 (Payback question, note 1419:89986; finance/payback_question.py).
+/// GET /api/review's `payback` on a money-in question, and
+/// GET /api/transactions/<id>/payback-question's `question`.
+struct PaybackQuestion: Decodable, Hashable {
+    /// The sender as the bank named them ("mPg"), or as she did.
+    let who: String
+    /// She named them, or it isn't an e-Transfer: no "Name them".
+    let named: Bool
+    let why: String
+    let line: String?
+    let tiles: [Tile]
+    /// PQ-03b: a part payment stays on the split.
+    let part: Bool
+    let card: Card
+
+    struct Tile: Decodable, Hashable, Identifiable {
+        let charge: String
+        let merchant: String
+        let amount: Double
+        let date: String
+        let category: String
+        let card: String
+        /// "split" (they're on it), "memo" (their message names it) or "share".
+        let kind: String
+        /// "Yes, Añejo · $61.57", "Yes, Añejo · mPg’s share".
+        let title: String
+        /// "$20.00 is about a third", "about half", "$20.00 of mPg’s $30.79 · $10.79 still to come".
+        let compare: String
+        /// PQ-03c: "mPg paid back $20.00 for Añejo".
+        let toast: String
+        /// Pearl's guess: the first tile only, drawn dashed.
+        var guess: Bool? = nil
+        var id: String { charge }
+
+        /// "Sat, Oct 31 · Amex Cobalt · $20.00 is about a third"; a split's
+        /// tile says only how it compares (PQ-03b).
+        var line: String {
+            let parts = kind == "split" ? [compare] : [Format.weekdayDay(date), card, compare]
+            return parts.filter { !$0.isEmpty }.joined(separator: " · ")
+        }
+    }
+
+    struct Card: Decodable, Hashable {
+        /// "Paying you back for Añejo?".
+        let title: String
+        /// "Pearl’s guess: about a third of Añejo, $61.57 · tap to answer".
+        let line: String
+    }
+}
+
 struct MarkReply: Decodable {
     let title: String?
     let detail: String?
