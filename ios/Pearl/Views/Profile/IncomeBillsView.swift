@@ -10,8 +10,10 @@ import SwiftUI
 //        pay to say yes or no to, and bills to confirm together
 // IB-03  her own amount a month, instead of Pearl's estimate
 // IB-04  "Are these your rent?": e-Transfers to one person that look like rent
-// Your plan (YP-01 to YP-06, YourPlanView.swift): a row of its own here, the
-//        way in PC-13's "It's in Profile › Income and bills › Your plan" names
+// YP-09  1356:9864 / 1356:9956  Your plan (YP-01 to YP-08, YourPlanView.swift):
+//        a card of its own above INCOME, the way in PC-13's "It's in Profile ›
+//        Income and bills › Your plan" names: in use with its total, not in
+//        use, or none yet (which opens YP-06)
 //
 // Every write returns the whole page again (finance/income_bills_api.py),
 // so nothing here adds anything up. A bill's tick saves at once once she has
@@ -113,6 +115,14 @@ struct IncomeBillsView: View {
 
     @ViewBuilder
     private func content(_ data: IncomeBills) -> some View {
+        // YP-09: replaces #350's plain "Your plan" row under the bills.
+        GlassCard {
+            NavigationLink { YourPlanView() } label: {
+                PlanCardLine(title: planCardTitle(data.yourPlan))
+            }
+            .buttonStyle(.plain)
+        }
+
         MoneySection(title: "Income") {
             if let own = data.expected?.amount, own > 0 {
                 IncomeLine(name: "Your own amount",
@@ -176,15 +186,6 @@ struct IncomeBillsView: View {
             }
         }
 
-        // Your plan (note 1353:11493): Profile › Income and bills › Your plan.
-        GlassCard {
-            NavigationLink { YourPlanView() } label: {
-                ProfileRow(title: "Your plan")
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.top, 8)
-
         ProfileSection("Something changed?")
         ProfileNote("A new job, a new place, a bill that stopped. Check again with your latest transactions.")
     }
@@ -234,6 +235,14 @@ struct IncomeBillsView: View {
     }
 
     // MARK: Words
+
+    /// YP-09: "Your plan · in use · $1,160 a month", "Your plan · not in
+    /// use", or "Your plan · none yet".
+    private func planCardTitle(_ card: IncomeBills.PlanCard?) -> String {
+        guard let card = card, card.rows > 0 else { return "Your plan \u{00B7} none yet" }
+        if card.inUse { return "Your plan \u{00B7} in use \u{00B7} \(Format.whole(card.total)) a month" }
+        return "Your plan \u{00B7} not in use"
+    }
 
     /// IB-02 while there's something found to confirm; otherwise the totals.
     private var lead: String? {
@@ -458,5 +467,26 @@ struct ExpectedIncomeSheet: View {
         } catch {
             self.error = app.handle(error)
         }
+    }
+}
+
+/// YP-09: "›  Your plan · in use · $1,160 a month", in Pearl's tint, as the
+/// card's one row. It opens Your plan (YP-01, YP-03, or YP-06 with none yet).
+private struct PlanCardLine: View {
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "chevron.right.circle.fill").font(.system(size: 22)).foregroundColor(Pearl.action)
+                .accessibilityHidden(true)
+            Text(title).font(Nacre.body).foregroundColor(Pearl.action)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(minHeight: 52)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
     }
 }
