@@ -157,10 +157,19 @@ struct AccountsOverview: Decodable {
         var canAnchor: Bool? = nil
         var nickname: String? = nil
         var disconnectedOn: String? = nil
+        /// Your accounts v2 (1415:87857): the server's short name
+        /// (finance/account_names.py), the bank on its own, and the name
+        /// without the bank, for the grouped row's list.
+        var shortName: String? = nil
+        var shortBank: String? = nil
+        var shortProduct: String? = nil
 
         enum CodingKeys: String, CodingKey {
             case id, name, mask, institution, kind, balance, owing, joint, transactions, status
             case source, counted, anchor, nickname
+            case shortName = "short_name"
+            case shortBank = "short_bank"
+            case shortProduct = "short_product"
             case updatedAt = "updated_at"
             case canAnchor = "can_anchor"
             case disconnectedOn = "disconnected_on"

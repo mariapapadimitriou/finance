@@ -1,17 +1,25 @@
 import SwiftUI
+import UIKit
 
 // Account setup (Pearl iOS Handoff File, Proposals › "Account setup"
 // 1380:75770, note 1380:76572; THL-120, THL-172, THL-300, THL-294, THL-304,
-// THL-305; approved by the product owner 2026-11-15):
+// THL-305; approved by the product owner 2026-11-15), and Your accounts v2
+// (Proposals › "Your accounts v2" 1415:6440, note 1415:88764; approved
+// 2026-11-16):
 //
-// AS-01 1380:75771 / 1380:75917  Your accounts: every linked account and,
-//       on one line, how it counts and who shares it. "These look right"
-//       finishes the step, changed or not (decision 2). Part 3 of setup,
-//       and Set Pearl up again's "Check your accounts" after Start over.
+// AS-01 v2 1415:87857 / 1415:88299  Your accounts, grouped: Everyday
+//       (chequing and cards), Savings & borrowing, Not in your budget. A row
+//       is the account's kind and its short name; a tag only where it
+//       differs from the default (Joint · 50%, Anchor). Accounts left out of
+//       the budget from one bank collapse into one row that opens in place.
+//       "These look right" ends the list and scrolls with it; it finishes
+//       the step, changed or not (decision 2). Part 3 of setup, and Set
+//       Pearl up again's "Check your accounts" after Start over.
 // AS-02 1380:76064 / 1380:76106  One account, every option on one page:
 //       Include in my budget, Shared with someone (inline: who, O-09cr's
 //       picker, and how purchases split), Part of my Anchor (savings only),
-//       Nickname. Nothing is saved until Save.
+//       Nickname. Nothing is saved until Save. v2: the header shows the same
+//       kind icon and short name as AS-01's row.
 //
 // They replace O-09b, O-09b2, O-09c and SU-02 ("Which accounts do you
 // share?") and Set Pearl up again's two account items. Accounts › AM-02 and
@@ -19,19 +27,84 @@ import SwiftUI
 // endpoint (PUT api/accounts/<id>/settings).
 
 enum AccountSetupWords {
-    /// AS-01's line: "In your budget · Joint, your share 50%", "In your
-    /// budget · Just you · Anchor", "Not in your budget" (an investment).
-    static func line(_ a: AccountsOverview.Account) -> String {
-        if a.kind == "investment" { return "Not in your budget" }
-        var parts = [(a.counted ?? true) ? "In your budget" : "Not in your budget"]
-        if a.joint == true {
-            // "Each purchase: mine unless I say" has no share to give.
-            parts.append(a.jointShare.map { "Joint, your share \(JointChangeSheet.pct($0))" } ?? "Joint")
-        } else {
-            parts.append("Just you")
+    /// Counts toward Allowance: an investment never does (AS-02 greys it).
+    static func counts(_ a: AccountsOverview.Account) -> Bool {
+        a.kind != "investment" && (a.counted ?? true)
+    }
+
+    /// The server's short name (finance/account_names.py).
+    static func name(_ a: AccountsOverview.Account) -> String { a.shortName ?? a.name }
+
+    /// The library Category icon for the kind (1415:87857): cash for
+    /// chequing, card, saved for savings and investing, rent for a mortgage
+    /// or loan.
+    static func symbol(_ a: AccountsOverview.Account) -> String {
+        switch a.kind {
+        case "card": return "creditcard"
+        case "savings", "investment": return "lifepreserver"
+        case "loan": return "house"
+        default: return "banknote"
         }
-        if a.anchor == true { parts.append("Anchor") }
-        return parts.joined(separator: " · ")
+    }
+
+    /// AM-01's tags, only where the account differs from the default.
+    static func tags(_ a: AccountsOverview.Account) -> [StatusPill] {
+        var out: [StatusPill] = []
+        if a.joint == true {
+            out.append(StatusPill(text: a.jointShare.map { "Joint · \(Int($0.rounded()))%" } ?? "Joint", tone: .joint))
+        }
+        if a.anchor == true { out.append(StatusPill(text: "Anchor", tone: .info)) }
+        return out
+    }
+
+    /// "7 in your budget · 1 shared · 3 not counted".
+    static func summary(_ accounts: [AccountsOverview.Account]) -> String {
+        let counted = accounts.filter(counts).count
+        let shared = accounts.filter { $0.joint == true }.count
+        return "\(counted) in your budget · \(shared) shared · \(accounts.count - counted) not counted"
+    }
+
+    /// VoiceOver (note 1415:88764): "TD Preferred Chequing, anchor account,
+    /// in your budget"; "Scotia Preferred Package, joint, your share 50
+    /// percent, in your budget".
+    static func spoken(_ a: AccountsOverview.Account) -> String {
+        var parts = [name(a)]
+        if a.joint == true {
+            parts.append("joint")
+            if let s = a.jointShare { parts.append("your share \(Int(s.rounded())) percent") }
+        }
+        if a.anchor == true { parts.append("anchor account") }
+        parts.append(counts(a) ? "in your budget" : "not in your budget")
+        return parts.joined(separator: ", ")
+    }
+
+    /// A row in Not in your budget: one account, or a bank's together.
+    enum LeftOut: Identifiable {
+        case one(AccountsOverview.Account)
+        case bank(String, [AccountsOverview.Account])
+
+        var id: String {
+            switch self {
+            case .one(let a): return a.id
+            case .bank(let bank, _): return "bank:" + bank
+            }
+        }
+    }
+
+    /// Accounts from one bank that are all left out collapse into one row
+    /// ("Scotia iTRADE · 3 accounts"); a bank with one stays a plain row.
+    static func leftOut(_ accounts: [AccountsOverview.Account]) -> [LeftOut] {
+        var order: [String] = []
+        var byBank: [String: [AccountsOverview.Account]] = [:]
+        for a in accounts {
+            let key = (a.shortBank ?? "").isEmpty ? "id:" + a.id : a.shortBank!
+            if byBank[key] == nil { order.append(key) }
+            byBank[key, default: []].append(a)
+        }
+        return order.map { key in
+            let group = byBank[key] ?? []
+            return group.count > 1 ? .bank(key, group) : .one(group[0])
+        }
     }
 }
 
@@ -41,47 +114,127 @@ enum AccountSetupWords {
 struct AccountSetupView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var path: [SetupRoute]
     /// Set Pearl up again's "Check your accounts" (AS-04): the same page,
     /// without setup's progress, ending back where she came from.
     var onDone: (() async -> Void)? = nil
     @State private var accounts: [AccountsOverview.Account] = []
+    /// The banks whose left-out accounts are open in place.
+    @State private var open: Set<String> = []
+    @State private var opened = false
     @State private var busy = false
     @State private var error: String?
 
+    private var everyday: [AccountsOverview.Account] {
+        accounts.filter { AccountSetupWords.counts($0) && $0.kind != "savings" && $0.kind != "loan" }
+    }
+    private var savings: [AccountsOverview.Account] {
+        accounts.filter { AccountSetupWords.counts($0) && ($0.kind == "savings" || $0.kind == "loan") }
+    }
+    private var leftOut: [AccountsOverview.Account] { accounts.filter { !AccountSetupWords.counts($0) } }
+
     var body: some View {
         NacreScreen {
-            if onDone == nil { ShellProgress(part: 3, name: "Your money") }
+            if onDone == nil { ShellProgress(part: 3, name: "Your money", opened: opened) }
             Text("Your accounts").font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
-            Text("Pearl set these up. Tap one to change how it counts or who shares it.").font(Nacre.body)
-                .fixedSize(horizontal: false, vertical: true)
+            Text("Pearl set these up. Just check two things: what counts in your budget, and what you share.")
+                .font(Nacre.body).fixedSize(horizontal: false, vertical: true)
             if !accounts.isEmpty {
-                GlassCard {
-                    ForEach(Array(accounts.enumerated()), id: \.element.id) { i, account in
-                        if i > 0 { RowSeparator(inset: 60) }
-                        NavigationLink {
-                            AccountSetupPage(account: account) { await load() }
-                        } label: {
-                            AccountLine(account: account, sub: AccountSetupWords.line(account),
-                                        trailing: AnyView(Image(systemName: "chevron.right")
-                                            .font(.system(size: 13, weight: .semibold))
-                                            .foregroundColor(Pearl.muted)
-                                            .accessibilityHidden(true)))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
+                Text(AccountSetupWords.summary(accounts)).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                group("Everyday", everyday)
+                group("Savings & borrowing", savings)
+                leftOutGroup
             }
             if let error = error { Hint(text: error) }
-        } actions: {
-            BottomActions {
+            VStack(spacing: 12) {
+                Text("Tap any account to change how it counts or who shares it. You can do this later in Profile › Accounts.")
+                    .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    .multilineTextAlignment(.center).frame(maxWidth: .infinity)
+                    .fixedSize(horizontal: false, vertical: true)
+                // At the end of the list, scrolling with it: it never covers a row.
                 Button("These look right") { Task { await finish() } }
                     .buttonStyle(NacreButtonStyle(busy: busy))
                     .disabled(busy)
             }
+        } actions: {
+            EmptyView()
         }
-        // Again on the way back from AS-02, so each line says what was saved.
-        .onAppear { Task { await load() } }
+        // Again on the way back from AS-02, so each row says what was saved.
+        .onAppear {
+            opened = false
+            Task { await load() }
+        }
+    }
+
+    @ViewBuilder
+    private func group(_ title: String, _ rows: [AccountsOverview.Account]) -> some View {
+        if !rows.isEmpty {
+            ProfileSection(title)
+            GlassCard(radius: 22) {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { i, a in
+                    if i > 0 { RowSeparator() }
+                    link(a, tags: AccountSetupWords.tags(a))
+                }
+            }
+        }
+    }
+
+    /// Not in your budget: the header says so, so these rows carry no
+    /// "not counted" tag.
+    @ViewBuilder
+    private var leftOutGroup: some View {
+        let rows = AccountSetupWords.leftOut(leftOut)
+        if !rows.isEmpty {
+            ProfileSection("Not in your budget")
+            GlassCard(radius: 22) {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
+                    if i > 0 { RowSeparator() }
+                    switch row {
+                    case .one(let a):
+                        link(a, tags: AccountSetupWords.tags(a))
+                    case .bank(let bank, let group):
+                        bankRows(bank, group)
+                    }
+                }
+            }
+        }
+    }
+
+    /// "Scotia iTRADE · 3 accounts" over their short names; a tap opens
+    /// them in place, and each opens AS-02.
+    @ViewBuilder
+    private func bankRows(_ bank: String, _ group: [AccountsOverview.Account]) -> some View {
+        let isOpen = open.contains(bank)
+        let names = Format.andList(group.map { $0.shortProduct ?? AccountSetupWords.name($0) })
+        Button {
+            withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.35, dampingFraction: 0.85)) {
+                if isOpen { open.remove(bank) } else { open.insert(bank) }
+            }
+        } label: {
+            AccountKindRow(symbol: AccountSetupWords.symbol(group[0]), title: "\(bank) · \(group.count) accounts",
+                           sub: names, chevronTurned: isOpen)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(bank), \(group.count) accounts, \(names), not in your budget")
+        .accessibilityValue(isOpen ? "Expanded" : "Collapsed")
+        .accessibilityHint(isOpen ? "Hides the accounts" : "Shows the accounts")
+        if isOpen {
+            ForEach(group) { a in
+                RowSeparator()
+                link(a, tags: AccountSetupWords.tags(a))
+            }
+        }
+    }
+
+    private func link(_ a: AccountsOverview.Account, tags: [StatusPill]) -> some View {
+        NavigationLink {
+            AccountSetupPage(account: a) { await load() }
+        } label: {
+            AccountKindRow(symbol: AccountSetupWords.symbol(a), title: AccountSetupWords.name(a), tags: tags)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(AccountSetupWords.spoken(a))
     }
 
     private func load() async {
@@ -94,18 +247,82 @@ struct AccountSetupView: View {
         }
     }
 
-    /// Decision 2: done, even with nothing changed.
+    /// Decision 2: done, even with nothing changed. In setup the third
+    /// shell opens first (350 ms spring, a fade with Reduce Motion) with a
+    /// success haptic (note 1415:88764).
     private func finish() async {
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
         if let onDone = onDone {
             busy = true
             await onDone()
             busy = false
             dismiss()
         } else {
+            withAnimation(reduceMotion ? .easeInOut(duration: 0.35) : .spring(response: 0.35, dampingFraction: 0.6)) {
+                opened = true
+            }
+            try? await Task.sleep(nanoseconds: 350_000_000)
             path.append(.payBills)
         }
     }
 }
+
+/// AS-01 v2's row (1415:87990): the kind's icon, the short name, a line
+/// or the tags under it, and the chevron.
+struct AccountKindRow: View {
+    let symbol: String
+    let title: String
+    var sub: String? = nil
+    var tags: [StatusPill] = []
+    /// A bank's row turns its chevron down while its accounts are open.
+    var chevronTurned = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            KindAvatar(symbol: symbol)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let sub = sub {
+                    Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if !tags.isEmpty {
+                    HStack(spacing: 6) { ForEach(Array(tags.enumerated()), id: \.offset) { $0.element } }
+                }
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(Pearl.muted)
+                .rotationEffect(.degrees(chevronTurned ? 90 : 0))
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, sub == nil && tags.isEmpty ? 14 : 10)
+        .frame(minHeight: 64)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The circle that says what kind of account it is (1415:87991): a
+/// Category icon in action rose on glass, with the shell-pink edge.
+struct KindAvatar: View {
+    let symbol: String
+    var size: CGFloat = 36
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: size * 0.5))
+            .foregroundColor(Pearl.action)
+            .frame(width: size, height: size)
+            .background(Circle().fill(Nacre.glass))
+            .overlay(Circle().strokeBorder(Nacre.edge, lineWidth: 1.5))
+            .accessibilityHidden(true)
+    }
+}
+
 
 // MARK: - AS-02 One account
 
@@ -268,12 +485,13 @@ struct AccountSetupPage: View {
 
     // MARK: Parts
 
-    /// AS-02's hero: the bank's letters, the name, the balance and the
-    /// account's pill, as on AM-08.
+    /// AS-02's hero: the kind's icon and the short name, as on AS-01 v2's
+    /// row (note 1415:88764), then the balance and the account's pill, as
+    /// on AM-08.
     private var hero: some View {
         VStack(spacing: 10) {
-            NacreAvatar(text: account.bankLetters, size: 56)
-            Text(account.name).font(Nacre.title2).foregroundColor(Pearl.ink)
+            KindAvatar(symbol: AccountSetupWords.symbol(account), size: 56)
+            Text(AccountSetupWords.name(account)).font(Nacre.title2).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center)
             Text(account.balance.map { Format.amount(abs($0)) } ?? "—")
                 .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))

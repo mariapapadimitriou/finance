@@ -175,7 +175,10 @@ def _last4(value) -> str | None:
 
 
 def _all_rows(st) -> list[dict]:
-    return _linked_rows(st) + _hand_rows(st)
+    """Every account, each with its short name (account_names.py: AS-01 v2
+    and AS-02's header), told apart across linked and added ones."""
+    from .account_names import add_short_names
+    return add_short_names(_linked_rows(st) + _hand_rows(st))
 
 
 def _find(st, account_id: str) -> dict | None:
