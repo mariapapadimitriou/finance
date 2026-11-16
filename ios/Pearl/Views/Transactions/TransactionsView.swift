@@ -1439,8 +1439,10 @@ struct TransactionRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             Text(shownMoney)
                 .font(Nacre.headline).monospacedDigit()
-                .foregroundColor(t.tone)
+                .foregroundColor(t.rowTone)
                 .lineLimit(1).fixedSize()
+                .accessibilityLabel(t.movedBetweenAccounts
+                                    ? Format.movedSpoken(t.amount, to: t.movedTo) : Format.spoken(shownMoney))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -1484,7 +1486,7 @@ struct TransactionRow: View {
         if let note = splitNote, note.hasPrefix("Split "), let full = t.fullAmount {
             return "\u{2212}" + Format.amount(full)
         }
-        return Format.money(t) + (currency.map { " \($0)" } ?? "")
+        return Format.row(t) + (currency.map { " \($0)" } ?? "")
     }
 
     /// "Your share of $86", "Refunded in full · Nov 10".
@@ -2140,6 +2142,30 @@ struct SheetBackground: View {
 extension Transaction {
     /// Red going out, green coming in, grey when it doesn't count.
     var tone: Color { notCounted ? Pearl.muted : (inflow ? Pearl.moneyIn : Pearl.ink) }
+
+    /// TC-A (1368:8300, 1368:8898, 1368:9480): a row's amount on Cash flow,
+    /// the Calendar day list and a trip page. Moved between her accounts is
+    /// grey, like anything else that doesn’t count (product owner,
+    /// 2026-11-15); spending stays ink and money in green.
+    var rowTone: Color { movedBetweenAccounts ? Pearl.muted : tone }
+}
+
+extension Format {
+    /// TC-A: "⇄ $500.00" moved between her accounts (grey), "$612.00" for anything
+    /// else that doesn't count (no sign: nothing left or came in), else
+    /// "−$24.80" / "+$2,150.00" as `money(_:)`.
+    static func row(_ t: Transaction) -> String {
+        if t.movedBetweenAccounts { return moved(t.amount) }
+        return t.notCounted ? amount(t.amount) : money(t)
+    }
+
+    /// TC-A: the ⇄ is a text glyph in the frame, not an SF Symbol.
+    static func moved(_ value: Double) -> String { "\u{21C4} " + amount(value) }
+
+    /// TC-A VoiceOver: "Moved $500.00 to Tangerine Savings".
+    static func movedSpoken(_ value: Double, to: String) -> String {
+        "Moved \(amount(value)) to \(to)"
+    }
 }
 
 

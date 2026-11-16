@@ -121,6 +121,9 @@ struct CalendarDay: Decodable {
     let spent: [Spent]
     let spentTotal: Double?
     let due: [Due]
+    /// TC-A (THL-123, 1368:8898): money moved between her own accounts that
+    /// day, "⇄ $500.00" in grey (finance/calendar_view.py `moved_rows`).
+    var moved: [Moved] = []
     /// TR-10b: the trips this day is part of (finance/calendar_view.py `trips_on`).
     var trips: [DayTrip] = []
 
@@ -139,8 +142,16 @@ struct CalendarDay: Decodable {
         let unusual: Bool?
     }
 
+    struct Moved: Decodable, Hashable {
+        let merchant: String
+        let category: String?
+        let amount: Double
+        /// Where it went, for VoiceOver's "Moved $500.00 to Tangerine Savings".
+        let to: String
+    }
+
     enum CodingKeys: String, CodingKey {
-        case label, reason, past, spent, due, trips
+        case label, reason, past, spent, due, trips, moved
         case spentTotal = "spent_total"
     }
 
@@ -153,6 +164,7 @@ struct CalendarDay: Decodable {
         spentTotal = try c.decodeIfPresent(Double.self, forKey: .spentTotal)
         due = try c.decode([Due].self, forKey: .due)
         trips = (try? c.decodeIfPresent([Lenient<DayTrip>].self, forKey: .trips))?.compactMap { $0.value } ?? []
+        moved = (try? c.decodeIfPresent([Lenient<Moved>].self, forKey: .moved))?.compactMap { $0.value } ?? []
     }
 }
 
@@ -580,7 +592,8 @@ struct CalendarCard: View {
             }
             if d.spent.isEmpty {
                 ProfileNote(d.past == false ? "Nothing spent yet." : "Nothing was spent.")
-            } else {
+            }
+            if !d.spent.isEmpty || !d.moved.isEmpty {
                 GlassCard {
                     ForEach(Array(d.spent.enumerated()), id: \.offset) { i, sp in
                         if i > 0 { RowSeparator(inset: 62) }
@@ -593,6 +606,24 @@ struct CalendarCard: View {
                             Spacer(minLength: 8)
                             Text("\u{2212}" + Format.amount(sp.amount)).font(Nacre.body).monospacedDigit()
                                 .foregroundColor(Pearl.ink)
+                        }
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .accessibilityElement(children: .combine)
+                    }
+                    // TC-A (1368:8898): a move between her accounts, after
+                    // what was spent, "⇄ $500.00" in grey with no sign.
+                    ForEach(Array(d.moved.enumerated()), id: \.offset) { i, m in
+                        if i > 0 || !d.spent.isEmpty { RowSeparator(inset: 62) }
+                        HStack(spacing: 12) {
+                            Initials(name: m.merchant, size: 36)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(m.merchant).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                                if let c = m.category { Text(c).font(Nacre.subheadline).foregroundColor(Pearl.muted) }
+                            }
+                            Spacer(minLength: 8)
+                            Text(Format.moved(m.amount)).font(Nacre.body).monospacedDigit()
+                                .foregroundColor(Pearl.muted)
+                                .accessibilityLabel(Format.movedSpoken(m.amount, to: m.to))
                         }
                         .padding(.horizontal, 16).padding(.vertical, 10)
                         .accessibilityElement(children: .combine)
