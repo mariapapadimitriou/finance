@@ -1107,19 +1107,49 @@ struct Transaction: Decodable, Identifiable, Hashable {
     /// Everything a row shows. SwiftUI skips redrawing a row that compares
     /// equal, so comparing less leaves old answers on the list: a Yes keeps the
     /// category and changes only the chip (the critics' stale rows, 2026-11-06).
+    ///
+    /// Stack (2026-11-16): written as one expression, this had a 31,584-byte
+    /// frame in the Debug device build, near the 32 KB that crashed the
+    /// product owner's iPhone (#340, #364): Debug gives every field read its
+    /// own stack slot, and `a.splitting`, `a.trip` and `a.cost` copied whole
+    /// values out of their boxes. The same fields are now compared a few at a
+    /// time in helpers that are never inlined, so each has a small frame of
+    /// its own, and the boxed ones compare as boxes (Boxed.==): the same box
+    /// is equal without unboxing, else their contents are compared, as before.
+    /// No field was dropped: there's no revision field from the server that
+    /// changes whenever these do, so `id` alone would miss a reload's edits.
+    /// `id` goes first, so two different transactions stop there.
     static func == (a: Transaction, b: Transaction) -> Bool {
-        a.id == b.id && a.category == b.category && a.suggested == b.suggested && a.chip == b.chip
-            && a.amount == b.amount && a.fullAmount == b.fullAmount && a.note == b.note && a.counts == b.counts
-            && a.excluded == b.excluded && a.cardPayment == b.cardPayment && a.pending == b.pending && a.oneOff == b.oneOff && a.tags == b.tags
-            && a.jointFrom == b.jointFrom && a.bankId == b.bankId && a.merchant == b.merchant
-            // TEST-19 (round 2): the page holds its Transaction in @State,
-            // and SwiftUI skips a redraw when the new value compares equal.
-            // A split saved, closed or paid back changes only these.
-            && a.split == b.split && a.splitting == b.splitting
+        a.id == b.id && sameChip(a, b) && sameMoney(a, b) && sameAnswers(a, b) && sameSplit(a, b)
+    }
+
+    @inline(never)
+    private static func sameChip(_ a: Transaction, _ b: Transaction) -> Bool {
+        a.category == b.category && a.suggested == b.suggested && a.chip == b.chip
+            && a.merchant == b.merchant
+    }
+
+    @inline(never)
+    private static func sameMoney(_ a: Transaction, _ b: Transaction) -> Bool {
+        a.amount == b.amount && a.fullAmount == b.fullAmount && a.note == b.note && a.counts == b.counts
+            && a.excluded == b.excluded && a.cardPayment == b.cardPayment && a.pending == b.pending
+    }
+
+    @inline(never)
+    private static func sameAnswers(_ a: Transaction, _ b: Transaction) -> Bool {
+        a.oneOff == b.oneOff && a.tags == b.tags && a.jointFrom == b.jointFrom && a.bankId == b.bankId
+    }
+
+    @inline(never)
+    private static func sameSplit(_ a: Transaction, _ b: Transaction) -> Bool {
+        // TEST-19 (round 2): the page holds its Transaction in @State,
+        // and SwiftUI skips a redraw when the new value compares equal.
+        // A split saved, closed or paid back changes only these.
+        a.split == b.split && a._splitting == b._splitting
             // TR-05: made into a trip, renamed, or taken out of one.
-            && a.trip == b.trip
+            && a._trip == b._trip
             // RC-03: a payback changes what's back and to come.
-            && a.cost == b.cost
+            && a._cost == b._cost
     }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
