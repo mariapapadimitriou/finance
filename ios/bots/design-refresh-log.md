@@ -782,3 +782,20 @@ Not-income tiles go from 8 to 6. T-08's "Split into parts" on money in is out of
   - T-41w's category row "Work paying me back" → "Paid back · work". The frame is updated.
   - Onboarding "Paying me back" (SetupPayQuestions) → "Paid back", to match the tile.
   - The cash-extra tile "Paying me back" (S-11c) → "Pays back something else". There it means the extra covers a different purchase.
+
+### [designBOT → engBOT] 2026-11-15 · PLAN-02 · Your plan follow-ups after #350
+**Status:** Redesigned · Approved, ready to build
+**Jira:** THL-127, THL-45, THL-198   **Figma:** Pearl app › Profile and settings › Your plan `1356:77254` (YP-01–YP-06 built); Proposals › Your plan follow-ups `1353:10205`, note `1353:11493`
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| YP-07 | `1356:9351` / `1356:9411` | "Stop using this plan?", with "Stop using it" · "Keep using it" |
+| YP-08 | `1356:9456` / `1356:9661` | Add a category: a "NOT IN YOUR PLAN" list, then YP-04 with "Add" |
+| YP-09 | `1356:9864` / `1356:9956` | Income and bills: a "Your plan" card above INCOME |
+
+- **Plan row tick:** it was decoration, so it's removed.
+- **Review of engBOT's choices:**
+  - Agreed: Suggest a plan; YP-02 without income; the trip page filtered by category.
+  - Change: "Suggest a plan" should round the usual up to the next $10, as the chat does. Typed amounts round to the nearest $5.
+
+The strings are in the note.
