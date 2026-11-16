@@ -376,6 +376,10 @@ def account_settings(account_id: str):
 
     if reclassify:
         _reclassify(st)
+    # AS-04 (Account setup, 2026-11-15): saving any account after Start over
+    # answers "Check your accounts", as "These look right" does.
+    from . import setup_again
+    setup_again.mark(st, "accounts")
     out = {"ok": True, "account": _find(st, account_id),
            "safe_to_spend": _safe_to_spend(st), "resync": resync,
            **({"applied": applied} if applied else {})}
