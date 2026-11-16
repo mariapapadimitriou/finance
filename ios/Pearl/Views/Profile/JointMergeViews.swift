@@ -34,7 +34,7 @@ extension AccountsOverview.Account {
 }
 
 /// Letters in a frosted disc with the nacre ring: a bank or a person.
-private struct NacreAvatar: View {
+struct NacreAvatar: View {
     let text: String
     var size: CGFloat = 36
 
@@ -53,7 +53,7 @@ private struct NacreAvatar: View {
 
 /// One of several: a title, a line under it, a trailing tick when it's the
 /// one (the Choice component's Radio type; iOS has no radio buttons).
-private struct PickRow: View {
+struct PickRow: View {
     let title: String
     var sub: String? = nil
     let selected: Bool
@@ -86,7 +86,7 @@ private struct PickRow: View {
 }
 
 /// "Last four digits   5521": a label and a field, right-aligned, in a card.
-private struct InlineField: View {
+struct InlineField: View {
     let label: String
     @Binding var text: String
     var prompt = ""
