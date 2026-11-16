@@ -253,7 +253,7 @@ RULES: list[tuple[str, str]] = [
 
     # Utilities / telecom / housing
     (r"\b(hydro|electric|power co|pg&e|con ?edison|duke energy|national grid|"
-     r"water dept|waste management|gas company|enbridge|fortis|utility)\b", "Utilities"),
+     r"water dept|waste management|gas company|enbridge|fortis|utilit(?:y|ies))\b", "Utilities"),
     (r"\b(at&t|verizon|t-?mobile|sprint|rogers|bell canada|telus|fido|koodo|"
      r"freedom mobile|comcast|xfinity|spectrum|cox comm|shaw|videotron|"
      r"internet|wireless|mobile bill)\b", "Phone & Internet"),
@@ -415,7 +415,68 @@ def is_unsure(t) -> bool:
 
 # Bumped whenever the rules above change enough that what is already in the
 # ledger should be sorted again; the next sync does it once.
-RULES_VERSION = 15
+# 16 (2026-11-15): bills paid from a bank account sort by their payee.
+RULES_VERSION = 16
+
+
+# ── Bills paid from a bank account (2026-11-15) ──────────────────────────
+#
+# A bill paid from chequing reads "BILL PAYMENT TORONTO HYDRO", "PAYMENT -
+# BELL CANADA" or "ONLINE BANKING PAYMENT ENBRIDGE", and Plaid often codes it
+# LOAN_PAYMENTS_* or TRANSFER_OUT_*: money leaving the account, which is all
+# Plaid can see. The words before the payee are the bank's channel, not who
+# was paid, so the payee is sorted by the same name patterns as any purchase:
+# a utility is Utilities, a phone company Phone & Internet. A card payment,
+# a loan or a payee Pearl can't name stays a transfer, matched to her own
+# accounts as before (finance/transfers.py). No merchant is named here.
+_BILL_CHANNEL = re.compile(
+    r"^\s*(?:"
+    r"(?:(?:internet|online|mobile|telephone|tel|web)\s+)?(?:banking\s+)?bill\s*(?:payment|pmt|pay)"
+    r"|(?:internet|online|mobile|telephone|web)\s+(?:banking\s+)?(?:payment|pmt)"
+    r"|(?:payment|pmt)\s*-"
+    r"|pre-?authori[sz]ed\s+(?:debit|payment)|pad"
+    r")(?![a-z0-9])[\s\-:#*]*(?:\d{3,}\s+)?", re.I)
+
+# A payee that is a card: money onto it is a card payment, a transfer.
+_CARD_PAYEE = re.compile(
+    r"\b(visa|master\s*card|mc|amex|american express|credit\s*card|card|line of credit|loc|bank)\b", re.I)
+# A payee that isn't a bill: a loan, or the bank's own words for a payment.
+_NOT_A_BILL = re.compile(r"\b(loan|thank you|received|transfer|tfr)\b", re.I)
+
+# What only a bill's payee says: "CITY OF TORONTO WATER", "ALECTRA UTILITIES".
+# Too broad for any purchase (Water Street Cafe), fine for a bill.
+_BILL_WORDS = [(re.compile(r"\b(water|wastewater|sewer|electricity|natural gas|energy|power)\b", re.I),
+                "Utilities")]
+
+
+def bill_payee(merchant: str, description: str = "") -> str | None:
+    """Who a bill paid from a bank account was paid to, from "BILL PAYMENT
+    TORONTO HYDRO" or "PAYMENT - BELL CANADA"; None when it isn't one."""
+    for text in (description, merchant):
+        m = _BILL_CHANNEL.match(text or "")
+        if m:
+            payee = (text or "")[m.end():].strip(" -:#*")
+            return payee or None
+    return None
+
+
+def bill_category(merchant: str, description: str = "") -> str | None:
+    """The spending category of a bill's payee, by the name patterns;
+    Transfers for a card ("BILL PAYMENT TD VISA"); None for a loan, the
+    bank's own words, or a payee Pearl can't name."""
+    payee = bill_payee(merchant, description)
+    if not payee or _NOT_A_BILL.search(payee):
+        return None
+    if _CARD_PAYEE.search(payee):
+        # "BILL PAYMENT ROGERS MC": the card, not the phone company.
+        return "Transfers"
+    for pattern, category in _COMPILED:
+        if pattern.search(payee):
+            return category if is_spend_category(category) and category != "Other" else None
+    for pattern, category in _BILL_WORDS:
+        if pattern.search(payee):
+            return category
+    return None
 
 
 def plaid_category(code: str) -> str | None:
@@ -522,6 +583,14 @@ def categorize(merchant: str, description: str = "", issuer_category: str = "",
         return overrides[key], "merchant_override"
 
     code = (issuer_category or "").strip().lower()
+    # A bill paid from her bank to a payee Pearl can name (2026-11-15): the
+    # payee's category, whatever "money left the account" code Plaid gave it.
+    # Never a card payment, which Plaid says outright.
+    if code != "loan_payments_credit_card_payment":
+        bill = bill_category(merchant, description)
+        if bill:
+            return bill, "rule"
+
     if code in AUTHORITATIVE_ISSUER_CATEGORIES:
         return AUTHORITATIVE_ISSUER_CATEGORIES[code], "issuer"
 
