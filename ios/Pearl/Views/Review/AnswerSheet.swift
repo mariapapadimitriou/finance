@@ -264,8 +264,8 @@ struct AnswerSheet: View {
             }
         }
         .sheet(isPresented: $parting) {
-            // PB-11 › A person: their splits (PB-12) or S-35's ticks, then
-            // part or all of each share (PB-13).
+            // PB-11 › A person: their shares ticked as they add up (PB-30),
+            // or S-35's ticks, then part or all of each share (PB-13).
             PartsSheet(deposit: PartsDeposit(id: t.id, name: who, amount: t.amount, date: t.date), api: api,
                        paidBack: true, payer: ask.item.from) { reply in
                 parting = false
@@ -320,6 +320,12 @@ struct AnswerSheet: View {
         default: likelyWho = nil
         }
         likelyPerson = likely?.person
+        // PB-30 (Paybacks & undo, note 1397:4697): PB-11 is skipped when the
+        // e-Transfer names someone Pearl knows; straight to what they paid back.
+        if likelyWho == .person, likely?.person != nil {
+            paidBack(.person)
+            return
+        }
         whoPaid = true
     }
 
