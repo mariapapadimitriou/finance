@@ -83,6 +83,13 @@ struct AnswerSheet: View {
     @State private var chargeCase: String?
     /// TEST-31 Money back (T-09rs): the purchase list is for a refund.
     @State private var refunding = false
+    /// PB-11 "Who paid you back?" (Paid back, 2026-11-15), and what she
+    /// picked, acted on once it has closed.
+    @State private var whoPaid = false
+    @State private var pickedWho: PaidBackWho?
+    /// PB-15: a person who isn't on a split; T-09's purchase list counts
+    /// the whole amount as paid back by them.
+    @State private var payerName: String?
     @State private var splitting = false
     /// T-06jr (JOINT-B): Whose was it? on a joint purchase, beside Split my part.
     @State private var whosing = false
@@ -243,10 +250,23 @@ struct AnswerSheet: View {
             }
         }
         .sheet(isPresented: $parting) {
-            PartsSheet(deposit: PartsDeposit(id: t.id, name: who, amount: t.amount, date: t.date), api: api) { reply in
+            // PB-11 › A person: their splits (PB-12) or S-35's ticks, then
+            // part or all of each share (PB-13).
+            PartsSheet(deposit: PartsDeposit(id: t.id, name: who, amount: t.amount, date: t.date), api: api,
+                       paidBack: true, payer: ask.item.from) { reply in
                 parting = false
                 onAnswer(.done(reply))
             }
+        }
+        .sheet(isPresented: $whoPaid, onDismiss: {
+            let picked = pickedWho
+            pickedWho = nil
+            if let picked = picked { paidBack(picked) }
+        }) {
+            // PB-11 (1351:9324): A person · The shop · Work.
+            PaidBackWhoSheet(face: payer, sub: "\(amountText) · \(who) · \(Format.short(t.date))",
+                             onPick: { pickedWho = $0; whoPaid = false },
+                             onClose: { whoPaid = false })
         }
         .sheet(item: $shareExtra, onDismiss: {
             // Closed without answering: her share stays saved, the extra counts as money in.
@@ -572,24 +592,45 @@ struct AnswerSheet: View {
             return
         }
         switch key {
-        case "paid_back":
-            // Who paid you back? (2026-11-09): every share she split with
-            // someone, tick as many as it paid back, not one purchase searched for.
-            parting = true
-        case "refund":                                 // T-09: what it paid back
-            chargeCase = nil
-            refunding = true
-            go(.charges)
-        case "reimbursement":
-            chargeCase = key
-            refunding = false
-            go(.charges)
+        // PB-10: one Paid back tile; PB-11 asks who paid her back.
+        case "paid_back": whoPaid = true
         case "own": onAnswer(.mark(t.id, ["case": "own", "remember": learnable && rememberInto]))
         case "loan": onAnswer(.mark(t.id, ["case": "borrowed"]))
         case "out_of_savings": onAnswer(.mark(t.id, ["case": "out_of_savings"]))
         case "lent_back": onAnswer(.mark(t.id, ["case": "lent_back"]))
         default: onAnswer(.mark(t.id, ["case": "not_mine", "reason": "Not mine",
                                        "remember": learnable && rememberInto]))
+        }
+    }
+
+    /// PB-11's answer. The shop and Work keep their flows (T-09rs, T-09w;
+    /// extras S-11m, S-11w). A person: PB-15 when the sender is named but on
+    /// no split; otherwise their splits (PB-12) or S-35's ticks, then PB-13.
+    private func paidBack(_ who: PaidBackWho) {
+        switch who {
+        case .shop:
+            chargeCase = nil
+            payerName = nil
+            refunding = true
+            go(.charges)
+        case .work:
+            chargeCase = "reimbursement"
+            payerName = nil
+            refunding = false
+            go(.charges)
+        case .person:
+            Task {
+                struct Owing: Decodable { let from: String?; let named: String? }
+                let r: Owing? = try? await api.get("api/transactions/\(t.id)/owing")
+                if let r = r, r.from == nil, let named = r.named, !named.isEmpty {
+                    chargeCase = "payback"
+                    payerName = named
+                    refunding = false
+                    go(.charges)
+                } else {
+                    parting = true
+                }
+            }
         }
     }
 
@@ -616,7 +657,9 @@ struct AnswerSheet: View {
                         otherKindTiles
                     } else {
                         if step == .charges && !options.isEmpty {
-                            Text("LIKELY").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+                            // PB-15: "SAM ISN’T ON A SPLIT · PICK THE PURCHASE".
+                            Text(payerName.map { "\(firstName($0)) isn’t on a split · pick the purchase".uppercased() } ?? "LIKELY")
+                                .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
                                 .padding(.horizontal, 16)
                         }
                         if step == .sender && !options.isEmpty {
@@ -826,8 +869,10 @@ struct AnswerSheet: View {
         switch step {
         case .out, .into: return "What was this?"
         case .accounts: return "Where did it go?"
-        // T-09rs (1302:2312): a refund keeps T-09r's title.
-        case .charges: return refunding ? "What was this a refund for?" : "What did this pay back?"
+        // T-09rs (1302:2312): a refund keeps T-09r's title. PB-15: "What did Sam pay back?"
+        case .charges:
+            if refunding { return "What was this a refund for?" }
+            return payerName.map { "What did \(firstName($0)) pay back?" } ?? "What did this pay back?"
         case .kinds, .otherKinds: return "What kind of income?"
         case .cadence: return "How often is this pay?"
         case .joint: return "Whose pay is this?"
@@ -850,6 +895,11 @@ struct AnswerSheet: View {
     }
 
     private var payer: String { ask.item.from ?? who }
+
+    /// "Sam" from "Sam Lee", as PB-12 and PB-15 say it.
+    private func firstName(_ name: String) -> String {
+        name.split(separator: " ").first.map(String.init) ?? name
+    }
 
     private var options: [Option] {
         switch step {
@@ -932,6 +982,10 @@ struct AnswerSheet: View {
         case .accounts where !rememberAnswer: return nil
         // T-09rs: no "Pearl will remember" on a refund, as T-09r has none.
         case .charges where refunding: return nil
+        // PB-15 (1351:10581): what picking does, and where splitting is.
+        case .charges where payerName != nil:
+            let first = firstName(payerName ?? who)
+            return "Pick a purchase and it counts as paid back by \(first). To split it with \(first) first, open the purchase."
         case .accounts, .joint, .charges: return "Pearl will remember this for \(who)."
         case .cadence where choice != nil && choice != "once": return "Pearl will count every deposit from \(who) as pay."
         default: return nil
@@ -1009,7 +1063,10 @@ struct AnswerSheet: View {
             guard let charge = charges.first(where: { $0.id == choice }) else { return }
             // The same shop sending money back is a refund; anyone else, a payback.
             let refund = charge.name.lowercased() == who.lowercased()
-            onAnswer(.mark(t.id, ["case": chargeCase ?? (refund ? "refund" : "payback"), "charge": charge.id]))
+            var body: [String: Any] = ["case": chargeCase ?? (refund ? "refund" : "payback"), "charge": charge.id]
+            // PB-15: paid back by the person she named.
+            if let payer = payerName { body["person"] = payer }
+            onAnswer(.mark(t.id, body))
         case .payback:
             switch choice {
             case "this":

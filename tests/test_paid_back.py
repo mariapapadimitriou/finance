@@ -251,13 +251,13 @@ class TestTilesBySource:
     def test_one_paid_back_tile(self):
         s = self.src("ios/Pearl/Views/Transactions/CategorySheet.swift")
         start = s.index("static let notIncome: [CaseTile] = [")
-        tiles = s[start:s.index("]", start + len("static let notIncome: [CaseTile] = ["))]
+        tiles = s[start:s.index("\n    ]", start)]
         assert tiles.count("CaseTile(") == 6
         assert 'label: "Paid back"' in tiles
         for gone in ("Paying me back", "Money back", "Work paying me back"):
             assert gone not in tiles, gone
         income = s[s.index("static let income: [CaseTile] = ["):]
-        assert income[:income.index("]")].count("CaseTile(") == 4
+        assert income[:income.index("\n    ]")].count("CaseTile(") == 4
 
     def test_who_paid_you_back_and_how_much(self):
         s = self.src("ios/Pearl/Views/Transactions/PaidBackViews.swift")
@@ -267,8 +267,12 @@ class TestTilesBySource:
             assert words in s, words
         parts = self.src("ios/Pearl/Views/Transactions/PartsFlow.swift")
         assert "How much of \\(possessive(firstName(o.person ?? who))) \\(Format.amount(o.owes))?" in parts
-        # S-35 no longer takes min(share, what's left) on its own.
-        assert "picked[o.id] = Double(min(cents(o.owes), room)) / 100" not in parts
+        # S-35 no longer takes min(share, what's left) on its own: a tick on
+        # someone's share goes to PB-13 first (the min stays only for a
+        # purchase with no one on it).
+        toggle = parts[parts.index("private func toggle(_ o: Owing)"):]
+        assert toggle.index("asksHowMuch(o)") < toggle.index("Double(min(cents(o.owes), room))")
+        assert "startHowMuch(queue, asked: asked)" in parts
         for path in ("ios/Pearl/Views/Transactions/PaidBackViews.swift",
                      "ios/Pearl/Views/Transactions/PartsFlow.swift",
                      "ios/Pearl/Views/Review/AnswerSheet.swift"):

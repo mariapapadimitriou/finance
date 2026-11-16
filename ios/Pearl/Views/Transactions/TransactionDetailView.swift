@@ -1120,9 +1120,9 @@ struct TransactionDetailView: View {
         // T-41m: a refund of her share stays a refund page (T-41).
         guard t.inflow, t.transfer == nil, t.excluded.isEmpty, t.refundOf == nil,
               let charge = t.repaysCharge else { return nil }
-        let key = charge.kind == "reimbursement" ? "reimbursement" : "paid_back"
-        guard let tile = CaseTile.notIncome.first(where: { $0.key == key }) else { return nil }
-        return (tile.label, tile.symbol)
+        // PB-10 folded these tiles into Paid back; T-41w's words stay as its
+        // frame draws them until designBOT redraws it.
+        return charge.kind == "reimbursement" ? ("Work paying me back", "briefcase") : ("Paying me back", "person.2")
     }
 
     /// Money in that could be her pay: not a refund, a payback or a transfer.
