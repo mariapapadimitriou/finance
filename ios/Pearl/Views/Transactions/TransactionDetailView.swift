@@ -455,7 +455,11 @@ struct TransactionDetailView: View {
                 newOnes = draft.always
             }
         }
-        .sheet(item: $sorting, onDismiss: { Task { await load() } }) { ask in
+        .sheet(item: $sorting, onDismiss: {
+            // Closed without an answer: TF-01c doesn't go on to the other end.
+            otherSide = nil
+            Task { await load() }
+        }) { ask in
             // The stored category stays hers unless she changes it; a question is answered in place.
             if let guessing = guessing {
                 // T-96: the guess is wrong, so the answer is the question's. Yes is already on the page.
@@ -511,10 +515,12 @@ struct TransactionDetailView: View {
                             } : nil,
                             confirmsGuess: false, fromPage: true) { answer in
                     sorting = nil
+                    // TF-01c: then what the other end was.
+                    let other = otherSide
+                    otherSide = nil
                     Task {
                         await answered(answer)
-                        // TF-01c: then what the other end was.
-                        if let other = otherSide { otherSide = nil; await askOtherSide(other) }
+                        if let other = other { await askOtherSide(other) }
                     }
                 }
             }
