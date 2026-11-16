@@ -431,6 +431,8 @@ struct PearlToast: View {
     }
 
     let model: Model
+    /// Stays until something replaces it (Quick sort's Undo, UN-01).
+    var stays = false
     let done: () -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
 
@@ -466,6 +468,7 @@ struct PearlToast: View {
         }
         .task(id: model.id) {
             UIAccessibility.post(notification: .announcement, argument: model.text)
+            guard !stays else { return }
             let seconds: UInt64 = UIAccessibility.isVoiceOverRunning ? 15 : 6
             try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
             if !Task.isCancelled { done() }

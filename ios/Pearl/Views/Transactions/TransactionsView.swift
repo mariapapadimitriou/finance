@@ -892,30 +892,14 @@ struct TransactionsView: View {
         .opacity(picked.isEmpty ? 0.4 : 1)
     }
 
-    /// "✓ Changed 3 to Dining out. Allowance is now $842.  Undo".
+    /// "✓ Changed 3 to Dining out. Allowance is now $842.  Undo". UN-01: the
+    /// one Undo look (PearlToast's ink), 12 above the tab bar.
     @ViewBuilder private var toastView: some View {
         if let toast = toast {
-            HStack(spacing: 12) {
-                Image(systemName: "checkmark").font(.system(size: 13, weight: .bold)).foregroundColor(Nacre.teal)
-                Text(toast.title).font(Nacre.footnote).foregroundColor(Pearl.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 8)
-                if toast.undo != nil {
-                    Button("Undo") { Task { await undo() } }
-                        .font(Nacre.textButton).foregroundColor(Pearl.link)
-                }
-            }
-            .padding(.horizontal, 16).padding(.vertical, 12)
-            .background(Capsule().fill(.ultraThinMaterial))
-            .background(Capsule().fill(Nacre.glass))
-            .overlay(Capsule().strokeBorder(Nacre.edge, lineWidth: 1))
-            .padding(.horizontal, 16).padding(.bottom, 12)
-            .swipeToDismiss { self.toast = nil }
-            .transition(.move(edge: .bottom).combined(with: .opacity))
-            .task(id: toast) {
-                try? await Task.sleep(nanoseconds: 6_000_000_000)
+            UndoToast(text: toast.title, undo: toast.undo == nil ? nil : { Task { await undo() } }) {
                 if self.toast == toast { withAnimation { self.toast = nil } }
             }
+            .padding(.bottom, 12)
         }
     }
 
