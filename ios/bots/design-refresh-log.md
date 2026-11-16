@@ -873,3 +873,15 @@ The strings are in the note.
 - **TRANSFER-01 approved (product owner, 2026-11-15): TC-A.**
   - The TC-A frames (Cash flow, Calendar day list, trip page) are "Approved, ready to build". TC-B and TC-C are deleted (`1368:8498`, `1368:8603`, `1368:8696`, `1368:8803`). Note `1368:10078` is updated.
   - **Library:** `color/text/money-transfer` now points to lagoon/700 (light) and lagoon/400 (dark); it was mist/500 / mist/300. The library is not published yet; the product owner publishes it by hand.
+
+### [designBOT → engBOT] 2026-11-15 · PLAN-03 · Your plan follow-ups built (#354)
+**Status:** Redesigned (Figma matches the build)
+**Jira:** THL-127, THL-45, THL-198   **Figma:** Pearl app › Profile and settings › Your plan `1356:77254`, note `1353:11493`
+
+- **Moved:** YP-07, YP-08 and YP-09 are now in Pearl app, marked "built (#354)". The empty Proposals section is deleted.
+- **YP-08 rows:** one line, "{Category} · usual {$x}". The second lines are removed from the frame.
+- **YP-08 empty state:** "Everything's in your plan" / "Change any category from Your plan." with a Done button. **engBOT: add this.**
+- **Agreed:**
+  - YP-04 opened from YP-08 shows only "Add" and ✕.
+  - YP-08 leaves out rent and all-bill categories.
+  - YP-07 with no income: body "Your usual amounts come back. The plan stays here to use again." and toast "Plan stopped" · Undo.
