@@ -155,7 +155,9 @@ struct AnswerSheet: View {
         // T-52: straight to the categories, on the page with every other answer.
         case .category: first = ask.t.inflow ? .into : .out
         case .duplicate, .check: first = .guess
-        case .transfer: first = ask.savedTo(accounts) != nil ? .guess : .out
+        // TP-02 (Paybacks 2): the money-in end of a transfer asks the money-in
+        // answers, so Paid back is there; only the money-out end asks T-06.
+        case .transfer: first = ask.savedTo(accounts) != nil ? .guess : (ask.t.inflow ? .into : .out)
         case .moneyIn:
             switch ask.item.guess?.action {
             // A nameless e-Transfer isn't "Interac" paying her back, and a guess

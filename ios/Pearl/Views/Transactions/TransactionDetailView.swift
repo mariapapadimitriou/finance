@@ -609,7 +609,8 @@ struct TransactionDetailView: View {
             if let guessing = guessing {
                 // T-96: the guess is wrong, so the answer is the question's. Yes is already on the page.
                 AnswerSheet(ask: ask, categories: categories, accounts: guessing.accounts, names: guessing.names,
-                            api: app.api, start: ask.kind == .transfer ? .out : nil,
+                            // TP-02 (Paybacks 2): the money-in end asks the money-in answers.
+                            api: app.api, start: ask.kind == .transfer ? (ask.t.inflow ? .into : .out) : nil,
                             pageAlways: offersNewOnes && newOnesOn, pageAmount: Format.money(t),
                             pageCategory: chosenCategory,
                             onCategory: { name, remember in
