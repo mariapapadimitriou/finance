@@ -1,0 +1,276 @@
+"""The payback question, in Pearl's words (Figma Proposals › "Payback
+question" 1418:88290, note 1419:89986; approved by the product owner
+2026-11-16; THL-289, THL-291, THL-181, THL-231, THL-232, THL-301). It
+replaces T-70 and the app's old list of three answers.
+
+Worked out here so the app shows the server's sentences, never its own:
+
+- `why`: why Pearl is asking. On a split: "mPg is on your Añejo split and
+  still owes you $30.79. $20.00 is part of it." Not on one, the amount and
+  the timing: "mPg sent $20.00 two days after Añejo. That’s about a third of
+  the $61.57, like a share of a meal for three." From a message: "mPg’s
+  message says “tacos”."
+- `line`: the runner-up when there is one ("Uber Eats also fits: $20.00 is
+  about half of $40.10, two days before."), otherwise what Yes does ("You
+  haven’t split Añejo, so Yes takes $20.00 off it: $41.57 stays yours.").
+- `tiles`: up to three likely purchases, best first (PQ-03, PQ-03b). Only
+  the first is Pearl's guess, drawn dashed. Each carries its category, the
+  short card name (account_names.py) and how the money compares: "about a
+  third", or on a split "$20.00 of mPg’s $30.79 · $10.79 still to come".
+- `card`: the dashed question card on the deposit's own page (PQ-03p).
+
+A tile answers through the payback path that already exists (POST
+/api/transactions/<id>/mark {"case": "payback", "charge": …}); nothing here
+writes.
+"""
+
+from __future__ import annotations
+
+from datetime import date
+
+from .models import Transaction
+
+MAX_TILES = 3
+# Spending a friend's share of is a meal: "like a share of a meal for three".
+MEALS = {"Dining", "Food Delivery"}
+
+_FRACTION = {2: "half", 3: "a third", 4: "a quarter", 5: "a fifth", 6: "a sixth"}
+_WORDS = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven",
+          8: "eight", 9: "nine", 10: "ten"}
+
+
+def _money(x: float) -> str:
+    return f"${abs(x):,.2f}"
+
+
+def _whose(name: str) -> str:
+    """"mPg’s", "James’"."""
+    return f"{name}’" if name.lower().endswith("s") else f"{name}’s"
+
+
+def _gap(t: Transaction, day: str) -> int:
+    return (date.fromisoformat(t.date[:10]) - date.fromisoformat(day[:10])).days
+
+
+def _after(gap: int, merchant: str) -> str:
+    """"two days after Añejo"."""
+    if gap <= 0:
+        return f"the same day as {merchant}"
+    if gap == 1:
+        return f"the day after {merchant}"
+    return f"{_WORDS.get(gap, str(gap))} days after {merchant}"
+
+
+def _before(gap: int) -> str:
+    """"two days before": when the purchase was, from the money."""
+    if gap <= 0:
+        return "the same day"
+    if gap == 1:
+        return "the day before"
+    return f"{_WORDS.get(gap, str(gap))} days before"
+
+
+def share_of(got: float, amount: float) -> int | None:
+    """How many ways the purchase was shared, when the money is one share
+    of it: within $3 or 5% for tips and rounding, as review.py's
+    charge_candidates reads it."""
+    best = None
+    for n in range(2, 7):
+        share = amount / n
+        if abs(share - got) <= max(3.0, share * 0.05):
+            if best is None or abs(amount / n - got) < abs(amount / best - got):
+                best = n
+    return best
+
+
+def card_names(st) -> dict[str, str]:
+    """Each account's short name by id ("Amex Cobalt"), as Your accounts
+    shows it (account_names.py, #367)."""
+    from .profile_api import _all_rows
+    try:
+        return {a["id"]: a["short_name"] for a in _all_rows(st)}
+    except Exception:  # noqa: BLE001 - a name is a nicety; the question stands without it
+        return {}
+
+
+def _card(c: Transaction, cards: dict[str, str]) -> str:
+    if cards.get(c.account_id):
+        return cards[c.account_id]
+    from .account_names import short_name
+    label = (c.account_nickname or c.account_name or "").split(" ••")[0]
+    return short_name(label) if label.strip() else ""
+
+
+def _tile(c: Transaction, cards: dict[str, str], **extra) -> dict:
+    return {"charge": c.fingerprint, "merchant": c.merchant, "amount": round(c.amount, 2),
+            "date": c.date[:10], "category": c.category or "Other", "card": _card(c, cards), **extra}
+
+
+def build(t: Transaction, transactions: list[Transaction], splits: dict | None = None,
+          payer: dict | None = None, people: list[str] | None = None,
+          cards: dict[str, str] | None = None, sender: str | None = None,
+          candidates: list[dict] | None = None) -> dict | None:
+    """The question for one deposit, or None when no purchase is likely or
+    nobody is named to be paying her back (a nameless e-Transfer isn't
+    "Interac" paying her back). `sender` is the name the review already
+    settled on; `candidates` are review.charge_candidates', when computed."""
+    from .categorize import is_generic_transfer_name
+    from .etransfers import memo, party
+    from .marks import memo_match
+    from .review import charge_candidates
+    from .splits import for_inflow
+
+    if t.amount >= 0 or t.repays:
+        return None
+    cards = cards or {}
+    sent = party(t, people) or {}
+    who = sender or (sent.get("name") if sent.get("direction") == "from" else None)
+    # "Name them" only where the bank's name is all Pearl has: once she
+    # names them, or for a payer that isn't an e-Transfer, it's a name.
+    named = sent.get("named_by") == "you" or not sent
+    if not who:
+        if not (t.merchant or "").strip() or is_generic_transfer_name(t.merchant):
+            return None
+        who = t.merchant
+    got = round(-t.amount, 2)
+    by_id = {x.fingerprint: x for x in transactions}
+    tiles: list[dict] = []
+    seen: set[str] = set()
+
+    # 1. Splits the sender is on and still owes on (PQ-03b): the closest to
+    # what they owe first, then the latest. Never one they'd overpay.
+    if splits:
+        rows, theirs = for_inflow(t, transactions, splits, payer or {})
+        owed = [r for r in rows if theirs and not r.get("unknown")
+                and r["owes"] >= 0.005 and got <= r["owes"] + 0.005]
+        # for_inflow lists the latest first; a stable sort keeps that.
+        owed.sort(key=lambda r: abs(r["owes"] - got) >= 0.005)
+        for r in owed:
+            c = by_id.get(r["charge_id"])
+            if c is None or c.fingerprint in seen:
+                continue
+            seen.add(c.fingerprint)
+            rest = round(r["owes"] - got, 2)
+            name = r["name"]
+            compare = f"{_money(got)} of {_whose(name)} {_money(r['owes'])}"
+            if rest >= 0.005:
+                compare += f" · {_money(rest)} still to come"
+            tiles.append(_tile(c, cards, kind="split", person=name, owes=r["owes"],
+                               title=f"Yes, {c.merchant} · {_whose(name)} share",
+                               compare=compare, toast=f"{who} paid back {_money(got)} for {c.merchant}"))
+
+    # 2. The purchase the sender's message names.
+    said = memo_match(t, transactions)
+    if said and said["id"] not in seen and said["id"] in by_id:
+        c = by_id[said["id"]]
+        seen.add(c.fingerprint)
+        n = share_of(got, c.amount)
+        tiles.append(_tile(c, cards, kind="memo", ways=n, memo=memo(t),
+                           title=f"Yes, {c.merchant} · {_money(c.amount)}",
+                           compare=f"about {_FRACTION[n]}" if n else "",
+                           toast=f"{who} paid back {_money(got)} for {c.merchant}"))
+
+    # 3. An even share of a purchase, best first (review.charge_candidates).
+    for cand in candidates if candidates is not None else charge_candidates(t, transactions):
+        c = by_id.get(cand["id"])
+        if c is None or c.fingerprint in seen:
+            continue
+        seen.add(c.fingerprint)
+        n = cand.get("split") or share_of(got, c.amount)
+        tiles.append(_tile(c, cards, kind="share", ways=n,
+                           title=f"Yes, {c.merchant} · {_money(c.amount)}",
+                           compare=f"about {_FRACTION[n]}" if n in _FRACTION else "",
+                           toast=f"{who} paid back {_money(got)} for {c.merchant}"))
+
+    tiles = tiles[:MAX_TILES]
+    if not tiles:
+        return None
+    best = tiles[0]
+    best["guess"] = True
+    first = by_id[best["charge"]]
+    m, amount = best["merchant"], _money(best["amount"])
+
+    # Why Pearl is asking.
+    if best["kind"] == "split":
+        if abs(best["owes"] - got) < 0.005:
+            why = f"{best['person']} owes you exactly {_money(got)} for {m}."
+        else:
+            why = (f"{best['person']} is on your {m} split and still owes you "
+                   f"{_money(best['owes'])}. {_money(got)} is part of it.")
+    elif best["kind"] == "memo":
+        why = f"{_whose(who)} message says “{best['memo']}”."
+    else:
+        n = best.get("ways")
+        why = f"{who} sent {_money(got)} {_after(_gap(t, best['date']), m)}."
+        if n in _FRACTION:
+            why += f" That’s about {_FRACTION[n]} of the {amount}"
+            why += (f", like a share of a meal for {_WORDS[n]}." if best["category"] in MEALS
+                    else ".")
+
+    # The second line: the runner-up, or what Yes does.
+    runner = next((x for x in tiles[1:] if x["kind"] != "split" and x.get("ways") in _FRACTION), None)
+    line = None
+    if runner:
+        line = (f"{runner['merchant']} also fits: {_money(got)} is about {_FRACTION[runner['ways']]} "
+                f"of {_money(runner['amount'])}, {_before(_gap(t, runner['date']))}.")
+    elif best["kind"] != "split":
+        if first.my_share is None:
+            left = round(first.amount - (first.paid_back or 0.0) - got, 2)
+            line = f"You haven’t split {m}, so Yes takes {_money(got)} off it"
+            line += f": {_money(left)} stays yours." if left >= 0.005 else "."
+        else:
+            line = f"Yes takes {_money(got)} off {m}."
+
+    # The guess tile reads "$20.00 is about a third" (PQ-03); a split's
+    # compares already start with the money.
+    if best["kind"] != "split" and best["compare"]:
+        best["compare"] = f"{_money(got)} is {best['compare']}"
+
+    # PQ-03p: the dashed card on the deposit's page.
+    if best["kind"] == "split":
+        guess = best["compare"]
+    elif best.get("ways") in _FRACTION:
+        guess = f"about {_FRACTION[best['ways']]} of {m}, {amount}"
+    else:
+        guess = f"{m}, {amount}"
+    return {
+        "who": who, "named": named, "why": why, "line": line, "tiles": tiles,
+        # PQ-03b's footer: a part payment stays on the split.
+        "part": best["kind"] == "split" and abs(best["owes"] - got) >= 0.005,
+        "card": {"title": f"Paying you back for {m}?",
+                 "line": f"Pearl’s guess: {guess} · tap to answer"},
+    }
+
+
+def annotate(st, review: dict, txns: list[Transaction]) -> None:
+    """Add `payback` to each money-in question it answers: the deposits
+    that could be someone paying her back. Not a refund from a store, the
+    rest of a deposit, the extra on a paid-back purchase, or money the
+    evidence already calls a loan."""
+    from .etransfers import known_people
+    items = [it for it in review.get("money_in") or []
+             if not it.get("rest") and not it.get("extra")
+             and (it.get("guess") or {}).get("action") not in ("refund", "unknown")
+             and (it.get("pair") or {}).get("kind") not in ("lent", "borrowed", "refund", "reimbursement")]
+    if not items:
+        return
+    splits, payer = st.splits(), st.payback_people()
+    people = known_people(txns, splits, payer)
+    cards = card_names(st)
+    by_id = {t.fingerprint: t for t in txns}
+    for it in items:
+        t = by_id.get(it["txn"]["id"])
+        if t is None:
+            continue
+        q = build(t, txns, splits, payer, people, cards, sender=it.get("from"),
+                  candidates=it.get("candidates"))
+        if q:
+            it["payback"] = q
+
+
+def for_deposit(st, t: Transaction) -> dict | None:
+    """PQ-03p: the question for one deposit's own page."""
+    from .etransfers import known_people
+    txns = st.all_transactions()
+    splits, payer = st.splits(), st.payback_people()
+    return build(t, txns, splits, payer, known_people(txns, splits, payer), card_names(st))

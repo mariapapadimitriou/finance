@@ -273,6 +273,8 @@ struct TransactionDetailView: View {
     /// A money-in question opened from here (THL-198): its kind, how often
     /// it pays, or What was this?.
     @State private var asking: Asking?
+    /// PQ-03p (Payback question): Pearl's guess on an unsorted deposit, in words.
+    @State private var paybackAsk: PaybackQuestion?
 
     struct Asking: Identifiable {
         let step: AnswerSheet.Step
@@ -1059,21 +1061,7 @@ struct TransactionDetailView: View {
                     .background(Capsule().fill(Nacre.glass))
                     .padding(.top, 4)
             }
-            if t.transfer == nil {
-                // T-03's Counts pill: Spending, Income, Refund or Not counted.
-                HStack(spacing: 6) {
-                    // T-41w: "↺ Paid back"; otherwise the Counts arrow.
-                    Image(systemName: paidBackAnswer != nil ? "arrow.counterclockwise"
-                          : countsPill.up ? "arrow.up" : "arrow.down")
-                        .font(.system(size: 12, weight: .semibold)).foregroundColor(countsPill.tone)
-                    Text(countsPill.label)
-                }
-                .font(Nacre.footnote).foregroundColor(Pearl.ink)
-                .padding(.horizontal, 12).frame(height: 30)
-                .background(Capsule().fill(Nacre.glass))
-                .padding(.top, 4)
-                .accessibilityElement(children: .combine)
-            }
+            if t.transfer == nil { OwnBody { countsOrName } }
             OwnBody { heroPills }
         }
         .frame(maxWidth: .infinity)
@@ -1110,6 +1098,28 @@ struct TransactionDetailView: View {
             .padding(.horizontal, 12).frame(height: 28)
             .background(Capsule().fill(Nacre.glass))
             .padding(.top, 4)
+        }
+    }
+
+    /// T-03's Counts pill: Spending, Income, Refund or Not counted. PQ-03p:
+    /// "Name them" in its place on a deposit Pearl asks a payback about,
+    /// while the bank's name is all it has; it opens T-14 Who sent this?.
+    @ViewBuilder private var countsOrName: some View {
+        if let q = paybackAsk, !q.named, t.asks {
+            NameThemPill { asking = Asking(step: .sender) }
+        } else {
+            HStack(spacing: 6) {
+                // T-41w: "↺ Paid back"; otherwise the Counts arrow.
+                Image(systemName: paidBackAnswer != nil ? "arrow.counterclockwise"
+                      : countsPill.up ? "arrow.up" : "arrow.down")
+                    .font(.system(size: 12, weight: .semibold)).foregroundColor(countsPill.tone)
+                Text(countsPill.label)
+            }
+            .font(Nacre.footnote).foregroundColor(Pearl.ink)
+            .padding(.horizontal, 12).frame(height: 30)
+            .background(Capsule().fill(Nacre.glass))
+            .padding(.top, 4)
+            .accessibilityElement(children: .combine)
         }
     }
 
@@ -1163,7 +1173,7 @@ struct TransactionDetailView: View {
     @ViewBuilder private var whatItIs: some View {
         if let label = guessName { guessCard(label) }
         else if !t.parts.isEmpty { partsCard } else if jointAsks { jointGuessCard }
-        else if t.asks { askingCard } else { categoryCard }
+        else if t.asks { askingOrPayback } else { categoryCard }
     }
 
     /// "Wed, Nov 11 · TD Chequing ••4417".
@@ -1410,6 +1420,27 @@ struct TransactionDetailView: View {
         default:
             return t.note.flatMap { $0.isEmpty ? nil : $0 }
         }
+    }
+
+    /// PQ-03p: "Paying you back for Añejo?" on a dashed card in place of
+    /// the flat Not sorted yet one; it opens Needs a look's question.
+    @ViewBuilder private var askingOrPayback: some View {
+        if let q = paybackAsk {
+            PaybackQuestionCard(card: q.card) { Task { await openQuestion() } }
+                .disabled(busy)
+        } else {
+            askingCard
+        }
+    }
+
+    /// PQ-03p: the payback question for this deposit, when Needs a look is
+    /// asking about it (GET payback-question).
+    @inline(never)
+    private func loadPaybackQuestion() async {
+        guard guessing == nil, t.asks, t.inflow else { paybackAsk = nil; return }
+        struct Reply: Decodable { let question: PaybackQuestion? }
+        let reply: Reply? = try? await app.api.get("api/transactions/\(t.id)/payback-question")
+        paybackAsk = reply?.question
     }
 
     /// "Not sorted yet · Paid back or income? Tell us": the question Needs a
@@ -2636,6 +2667,7 @@ struct TransactionDetailView: View {
             oneOff = nil
         }
         if canPayFromBank { billKey = bill?.billKey }
+        await loadPaybackQuestion()
         if guessing == nil {
             self.cases = cases ?? Cases(learnable: false, mixed: false, hasRule: false)
         }

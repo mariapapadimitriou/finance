@@ -17,6 +17,9 @@
 * POST /api/transactions/batch/category/preview  the helper line, before.
 * POST /api/transactions/batch/confirm          {ids}: Pearl's suggestions
   were right (Y), with one Undo.
+* GET  /api/transactions/<id>/payback-question  PQ-03p: the deposit's page asks
+  "Paying you back for Añejo?" (finance/payback_question.py); `question` is
+  None when no purchase is likely. Read-only.
 * GET/PUT /api/preferences                     {single_key_shortcuts}: off for
   WCAG 2.1.4 when they clash with a screen reader or voice control. Saved
   for her account; Ctrl/⌘ shortcuts always work.
@@ -129,6 +132,20 @@ def set_one_off(txn_id: str):
     toast = _one_off_toast(effect, on, _month(t.date))
     return jsonify({"ok": True, "one_off": on, "id": txn_id, **toast,
                     "undo": {"one_off": {txn_id: was}}})
+
+
+# ── The payback question on the deposit's page (PQ-03p) ──────────────────
+
+@bp.get("/transactions/<txn_id>/payback-question")
+def payback_question(txn_id: str):
+    """PQ-03p (1419:89482): Pearl's guess in words for the dashed card,
+    worked out as Needs a look's money-in question works it out."""
+    from . import payback_question as pq
+    st = store()
+    t = st.get_transaction(txn_id)
+    if t is None:
+        return jsonify({"error": "No such transaction."}), 404
+    return jsonify({"question": pq.for_deposit(st, t)})
 
 
 # ── Possible duplicates (THL-165) ────────────────────────────────────────

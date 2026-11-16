@@ -577,6 +577,10 @@ enum ReviewAnswer {
     /// the tiles and held for a Quick sort card ("A gift?"). Yes sends the
     /// parts in one request; its Undo links it back.
     case extra(String, [String: Any], label: String)
+    /// PQ-03 / PQ-03c (Payback question): a purchase tile, linked through
+    /// the payback mark as any other, with the server's toast ("mPg paid
+    /// back $20.00 for Añejo") and Undo.
+    case payback(String, charge: String, toast: String)
 
     /// What a Quick sort card asks once this answer is held for its Yes. Nil is
     /// an answer that has already happened, or that isn't one to hold.
@@ -612,6 +616,7 @@ enum ReviewAnswer {
         case .split(_, _, let label): return label
         case .credit(_, _, let label): return label
         case .extra(_, _, let label): return label
+        case .payback: return "Paid back"
         case .confirm, .always, .varies, .pair, .check, .skip, .done: return nil
         }
     }
@@ -707,6 +712,9 @@ enum ReviewAnswer {
             return try await api.post("api/transactions/\(id)/credit", ["person": person])
         case .extra(let id, let body, _):
             return try await api.post("api/transactions/\(id)/parts", body)
+        case .payback(let id, let charge, let toast):
+            let reply: MarkReply = try await api.post("api/transactions/\(id)/mark", ["case": "payback", "charge": charge])
+            return MarkReply(title: toast, detail: nil, undo: reply.undo)
         case .split(let id, let body, let label):
             // The split and its category together (finance/api.py), so the
             // Sorted card's Undo puts back the split, her share and the category.
