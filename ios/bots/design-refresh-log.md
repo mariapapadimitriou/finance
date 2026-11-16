@@ -1100,3 +1100,43 @@ Product owner decisions:
 1. **50/50 joint account:** is money Mom sends her from it all Mom's, or half hers? Recommended: all Mom's.
 2. **Joint ratio:** take the $240.00 off Mom's "them" deposits for that month? Recommended: yes. It only matters on accounts without a set share.
 3. **When to offer it:** on every transfer in from a joint account, or only once Mom has deposited there? Recommended: every one.
+
+### [designBOT → engBOT] 2026-11-16 · SETUP-02 · Your accounts, calmer
+**Status:** Redesigned · Awaiting product owner
+**Jira:** THL-120, THL-172, THL-300, THL-294, THL-304, THL-305   **Figma:** Proposals › "Your accounts v2 · Awaiting product owner" `1415:6440`, note `1415:88764`
+
+The product owner on the built AS-01 (#359): "a bit less like info being thrown at me and more intuitive. Joint should show the colourful tag beside it."
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| Before | `1415:87856` | The phone screenshot |
+| AS-01 v2 | `1415:87857` / `1415:88299` | Grouped, short names, kind icons, tags only for what differs, the button at the end of the list |
+
+The page now:
+- **The Joint tag** is the library Status pill, Tone=Joint ("Joint · 50%"). It comes from **AM-01 · Accounts** (`731:29085`), where AM-08 also uses it. Anchor is Tone=Info, as on AM-01.
+- **Quiet by default:** an account that's in her budget and only hers shows just its name. Tags appear only for Joint · 50% and Anchor.
+- **Groups:** Everyday, Savings & borrowing, and Not in your budget. The group header says "not in your budget", so those rows need no tag.
+- **Collapsed:** not-counted accounts from one bank collapse into one row ("Scotia iTRADE · 3 accounts"). A tap opens it inline, and each account opens AS-02.
+- **Kind icons:** the circle shows what kind of account it is (chequing, card, savings, mortgage, investing) instead of repeated bank initials. These are the handoff's Category icons.
+- **Short names:**
+  - Use the nickname if she set one.
+  - Otherwise, the bank plus the product, without "Account", "Card", "®" or "*" ("Amex Cobalt", "TD Minimum Chequing").
+  - Show ••last four only when two names would otherwise match.
+- **Lead line:** "Pearl set these up. Just check two things: what counts in your budget, and what you share." Under it, a summary: "7 in your budget · 1 shared · 3 not counted".
+- **The button:** "These look right" sits at the end of the list and scrolls with it, so it never covers a row. It works the same in Set Pearl up again, with the tab bar.
+- **AS-02:** its header uses the same kind icon and short name, and its rows set the same tags.
+- **Motion:** "These look right" opens the third shell (350 ms spring, success haptic). With Reduce Motion, it fades.
+
+Product owner decisions:
+1. **Collapse:** should not-counted accounts from one bank collapse into one row? Recommended: yes.
+2. **Group names:** are Everyday, Savings & borrowing and Not in your budget right?
+
+**Library follow-up:** Account row has no slot for a kind icon or tags, so these rows follow AM-01's rows (library Status pill plus Category icons). If the product owner wants, I'll add both slots to Account row; the library would then need a publish.
+
+### [designBOT → engBOT] 2026-11-16 · SETUP-02 · Approved, ready to build
+**Status:** Approved, ready to build (product owner, 2026-11-16, as drawn)
+**Jira:** THL-120, THL-172, THL-300, THL-294, THL-304, THL-305   **Figma:** Proposals › "Your accounts v2 · Approved, ready to build" `1415:6440`. AS-01 v2 `1415:87857` (light) / `1415:88299` (dark), note `1415:88764`
+
+- Not-counted accounts from one bank collapse into one row.
+- The groups are Everyday, Savings & borrowing and Not in your budget.
+- The library Account row stays as it is for now, so no publish is needed. Build these rows like AM-01's rows, with the library Status pill and the Category icons.
