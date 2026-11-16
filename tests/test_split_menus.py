@@ -331,6 +331,7 @@ class TestLessWords:
              "ios/Pearl/Views/Review/AnswerSheet.swift",
              "ios/Pearl/Views/Home/HomeView.swift",
              "ios/Pearl/Views/Onboarding/SetupFlow.swift",
+             "ios/Pearl/Views/Onboarding/AccountSetupViews.swift",
              "ios/Pearl/Views/Profile/JointMergeViews.swift",
              "ios/Pearl/Info.plist",
              "finance/unlink.py", "finance/api.py", "finance/parts_api.py", "finance/profile_api.py"]
@@ -392,8 +393,10 @@ class TestLessWords:
         "ios/Pearl/Views/Home/HomeView.swift": [
             '"\\(count) to sort"', '" Pearl sorted \\(pearlSorted) by itself."', 'had 3 paycheques.',
             '"\\(who) you \\(Format.amount(owed.total))"', '· \\(unsettled.count) not settled', 'Allowance.restCaption'],
-        "ios/Pearl/Views/Onboarding/SetupFlow.swift": ['"Only you see this. Nothing is sent."', 'title: "Shared with"',
-                                                     '"Up to six. Only you see this."'],
+        # Account setup (#359) moved O-09b's people picker to AS-02, and its
+        # "Only you see this. Nothing is sent." line went with O-09b.
+        "ios/Pearl/Views/Onboarding/AccountSetupViews.swift": ['title: "Shared with"',
+                                                             '"Up to six. Only you see this."'],
         "ios/Pearl/Views/Profile/JointMergeViews.swift": ['"Only you see these names."', '"Not joint now"'],
         "ios/Pearl/Info.plist": ["To pick people faster. Pearl keeps only the name."],
         "finance/unlink.py": ['"Unlink and remove"', 'comes off the split too."', "The cash is forgotten",

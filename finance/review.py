@@ -166,15 +166,21 @@ def build(transactions: list[Transaction], today: str | None = None,
     # 1b. Recurring transfers (2026-10-27): the same amount out of one account
     # on a schedule is asked once, "Is this a recurring transfer?", instead of
     # once for each.
-    from .recurring_transfers import series
+    from .recurring_transfers import next_after, paydays, series
     from .transfers import transfer_pairs
     by_id = {t.fingerprint: t for t in live}
     waiting = {t["id"] for t in groups["transfers"]}
     repeating = []
+    pays = None
     for s in series(live, recurring or [], set(transfer_pairs(transactions, today=today_d.isoformat()))):
         key = s["key"]
         if key in dismissed:
             continue
+        # RQ-01: "Next one around Tue, Dec 2", when the schedule says.
+        if pays is None:
+            pays = paydays(live)
+        nxt = next_after(s, today_d, pays)
+        s = {**s, "next": nxt.isoformat() if nxt else None}
         rows = [by_id[i] for i in s["ids"] if i in by_id]
         last = rows[-1]
         to = f" to {s['to']}" if s["to"] else ""

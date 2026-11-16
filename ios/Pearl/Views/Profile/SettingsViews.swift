@@ -98,7 +98,6 @@ struct SignInSecurityView: View {
     @State private var codesLeft: Int?
     @State private var codes: RecoveryCodes?
     @State private var busy = false
-    @State private var message: String?
     @State private var error: String?
 
     struct Device: Decodable, Identifiable, Hashable {
@@ -178,7 +177,6 @@ struct SignInSecurityView: View {
                     settingsRow("This iPhone", value: "Now")
                 }
             }
-            if let message = message { settingsNote(message) }
             if let error = error {
                 Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).padding(.horizontal, 16)
             }
@@ -202,7 +200,9 @@ struct SignInSecurityView: View {
                 let _: OK = try await app.api.delete("api/auth/devices/\(d.id)")
                 removingDevice = nil
                 await load()
-                message = "\(d.label ?? "That device") is signed out."
+                // POLISH-01 audit 5: a toast, not a line left on the page. A
+                // signed-out device can't be signed back in for her: no Undo.
+                app.say("\(d.label ?? "That device") is signed out.")
             }
         }
         .sheet(item: $codes) { made in
@@ -225,7 +225,7 @@ struct SignInSecurityView: View {
                 }
                 confirming = false
                 await load()
-                message = n == 1 ? "Signed out of 1 other device." : "Signed out of \(n) other devices."
+                app.say(n == 1 ? "Signed out of 1 other device." : "Signed out of \(n) other devices.")
             }
         }
     }

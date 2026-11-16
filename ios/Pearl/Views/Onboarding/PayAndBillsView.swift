@@ -22,6 +22,12 @@ struct PayAndBillsView: View {
         case bill(IncomeBills.Bill), addBill
         case ask(IncomeBills.Ask)
 
+        /// O-10f and O-10g (POLISH-01) size to their content.
+        var fits: Bool {
+            if case .ask = self { return true }
+            return false
+        }
+
         var id: String {
             switch self {
             case .ask(let a): return "a" + a.id
@@ -128,7 +134,7 @@ struct PayAndBillsView: View {
                     WhatIsItSheet(ask: a, bills: bills) { reply in apply(reply) }
                 }
             }
-            .presentationDetents([.large])
+            .largeUnless(which.fits)
             .presentationDragIndicator(.visible)
         }
     }
@@ -683,8 +689,10 @@ struct SheetFrame<Content: View, Actions: View>: View {
                     content()
                 }
                 .padding(16)
+                .sheetPart()
             }
             VStack(spacing: 6, content: actions).padding(.horizontal, 16).padding(.bottom, 8)
+                .sheetPart()
         }
         .foregroundColor(Pearl.ink)
         .background(SheetBackground())  // REFRESH-05: the sheet surface is the page's

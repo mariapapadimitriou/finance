@@ -1633,6 +1633,14 @@ struct Review: Decodable {
         let when: String?
         let count: Int?
         let to: String?
+        /// RQ-01 (POLISH-01): "monthly", "biweekly", "weekly" or "payday".
+        var cadence: String? = nil
+        var amount: Double? = nil
+        /// Each payment's day, oldest first, for the rhythm.
+        var dates: [String]? = nil
+        var first: String? = nil
+        /// When the next one is due on the schedule.
+        var next: String? = nil
     }
 
     /// Pearl's guess: a category name for "unsure", an income kind, or an

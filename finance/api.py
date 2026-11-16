@@ -1350,8 +1350,14 @@ def set_transaction_share(txn_id: str):
         # On a joint account the share is what says whose it was: the whole
         # of it (yours), nothing (theirs, the default) or part — and that
         # applies to money coming in as much as going out.
+        from .impact import snapshot, undo_payload
         from .transfers import apply_transfer_matches
         rule = ""
+        # POLISH-01: Whose was it? answers with a toast and Undo, which puts
+        # her share back as it was (a split-always rule she set stays).
+        before = snapshot(st, st.all_transactions())
+        # What she set on this row, if anything; none follows the account's share.
+        was_share = txn.my_share if txn.share_set else None
         if raw is None or (isinstance(raw, str) and not raw.strip()):
             # "Mine" on a charge from a name she always splits: all hers this
             # once, said outright, or the split would come straight back.
@@ -1378,7 +1384,10 @@ def set_transaction_share(txn_id: str):
             elif part or body.get("always") is False:
                 st.set_joint_split(txn.account_id, txn.merchant, None)
         apply_transfer_matches(st)
-        return jsonify({"ok": True, "my_share": st.get_transaction(txn_id).my_share, "rule": rule})
+        undo = undo_payload(before, snapshot(st, st.all_transactions()))
+        undo["marks"] = {"shares": {txn_id: was_share}}
+        return jsonify({"ok": True, "my_share": st.get_transaction(txn_id).my_share, "rule": rule,
+                        "undo": undo})
     if txn.amount <= 0:
         return jsonify({"error": "Only a charge can be split. This is money "
                                  "that came back."}), 400

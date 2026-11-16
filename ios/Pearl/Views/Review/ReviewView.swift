@@ -573,8 +573,9 @@ enum ReviewAnswer {
     case party(String, name: String)
     /// "Same purchase?": count it once, or both are real.
     case duplicate(String, same: Bool)
-    /// "Is this a recurring transfer?": what the series is.
-    case recurring(key: String, kind: String?, category: String?)
+    /// "Is this a recurring transfer?": what the series is. RQ-01b: the
+    /// toast it says ("Rent · all 9 sorted, and the ones to come").
+    case recurring(key: String, kind: String?, category: String?, toast: String? = nil)
     /// "No, it doesn't repeat": not asked again.
     case dismiss(String)
     /// Skip for now, or put a skipped one back.
@@ -704,11 +705,12 @@ enum ReviewAnswer {
             return try await api.put("api/transactions/\(id)/party", ["name": name])
         case .duplicate(let id, let same):
             return try await api.post("api/review/duplicates/\(id)", ["answer": same ? "same" : "different"])
-        case .recurring(let key, let kind, let category):
+        case .recurring(let key, let kind, let category, let toast):
             var body: [String: Any] = ["key": key]
             if let kind = kind { body["kind"] = kind }
             if let category = category { body["category"] = category }
-            return try await api.post("api/recurring-transfers", body)
+            let reply: MarkReply = try await api.post("api/recurring-transfers", body)
+            return MarkReply(title: toast ?? reply.title, detail: toast == nil ? reply.detail : nil, undo: reply.undo)
         case .dismiss(let key):
             return try await api.post("api/review/dismiss", ["key": key])
         case .skip(let key, let on):

@@ -318,6 +318,9 @@ def _series(account: str, cents: int, dest: str | None, cadence: str,
         "to": where[1] if where else "", "ids": [t.fingerprint for t in rows],
         "first": rows[0].date[:10], "last": last.date[:10], "count": len(rows),
         "when": when_words(cadence, _d(last.date)),
+        # RQ-01 (POLISH-01): each payment's day, oldest first, for the rhythm
+        # Is this a recurring transfer? draws (one pill per payment).
+        "dates": [t.date[:10] for t in rows],
     }
 
 

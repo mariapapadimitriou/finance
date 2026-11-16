@@ -370,7 +370,10 @@ struct TransactionDetailView: View {
     @State private var unlinkingLink: Transaction.LinkInfo?
     /// S-05o's View the e-Transfer / deposit / refund.
     @State private var viewing: Transaction?
-    @State private var message: String?
+    /// TF-01c: "This isn't a transfer?" asks first.
+    @State private var unpairing = false
+    /// TF-01c: the other end, asked What was this? once this one is answered.
+    @State private var otherSide: String?
     @State private var error: String?
     /// S-04r v2s: the hero has scrolled under the bar.
     @State private var heroGone = false
@@ -392,7 +395,10 @@ struct TransactionDetailView: View {
                             .onChange(of: g.frame(in: .global).maxY) { heroGone = $0 < 120 }
                     })
                 if let transfer = t.transfer, guessing == nil {
+                    // TF-01 (1389:24632 / 1389:24833): How it counts, Moved,
+                    // Options, Details.
                     OwnBody { transferLegs(transfer) }
+                    OwnBody { details }
                 } else {
                     OwnBody { whatItIs }
                     OwnBody { linked }
@@ -401,11 +407,6 @@ struct TransactionDetailView: View {
                     OwnBody { depositParts }
                     OwnBody { options }
                     OwnBody { details }
-                }
-                if let message = message {
-                    Text(message).font(Nacre.footnote).foregroundColor(Pearl.ink)
-                        .padding(.horizontal, 16).padding(.top, 8)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
                 if let error = error {
                     Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
@@ -454,7 +455,11 @@ struct TransactionDetailView: View {
                 newOnes = draft.always
             }
         }
-        .sheet(item: $sorting, onDismiss: { Task { await load() } }) { ask in
+        .sheet(item: $sorting, onDismiss: {
+            // Closed without an answer: TF-01c doesn't go on to the other end.
+            otherSide = nil
+            Task { await load() }
+        }) { ask in
             // The stored category stays hers unless she changes it; a question is answered in place.
             if let guessing = guessing {
                 // T-96: the guess is wrong, so the answer is the question's. Yes is already on the page.
@@ -486,9 +491,11 @@ struct TransactionDetailView: View {
                     }
                 }
             } else {
+                // TF-01c's other end is its own transaction, not this page's.
+                let here = ask.t.id == t.id
                 AnswerSheet(ask: ask, categories: categories, accounts: [], names: recent, api: app.api,
-                            pageAlways: offersNewOnes && newOnesOn, pageAmount: Format.money(t),
-                            pageCategory: chosenCategory,
+                            pageAlways: here ? offersNewOnes && newOnesOn : nil, pageAmount: here ? Format.money(t) : nil,
+                            pageCategory: here ? chosenCategory : nil,
                             onCategory: ask.kind == .category && !t.inflow ? { name, remember in
                                 sorting = nil
                                 // Pearl's guess, picked: that's her yes.
@@ -508,7 +515,13 @@ struct TransactionDetailView: View {
                             } : nil,
                             confirmsGuess: false, fromPage: true) { answer in
                     sorting = nil
-                    Task { await run { try await answer.send(app.api).title ?? answer.done } }
+                    // TF-01c: then what the other end was.
+                    let other = otherSide
+                    otherSide = nil
+                    Task {
+                        await answered(answer)
+                        if let other = other { await askOtherSide(other) }
+                    }
                 }
             }
         }
@@ -519,7 +532,7 @@ struct TransactionDetailView: View {
                             : a.step == .kinds ? t.incomeType : t.regularPay?.cadence,
                         fromPage: a.step == .into) { answer in
                 asking = nil
-                Task { await run { try await answer.send(app.api).title ?? answer.done } }
+                Task { await answered(answer) }
             }
         }
         .sheet(isPresented: $splitting) {
@@ -838,11 +851,12 @@ struct TransactionDetailView: View {
                         })
         }
         .sheet(isPresented: $whose) {
-            WhoseSheet(t: t, api: app.api) { said in
+            WhoseSheet(t: t, api: app.api) { said, undo in
                 whose = false
-                Task { await run { said } }
+                // "Yours." (POLISH-01): a toast with Undo, not a line under the page.
+                Task { await run { withAnimation { toast = (said, undoing(undo)) }; return nil } }
             }
-            .presentationDetents([.medium, .large])
+            .fitsContent()
             .presentationDragIndicator(.visible)
         }
         .navigationDestination(isPresented: $seeingOwed) { OwedView() }
@@ -872,26 +886,53 @@ struct TransactionDetailView: View {
                         AngularGradient(colors: [Nacre.rose, Nacre.lilac, Nacre.seaglass, Nacre.rose], center: .center),
                         lineWidth: 1.2))
                     .padding(.bottom, 6)
+            } else {
+                // TF-01: ⇄ in the avatar, like every transaction page's initials.
+                Text("\u{21C4}").font(Nacre.headline).foregroundColor(Pearl.ink)
+                    .frame(width: 56, height: 56)
+                    .background(Circle().fill(Nacre.glass))
+                    .overlay(Circle().strokeBorder(Nacre.edge, lineWidth: 1.5))
+                    .padding(.bottom, 6)
+                    .accessibilityHidden(true)
             }
-            // T-80: tap the name to rename the merchant.
-            Button { if t.transfer == nil { renaming = true } } label: {
+            if t.transfer == nil {
+                // T-80: tap the name to rename the merchant.
+                Button { renaming = true } label: {
+                    Text(t.merchant).font(Nacre.title2).foregroundColor(Pearl.ink)
+                        .multilineTextAlignment(.center)
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityHint("Rename the merchant")
+            } else {
+                // TF-01 (POLISH-01): a transfer's name isn't renamed here, but
+                // it's in ink, not dimmed as a disabled button (it was
+                // `.disabled(t.transfer != nil)`), on up to two lines.
                 Text(t.merchant).font(Nacre.title2).foregroundColor(Pearl.ink)
-                    .multilineTextAlignment(.center)
+                    .multilineTextAlignment(.center).lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
             }
-            .buttonStyle(.plain)
-            .disabled(t.transfer != nil)
-            .accessibilityAddTraits(.isHeader)
-            .accessibilityHint(t.transfer == nil ? "Rename the merchant" : "")
             Text(heroAmount)
                 .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
                 // T-41w: money that paid a purchase back is money in, green.
-                // T-41m: a refund of her share too.
-                .foregroundColor(paidBackAnswer != nil || t.refundOf?.share == true ? Pearl.moneyIn : t.tone)
+                // T-41m: a refund of her share too. TF-01: a transfer in
+                // money-transfer grey, with no sign.
+                .foregroundColor(paidBackAnswer != nil || t.refundOf?.share == true ? Pearl.moneyIn
+                                 : t.transfer != nil ? Pearl.muted : t.tone)
                 .lineLimit(1).minimumScaleFactor(0.5)
-                .accessibilityLabel(Format.spoken(heroAmount))
-            Text(t.transfer != nil ? "Doesn’t count · Between your accounts" : dateLine)
+                .accessibilityLabel(t.transfer != nil ? "Moved \(heroAmount)" : Format.spoken(heroAmount))
+            Text(t.transfer.map { transferDates($0) } ?? dateLine)
                 .font(Nacre.footnote).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center)
+            if t.transfer != nil {
+                // TF-01's Counts pill: "⇄  Doesn’t count".
+                Text("\u{21C4}  Doesn’t count")
+                    .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    .padding(.horizontal, 12).frame(height: 30)
+                    .background(Capsule().fill(Nacre.glass))
+                    .padding(.top, 4)
+            }
             if t.transfer == nil {
                 // T-03's Counts pill: Spending, Income, Refund or Not counted.
                 HStack(spacing: 6) {
@@ -939,6 +980,8 @@ struct TransactionDetailView: View {
     /// purchase, as on the card statement, with "Your share" under it. Not
     /// sure yet keeps what it counts as so far (S-04u).
     private var heroAmount: String {
+        // TF-01: a transfer has no sign; it didn't leave her.
+        if t.transfer != nil { return Format.amount(t.amount) }
         if let s = t.splitting, !s.unsure, !t.inflow, let full = t.fullAmount {
             return "\u{2212}" + Format.amount(full)
         }
@@ -2050,34 +2093,103 @@ struct TransactionDetailView: View {
         }
     }
 
-    // MARK: A transfer (T-05)
+    // MARK: A transfer (TF-01, POLISH-01; was T-05)
 
-    @ViewBuilder private func transferLegs(_ transfer: Transaction.Transfer) -> some View {
-        let outDate = transfer.from == t.account ? t.date : (transfer.otherDate ?? t.date)
-        let inDate = transfer.to == t.account ? t.date : (transfer.otherDate ?? t.date)
-        SolidCard {
-            leg(account: transfer.from, sub: "Out · \(Format.weekdayDay(outDate))", sign: "\u{2212}")
-            RowSeparator(inset: 72)
-            leg(account: transfer.to, sub: "In · \(Format.weekdayDay(inDate))", sign: "+")
-        }
-        Spacer(minLength: 120)
-        Button("This isn’t a transfer") { sorting = sortAsk(.transfer) }
-            .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
-            .padding(.top, 24)
+    /// The day each end moved.
+    private func legDates(_ transfer: Transaction.Transfer) -> (out: String, in: String) {
+        (transfer.from == t.account ? t.date : (transfer.otherDate ?? t.date),
+         transfer.to == t.account ? t.date : (transfer.otherDate ?? t.date))
     }
 
-    private func leg(account: String, sub: String, sign: String) -> some View {
-        HStack(spacing: 14) {
+    /// "Thu, Nov 12 → Fri, Nov 13", or the one day.
+    private func transferDates(_ transfer: Transaction.Transfer) -> String {
+        let (out, into) = legDates(transfer)
+        let a = Format.weekdayDay(out), b = Format.weekdayDay(into)
+        return a == b ? a : "\(a) \u{2192} \(b)"
+    }
+
+    /// TF-01 (1389:24632 / 1389:24833; THL-292, THL-181): How it counts, both
+    /// ends with how far apart, and "This isn't a transfer", which asks first
+    /// (TF-01c). The red link under a 120 pt gap is gone.
+    @ViewBuilder private func transferLegs(_ transfer: Transaction.Transfer) -> some View {
+        let (outDate, inDate) = legDates(transfer)
+        section("How it counts")
+        GlassCard {
+            // Opens What was this? to change it.
+            Button { sorting = sortAsk(.transfer) } label: {
+                categoryRow(symbol: "", title: "Between your accounts", sub: nil, systemImage: "arrow.left.arrow.right")
+            }
+            .buttonStyle(.plain)
+            .disabled(busy)
+            .accessibilityHint("Changes what it was")
+        }
+        section("Moved")
+        SolidCard {
+            leg(account: transfer.from, sub: "Out · \(Format.weekdayDay(outDate))")
+            apart(outDate, inDate)
+            leg(account: transfer.to, sub: "In · \(Format.weekdayDay(inDate))")
+        }
+        section("Options")
+        GlassCard {
+            Button { unpairing = true } label: {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("This isn’t a transfer").font(Nacre.body).foregroundColor(Pearl.ink)
+                        Text("Pearl asks first, then you say what each side was")
+                            .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 52)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(busy)
+            .accessibilityElement(children: .combine)
+        }
+        .sheet(isPresented: $unpairing) {
+            // TF-01c (1390:2451 / 1390:2586): a Pearl sheet, not an alert.
+            PearlConfirmSheet(overline: "Transfer · \(Format.amount(t.amount))", title: "This isn’t a transfer?",
+                              message: "Pearl stops pairing \(transfer.from) and \(transfer.to), and asks you what each one was. Nothing else changes.",
+                              primary: "Not a transfer", secondary: "Keep it a transfer",
+                              onClose: { unpairing = false }) {
+                unpairing = false
+                otherSide = transfer.otherId
+                try? await Task.sleep(nanoseconds: 450_000_000)
+                sorting = sortAsk(.transfer)
+            }
+        }
+    }
+
+    /// TF-01: an end of the transfer, as a transaction row with no amount
+    /// (the hero already says it).
+    private func leg(account: String, sub: String) -> some View {
+        HStack(spacing: 12) {
             Initials(name: account)
             VStack(alignment: .leading, spacing: 2) {
                 Text(account).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
                 Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
             }
-            Spacer(minLength: 8)
-            Text(sign + Format.amount(t.amount)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.muted)
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 16).padding(.vertical, 12)
+        .padding(.horizontal, 16).padding(.vertical, 11)
         .accessibilityElement(children: .combine)
+    }
+
+    /// "1 day apart", "Same day": a line from one end's avatar to the other's.
+    private func apart(_ out: String, _ into: String) -> some View {
+        let days = abs(Calendar.current.dateComponents([.day], from: Format.localDay(out) ?? Date(),
+                                                       to: Format.localDay(into) ?? Date()).day ?? 0)
+        return HStack(spacing: 26) {
+            // Under the avatars' centre (16 + 40 / 2).
+            Rectangle().fill(Pearl.muted.opacity(0.5)).frame(width: 1.5, height: 22)
+            Text(days == 0 ? "Same day" : days == 1 ? "1 day apart" : "\(days) days apart")
+                .font(Nacre.footnote).foregroundColor(Pearl.muted)
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, 35.25)
     }
 
     // MARK: Parts
@@ -2194,17 +2306,45 @@ struct TransactionDetailView: View {
         }
     }
 
+    /// Does a change, then reloads. What it returns is said in the toast
+    /// (POLISH-01: it was a plain line left under the page, "Yours.").
     private func run(_ work: () async throws -> String?) async {
         busy = true
         defer { busy = false }
         do {
-            message = try await work()
+            if let said = try await work() {
+                withAnimation { splitToast = nil; toast = (said, nil) }
+            }
             error = nil
             await load()
             app.changed()
         } catch {
             self.error = app.handle(error)
         }
+    }
+
+    /// An answer from What was this? (or its other questions): the toast
+    /// says what it did, with the server's Undo.
+    private func answered(_ answer: ReviewAnswer) async {
+        await run {
+            let reply = try await answer.send(app.api)
+            withAnimation { splitToast = nil; toast = (reply.title ?? answer.done, undoing(reply.undo)) }
+            return nil
+        }
+    }
+
+    /// TF-01c: What was this? for the transfer's other end.
+    private func askOtherSide(_ id: String) async {
+        guard let other: Transaction = try? await app.api.get("api/transactions/\(id)") else { return }
+        let brief = BriefTransaction(id: other.id, date: other.date, merchant: other.merchant,
+                                     description: other.description,
+                                     amount: other.inflow ? -abs(other.amount) : abs(other.amount),
+                                     accountName: other.account, accountId: other.accountId,
+                                     category: other.category, skipped: nil, likely: nil)
+        // The sheet that just closed has to be gone first.
+        try? await Task.sleep(nanoseconds: 450_000_000)
+        sorting = Ask(kind: other.inflow ? .moneyIn : .transfer,
+                      item: Review.Item(key: "sort:" + other.id, txn: brief, skipped: nil))
     }
 
     /// T-41b: "Unlink? · It goes back to Needs a look."
@@ -2666,11 +2806,15 @@ struct TagsSheet: View {
 /// A charge on a joint account: hers by default, or all theirs, or a part
 /// she says, which is remembered for that merchant on the account unless she
 /// turns it off (finance/joint.py).
+///
+/// POLISH-01 (audit, note 1394:3149): Mine and theirs answer on the tap, with
+/// a toast and Undo after; Part of it keeps Save, since she types an amount.
 struct WhoseSheet: View {
     @Environment(\.dismiss) private var dismiss
     let t: Transaction
     let api: APIClient
-    let done: (String) -> Void
+    /// What to say, and the server's Undo when there is one.
+    let done: (String, JSONValue?) -> Void
 
     @State private var mode: String
     @State private var part: String
@@ -2681,7 +2825,7 @@ struct WhoseSheet: View {
     /// AM-21j for this one purchase (JOINT-B): someone has paid on its split.
     @State private var asking: [JointChange]?
 
-    init(t: Transaction, api: APIClient, done: @escaping (String) -> Void) {
+    init(t: Transaction, api: APIClient, done: @escaping (String, JSONValue?) -> Void) {
         self.t = t
         self.api = api
         self.done = done
@@ -2719,6 +2863,7 @@ struct WhoseSheet: View {
             }
             .overlay(alignment: .trailing) { CloseButton { dismiss() } }
             .padding(.top, 20)
+            .sheetPart()
             HStack(spacing: 12) {
                 RowAvatar(name: t.merchant, size: 48, font: Nacre.headline)
                 VStack(alignment: .leading, spacing: 2) {
@@ -2728,15 +2873,17 @@ struct WhoseSheet: View {
                 Spacer(minLength: 0)
             }
             .accessibilityElement(children: .combine)
+            .sheetPart()
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     GlassCard {
-                        ChoiceLine(title: "Mine", sub: "All of it counts as yours", selected: mode == "mine") { mode = "mine" }
+                        ChoiceLine(title: "Mine", sub: "All of it counts as yours", selected: mode == "mine") { pick("mine") }
                         RowSeparator()
-                        ChoiceLine(title: "\(t.joint)’s", sub: "None of it counts", selected: mode == "theirs") { mode = "theirs" }
+                        ChoiceLine(title: "\(t.joint)’s", sub: "None of it counts", selected: mode == "theirs") { pick("theirs") }
                         RowSeparator()
                         ChoiceLine(title: "Part of it", sub: "Say how much was yours", selected: mode == "part") { mode = "part" }
                     }
+                    .disabled(busy)
                     if mode == "part" {
                         FieldRow(label: "Your part", text: $part, prompt: Format.amount(WhoseAnswer.suggested(full: full, share: t.jointShare)))
                             .keyboardType(.decimalPad)
@@ -2745,7 +2892,8 @@ struct WhoseSheet: View {
                             .font(Nacre.body).tint(Pearl.action)
                             .padding(.horizontal, 16).frame(minHeight: 52)
                             .sheetCard()
-                    } else if mode == "mine" {
+                    } else {
+                        // Before Mine is tapped, since Mine answers at once.
                         Toggle("Always all mine at \(t.merchant)", isOn: $mineAlways)
                             .font(Nacre.body).tint(Pearl.action)
                             .padding(.horizontal, 16).frame(minHeight: 52)
@@ -2756,12 +2904,18 @@ struct WhoseSheet: View {
                     }
                     if let error = error { Hint(text: error) }
                 }
+                .sheetPart()
             }
-            Button("Save") { Task { await save() } }
-                .buttonStyle(NacreButtonStyle(busy: busy))
-                .disabled(busy || !ready)
+            if mode == "part" {
+                Button("Save") { Task { await save() } }
+                    .buttonStyle(NacreButtonStyle(busy: busy))
+                    .disabled(busy || !ready)
+                    .sheetPart()
+            }
         }
         .padding(.horizontal, 16).padding(.bottom, 8)
+        // POLISH-01: sized to content; the gaps between its parts count too.
+        .background(Color.clear.frame(height: 14 * 3 + 8).sheetPart())
         .background(SheetBackground())
         .sheet(isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } })) {
             if let changes = asking {
@@ -2778,10 +2932,17 @@ struct WhoseSheet: View {
         let rule: String?
         let needsConfirm: Bool?
         let changes: [JointChange]?
+        let undo: JSONValue?
         enum CodingKeys: String, CodingKey {
-            case rule, changes
+            case rule, changes, undo
             case needsConfirm = "needs_confirm"
         }
+    }
+
+    /// Mine or theirs: answered on the tap.
+    private func pick(_ answer: String) {
+        mode = answer
+        Task { await save() }
     }
 
     private func save() async {
@@ -2818,7 +2979,8 @@ struct WhoseSheet: View {
             case "part": said = reply.rule.flatMap { $0.isEmpty ? nil : $0 } ?? "Your part is \(Format.amount(amount ?? 0))."
             default: said = mineAlways ? "Yours, and every \(t.merchant) on this account from now on." : "Yours."
             }
-            done(said)
+            // Undo puts her share back; not "every one from now on", which it can't take back.
+            done(said, mode == "mine" && mineAlways ? nil : reply.undo)
         } catch let e as APIError {
             if case .server = e, confirm { throw SplitMenuError(words: e.localizedDescription) }
             throw e
