@@ -13,7 +13,7 @@ Profile › Income and bills › Your plan. The rules this keeps (product owner,
   comes off in "Already spent", and the rest of the plan is held back in a row
   of its own ("plan"), never below $0. So with nothing spent yet the Allowance
   is her income less her bills less the plan, which is the figure YP-01 says
-  ("With your income and bills, that leaves an Allowance of $1,180 a month").
+  (YOUR ALLOWANCE "$1,180 a month · plan total $1,160", LT-05).
   A charge that is a bill is a bill: it isn't counted again against a plan.
 * **While in use, a change counts at once**: Save or Remove (YP-04, YP-05)
   and the chat's Set it (the chat's confirm is the confirm; PC-12/PC-13).

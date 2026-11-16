@@ -20,6 +20,11 @@ import SwiftUI
 // The tick on a plan row was decoration and is gone (YP-01, YP-03); Remove
 // lives in YP-04.
 //
+// Less text (LT-05 · YP-01 1425:72756 / 1425:72885; TEXT-01, approved
+// 2026-11-16): "From your last 3 months.", EACH MONTH, YOUR ALLOWANCE "$1,180
+// a month · plan total $1,160", rows "Usual $214"; YP-02, YP-04, YP-05 and
+// YP-07 say the money in a line; YP-08 has no "Next: …" footnote.
+//
 // A plan only proposes: the Allowance follows it only after Use this plan and
 // YP-02 (finance/your_plan.py). Every write returns the whole page again, so
 // nothing here adds anything up. PC-13's "See it in Your plan" opens this
@@ -138,7 +143,7 @@ struct YourPlanView: View {
                 .accessibilityAddTraits(.isHeader)
             Text(lead(plan)).font(Nacre.body).foregroundColor(Pearl.ink)
                 .fixedSize(horizontal: false, vertical: true)
-            CardCaption("Each month · Plan · Your usual")
+            CardCaption("Each month")
             GlassCard {
                 ForEach(Array(plan.rows.enumerated()), id: \.element.id) { i, row in
                     if i > 0 { RowSeparator(inset: 16) }
@@ -148,7 +153,7 @@ struct YourPlanView: View {
                 // YP-01, YP-03: "⊕ Add a category" opens YP-08.
                 AddLine(title: "Add a category") { sheet = .add }
             }
-            CardCaption("What it means")
+            if plan.allowance != nil { CardCaption("Your Allowance") }
             Text(meaning(plan)).font(Nacre.footnote).foregroundColor(Pearl.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 16)
@@ -161,15 +166,14 @@ struct YourPlanView: View {
             let since = plan.since.map { " since \(Format.short($0))" } ?? ""
             return "In use\(since). Your Allowance follows it."
         }
-        return "Pearl\u{2019}s suggestion from your last 3 months. Nothing changes until you use it."
+        return "From your last 3 months."
     }
 
-    /// WHAT IT MEANS: "Total $1,160 a month. With your income and bills, that
-    /// leaves an Allowance of $1,180 a month."
+    /// YOUR ALLOWANCE: "$1,180 a month · plan total $1,160" (LT-05). With no
+    /// income there's no Allowance to name: "Plan total $1,160", no caption.
     private func meaning(_ plan: YourPlan) -> String {
-        let total = "Total \(Format.whole(plan.total)) a month."
-        guard let allowance = plan.allowance else { return total }
-        return total + " With your income and bills, that leaves an Allowance of \(allowance < 0 ? "-" : "")\(Format.whole(allowance)) a month."
+        guard let allowance = plan.allowance else { return "Plan total \(Format.whole(plan.total))" }
+        return "\(allowance < 0 ? "-" : "")\(Format.whole(allowance)) a month \u{00B7} plan total \(Format.whole(plan.total))"
     }
 
     // MARK: YP-06
@@ -235,7 +239,7 @@ struct YourPlanView: View {
             }
         case .remove(let row):
             PearlConfirmSheet(overline: "Your plan", title: "Remove \(row.category) from your plan?",
-                              message: "\(row.category) goes back to your usual, \(Format.whole(row.usual)) a month. If the plan is in use, your Allowance changes with it.",
+                              message: "Back to your usual, \(Format.whole(row.usual)).",
                               primary: "Remove", secondary: "Keep it",
                               onClose: { sheet = nil }) {
                 let reply: YourPlan = try await app.api.delete("api/your-plan/rows/\(row.category)")
@@ -250,21 +254,18 @@ struct YourPlanView: View {
         allowance.map { " \u{00B7} Allowance \($0 < 0 ? "-" : "")\(Format.whole($0)) a month" } ?? ""
     }
 
-    /// YP-07's body. Without an income there's no Allowance to name, so that
-    /// clause waits for one, as on YP-02.
-    private var stopMessage: String {
-        guard let without = plan?.allowanceWithout else {
-            return "Your usual amounts come back. The plan stays here to use again."
-        }
-        return "Your usual amounts come back, and your Allowance goes back to \(without < 0 ? "-" : "")\(Format.whole(without)) a month. The plan stays here to use again."
+    /// YP-07's body: "Allowance back to $1,240 a month." (TEXT-01). Without
+    /// an income there's no Allowance to name, so there's no body.
+    private var stopMessage: String? {
+        guard let without = plan?.allowanceWithout else { return nil }
+        return "Allowance back to \(without < 0 ? "-" : "")\(Format.whole(without)) a month."
     }
 
-    /// YP-02's body. Without an income there's no Allowance to name, so the
-    /// first sentence waits for one.
-    private var useMessage: String {
-        let rest = "These plans replace your usual amounts in Income and bills. You can change or stop it any time."
-        guard let allowance = plan?.allowance else { return rest }
-        return "Your Allowance becomes \(allowance < 0 ? "-" : "")\(Format.whole(allowance)) a month, from today. " + rest
+    /// YP-02's body: "Allowance $1,180 a month, from today." (TEXT-01).
+    /// Without an income there's no Allowance to name, so there's no body.
+    private var useMessage: String? {
+        guard let allowance = plan?.allowance else { return nil }
+        return "Allowance \(allowance < 0 ? "-" : "")\(Format.whole(allowance)) a month, from today."
     }
 
     // MARK: Loading and saving
@@ -308,9 +309,9 @@ struct YourPlanView: View {
     }
 }
 
-/// YP-01's Plan row: "Groceries · Usual $412   $400  Edit", and "Usual $214
-/// · set in Pearl chat" for a plan set there. The row opens YP-04. No tick:
-/// it was decoration (note 1353:11493).
+/// YP-01's Plan row: "Groceries · Usual $412   $400  Edit", wherever the
+/// plan was set (TEXT-01 cut "· set in Pearl chat"). The row opens YP-04. No
+/// tick: it was decoration (note 1353:11493).
 private struct PlanLine: View {
     let row: YourPlan.Row
     let edit: () -> Void
@@ -341,7 +342,7 @@ private struct PlanLine: View {
     }
 
     private var sub: String {
-        "Usual \(Format.whole(row.usual))" + (row.source == "chat" ? " \u{00B7} set in Pearl chat" : "")
+        "Usual \(Format.whole(row.usual))"
     }
 }
 
@@ -371,7 +372,7 @@ private struct PlanAmountSheet: View {
         PearlSheet(dismissDisabled: busy) {
             PearlSheetHeader(overline: "Your plan", title: row.category, close: close)
                 .disabled(busy)
-            Text("Your usual is \(Format.whole(row.usual)) a month. Plans round to the nearest $5.")
+            Text("Usual \(Format.whole(row.usual))")
                 .font(Pearl.text(.headline)).foregroundColor(Pearl.ink)
                 .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 6) {
@@ -478,15 +479,8 @@ private struct AddCategorySheet: View {
                 // YP-08 empty: nothing to add, so Done closes the sheet.
                 PearlSheetButtons(primary: "Done", onPrimary: close)
             } else {
-                VStack(spacing: 0) {
-                    Text("Next: how much each month (starts at your usual).")
-                        .font(Pearl.text(.footnote)).foregroundColor(Pearl.ink)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 16)
-                    PearlSheetButtons(primary: "Next", onPrimary: { if let p = picked { next(p) } })
-                        .disabled(picked == nil)
-                }
+                PearlSheetButtons(primary: "Next", onPrimary: { if let p = picked { next(p) } })
+                    .disabled(picked == nil)
             }
         }
         .task { await load() }
