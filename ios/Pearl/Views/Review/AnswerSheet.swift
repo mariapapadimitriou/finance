@@ -229,13 +229,13 @@ struct AnswerSheet: View {
         .task(id: step) { await loadOptions() }
         .sheet(isPresented: $whosing) {
             if let f = full {
-                WhoseSheet(t: f, api: api) { said in
+                WhoseSheet(t: f, api: api) { said, _ in
                     whosing = false
                     whoseSaid = said
                     // Her part may have changed, so Split my part says so.
                     Task { full = try? await api.get("api/transactions/\(f.id)") }
                 }
-                .presentationDetents([.medium, .large])
+                .fitsContent()
                 .presentationDragIndicator(.visible)
             }
         }
