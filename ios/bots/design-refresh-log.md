@@ -842,3 +842,34 @@ The strings are in the note.
 - **Token:** repoint color/text/money-transfer from mist to lagoon/700 (light, 5.1:1 on the card) and lagoon/400 (dark, 8.9:1). No new token is needed.
 - **Other not-counted rows** stay muted, with no sign.
 
+### [designBOT] 2026-11-15 · CLEAN-01 · Handoff file: Pearl app = built, Proposals = not built
+**Status:** Done (product owner's rule, 2026-11-15)
+
+**Moved into Pearl app:**
+- New "Pearl chat" group, section `1369:70113`: PB-01 and PC-03 to PC-13 (light and dark), plus note `1340:8893`.
+- PC-01 → Home › `1369:70114`. PC-02 → Cash flow and transactions › `1369:70115`.
+- All marked "built (#348, #352)". PC-05/PC-06 now quote the user ("You said: “Out with friends Saturday.”"), as #352 built.
+- TEST-31 (built in #338): T-09w/rs, S-04w/w2/w3, S-04m/m2/m3/m4, S-40w/m, S-11w/m, T-41w/m, with notes `1294:2593` and `1303:3395` → Splits and paybacks › `1369:70116`.
+- S-06 v2/v3/v3a (still built and cited in SplitFlow) → Splits and paybacks › `1369:70117`.
+- The Paid back note `1352:10319` → Sorting › Paid back `1361:67898`.
+
+**Deleted:**
+- Ask Pearl AI-10 to AI-17. PC-12's preview card covers AI-17's suggestion.
+- AI-22.
+- The Tell Pearl section TP-01 to TP-09 and its note.
+- From To check:
+  - S-03 (covered by S-03r2 / S-03b v2)
+  - S-05, S-19, S-20 (covered by S-04r v2 / S-44)
+  - T-75 (covered by S-01jr)
+  - O-09c (covered by O-09cr)
+- The ticket tags and notes that belonged to those frames, and the now-empty sections To check, TEST-31, Paid back and Pearl chat on Proposals.
+
+**Left on Proposals:**
+- Deferred (recovery codes)
+- AI phase 2 sketches AI-20 and AI-21 (note rewritten)
+- Trips TR-17/TR-18 (approved, not built)
+- Your plan YP-07 to YP-09 (approved, not built)
+- Transfer colour (awaiting)
+- **TRANSFER-01 approved (product owner, 2026-11-15): TC-A.**
+  - The TC-A frames (Cash flow, Calendar day list, trip page) are "Approved, ready to build". TC-B and TC-C are deleted (`1368:8498`, `1368:8603`, `1368:8696`, `1368:8803`). Note `1368:10078` is updated.
+  - **Library:** `color/text/money-transfer` now points to lagoon/700 (light) and lagoon/400 (dark); it was mist/500 / mist/300. The library is not published yet; the product owner publishes it by hand.
