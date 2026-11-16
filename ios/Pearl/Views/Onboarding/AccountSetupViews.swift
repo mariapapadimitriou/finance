@@ -15,6 +15,8 @@ import UIKit
 //       "These look right" ends the list and scrolls with it; it finishes
 //       the step, changed or not (decision 2). Part 3 of setup, and Set
 //       Pearl up again's "Check your accounts" after Start over.
+//       LT-04 1425:7857 / 1425:8059 (Less text, TEXT-01): the lead is "Check
+//       what counts and what you share."; no footer over the button.
 // AS-02 1380:76064 / 1380:76106  One account, every option on one page:
 //       Include in my budget, Shared with someone (inline: who, O-09cr's
 //       picker, and how purchases split), Part of my Anchor (savings only),
@@ -138,7 +140,7 @@ struct AccountSetupView: View {
         NacreScreen {
             if onDone == nil { ShellProgress(part: 3, name: "Your money", opened: opened) }
             Text("Your accounts").font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
-            Text("Pearl set these up. Just check two things: what counts in your budget, and what you share.")
+            Text("Check what counts and what you share.")
                 .font(Nacre.body).fixedSize(horizontal: false, vertical: true)
             if !accounts.isEmpty {
                 Text(AccountSetupWords.summary(accounts)).font(Nacre.footnote).foregroundColor(Pearl.muted)
@@ -147,16 +149,10 @@ struct AccountSetupView: View {
                 leftOutGroup
             }
             if let error = error { Hint(text: error) }
-            VStack(spacing: 12) {
-                Text("Tap any account to change how it counts or who shares it. You can do this later in Profile › Accounts.")
-                    .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                    .multilineTextAlignment(.center).frame(maxWidth: .infinity)
-                    .fixedSize(horizontal: false, vertical: true)
-                // At the end of the list, scrolling with it: it never covers a row.
-                Button("These look right") { Task { await finish() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
-                    .disabled(busy)
-            }
+            // At the end of the list, scrolling with it: it never covers a row.
+            Button("These look right") { Task { await finish() } }
+                .buttonStyle(NacreButtonStyle(busy: busy))
+                .disabled(busy)
         } actions: {
             EmptyView()
         }
