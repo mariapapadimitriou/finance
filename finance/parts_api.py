@@ -469,7 +469,52 @@ def split_into_parts(txn_id: str):
     t = st.get_transaction(txn_id)
     if t is None:
         return jsonify({"error": "No such transaction."}), 404
-    return save_parts(st, t, _body())
+    body = _body()
+    if body.get("joint_payback") is not None:
+        return _joint_payback(st, t, body)
+    return save_parts(st, t, body)
+
+
+# ── Paybacks 2 (approved 2026-11-16): a transfer that was really someone
+# paying her back. Figma Proposals › "Paybacks 2" 1406:5084, TP-01 to TP-05.
+# TP-03 is PB-30 on the money in, with `joint_payback: {out, person}`: the
+# parts save as any payback's, and the joint money out becomes that
+# owner's (finance/joint.py `mark_payback`), in one save with one Undo.
+
+
+def _joint_payback(st, t, body: dict):
+    from .joint import mark_payback, payback_offer
+    from .transfers import transfer_pairs
+    ask = body.get("joint_payback")
+    if not isinstance(ask, dict):
+        return jsonify({"error": "Say who paid you back."}), 400
+    out = st.get_transaction(str(ask.get("out") or ""))
+    pairs = transfer_pairs(st.all_transactions(), today=core._today_iso())
+    offer = payback_offer(t, out) if out is not None and pairs.get(out.fingerprint) == t.fingerprint else None
+    if offer is None:
+        return jsonify({"error": "That isn’t money from a joint account any more."}), 400
+    asked = " ".join(str(ask.get("person") or "").split())
+    person = next((p for p in offer["people"] if p == asked), None) or next(
+        (p for p in offer["people"] if asked and sp.same_person(p, asked)), None)
+    if person is None:
+        return jsonify({"error": f"Pick someone on {offer['account']}."}), 400
+    parts = body.get("parts")
+    if isinstance(parts, list):
+        # Their shares: a payback part with no name is theirs.
+        parts = [dict(p, person=person) if isinstance(p, dict) and p.get("kind") == "payback"
+                 and not str(p.get("person") or "").strip() else p for p in parts]
+    reply = save_parts(st, t, {**{k: v for k, v in body.items() if k != "joint_payback"}, "parts": parts})
+    if isinstance(reply, tuple):
+        return reply
+    data = reply.get_json()
+    marks = mark_payback(st, out, t.fingerprint, person)
+    core._reclassify(st)
+    undo = dict(data.get("undo") or {})
+    had = dict(undo.get("marks") or {})
+    had["shares"] = {**(had.get("shares") or {}), **marks["shares"]}
+    had["joint_paybacks"] = {**(had.get("joint_paybacks") or {}), **marks["joint_paybacks"]}
+    undo["marks"] = had
+    return jsonify({**data, "undo": undo})
 
 
 def save_parts(st, t, body: dict):
@@ -1188,6 +1233,7 @@ def change_payback(txn_id: str, inflow_id: str):
     if who == sp.ME:
         who = None
     title = None
+    moved: tuple[str, str] | None = None
     letting: list[tuple[str, str]] = []
     if body.get("to"):
         # PB-12: the same person's share of another purchase.
@@ -1207,10 +1253,16 @@ def change_payback(txn_id: str, inflow_id: str):
         if kind not in ("person", "shop", "work"):
             return jsonify({"error": "Say who paid it back."}), 400
         person = " ".join(str(body.get("person") or who or "").split()) or None
-        if kind == "person" and (person is None or _owes_on(st, charge, person) is None):
-            return jsonify({"error": "Pick someone on this split."}), 400
+        if kind == "person" and person is None:
+            return jsonify({"error": "Say who paid it back."}), 400
+        if kind == "person" and _owes_on(st, charge, person) is not None:
+            person = _person(st.splits()[txn_id], person)["name"]
+        # PP-01 (Paybacks 2): someone who isn't on this split pays it back as
+        # theirs, the whole amount, the way PB-15 does; no split needed.
         new = _part_for(kind, txn_id, now / 100, person if kind == "person" else None)
         title = f"Linked ${now / 100:,.2f} · {charge.merchant or charge.description}"
+        if kind == "person" and who and was["kind"] == "payback" and not sp.same_person(person, who):
+            moved = (person, who)
     elif body.get("amount") is not None:
         # PB-13: Part of it or All of it, up to what's free of the deposit.
         try:
@@ -1237,6 +1289,13 @@ def change_payback(txn_id: str, inflow_id: str):
         return jsonify({"error": problem}), 400
     let_marks, let_total = _let_go_after(st, letting)
     core._reclassify(st)
+    if moved:
+        # PP-02: "Priya paid this back, not Sam. Sam owes $26.65 again."
+        now_by, was_by = _first_name(moved[0]), _first_name(moved[1])
+        title = f"{now_by} paid this back, not {was_by}."
+        again = _owes_on(st, charge, moved[1])
+        if again:
+            title += f" {was_by} owes ${again / 100:,.2f} again."
     if title is None:
         title = _paid_back_title([new], let_total) or f"Linked ${_cents(new['amount']) / 100:,.2f}"
     return jsonify({"ok": True, "title": title,
@@ -1377,8 +1436,12 @@ def unlink_parts(txn_id: str):
     if not deposit or not st.parts().get(deposit):
         return jsonify({"error": "This isn’t in parts."}), 404
     n = dp.undo(st, deposit)
+    # TP-04 Unlink all: the joint money out is as it was, so it's a transfer again.
+    from .joint import release_payback
+    again = bool(release_payback(st, deposit))
     core._reclassify(st)
-    return jsonify({"ok": True, "id": deposit, "removed": n, "title": "Unlinked. It’s one deposit again."})
+    return jsonify({"ok": True, "id": deposit, "removed": n,
+                    "title": "Unlinked. It’s a transfer again." if again else "Unlinked. It’s one deposit again."})
 
 
 @bp.get("/owed")
@@ -1396,7 +1459,9 @@ def owing(txn_id: str):
     t = st.get_transaction(txn_id)
     if t is None or t.amount >= 0:
         return jsonify({"from": None, "items": []})
-    sender = t.party or t.merchant or ""
+    # TP-03 (Paybacks 2): `person`, who it's from when Pearl can't read it
+    # off the money in: the joint account's other owner.
+    sender = " ".join(str(request.args.get("person") or "").split()) or t.party or t.merchant or ""
     rows = dp.owed(st, st.all_transactions(), _today())["owes_you"]
     mine = [r for r in rows if sp.same_person(r["name"], sender)]
     rest = [r for r in rows if r not in mine]
