@@ -120,17 +120,14 @@ struct PaybackLinkSheet: View {
 
     // MARK: PB-42 options
 
-    /// "All of Sam’s share · from the e-Transfer on Nov 14".
+    /// "All of it · Nov 14" (TEXT-01): the title already names Sam.
     private var headerSub: String {
-        "\(all ? "All" : "Part") of \(possessive(first)) share · from the \(word) on \(Format.short(link.deposit?.date ?? link.date))"
+        "\(all ? "All" : "Part") of it · \(Format.short(link.deposit?.date ?? link.date))"
     }
 
-    /// "Sam will owe you $26.65 again on Pizza Nova. Pai Northern Thai stays paid."
+    /// "Sam owes $26.65 again" (TEXT-01): what stays paid is S-34's to say.
     private var unlinkSub: String {
-        let stays = link.stays ?? []
-        let again = "\(first) will owe you \(Format.amount(link.amount)) again on \(merchant)."
-        guard !stays.isEmpty else { return again }
-        return again + " \(Format.andList(stays)) \(stays.count == 1 ? "stays" : "stay") paid."
+        "\(first) owes \(Format.amount(link.amount)) again"
     }
 
     private var options: some View {
