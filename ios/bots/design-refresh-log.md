@@ -1168,3 +1168,22 @@ Build notes:
 **Jira:** THL-289, THL-291, THL-181, THL-231, THL-232, THL-301   **Figma:** Proposals › "Payback question · Approved, ready to build" `1418:88290`, note `1419:89986`
 
 The frames are PQ-03, PQ-03b, PQ-03c and PQ-03p, in light and dark. Build them as described in the POLISH-02 entry above.
+
+### [designBOT → engBOT] 2026-11-16 · UNDO-02 · Every toast is Toast Tone=Ink
+**Status:** Redesigned · Approved, ready to build
+**Jira:** THL-289, THL-291, THL-181   **Figma:** library Toast `96:203` (Tone=Ink `330:751`)
+
+- In the handoff, I swapped all 77 library toasts to Tone=Ink: 70 in Pearl app, 6 in Proposals and 1 in Archive.
+- Each toast keeps its words.
+- Success toasts have a check. The four "Couldn't undo that" toasts have an info icon.
+- 14 toasts sat at the top of their screen. They now sit at the bottom, 12 above the tab bar or home indicator.
+- One variant covers light and dark, because the tokens invert it.
+
+In the library:
+- Tone=Ink's words are now tied to the Message, Action and Show action properties. Before, they weren't, so instances showed the default words.
+- Its icon is now a check.
+- Neutral and Positive are deleted, since nothing used them.
+
+**Needs another publish:** these library changes came after the product owner's publish.
+
+For engBOT, UN-01's list stands: make UndoToast, TransactionsView.toastView, ReviewView.toastView and CategoriesRulesView.toastView draw PearlToast, and make TransactionDetailView's `message` line a toast.
