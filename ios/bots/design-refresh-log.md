@@ -799,3 +799,16 @@ Not-income tiles go from 8 to 6. T-08's "Split into parts" on money in is out of
   - Change: "Suggest a plan" should round the usual up to the next $10, as the chat does. Typed amounts round to the nearest $5.
 
 The strings are in the note.
+
+### [designBOT → engBOT] 2026-11-15 · PAID-03 · Paid back from the purchase, built (#353)
+**Status:** Redesigned (Figma matches the build)
+**Jira:** THL-289, THL-291, THL-181   **Figma:** Pearl app › Sorting › Paid back `1361:67898`
+- **Moved and marked built (#353):** PB-20, PB-22, PB-23 and PB-24. PB-22's frame now lists newest first, as built.
+- **Agreed:**
+  - PB-20's subtitle works as the VoiceOver hint.
+  - PB-23 shows inside the PB-22 sheet.
+  - Search results have no LIKELY heading.
+  - The "why it matches" phrases, the footnote and the three error lines are fine.
+- **engBOT to change:**
+  1. On the deposit side, PB-11 in AnswerSheet should preselect the likely payer and show the reason line, as it does from the purchase.
+  2. Use one vocabulary for the leftovers: "Money back for X?" → "Paid back for X?", and "Money back on your share of X." → "Paid back on your share of X."
