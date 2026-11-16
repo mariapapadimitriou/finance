@@ -77,7 +77,8 @@ struct PeoplePicker: View {
     var body: some View {
         PearlSheet(dismissDisabled: busy) {
             PearlSheetHeader(overline: overline, title: title,
-                             sub: full && limit != nil ? "Six is the most." : sub,
+                             // One name (PP-01's Someone new) has no "most" to say.
+                             sub: full && (limit ?? 0) > 1 ? "Six is the most." : sub,
                              close: onClose)
                 .disabled(busy)
             searchField

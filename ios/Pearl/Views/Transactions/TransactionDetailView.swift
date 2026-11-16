@@ -319,6 +319,10 @@ struct TransactionDetailView: View {
     @State private var depositUnlink: DepositLink?
     /// PB-42 from the purchase: the step S-40c's How much / Which purchase opens on.
     @State private var linkStart: PaybackLinkSheet.Step = .options
+    /// PP-02 (Paybacks 2): PB-42 again for who paid it now, with the toast.
+    @State private var linkNotice: PearlToast.Model?
+    /// TP-01 (Paybacks 2): "Mom paid me back" on the money in.
+    @State private var jointStart: JointPaybackStart?
     @State private var unlinking = false
     /// S-34 for a payback linked to one purchase, from either side.
     @State private var unlinkingPayback: PaybackLink?
@@ -410,6 +414,7 @@ struct TransactionDetailView: View {
         .sheet(item: $linkOptions, onDismiss: {
             // The choice runs once S-05o has gone, so its next sheet can open.
             linkStart = .options
+            linkNotice = nil
             let next = afterOptions
             afterOptions = nil
             next?()
@@ -431,7 +436,14 @@ struct TransactionDetailView: View {
                                  onDone: { title, undo in
                                      linkOptions = nil
                                      linkChanged(title, undo)
-                                 })
+                                 },
+                                 people: t.splitting?.people ?? [],
+                                 onPerson: { title, undo, name in
+                                     // PP-02: back on PB-42 for who paid it now.
+                                     afterOptions = { Task { await reopenLink(link, for: name, title, undo) } }
+                                     linkOptions = nil
+                                 },
+                                 notice: linkNotice)
             } else {
                 // S-05or (REFRESH-02): View… opens it here in Pearl; Unlink… → S-34kr.
                 PaybackOptionsSheet(link: link, overline: link.kind == "refund" ? "REFUNDED BY" : "PAID BACK",
@@ -463,7 +475,8 @@ struct TransactionDetailView: View {
                              onDone: { title, undo in
                                  depositLink = nil
                                  linkChanged(title, undo)
-                             })
+                             },
+                             people: d.people)
         }
         .sheet(item: $depositUnlink) { d in
             // S-34kr for one purchase this deposit paid back (PB-42 › Unlink…).
@@ -921,6 +934,16 @@ struct TransactionDetailView: View {
                 }
             }
         }
+        // TP-01 › TP-03 (Paybacks 2): PB-30 with the joint account's other
+        // owner picked; TP-04's ink toast with Undo, which makes it a transfer again.
+        .modifier(JointPaybackFlow(start: $jointStart, api: app.api) { reply in
+            Task {
+                await run {
+                    withAnimation { toast = (reply.title ?? "Sorted.", undoing(reply.undo)) }
+                    return nil
+                }
+            }
+        })
         .sheet(item: $crediting) { c in
             // S-35c from S-05u, or the deposit's Needs a look question card (S-21u; SPLIT-23 (3): no other entry on its page).
             WhoSentSheet(id: c.id, api: app.api) { reply in
@@ -991,7 +1014,9 @@ struct TransactionDetailView: View {
             if t.transfer == nil {
                 // T-80: tap the name to rename the merchant.
                 Button { renaming = true } label: {
-                    Text(t.merchant).font(Nacre.title2).foregroundColor(Pearl.ink)
+                    // TP-04 (Paybacks 2): "From Mom · Joint ··1123".
+                    Text(heroName)
+                        .font(Nacre.title2).foregroundColor(Pearl.ink)
                         .multilineTextAlignment(.center)
                 }
                 .buttonStyle(.plain)
@@ -1021,7 +1046,8 @@ struct TransactionDetailView: View {
                 // RC-02 (1401:86515): the split's line, then the date and her share.
                 CostHeaderLines(line: line, back: t.cost?.back ?? 0, date: costDateLine)
             } else {
-                Text(t.transfer.map { transferDates($0) } ?? dateLine)
+                // TP-04: "Fri, Nov 14 · into Chequing ··4417".
+                Text(heroDateLine)
                     .font(Nacre.footnote).foregroundColor(Pearl.ink)
                     .multilineTextAlignment(.center)
             }
@@ -1048,29 +1074,7 @@ struct TransactionDetailView: View {
                 .padding(.top, 4)
                 .accessibilityElement(children: .combine)
             }
-            if !t.joint.isEmpty && t.transfer == nil {
-                // T-40: "Joint with Sam · 50%"; T-75 on a charge: "yours unless you say".
-                HStack(spacing: 6) {
-                    Image(systemName: "person.2").font(.system(size: 12, weight: .medium))
-                    Text(!t.inflow && t.accountShare == nil && !t.jointPeople.isEmpty
-                         ? "Joint with \(t.jointPeople.joined(separator: " and ")) · yours unless you say" : jointLine)
-                }
-                .font(Nacre.footnote).foregroundColor(Pearl.ink)
-                .padding(.horizontal, 12).frame(height: 28)
-                .background(Capsule().fill(Nacre.glass))
-                .padding(.top, 4)
-                .accessibilityElement(children: .combine)
-            }
-            if t.pending {
-                HStack(spacing: 6) {
-                    Circle().fill(Pearl.danger).frame(width: 8, height: 8)
-                    Text("Pending · amount may change")
-                }
-                .font(Nacre.footnote).foregroundColor(Pearl.ink)
-                .padding(.horizontal, 12).frame(height: 28)
-                .background(Capsule().fill(Nacre.glass))
-                .padding(.top, 4)
-            }
+            OwnBody { heroPills }
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 4)
@@ -1081,6 +1085,51 @@ struct TransactionDetailView: View {
     /// nobody paid yet is the whole purchase; each payback, and work paying
     /// her share, lowers it at once (RC-03). Not sure yet keeps what it
     /// counts as so far (S-04u).
+    /// T-40's joint pill and the pending pill, in their own body (stack
+    /// check, 2026-11-16: the header's closure was past 24 KB).
+    @ViewBuilder private var heroPills: some View {
+        if !t.joint.isEmpty && t.transfer == nil {
+            // T-40: "Joint with Sam · 50%"; T-75 on a charge: "yours unless you say".
+            HStack(spacing: 6) {
+                Image(systemName: "person.2").font(.system(size: 12, weight: .medium))
+                Text(!t.inflow && t.accountShare == nil && !t.jointPeople.isEmpty
+                     ? "Joint with \(t.jointPeople.joined(separator: " and ")) · yours unless you say" : jointLine)
+            }
+            .font(Nacre.footnote).foregroundColor(Pearl.ink)
+            .padding(.horizontal, 12).frame(height: 28)
+            .background(Capsule().fill(Nacre.glass))
+            .padding(.top, 4)
+            .accessibilityElement(children: .combine)
+        }
+        if t.pending {
+            HStack(spacing: 6) {
+                Circle().fill(Pearl.danger).frame(width: 8, height: 8)
+                Text("Pending · amount may change")
+            }
+            .font(Nacre.footnote).foregroundColor(Pearl.ink)
+            .padding(.horizontal, 12).frame(height: 28)
+            .background(Capsule().fill(Nacre.glass))
+            .padding(.top, 4)
+        }
+    }
+
+    /// The hero's name: TP-04 (Paybacks 2) "From Mom · Joint ··1123" on
+    /// money a joint account's other owner paid her back with. Its own
+    /// small frame, out of the header's (stack check).
+    @inline(never)
+    private var heroName: String {
+        guard let jp = t.jointPayback else { return t.merchant }
+        return "From \(jp.person) · \(jp.account)"
+    }
+
+    /// TF-01's dates, TP-04's "Fri, Nov 14 · into Chequing ··4417", or the day.
+    @inline(never)
+    private var heroDateLine: String {
+        if let transfer = t.transfer { return transferDates(transfer) }
+        if let jp = t.jointPayback { return "\(Format.weekdayDay(t.date)) · into \(jp.into)" }
+        return dateLine
+    }
+
     private var heroAmount: String {
         // TF-01: a transfer has no sign; it didn't leave her.
         if t.transfer != nil { return Format.amount(t.amount) }
@@ -1746,6 +1795,15 @@ struct TransactionDetailView: View {
             if paidBackOnly, people.count == 1, let who = people.first {
                 // PB-41: "Paid back · Sam Lee" (How it counts).
                 row(title: "Paid back · \(who)", chevron: false, icon: "person.2")
+                if let jp = t.jointPayback {
+                    // TP-04: the joint side is theirs; it opens that money out.
+                    RowSeparator()
+                    Button { Task { await open(jp.outId) } } label: {
+                        row(title: "Joint side: \(possessive(jp.person)) money, not your spending", chevron: true, icon: "person.2")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                }
             } else {
                 row(title: partsTitle, sub: "In \(t.parts.count) parts", chevron: false)
             }
@@ -1833,7 +1891,9 @@ struct TransactionDetailView: View {
             .disabled(busy)
             RowSeparator()
             Button { unlinking = true } label: {
-                row(title: n == 2 ? "Unlink both" : "Unlink", chevron: true)
+                // TP-04: "Unlink all · it's a transfer again".
+                row(title: t.jointPayback != nil ? "Unlink all · it’s a transfer again" : n == 2 ? "Unlink both" : "Unlink",
+                    chevron: true)
             }
             .buttonStyle(.plain)
             .disabled(busy)
@@ -1870,7 +1930,8 @@ struct TransactionDetailView: View {
                 error = "Couldn’t open that. Pull to refresh."
                 return
             }
-            depositLink = DepositLink(link: link, charge: c.id, merchant: c.merchant, date: c.date, owes: person.owes)
+            depositLink = DepositLink(link: link, charge: c.id, merchant: c.merchant, date: c.date, owes: person.owes,
+                                      people: c.splitting?.people ?? [])
         } catch {
             self.error = app.handle(error) ?? "Couldn’t open that. Pull to refresh."
         }
@@ -1884,6 +1945,26 @@ struct TransactionDetailView: View {
     /// What the person this link is credited to still owes here.
     private func owesOn(_ link: Transaction.LinkInfo) -> Double {
         t.splitting?.people.first { ($0.links ?? []).contains { $0.id == link.id } }?.owes ?? 0
+    }
+
+    /// PP-02 (Paybacks 2): the page again, then PB-42 for the same payment
+    /// on who paid it now, with the ink toast and its Undo. Someone not on
+    /// the split has no row to open it from: the page's toast instead.
+    private func reopenLink(_ was: Transaction.LinkInfo, for name: String, _ title: String, _ undo: JSONValue?) async {
+        await load()
+        app.changed()
+        let payment = was.deposit?.id ?? was.inflow ?? was.id
+        let now = t.splitting?.people.first { $0.name == name }?.links?.first { ($0.deposit?.id ?? $0.inflow ?? $0.id) == payment }
+        guard let link = now, Self.personPayback(link) else {
+            showSplit(title, undo: undo.map { u in { try await postUndo(u); return nil } })
+            return
+        }
+        linkNotice = PearlToast.Model(text: title, action: undo == nil ? nil : "Undo", run: undo.map { u in {
+            linkOptions = nil
+            Task { await runUndo { try await postUndo(u); return nil } }
+        } })
+        linkStart = .options
+        linkOptions = link
     }
 
     /// PB-42's change saved: the page again, and UN-01's toast with Undo.
@@ -2356,6 +2437,11 @@ struct TransactionDetailView: View {
         }
         section("Options")
         GlassCard {
+            if t.inflow, let joint = transfer.joint, let out = transfer.otherId {
+                // TP-01 (Paybacks 2): "Mom paid me back", above This isn't a transfer.
+                jointPaidBackRow(joint, out: out)
+                RowSeparator()
+            }
             Button { unpairing = true } label: {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -2386,6 +2472,38 @@ struct TransactionDetailView: View {
                 sorting = sortAsk(.transfer)
             }
         }
+        if t.inflow && transfer.mineOnly == true {
+            // TP-05 (Paybacks 2): both accounts are only hers, so no Paid back.
+            NoPaidBackCallout()
+        }
+    }
+
+    /// TP-01: "Mom paid me back" over "From your joint account with Mom.
+    /// Pick what it paid for."; with more than one other owner, "Someone on
+    /// Joint ··1123 paid me back" (PP-01 asks who first).
+    private func jointPaidBackRow(_ joint: Transaction.Transfer.JointFrom, out: String) -> some View {
+        let one = joint.people.count == 1 ? joint.people.first : nil
+        return Button {
+            jointStart = JointPaybackStart(deposit: PartsDeposit(id: t.id, name: t.merchant, amount: t.amount, date: t.date),
+                                           people: joint.people, account: joint.account, out: out)
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(one.map { "\($0) paid me back" } ?? "Someone on \(joint.account) paid me back")
+                        .font(Nacre.body).foregroundColor(Pearl.ink)
+                    Text("From your joint account with \(Format.andList(joint.people)). Pick what it paid for.")
+                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 52)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
+        .accessibilityElement(children: .combine)
     }
 
     /// TF-01: an end of the transfer, as a transaction row with no amount
@@ -3233,6 +3351,8 @@ struct DepositLink: Identifiable {
     let merchant: String
     let date: String
     let owes: Double
+    /// PP-01's ON THIS SPLIT.
+    var people: [Transaction.Splitting.Person] = []
     var id: String { link.id }
 }
 

@@ -82,6 +82,10 @@ struct PartsSheet: View {
     /// came from, so A person skips PB-12 and asks PB-13 for `payer`'s
     /// share of it straight away.
     var forCharge: String? = nil
+    /// Paybacks 2 (TP-03): money in from a joint account that its other
+    /// owner sent to pay her back. `payer` is them; saving makes the money
+    /// out of the joint account theirs too, in the same save and Undo.
+    var joint: JointPaybackStart? = nil
     let onSaved: (MarkReply) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -143,6 +147,9 @@ struct PartsSheet: View {
     @State private var letGoAsk: Owing?
     /// PB-11 from S-11 v2's Paid back tile.
     @State private var whoPaid = false
+    /// TP-03's Change: another of the joint account's owners (PP-01).
+    @State private var jointWho = false
+    @State private var jointPerson: String?
 
     /// `work`: Work's reimbursement, the expense it pays (T-09, as on the shared page).
     /// `otherKind`: S-11k (SPLIT-18), which kind Other income is.
@@ -380,6 +387,23 @@ struct PartsSheet: View {
                              sub: "+\(Format.amount(deposit.whole ?? deposit.amount)) · \(deposit.name) · \(Format.short(deposit.date))",
                              onPick: { who in whoPaid = false; takePaidBack(who) },
                              onClose: { whoPaid = false })
+        }
+        .sheet(isPresented: $jointWho) {
+            if let j = joint {
+                // TP-03's Change: PP-01 with the joint account's people.
+                WhoPaidPicker(api: api, sub: "+\(Format.amount(deposit.amount)) · \(deposit.name) · \(Format.short(deposit.date))",
+                              top: j.people.map { name in
+                                  WhoPaidPicker.Row(name: name, sub: "Your joint account",
+                                                    ticked: samePerson(name, jointPerson ?? j.person ?? ""))
+                              },
+                              pastSplits: false, someoneNew: false,
+                              onPick: { name in
+                                  jointWho = false
+                                  jointPerson = name
+                                  Task { await load() }
+                              },
+                              onClose: { jointWho = false })
+            }
         }
         .sheet(item: $splitCharge) { t in
             // S-24 (SPLIT-07): "Split and link" holds the split; the deposit's
@@ -681,7 +705,9 @@ struct PartsSheet: View {
                 Text("No purchases match.").font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     .padding(.horizontal, 16)
             } else {
-                if typed.isEmpty {
+                if typed.isEmpty, joint != nil {
+                    jointLabel(first)
+                } else if typed.isEmpty {
                     label("Likely · \(first)" + (likelyBefore ? ", before \(Format.short(deposit.date))" : ""))
                 } else {
                     label("Results for “\(typed)”")
@@ -694,7 +720,28 @@ struct PartsSheet: View {
                 }
             }
             totalLine
+            if let j = joint {
+                // TP-03: what happens to the pair.
+                Text("It stops being a transfer: the \(Format.amount(deposit.amount)) out of \(j.account) counts as \(possessive(first)) money, not yours.")
+                    .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    .frame(maxWidth: .infinity).multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+    }
+
+    /// TP-03: "MOM · FROM YOUR JOINT ACCOUNT · CHANGE".
+    private func jointLabel(_ first: String) -> some View {
+        HStack(spacing: 0) {
+            Text("\(first) · from your joint account · ".uppercased())
+                .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+            Button("CHANGE") { jointWho = true }
+                .font(Nacre.caption2.weight(.semibold)).tracking(0.4).foregroundColor(Pearl.action)
+                .frame(minHeight: 44).buttonStyle(.plain)
+                .accessibilityLabel("Change who paid you back")
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
     }
 
     /// "Ticked $86.65 of $86.65 · it all adds up" (money in), "… · $13.35
@@ -1781,7 +1828,10 @@ struct PartsSheet: View {
         if let r: CashReply = try? await api.get("api/transactions/\(deposit.id)/cash-matches") {
             cash = r.cash.compactMap { $0.value }
         }
-        if let r: OwingReply = try? await api.get("api/transactions/\(deposit.id)/owing") {
+        // TP-03: from the joint account's other owner, whoever the bank says sent it.
+        let from = jointPerson ?? joint?.person
+        if let r: OwingReply = try? await api.get("api/transactions/\(deposit.id)/owing",
+                                                  query: from.map { ["person": $0] } ?? [:]) {
             sender = r.from
             named = r.named
             var items = r.items.compactMap { $0.value }
@@ -1869,6 +1919,10 @@ struct PartsSheet: View {
         // S-11xm (THL-301): these parts are the extra; the server keeps Jo's
         // credit on Pizza Nova as it is, and Undo links Loblaws back.
         if whole?.isPart == true { body["extra"] = true }
+        if let j = joint {
+            // TP-03: the money out of the joint account is theirs, in this save.
+            body["joint_payback"] = ["out": j.out, "person": jointPerson ?? j.person ?? sender ?? ""]
+        }
         if let held = heldSplit, parts.contains(where: { $0.held }) {
             // S-12c (SPLIT-07): the split and the link in one request.
             body["split"] = held.body.merging(["charge": held.charge]) { _, new in new }

@@ -8,6 +8,12 @@ import SwiftUI
 // deposit (PB-41): How much (PB-13), Who paid (PB-11), Which purchase
 // (PB-12), View the e-Transfer, Unlink… (says what changes). Each change is
 // one request (POST …/paybacks/<inflow>/change) with one Undo.
+//
+// Paybacks 2 (approved 2026-11-16, Proposals › "Paybacks 2" 1406:5084):
+// Who paid › A person opens PP-01 (1406:5216, JointPaybackViews.swift); a tap
+// answers, and PP-02 (1406:5860) is this sheet again with the new person and
+// the ink toast with Undo ("Priya paid this back, not Sam. Sam owes $26.65
+// again."). Someone not on the split gets the payback as theirs, as PB-15.
 
 @MainActor
 struct PaybackLinkSheet: View {
@@ -29,6 +35,13 @@ struct PaybackLinkSheet: View {
     let onUnlink: () -> Void
     /// The toast's words and its Undo (UN-01).
     let onDone: (String, JSONValue?) -> Void
+    /// PP-01's ON THIS SPLIT: the people on the purchase's split.
+    var people: [Transaction.Splitting.Person] = []
+    /// PP-02: someone else paid it back; the caller opens this sheet again
+    /// for them with the toast (words, Undo, who). Nil: `onDone`.
+    var onPerson: ((String, JSONValue?, String) -> Void)? = nil
+    /// PP-02: the ink toast with Undo, over the options.
+    var notice: PearlToast.Model? = nil
 
     @State private var step: Step = .options
     @State private var busy = false
@@ -41,6 +54,9 @@ struct PaybackLinkSheet: View {
     @State private var letGoAsk = false
     // PB-11
     @State private var whoPaid = false
+    // PP-01, once PB-11 has closed.
+    @State private var aPerson = false
+    @State private var choosing = false
     // PB-12
     @State private var shares: [PartsSheet.Owing]?
     @State private var pick: String?
@@ -65,19 +81,33 @@ struct PaybackLinkSheet: View {
         }
         .onAppear { step = start; allOfIt = all }
         .task(id: step) { if step == .which && shares == nil { await loadShares() } }
-        .sheet(isPresented: $whoPaid) {
+        .sheet(isPresented: $whoPaid, onDismiss: {
+            if aPerson { aPerson = false; choosing = true }
+        }) {
             // PB-11, A person picked: who it came from today.
             PaidBackWhoSheet(face: person, sub: "+\(Format.amount(link.whole ?? link.amount)) · \(word) from \(person) · \(Format.short(link.deposit?.date ?? link.date))",
                              picked: .person, pickedPerson: person,
                              onPick: { who in
                                  whoPaid = false
                                  switch who {
-                                 case .person: break  // Already a person: nothing changes.
+                                 // PP-01: which person (Paybacks 2).
+                                 case .person: aPerson = true
                                  case .shop: Task { await change(["kind": "shop"]) }
                                  case .work: Task { await change(["kind": "work"]) }
                                  }
                              },
                              onClose: { whoPaid = false })
+        }
+        .sheet(isPresented: $choosing) {
+            // PP-01 Who paid you back? A tap answers.
+            WhoPaidPicker(api: api, sub: "\(Format.amount(link.amount)) toward \(merchant) · \(word), \(Format.short(link.deposit?.date ?? link.date))",
+                          top: WhoPaidPicker.onSplit(people, answer: person), topLabel: "On this split",
+                          onPick: { name in
+                              choosing = false
+                              guard name != person else { return }
+                              Task { await changePerson(name) }
+                          },
+                          onClose: { choosing = false })
         }
         .sheet(isPresented: $letGoAsk) {
             // PB-13b: All of it, but the money is less than they owe.
@@ -105,6 +135,10 @@ struct PaybackLinkSheet: View {
 
     private var options: some View {
         PearlSheet(dismissDisabled: busy) {
+            if let notice = notice {
+                // PP-02: what moved, with Undo.
+                PearlToast(model: notice, stays: true) {}
+            }
             PearlSheetHeader(overline: "Paid back", title: link.dialog, sub: headerSub, close: onClose)
             PearlOptionCard {
                 PearlOptionRow(symbol: "target", title: "How much",
@@ -313,6 +347,21 @@ struct PaybackLinkSheet: View {
             onDone(r.title ?? "Changed", r.undo)
         } catch {
             // A failed save keeps what she said; nothing changed.
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// PP-01's tap: who paid it back now, on the split or not (PB-15).
+    private func changePerson(_ name: String) async {
+        busy = true
+        error = nil
+        defer { busy = false }
+        do {
+            let r: Reply = try await api.post("api/transactions/\(charge)/paybacks/\(link.inflow ?? link.id)/change",
+                                              ["kind": "person", "person": name])
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            if let onPerson = onPerson { onPerson(r.title ?? "Changed", r.undo, name) } else { onDone(r.title ?? "Changed", r.undo) }
+        } catch {
             self.error = error.localizedDescription
         }
     }
