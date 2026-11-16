@@ -78,6 +78,14 @@ class TestPartOfIt:
             "mode": "amount", "people": [{"name": "Sam", "amount": 60}]})
         return i["PAI NORTHERN THAI"], i["E-TRANSFER FROM SAM LEE"]
 
+    def test_pb12_lists_sams_split_and_how_many_ways(self, client):
+        """PB-12: "Sam’s share of Pai Northern Thai · owes $60.00" over
+        "Wed, Nov 12 · split 2 ways"."""
+        pai, dep = self.setup(client)
+        r = client.get(f"/api/transactions/{dep}/owing").get_json()
+        assert r["from"] == "Sam"
+        assert [(x["id"], x["owes"], x["theirs"], x["ways"]) for x in r["items"]] == [(pai, 60.0, True, 2)]
+
     def test_part_of_it_counts_what_came_in_and_sam_still_owes_the_rest(self, client):
         pai, dep = self.setup(client)
         r = parts(client, dep, {"kind": "payback", "amount": 15.0, "charge": pai, "person": "Sam"})

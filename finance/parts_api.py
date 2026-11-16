@@ -767,9 +767,17 @@ def owing(txn_id: str):
     mine = [r for r in rows if sp.same_person(r["name"], sender)]
     rest = [r for r in rows if r not in mine]
     txns = {x.fingerprint: x for x in st.all_transactions()}
+    every = st.splits()
+
+    def ways(cid: str) -> int | None:
+        """PB-12's "split 2 ways": the people on it, and her when she's in it."""
+        s = every.get(cid)
+        return len(s.get("people") or []) + (1 if s.get("me", True) else 0) if s else None
+
     # S-32 (2026-11-04): a purchase that hasn't posted yet says so.
     items = [{"id": i["charge_id"], "merchant": i["merchant"], "date": i["date"], "owes": i["owes"],
               "share": i["amount"], "paid": i["paid"], "person": r["name"], "theirs": r in mine,
+              "ways": ways(i["charge_id"]),
               "pending": bool(((getattr(txns.get(i["charge_id"]), "raw", None)) or {}).get("pending"))}
              for r in mine + rest for i in r["items"]]
     # SPLIT-C (S-09u, S-35u): Not sure yet splits take any amount, up to what
