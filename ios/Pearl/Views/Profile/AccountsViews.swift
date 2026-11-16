@@ -106,39 +106,36 @@ enum AccountWords {
     }
 }
 
-/// "Amex Business no longer counts. Allowance is now $738.58.  Undo",
-/// dropped in under the status bar for a few seconds.
+/// "Amex Business no longer counts. Allowance is now $738.58.  Undo".
+/// UN-01 (Paybacks & undo, 1396:4365, note 1397:4699): the one Undo look,
+/// PearlToast's ink (inverse in dark mode), at the bottom, never the top.
+/// Every caller keeps its words and its Undo; this draws them.
 struct UndoToast: View {
     let text: String
     var undo: (() -> Void)? = nil
     /// Stays until something replaces it, rather than leaving after a few seconds.
     var stays = false
+    /// UN-01: the info icon for "Couldn’t undo" and other failures.
+    var failed = false
     let done: () -> Void
+    @State private var model: PearlToast.Model
+
+    init(text: String, undo: (() -> Void)? = nil, stays: Bool = false, failed: Bool = false,
+         done: @escaping () -> Void) {
+        self.text = text
+        self.undo = undo
+        self.stays = stays
+        self.failed = failed
+        self.done = done
+        _model = State(initialValue: PearlToast.Model(text: text, action: undo == nil ? nil : "Undo",
+                                                      failed: failed, run: undo))
+    }
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "checkmark").font(.system(size: 13, weight: .bold)).foregroundColor(Nacre.teal)
-            Text(text).font(Nacre.footnote).foregroundColor(Pearl.ink)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 8)
-            if let undo = undo {
-                Button("Undo", action: undo).font(Nacre.textButton).foregroundColor(Pearl.link)
+        PearlToast(model: model, stays: stays, done: done)
+            .onChange(of: text) { t in
+                model = PearlToast.Model(text: t, action: undo == nil ? nil : "Undo", failed: failed, run: undo)
             }
-        }
-        .padding(.horizontal, 16).padding(.vertical, 12)
-        .background(Capsule().fill(.ultraThinMaterial))
-        .background(Capsule().fill(Nacre.glass))
-        .overlay(Capsule().strokeBorder(Nacre.edge, lineWidth: 1))
-        .padding(.horizontal, 16).padding(.top, 4)
-        .swipeToDismiss(done)
-        .transition(.move(edge: .top).combined(with: .opacity))
-        .task(id: text) {
-            guard !stays else { return }
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
-            done()
-        }
-        .accessibilityElement(children: .combine)
-        .onAppear { UIAccessibility.post(notification: .announcement, argument: text) }
     }
 }
 
@@ -247,9 +244,11 @@ struct AccountsView: View {
                     .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
             }
         }
-        .overlay(alignment: .top) {
+        .overlay(alignment: .bottom) {
+            // UN-01: the toast sits at the bottom.
             if let toast = toast {
                 UndoToast(text: toast) { withAnimation { self.toast = nil } }
+                    .padding(.bottom, 12)
             }
         }
         .refreshable { await load() }
@@ -1056,8 +1055,9 @@ struct ManualAccountView: View {
             .padding(.top, 12)
             if let error = error { Hint(text: error).padding(.top, 4) }
         }
-        .overlay(alignment: .top) {
-            if let toast = toast { UndoToast(text: toast) { withAnimation { self.toast = nil } } }
+        .overlay(alignment: .bottom) {
+            // UN-01: the toast sits at the bottom.
+            if let toast = toast { UndoToast(text: toast) { withAnimation { self.toast = nil } }.padding(.bottom, 12) }
         }
         .onAppear { counted = account.counted ?? true; anchor = account.anchor == true }
         .sheet(isPresented: $renaming) {

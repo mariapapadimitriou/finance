@@ -115,11 +115,13 @@ struct YourPlanView: View {
                 }
             }
         }
-        .overlay(alignment: .top) {
+        .overlay(alignment: .bottom) {
+            // UN-01: the toast sits at the bottom.
             if let toast = toast {
                 UndoToast(text: toast.text, undo: { Task { await undo(toast.undo) } }) {
                     withAnimation { self.toast = nil }
                 }
+                .padding(.bottom, 12)
             }
         }
         .refreshable { await load() }

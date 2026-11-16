@@ -68,10 +68,14 @@ struct PartsSheet: View {
     /// Quick sort (S-11x on its card): the answer is held for the card's Yes
     /// as the parts request and a label ("A gift?"); nothing is saved here.
     var onHeld: (([String: Any], String) -> Void)? = nil
-    /// PB-11 › A person (Paid back, 2026-11-15): the sender's own splits
-    /// first, one to pick (PB-12), then how much of their share (PB-13).
-    /// From someone Pearl can't name, S-35's ticks, then PB-13 for each.
+    /// PB-11 › A person (Paid back, 2026-11-15): the sender's own shares,
+    /// ticked as Pearl thinks they add up (PB-30, Paybacks & undo
+    /// 2026-11-16), then one tap. From someone Pearl can't name, S-35's
+    /// ticks, then PB-13 for each.
     var paidBack = false
+    /// PB-41 Change what it paid back: PB-30 again on a deposit already in
+    /// parts, ticked as it is today; saving replaces them (one Undo).
+    var repick = false
     /// Who sent it, for PB-12's "$15.00 · Paid back · Sam Lee".
     var payer: String? = nil
     /// From the purchase (PB-22, Paid back 2026-11-15): the purchase she
@@ -124,8 +128,8 @@ struct PartsSheet: View {
     @State private var error: String?
     /// TEST-31 S-11m: Something else shows the shared What was this? tiles.
     @State private var allTiles = false
-    /// PB-12: the share picked; nil is Pearl's likeliest, the first.
-    @State private var pick: String?
+    /// PB-30: the shares ticked, by id.
+    @State private var ticks: Set<String> = []
     /// PB-13: the shares still to answer, in the order ticked (S-35's ticks,
     /// or PB-12's one), and what's being said about the first.
     @State private var shareQueue: [Owing] = []
@@ -142,7 +146,7 @@ struct PartsSheet: View {
 
     /// `work`: Work's reimbursement, the expense it pays (T-09, as on the shared page).
     /// `otherKind`: S-11k (SPLIT-18), which kind Other income is.
-    /// `whose`: PB-12, which of the sender's splits. `howMuch`: PB-13, part or all.
+    /// `whose`: PB-30, which of the sender's shares it paid. `howMuch`: PB-13, part or all.
     enum Step { case loading, cash, owing, progress, kind, otherKind, refund, work, review, whose, howMuch }
 
     struct Part: Identifiable, Hashable {
@@ -314,10 +318,16 @@ struct PartsSheet: View {
                 VStack(alignment: .leading, spacing: 12) {
                     // S-11xm (THL-301): the whole deposit here, "The $30.00" in the title.
                     // PB-12 / PB-13: "$15.00 · Paid back · Sam Lee".
-                    QuestionHeader(name: deposit.name, amount: Format.amount(deposit.whole ?? deposit.amount),
-                                   tone: Pearl.ink,
-                                   sub: paidBack ? (["Paid back", payer ?? sender].compactMap { $0 }.joined(separator: " · "))
-                                       : Format.short(deposit.date))
+                    // PB-30: "e-Transfer from Sam Lee" over "+$86.65 · Fri, Nov 14" in money-in green.
+                    if step == .whose {
+                        QuestionHeader(name: deposit.name, amount: "+" + Format.amount(deposit.whole ?? deposit.amount),
+                                       tone: Pearl.moneyIn, sub: Format.weekdayDay(deposit.date))
+                    } else {
+                        QuestionHeader(name: deposit.name, amount: Format.amount(deposit.whole ?? deposit.amount),
+                                       tone: Pearl.ink,
+                                       sub: paidBack ? (["Paid back", payer ?? sender].compactMap { $0 }.joined(separator: " · "))
+                                           : Format.short(deposit.date))
+                    }
                     content
                     // S-11x shows its error under the grid instead (T-08k).
                     if let error = error, whole == nil || step != .kind {
@@ -424,7 +434,7 @@ struct PartsSheet: View {
             if parts.isEmpty { return "What was the \(Format.amount(left))?" }
             return extra ? "What’s the extra \(Format.amount(left))?" : "What’s the other \(Format.amount(left))?"
         case .review: return "Check and save"
-        // PB-12: "What did Sam pay back?"
+        // PB-30: "What did Sam pay back?"
         case .whose: return "What did \(firstName(sender ?? who)) pay back?"
         // PB-13: "How much of Sam’s $60.00?"
         case .howMuch:
@@ -565,30 +575,100 @@ struct PartsSheet: View {
         }
     }
 
-    // MARK: PB-12 Which of their splits (Paid back, 1351:9586)
+    // MARK: PB-30 What did Sam pay back? (Paybacks & undo, 1395:3405)
 
-    /// The sender's own shares with an amount, for PB-12. A Not sure yet
+    /// The sender's own shares with an amount, for PB-30. A Not sure yet
     /// split has no share to be part or all of, so it stays on S-09u.
     private var theirShares: [Owing] {
         guard sender != nil else { return [] }
         return owing.filter { $0.theirs == true && $0.unknown != true && $0.person != nil && $0.owes >= 0.005 }
     }
 
-    /// Where A person starts: PB-12 when the sender owes on a split, else
+    /// Where A person starts: PB-30 when the sender owes on a split, else
     /// S-09 / S-35's list (who it was, then PB-13 for each).
-    private var personStep: Step { paidBack && editing.isEmpty && !theirShares.isEmpty ? .whose : .owing }
-
-    private var picked12: Owing? {
-        let rows = theirShares
-        return rows.first { $0.id == pick } ?? rows.first
+    private var personStep: Step {
+        paidBack && (editing.isEmpty || repick) && !theirShares.isEmpty ? .whose : .owing
     }
 
-    /// PB-12: search, LIKELY, "Sam’s share of Pai Northern Thai · owes
-    /// $60.00" over "Wed, Nov 12 · split 2 ways" with a checkmark (one
-    /// pick), and "$15.00 is part of the $60.00. Next: all of it or part."
+    /// LIKELY: theirs, dated before the deposit. When none is (the payback
+    /// came first), all of theirs. Newest first, as drawn.
+    private var likely: [Owing] {
+        let day = String(deposit.date.prefix(10))
+        let before = theirShares.filter { String($0.date.prefix(10)) <= day }
+        return (before.isEmpty ? theirShares : before).sorted { $0.date > $1.date }
+    }
+
+    private var likelyBefore: Bool {
+        let day = String(deposit.date.prefix(10))
+        return theirShares.contains { String($0.date.prefix(10)) <= day }
+    }
+
+    /// The ticked shares, oldest first: the order the money pays them.
+    private var tickedShares: [Owing] {
+        theirShares.filter { ticks.contains($0.id) }.sorted { $0.date < $1.date }
+    }
+
+    private var tickedCents: Int { tickedShares.map { cents($0.owes) }.reduce(0, +) }
+
+    /// PB-30o: what each ticked share gets, oldest first and in full, until
+    /// the money runs out; the newest one it reaches is part-paid.
+    private var allocation: [String: Int] {
+        var room = leftCents
+        var out: [String: Int] = [:]
+        for o in tickedShares {
+            let take = min(cents(o.owes), max(room, 0))
+            out[o.id] = take
+            room -= take
+        }
+        return out
+    }
+
+    /// PB-30o: the share that's part-paid, when the ticks come to more.
+    private var partPaid: Owing? {
+        guard tickedCents > leftCents else { return nil }
+        return tickedShares.first { (allocation[$0.id] ?? 0) < cents($0.owes) }
+    }
+
+    /// Pearl ticks the likely set (AI only suggests): the shares whose total
+    /// is the deposit, or nearest under it; on a tie, the older ones.
+    private func preTick() {
+        let rows = likely.sorted { $0.date < $1.date }
+        let room = leftCents
+        var best: [Owing] = []
+        if rows.count <= 16 {
+            var bestSum = 0
+            var bestKey = 0
+            for mask in 1..<(1 << rows.count) {
+                var sum = 0
+                var key = 0
+                for (i, o) in rows.enumerated() where mask & (1 << i) != 0 {
+                    sum += cents(o.owes)
+                    key |= 1 << (rows.count - 1 - i)
+                }
+                guard sum <= room else { continue }
+                if sum > bestSum || (sum == bestSum && key > bestKey) {
+                    bestSum = sum
+                    bestKey = key
+                    best = rows.enumerated().filter { mask & (1 << $0.offset) != 0 }.map(\.element)
+                }
+            }
+        } else {
+            var left = room
+            for o in rows where cents(o.owes) <= left {
+                best.append(o)
+                left -= cents(o.owes)
+            }
+        }
+        ticks = Set(best.map(\.id))
+    }
+
+    /// PB-30: search, LIKELY · SAM, BEFORE NOV 14, the shares as Choice
+    /// (Checkbox) rows, then the running total against the deposit.
     private var whoseList: some View {
         let typed = query.trimmingCharacters(in: .whitespaces)
-        let rows = theirShares.filter { typed.isEmpty || $0.merchant.localizedCaseInsensitiveContains(typed) }
+        let rows = typed.isEmpty ? likely
+            : theirShares.filter { $0.merchant.localizedCaseInsensitiveContains(typed) }.sorted { $0.date > $1.date }
+        let first = firstName(sender ?? who)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundColor(Pearl.muted)
@@ -601,43 +681,133 @@ struct PartsSheet: View {
                 Text("No purchases match.").font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     .padding(.horizontal, 16)
             } else {
-                label("Likely")
+                if typed.isEmpty {
+                    label("Likely · \(first)" + (likelyBefore ? ", before \(Format.short(deposit.date))" : ""))
+                } else {
+                    label("Results for “\(typed)”")
+                }
                 GlassCard {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { i, o in
-                        if i > 0 { RowSeparator() }
-                        whoseRow(o, on: picked12?.id == o.id)
+                        if i > 0 { RowSeparator(inset: 50) }
+                        tickRow(o)
                     }
                 }
             }
-            if let o = picked12, cents(left) < cents(o.owes) {
-                Text("\(Format.amount(left)) is part of the \(Format.amount(o.owes)). Next: all of it or part.")
-                    .font(Nacre.footnote).foregroundColor(Pearl.ink)
-                    .frame(maxWidth: .infinity).multilineTextAlignment(.center)
-            }
+            totalLine
         }
     }
 
-    private func whoseRow(_ o: Owing, on: Bool) -> some View {
+    /// "Ticked $86.65 of $86.65 · it all adds up" (money in), "… · $13.35
+    /// left over" (muted), "… · $10.95 more than Sam sent" (error).
+    private var totalLine: some View {
+        let ticked = Double(tickedCents) / 100
+        let first = firstName(sender ?? who)
+        let head = "Ticked \(Format.amount(ticked)) of \(Format.amount(left))"
+        let (words, tone): (String, Color) = tickedCents == leftCents ? ("\(head) · it all adds up", Pearl.moneyIn)
+            : tickedCents < leftCents ? ("\(head) · \(Format.amount(Double(leftCents - tickedCents) / 100)) left over", Pearl.muted)
+            : ("\(head) · \(Format.amount(Double(tickedCents - leftCents) / 100)) more than \(first) sent", Pearl.danger)
+        return Text(words).font(Nacre.footnote).foregroundColor(tone)
+            .frame(maxWidth: .infinity).multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// "Sam’s share of Pai Northern Thai · $60.00" over "Wed, Nov 12 · split 2
+    /// ways"; when the ticks come to more (PB-30o), "Thu, Oct 9 · all of it",
+    /// and on the newest "Part: $49.05 of $60.00 · Sam still owes $10.95 · Change".
+    private func tickRow(_ o: Owing) -> some View {
         let first = firstName(o.person ?? who)
-        let sub = [o.pending == true ? "Pending" : Format.weekdayDay(o.date), o.ways.map { "split \($0) ways" }]
-            .compactMap { $0 }.joined(separator: " · ")
-        return Button { pick = o.id } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(possessive(first)) share of \(o.merchant) · owes \(Format.amount(o.owes))")
-                        .font(Nacre.body).foregroundColor(Pearl.ink).fixedSize(horizontal: false, vertical: true)
-                    Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+        let on = ticks.contains(o.id)
+        let day = o.pending == true ? "Pending" : Format.weekdayDay(o.date)
+        let over = tickedCents > leftCents
+        let part = partPaid?.id == o.id
+        let got = Double(allocation[o.id] ?? 0) / 100
+        let sub = part ? "Part: \(Format.amount(got)) of \(Format.amount(o.owes)) · \(first) still owes \(Format.amount(o.owes - got))"
+            : over && on ? "\(day) · all of it"
+            : [day, o.ways.map { "split \($0) ways" }].compactMap { $0 }.joined(separator: " · ")
+        return HStack(alignment: .center, spacing: 12) {
+            Button { toggleTick(o) } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        if on {
+                            Circle().fill(Pearl.action)
+                            Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundColor(Pearl.onAction)
+                        } else {
+                            Circle().strokeBorder(Pearl.borderStrong, lineWidth: 1.5)
+                        }
+                    }
+                    .frame(width: 22, height: 22)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(possessive(first)) share of \(o.merchant) · \(Format.amount(o.owes))")
+                            .font(Nacre.body).foregroundColor(Pearl.ink).fixedSize(horizontal: false, vertical: true)
+                        Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 8)
-                if on {
-                    Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold)).foregroundColor(Pearl.action)
-                }
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 16).frame(minHeight: 52).padding(.vertical, 6)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(on ? .isSelected : [])
+            if part {
+                // PB-30o: Change opens PB-13 for this one.
+                Button("Change") { changePart(o) }
+                    .font(Nacre.subheadline.weight(.semibold)).foregroundColor(Pearl.action)
+                    .frame(minHeight: 44).buttonStyle(.plain)
+                    .accessibilityLabel("Change how much of \(possessive(first)) share of \(o.merchant)")
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(on ? .isSelected : [])
+        .padding(.horizontal, 16).frame(minHeight: 52).padding(.vertical, 6)
+    }
+
+    private func toggleTick(_ o: Owing) {
+        if ticks.contains(o.id) { ticks.remove(o.id) } else { ticks.insert(o.id) }
+    }
+
+    /// The ticked shares as payback parts, all of each but the part-paid one.
+    private func addTicked(except: Owing? = nil) {
+        let alloc = allocation
+        for o in tickedShares where o.id != except?.id {
+            let amount = Double(alloc[o.id] ?? 0) / 100
+            guard amount >= 0.005 else { continue }
+            parts.removeAll { $0.charge == o.charge && $0.person == o.person && $0.kind == "payback" }
+            parts.append(Part(kind: "payback", amount: amount, charge: o.charge, merchant: o.merchant, person: o.person,
+                              date: o.date))
+        }
+    }
+
+    /// PB-30o Change: the others are paid in full; PB-13 asks about this one.
+    private func changePart(_ o: Owing) {
+        addTicked(except: o)
+        query = ""
+        startHowMuch([o])
+    }
+
+    /// PB-30's one tap. All add up, or more (PB-30o): mark them all paid
+    /// back in one request (one Undo). Less (PB-30u): on to what the rest is.
+    private func takeTicked() {
+        addTicked()
+        query = ""
+        if leftCents == 0 {
+            Task {
+                await save(later: false)
+                if error != nil { step = .review }
+            }
+        } else {
+            step = .kind
+        }
+    }
+
+    /// PB-30's button: "Mark 2 paid back", or "Next: the other $13.35".
+    private var tickedButton: String {
+        tickedCents >= leftCents && !tickedShares.isEmpty
+            ? "Mark \(tickedShares.count) paid back"
+            : "Next: the other \(Format.amount(Double(leftCents - tickedCents) / 100))"
+    }
+
+    /// Off while a ticked share would get nothing (the money ran out first).
+    private var tickedReady: Bool {
+        tickedShares.allSatisfy { (allocation[$0.id] ?? 0) > 0 }
     }
 
     // MARK: PB-13 How much of their share (Paid back, 1352:716)
@@ -820,6 +990,7 @@ struct PartsSheet: View {
                 parts.removeAll { $0.kind == "payback" && !$0.held }
             }
             step = personStep
+            if step == .whose { preTick() }
         case .shop, .work:
             picked = [:]
             step = who == .shop ? .refund : .work
@@ -1444,9 +1615,9 @@ struct PartsSheet: View {
                     .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
             }
         case .whose:
-            // PB-12: Next goes to PB-13 for the share picked.
-            Button("Next") { if let o = picked12 { query = ""; startHowMuch([o]) } }
-                .buttonStyle(NacreButtonStyle()).disabled(picked12 == nil)
+            // PB-30: one tap marks them all; less than the deposit goes on to the rest.
+            Button(tickedButton) { takeTicked() }
+                .buttonStyle(NacreButtonStyle(busy: busy)).disabled(!tickedReady || busy)
                 .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
         case .howMuch:
             Button(shareQueue.isEmpty || howMuchFinishes ? "Save" : "Next") { takeHowMuch() }
@@ -1505,6 +1676,7 @@ struct PartsSheet: View {
 
     private func afterCash() {
         step = leftCents == 0 ? .review : personStep
+        if step == .whose { preTick() }
     }
 
     private func takeOwing() {
@@ -1565,7 +1737,9 @@ struct PartsSheet: View {
             otherAmount = amount
             step = .otherKind
         // PB-10: the one Paid back tile asks who first (PB-11).
-        case "paid_back": whoPaid = true
+        // PB-30 note: PB-11 is skipped when the e-Transfer names someone Pearl knows.
+        case "paid_back":
+            if sender != nil && !theirShares.isEmpty { takePaidBack(.person) } else { whoPaid = true }
         case "own": add(Part(kind: "moved", amount: amount))
         case "loan": add(Part(kind: "loan", amount: amount))
         case "out_of_savings": add(Part(kind: "savings", amount: amount))
@@ -1638,6 +1812,14 @@ struct PartsSheet: View {
             step = .kind
             return
         }
+        if repick && !editing.isEmpty && personStep == .whose {
+            // PB-41 Change what it paid back: PB-30 with today's ticks.
+            let linked = Set(parts.filter { $0.kind == "payback" }.map { ($0.charge ?? "") + "|" + ($0.person ?? "") })
+            parts.removeAll { $0.kind == "payback" }
+            ticks = Set(theirShares.map(\.id).filter { linked.contains($0) })
+            step = .whose
+            return
+        }
         if !editing.isEmpty {
             step = .progress
             return
@@ -1652,6 +1834,7 @@ struct PartsSheet: View {
             return
         }
         step = !cash.isEmpty ? .cash : personStep
+        if step == .whose { preTick() }
         if step == .owing {
             // Pearl's likeliest: their shares, up to what came in.
             for o in owing where sender != nil && o.theirs == true { toggle(o) }

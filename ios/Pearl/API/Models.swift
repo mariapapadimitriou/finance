@@ -687,6 +687,15 @@ struct Transaction: Decodable, Identifiable, Hashable {
         var whole: Double? = nil
         var others: [String]? = nil
         var deposit: Deposit? = nil
+        /// PB-42 (Paybacks & undo): who it's credited to, every other purchase
+        /// the same payment still pays back ("Pai Northern Thai stays paid"),
+        /// their share of this purchase, and what of the payment is still free.
+        var person: String? = nil
+        var stays: [String]? = nil
+        var share: Double? = nil
+        var free: Double? = nil
+        /// "e-Transfer": the whole payment's word, also for a part of it.
+        var word: String? = nil
 
         struct Target: Decodable, Hashable { let id: String; let label: String }
         struct Deposit: Decodable, Hashable { let id: String; let amount: Double; let date: String }
@@ -714,6 +723,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
 
         enum CodingKeys: String, CodingKey {
             case id, inflow, amount, date, kind, noun, dialog, message, view, sheet, toast, whole, others, deposit
+            case person, stays, share, free, word
             case cashId = "cash_id"
         }
     }
@@ -1097,6 +1107,8 @@ struct DepositPart: Decodable, Hashable, Identifiable {
     let sorted: Bool?
     /// The cash records a cash part holds, to save it again (S-10e).
     var cashIds: [Int]? = nil
+    /// PB-41: the person's share of the purchase a payback part pays back.
+    var share: Double? = nil
 
     struct Charge: Decodable, Hashable {
         let id: String
@@ -1107,7 +1119,7 @@ struct DepositPart: Decodable, Hashable, Identifiable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, kind, amount, person, category, charge, sorted
+        case id, kind, amount, person, category, charge, sorted, share
         case incomeKind = "income_kind"
         case cashIds = "cash_ids"
     }

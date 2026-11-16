@@ -252,21 +252,13 @@ struct CalendarCard: View {
             }
             if selecting { selectionPanel }
             if let toast = toast {
-                HStack(spacing: 10) {
-                    Image(systemName: "checkmark").font(.system(size: 13, weight: .bold)).foregroundColor(Nacre.teal)
-                    Text(toast.title).font(Nacre.footnote).foregroundColor(Pearl.ink)
-                    Spacer(minLength: 8)
-                    if let id = toast.undo {
-                        Button("Undo") { Task { await remove(id, undo: true) } }
-                            .font(Nacre.textButton).foregroundColor(Pearl.link)
-                    } else if let band = toast.putBack {
-                        Button("Undo") { Task { await putBack(band) } }
-                            .font(Nacre.textButton).foregroundColor(Pearl.link)
-                    }
-                }
-                .padding(.horizontal, 16).padding(.vertical, 12)
-                .background(Capsule().fill(Nacre.glass))
-                .overlay(Capsule().strokeBorder(Nacre.edge, lineWidth: 1))
+                // UN-01: the one Undo look (PearlToast's ink). It stays in the
+                // card, under the grid it changed, until she sorts again.
+                UndoToast(text: toast.title,
+                          undo: toast.undo.map { id in { Task { await remove(id, undo: true) } } }
+                              ?? toast.putBack.map { band in { Task { await putBack(band) } } },
+                          stays: true) { withAnimation { self.toast = nil } }
+                    .padding(.horizontal, -16)
             }
             if let error = error {
                 Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)

@@ -513,8 +513,21 @@ def save_parts(st, t, body: dict):
         st.set_split(charge.fingerprint, mode, people, watch)
         st.set_share(charge.fingerprint, None if mode == sp.UNSURE
                      else sp.your_part(charge, people, sp.split_base(charge) if charge.joint else None))
+    # PB-41 Change what it paid back (and S-10e): replacing the parts keeps
+    # what they were, so Undo puts them back rather than leaving nothing.
+    replaced = None
     try:
-        out = dp.apply(st, t, body.get("parts"), bool(body.get("later")), bool(body.get("replace")))
+        if body.get("replace") and st.parts().get(txn_id):
+            from . import unlink
+            replaced = unlink._take_down(st, txn_id, lambda asked: asked)
+            replaced.pop("new")
+            try:
+                out = dp.apply(st, st.get_transaction(txn_id) or t, body.get("parts"), bool(body.get("later")))
+            except dp.Problem:
+                unlink.put_back(st, txn_id, replaced["parts"], replaced["later"], replaced["made"], replaced["cash"])
+                raise
+        else:
+            out = dp.apply(st, t, body.get("parts"), bool(body.get("later")), bool(body.get("replace")))
     except dp.Problem as exc:
         if held:
             from .marks import undo_marks
@@ -541,6 +554,8 @@ def save_parts(st, t, body: dict):
         out["title"] = f"{held[0].merchant} split and ${round(-t.amount):,} sorted"
     if linked_was:
         undo["marks"] = {**(undo.get("marks") or {}), **linked_was}
+    if replaced:
+        undo["marks"] = {**(undo.get("marks") or {}), "reparts": [replaced]}
     if out.get("reopened"):
         # SPLIT-C decision 4: Undo closes the split it opened again.
         undo["marks"] = {**(undo.get("marks") or {}), "split_closed": out.pop("reopened")}
@@ -617,6 +632,10 @@ def _paid_back_title(parts, let_go: float) -> str | None:
         paid = sum(_cents(p.get("amount")) for p in parts) / 100
     except (TypeError, ValueError):
         return None
+    charges = {str(p.get("charge") or "") for p in parts}
+    if len(charges) > 1:
+        # PB-30 / UN-01a: one e-Transfer, several purchases.
+        return f"{names[0]} paid back {len(charges)} purchases · ${paid:,.2f}"
     return f"{names[0]} paid back ${paid:,.2f}"
 
 
@@ -710,12 +729,16 @@ def paid_back_from_purchase(txn_id: str):
         return err
     t, split, p, owes = share
     deposit = st.get_transaction(str(body.get("deposit") or ""))
-    if deposit is None or not _free_deposit(st, deposit):
+    # PB-30 (Paybacks & undo, 2026-11-16): one deposit can pay back several
+    # shares from the purchase side too. Once the first is linked the deposit
+    # is in parts with the rest left to sort, and that rest is still free.
+    left = _left_to_sort(st, deposit) if deposit is not None else 0
+    if deposit is None or not (_free_deposit(st, deposit) or left):
         return jsonify({"error": "Pick the money that paid it back."}), 400
     if owes < 0.005:
         return jsonify({"error": f"{p['name']} doesn’t owe anything on this."}), 400
     whole = round(-deposit.amount, 2)
-    room = min(_cents(whole), _cents(owes))
+    room = min(left or _cents(whole), _cents(owes))
     if body.get("amount") is None:
         amount = room
     else:
@@ -728,7 +751,74 @@ def paid_back_from_purchase(txn_id: str):
     part = {"kind": "payback", "amount": amount / 100, "charge": t.fingerprint, "person": p["name"]}
     if body.get("let_go"):
         part["let_go"] = True
-    return save_parts(st, deposit, {"parts": [part], "later": amount < _cents(whole)})
+    if not left:
+        return save_parts(st, deposit, {"parts": [part], "later": amount < _cents(whole)})
+    # Already in parts: the deposit is saved again with this share added, and
+    # one Undo puts its parts back as they were (only this link goes).
+    letting, _ = _let_go_asks(st, [part])
+    linked = {k: v for k, v in part.items() if k != "let_go"}
+
+    def add(asked: list[dict]) -> list[dict]:
+        for a in asked:
+            if a["kind"] == "payback" and a.get("charge") == t.fingerprint and a.get("person") == p["name"]:
+                a["amount"] = (_cents(a["amount"]) + amount) / 100
+                return asked
+        return asked + [linked]
+    marks, problem = _relink(st, deposit, add)
+    if problem:
+        return jsonify({"error": problem}), 400
+    let_marks, let_total = _let_go_after(st, letting)
+    core._reclassify(st)
+    return jsonify({"ok": True, "title": _paid_back_title([part], let_total),
+                    "undo": {"parts": deposit.fingerprint, "marks": {**let_marks, **marks}}})
+
+
+def _left_to_sort(st, x: Transaction) -> int:
+    """Cents of a deposit in parts still left to sort; 0 for anything else."""
+    stored = st.parts().get(x.fingerprint)
+    if not stored or x.amount >= 0 or (x.raw or {}).get("part_of"):
+        return 0
+    return sum(_cents(q["amount"]) for q in stored if q["kind"] == "rest")
+
+
+def _relink(st, x: Transaction, change) -> tuple[dict | None, str | None]:
+    """Save deposit `x`'s links again with `change` made to them (the parts
+    as asked → the parts to save). In parts or linked whole, it ends up in
+    parts. Returns the Undo's marks: the client sends {"parts": x, "marks"}
+    and the deposit is put back exactly as it was. Or the problem."""
+    from . import unlink
+    from .marks import undo_marks
+    whole = _cents(-x.amount)
+
+    def later(parts: list[dict]) -> bool:
+        return sum(_cents(a["amount"]) for a in parts) < whole
+    if st.parts().get(x.fingerprint):
+        info = unlink._take_down(st, x.fingerprint, change)
+        try:
+            unlink.put_back(st, x.fingerprint, info["new"], later(info["new"]), info["made"], info["cash"])
+        except dp.Problem as exc:
+            unlink.put_back(st, x.fingerprint, info["parts"], info["later"], info["made"], info["cash"])
+            return None, str(exc)
+        info.pop("new")
+        return {"reparts": [info]}, None
+    linked = _as_parts(st, x)
+    if linked is None:
+        return None, "Pick the money that paid it back."
+    marks: dict = {}
+    if x.repays:
+        marks["paybacks"] = {x.fingerprint: {"charge": x.repays, "kind": st.payback_kinds().get(x.fingerprint),
+                                             "person": st.payback_people().get(x.fingerprint),
+                                             "amount": x.repays_amount}}
+        marks["payback_more"] = {x.fingerprint: st.payback_more(x.fingerprint)}
+    if x.refund_of:
+        marks["refunds"] = {x.fingerprint: x.refund_of}
+    new = change([dict(a) for a in linked[0]])
+    try:
+        dp.apply(st, x, new, later(new))
+    except dp.Problem as exc:
+        undo_marks(st, marks)
+        return None, str(exc)
+    return marks, None
 
 
 # ── PB-20 to PB-24: Find what paid it back (approved 2026-11-15) ─────────
@@ -1002,8 +1092,6 @@ def paid_back_take(txn_id: str):
     Pai Northern Thai"); with `take`, the rest this purchase needs comes off
     the other one too ("Moved $40.00 from Air Canada"). One Undo puts the
     deposit back exactly as it was."""
-    from . import unlink
-    from .marks import undo_marks
     st = store()
     f, err = _find_or_error(st, txn_id)
     if err:
@@ -1035,37 +1123,124 @@ def paid_back_take(txn_id: str):
             out.append(a)
         return out + [_part_for(row["kind"], f.t.fingerprint, (now + more) / 100, row["person"])]
 
-    whole = _cents(-x.amount)
-    later = lambda parts: sum(_cents(a["amount"]) for a in parts) < whole
-    if st.parts().get(x.fingerprint):
-        info = unlink._take_down(st, x.fingerprint, change)
-        try:
-            unlink.put_back(st, x.fingerprint, info["new"], later(info["new"]), info["made"], info["cash"])
-        except dp.Problem as exc:
-            unlink.put_back(st, x.fingerprint, info["parts"], info["later"], info["made"], info["cash"])
-            return jsonify({"error": str(exc)}), 400
-        info.pop("new")
-        marks: dict = {"reparts": [info]}
-    else:
-        asked, _ = _as_parts(st, x)
-        marks = {}
-        if x.repays:
-            marks["paybacks"] = {x.fingerprint: {"charge": x.repays, "kind": st.payback_kinds().get(x.fingerprint),
-                                                 "person": st.payback_people().get(x.fingerprint),
-                                                 "amount": x.repays_amount}}
-            marks["payback_more"] = {x.fingerprint: st.payback_more(x.fingerprint)}
-        if x.refund_of:
-            marks["refunds"] = {x.fingerprint: x.refund_of}
-        new = change(asked)
-        try:
-            dp.apply(st, x, new, later(new))
-        except dp.Problem as exc:
-            undo_marks(st, marks)
-            return jsonify({"error": str(exc)}), 400
+    marks, problem = _relink(st, x, change)
+    if problem:
+        return jsonify({"error": problem}), 400
     core._reclassify(st)
     title = (f"Moved ${more / 100:,.2f} from {taken['other']['merchant']}" if more
              else f"Linked ${now / 100:,.2f} · {f.t.merchant or f.t.description}")
     return jsonify({"ok": True, "title": title, "undo": {"parts": x.fingerprint, "marks": marks}})
+
+
+# ── PB-42: one link's options (Paybacks & undo, approved 2026-11-16) ──────
+# Figma Proposals › "Paybacks & undo" 1395:3376, note 1397:4698. The same
+# sheet from the purchase (S-40c, S-05or) and the deposit (PB-41): How much
+# (PB-13), Who paid (PB-11), Which purchase (PB-12). Each saves the deposit's
+# links again with that one changed, with one Undo (`_relink`).
+
+
+def _owes_on(st, charge: Transaction, name: str | None) -> int | None:
+    """Cents `name` still owes on `charge`; None when they aren't on it."""
+    split = st.splits().get(charge.fingerprint)
+    if not split or split.get("mode") == sp.UNSURE or not name:
+        return None
+    p = _person(split, name)
+    if p is None:
+        return None
+    status = next((s for s in sp.people_status(charge, split, st.all_transactions(), st.payback_people())
+                   if s["name"] == p["name"]), None)
+    return _cents(status["owes"]) if status else None
+
+
+@bp.post("/transactions/<txn_id>/paybacks/<inflow_id>/change")
+def change_payback(txn_id: str, inflow_id: str):
+    """PB-42: change one link of money in to this purchase. {amount,
+    let_go?}: How much (PB-13, part or all; let_go is PB-13b). {to}: Which
+    purchase (PB-12), the same person's share of another one, as much of it
+    as that share still needs. {kind: person|shop|work}: Who paid (PB-11).
+    `inflow_id` is the deposit, or its part. Returns the toast's `title` and
+    one `undo` that puts the deposit back as it was."""
+    st = store()
+    charge = st.get_transaction(txn_id)
+    inflow = st.get_transaction(inflow_id)
+    if charge is None or inflow is None or txn_id not in inflow.repays_all:
+        return jsonify({"error": "That money isn't linked to this charge."}), 404
+    parent = (inflow.raw or {}).get("part_of")
+    x = st.get_transaction(parent) if parent else inflow
+    if x is None:
+        return jsonify({"error": "That money isn't linked to this charge."}), 404
+    stored = st.parts().get(x.fingerprint)
+    if stored:
+        asked, _ = dp.as_asked(stored)
+        ids = [q["part_id"] for q in stored if q["kind"] != "rest"]
+        at = ids.index(inflow.fingerprint) if inflow.fingerprint in ids else -1
+    else:
+        linked = _as_parts(st, x)
+        asked = linked[0] if linked else []
+        at = next((i for i, a in enumerate(asked) if a.get("charge") == txn_id), -1)
+    if at < 0 or asked[at].get("charge") != txn_id:
+        return jsonify({"error": "That money isn't linked to this charge."}), 404
+    was = asked[at]
+    body = _body()
+    now = _cents(was["amount"])
+    free = _cents(-x.amount) - sum(_cents(a["amount"]) for a in asked)
+    who = was.get("person") or (st.payback_people().get(inflow.fingerprint) if was["kind"] == "payback" else None)
+    if who == sp.ME:
+        who = None
+    title = None
+    letting: list[tuple[str, str]] = []
+    if body.get("to"):
+        # PB-12: the same person's share of another purchase.
+        to = st.get_transaction(str(body["to"]))
+        need = _owes_on(st, to, who) if to is not None and to.fingerprint != txn_id else None
+        if need is None:
+            return jsonify({"error": f"Pick a purchase {who or 'they'} {'is' if who else 'are'} on."}), 400
+        if need < 1:
+            return jsonify({"error": f"{who} doesn’t owe anything on that."}), 400
+        amount = min(now, need)
+        new = {**was, "charge": to.fingerprint, "amount": amount / 100}
+        new.pop("let_go", None)
+        title = f"Linked ${amount / 100:,.2f} · {to.merchant or to.description}"
+    elif body.get("kind"):
+        # PB-11: A person, The shop or Work.
+        kind = body.get("kind")
+        if kind not in ("person", "shop", "work"):
+            return jsonify({"error": "Say who paid it back."}), 400
+        person = " ".join(str(body.get("person") or who or "").split()) or None
+        if kind == "person" and (person is None or _owes_on(st, charge, person) is None):
+            return jsonify({"error": "Pick someone on this split."}), 400
+        new = _part_for(kind, txn_id, now / 100, person if kind == "person" else None)
+        title = f"Linked ${now / 100:,.2f} · {charge.merchant or charge.description}"
+    elif body.get("amount") is not None:
+        # PB-13: Part of it or All of it, up to what's free of the deposit.
+        try:
+            amount = _cents(body.get("amount"))
+        except (TypeError, ValueError):
+            return jsonify({"error": "How much they paid back has to be an amount."}), 400
+        owes = _owes_on(st, charge, who) if was["kind"] == "payback" else None
+        room = now + max(free, 0)
+        if owes is not None:
+            room = min(room, now + owes)
+        if amount < 1 or amount > room:
+            return jsonify({"error": f"Make it between $0.01 and ${room / 100:,.2f}."}), 400
+        new = {**was, "amount": amount / 100}
+        new.pop("let_go", None)
+        if body.get("let_go") and was["kind"] == "payback" and who:
+            letting = [(txn_id, who)]
+    else:
+        return jsonify({"error": "Say what to change."}), 400
+
+    def change(parts: list[dict]) -> list[dict]:
+        return parts[:at] + [new] + parts[at + 1:]
+    marks, problem = _relink(st, x, change)
+    if problem:
+        return jsonify({"error": problem}), 400
+    let_marks, let_total = _let_go_after(st, letting)
+    core._reclassify(st)
+    if title is None:
+        title = _paid_back_title([new], let_total) or f"Linked ${_cents(new['amount']) / 100:,.2f}"
+    return jsonify({"ok": True, "title": title,
+                    "undo": {"parts": x.fingerprint, "marks": {**let_marks, **marks}}})
 
 
 def extra_parts(st, t, given) -> tuple[list | None, str | None]:

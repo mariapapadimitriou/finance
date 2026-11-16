@@ -312,6 +312,13 @@ struct TransactionDetailView: View {
     struct Crediting: Identifiable { let id: String }
     /// S-10e: the parts sheet opened from S-33's Edit, with the parts filled in.
     @State private var editingParts = false
+    /// PB-41 Change what it paid back: PB-30 again with today's ticks.
+    @State private var repicking = false
+    /// PB-42 from the deposit (PB-41), then its Unlink? (S-34kr).
+    @State private var depositLink: DepositLink?
+    @State private var depositUnlink: DepositLink?
+    /// PB-42 from the purchase: the step S-40c's How much / Which purchase opens on.
+    @State private var linkStart: PaybackLinkSheet.Step = .options
     @State private var unlinking = false
     /// S-34 for a payback linked to one purchase, from either side.
     @State private var unlinkingPayback: PaybackLink?
@@ -741,12 +748,14 @@ struct TransactionDetailView: View {
                 showSplit(title, undo: undo)
             }
         }
-        .sheet(item: $parting, onDismiss: { editingParts = false; partsExtra = nil }) { deposit in
-            // S-33's Edit opens S-10e with the parts it has (SPLIT-03).
+        .sheet(item: $parting, onDismiss: { editingParts = false; repicking = false; partsExtra = nil }) { deposit in
+            // S-33's Edit opens S-10e with the parts it has (SPLIT-03); PB-41's
+            // Change what it paid back opens PB-30 with today's ticks.
             PartsSheet(deposit: deposit, api: app.api, editing: editingParts ? t.parts : [],
-                       whole: partsExtra) { reply in
+                       whole: partsExtra, paidBack: repicking, repick: repicking) { reply in
                 parting = nil
                 editingParts = false
+                repicking = false
                 Task {
                     await run {
                         // S-12d: "Costco split and $600 sorted · Undo" puts it all back.
@@ -818,21 +827,73 @@ struct TransactionDetailView: View {
         }
         .sheet(item: $linkOptions, onDismiss: {
             // The choice runs once S-05o has gone, so its next sheet can open.
+            linkStart = .options
             let next = afterOptions
             afterOptions = nil
             next?()
         }) { link in
-            // S-05or (REFRESH-02): View… opens it here in Pearl; Unlink… → S-34kr.
-            PaybackOptionsSheet(link: link, overline: link.kind == "refund" ? "REFUNDED BY" : "PAID BACK",
-                                onClose: { linkOptions = nil },
-                                onView: {
-                                    afterOptions = { if let id = link.view?.id { Task { await open(id) } } }
-                                    linkOptions = nil
-                                },
-                                onUnlink: {
-                                    afterOptions = { unlinkingLink = link }
-                                    linkOptions = nil
-                                })
+            if Self.personPayback(link) {
+                // PB-42 (Paybacks & undo, 1395:5050): S-05or grows How much, Who
+                // paid and Which purchase; S-40c's rows open it on their step.
+                PaybackLinkSheet(link: link, charge: t.id, merchant: t.merchant, date: t.date, owes: owesOn(link),
+                                 start: linkStart, api: app.api,
+                                 onClose: { linkOptions = nil },
+                                 onView: {
+                                     afterOptions = { if let id = link.view?.id { Task { await open(id) } } }
+                                     linkOptions = nil
+                                 },
+                                 onUnlink: {
+                                     afterOptions = { unlinkingLink = link }
+                                     linkOptions = nil
+                                 },
+                                 onDone: { title, undo in
+                                     linkOptions = nil
+                                     linkChanged(title, undo)
+                                 })
+            } else {
+                // S-05or (REFRESH-02): View… opens it here in Pearl; Unlink… → S-34kr.
+                PaybackOptionsSheet(link: link, overline: link.kind == "refund" ? "REFUNDED BY" : "PAID BACK",
+                                    onClose: { linkOptions = nil },
+                                    onView: {
+                                        afterOptions = { if let id = link.view?.id { Task { await open(id) } } }
+                                        linkOptions = nil
+                                    },
+                                    onUnlink: {
+                                        afterOptions = { unlinkingLink = link }
+                                        linkOptions = nil
+                                    })
+            }
+        }
+        .sheet(item: $depositLink, onDismiss: {
+            let next = afterOptions
+            afterOptions = nil
+            next?()
+        }) { d in
+            // PB-42 from the deposit (PB-41): she's on the e-Transfer, so no View.
+            PaybackLinkSheet(link: d.link, charge: d.charge, merchant: d.merchant, date: d.date, owes: d.owes,
+                             fromDeposit: true, api: app.api,
+                             onClose: { depositLink = nil },
+                             onView: {},
+                             onUnlink: {
+                                 afterOptions = { depositUnlink = d }
+                                 depositLink = nil
+                             },
+                             onDone: { title, undo in
+                                 depositLink = nil
+                                 linkChanged(title, undo)
+                             })
+        }
+        .sheet(item: $depositUnlink) { d in
+            // S-34kr for one purchase this deposit paid back (PB-42 › Unlink…).
+            UnlinkLinkSheet(link: d.link, charge: d.charge, api: app.api, onCancel: { depositUnlink = nil }) { title, undo in
+                depositUnlink = nil
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                Task {
+                    await load()
+                    app.changed()
+                    showSplit(title, undo: undo.map { u in { try await postUndo(u); return "Linked again" } })
+                }
+            }
         }
         .navigationDestination(isPresented: Binding(get: { viewing != nil }, set: { if !$0 { viewing = nil } })) {
             if let viewing = viewing {
@@ -1621,7 +1682,13 @@ struct TransactionDetailView: View {
     /// "Payback + gift": what a deposit in parts was (S-33).
     private var partsCard: some View {
         GlassCard {
-            row(title: partsTitle, sub: "In \(t.parts.count) parts", chevron: false)
+            let people = Set(t.parts.compactMap(\.person))
+            if paidBackOnly, people.count == 1, let who = people.first {
+                // PB-41: "Paid back · Sam Lee" (How it counts).
+                row(title: "Paid back · \(who)", chevron: false, icon: "person.2")
+            } else {
+                row(title: partsTitle, sub: "In \(t.parts.count) parts", chevron: false)
+            }
         }
     }
 
@@ -1638,7 +1705,9 @@ struct TransactionDetailView: View {
     /// from (S-33, S-34).
     @ViewBuilder private var depositParts: some View {
         let parts = !t.parts.isEmpty ? t.parts : (t.partOf?.parts ?? [])
-        if !parts.isEmpty {
+        if paidBackOnly {
+            paidBackParts
+        } else if !parts.isEmpty {
             // S-33 v2: PARTS, every one of them, so they add up to the deposit.
             section(t.partOf.map { "Part of a \(Format.amount($0.amount)) deposit" } ?? "Parts")
             SolidCard {
@@ -1667,6 +1736,102 @@ struct TransactionDetailView: View {
                 .buttonStyle(.plain)
                 .disabled(busy)
             }
+        }
+    }
+
+    /// PB-41: a deposit that only pays back people's shares (PB-30's), all of it.
+    private var paidBackOnly: Bool {
+        t.partOf == nil && !t.parts.isEmpty
+            && t.parts.allSatisfy { $0.kind == "payback" && $0.person != nil && $0.charge != nil }
+    }
+
+    /// PB-41 (1395:4794, dark 1395:4922): PAID BACK · 2 PURCHASES, a row each
+    /// opening PB-42; Options: Change what it paid back (PB-30 with today's
+    /// ticks), Unlink both (asks first, as T-41b).
+    @ViewBuilder private var paidBackParts: some View {
+        let n = t.parts.count
+        section("Paid back · \(n) purchase\(n == 1 ? "" : "s")")
+        SolidCard {
+            ForEach(Array(t.parts.enumerated()), id: \.element.id) { index, p in
+                if index > 0 { RowSeparator(inset: 72) }
+                Button { Task { await openDepositLink(p) } } label: { paidBackRow(p) }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                    .accessibilityHint("How much, who, which purchase, or Unlink")
+            }
+        }
+        section("Options")
+        GlassCard {
+            Button {
+                editingParts = true
+                repicking = true
+                parting = deposit(rest: false)
+            } label: {
+                row(title: "Change what it paid back", chevron: true)
+            }
+            .buttonStyle(.plain)
+            .disabled(busy)
+            RowSeparator()
+            Button { unlinking = true } label: {
+                row(title: n == 2 ? "Unlink both" : "Unlink", chevron: true)
+            }
+            .buttonStyle(.plain)
+            .disabled(busy)
+        }
+    }
+
+    /// "Pai Northern Thai" over "Sam’s share · all of it · Nov 12", $60.00.
+    private func paidBackRow(_ p: DepositPart) -> some View {
+        let name = p.person.map { $0.split(separator: " ").first.map(String.init) ?? $0 } ?? "Their"
+        let all = p.share.map { Int(($0 * 100).rounded()) <= Int((p.amount * 100).rounded()) } ?? true
+        let merchant = p.charge?.merchant ?? p.label
+        return HStack(spacing: 14) {
+            Initials(name: merchant)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(merchant).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                Text("\(possessive(name)) share · \(all ? "all of it" : "part of it") · \(Format.short(p.charge?.date ?? t.date))")
+                    .font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Text(Format.amount(p.amount)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+
+    /// PB-41 → PB-42: the link as the purchase's split card has it.
+    private func openDepositLink(_ p: DepositPart) async {
+        guard let charge = p.charge else { return }
+        do {
+            let c: Transaction = try await app.api.get("api/transactions/\(charge.id)")
+            let on = c.splitting?.people.first { ($0.links ?? []).contains { $0.id == p.id } }
+            guard let person = on, let link = person.links?.first(where: { $0.id == p.id }) else {
+                error = "Couldn’t open that. Pull to refresh."
+                return
+            }
+            depositLink = DepositLink(link: link, charge: c.id, merchant: c.merchant, date: c.date, owes: person.owes)
+        } catch {
+            self.error = app.handle(error) ?? "Couldn’t open that. Pull to refresh."
+        }
+    }
+
+    /// A payback by someone on a split, bank or part: PB-42's options.
+    static func personPayback(_ link: Transaction.LinkInfo) -> Bool {
+        ["bank", "part"].contains(link.kind) && link.person != nil
+    }
+
+    /// What the person this link is credited to still owes here.
+    private func owesOn(_ link: Transaction.LinkInfo) -> Double {
+        t.splitting?.people.first { ($0.links ?? []).contains { $0.id == link.id } }?.owes ?? 0
+    }
+
+    /// PB-42's change saved: the page again, and UN-01's toast with Undo.
+    private func linkChanged(_ title: String, _ undo: JSONValue?) {
+        Task {
+            await load()
+            app.changed()
+            showSplit(title, undo: undo.map { u in { try await postUndo(u); return nil } })
         }
     }
 
@@ -2502,6 +2667,9 @@ struct TransactionDetailView: View {
         case .changeAnswer: changingAnswer = p
         case .view(let link): if let id = link.view?.id { Task { await open(id) } }
         case .unlink(let link): unlinkingLink = link
+        // PB-42 (Paybacks & undo): S-40c's How much and Which purchase.
+        case .howMuch(let link): linkStart = .howMuch; linkOptions = link
+        case .whichPurchase(let link): linkStart = .which; linkOptions = link
         case .undoLetGo:
             // S-40d → S-44e at once; its Undo lets it go again.
             Task {
@@ -2996,4 +3164,14 @@ struct OwnBody<Content: View>: View {
     let content: () -> Content
     init(@ViewBuilder _ content: @escaping () -> Content) { self.content = content }
     var body: Content { content() }
+}
+
+/// PB-42 opened from the deposit (PB-41): the link and its purchase.
+struct DepositLink: Identifiable {
+    let link: Transaction.LinkInfo
+    let charge: String
+    let merchant: String
+    let date: String
+    let owes: Double
+    var id: String { link.id }
 }

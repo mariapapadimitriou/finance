@@ -209,8 +209,8 @@ struct MainTabs: View {
             }
         }
         // Trips (TR-02c, TR-11–TR-13): its toast stays while the trip's page
-        // opens or closes under it.
-        .overlay(alignment: .top) {
+        // opens or closes under it. UN-01: at the bottom, above the tab bar.
+        .overlay(alignment: .bottom) {
             if let toast = app.toast {
                 UndoToast(text: toast.text, undo: toast.undo.map { run in {
                     // Gone at once, so a second tap can't undo twice.
@@ -227,6 +227,8 @@ struct MainTabs: View {
                 } }) {
                     if app.toast == toast { withAnimation { app.toast = nil } }
                 }
+                // UN-01: 12 above the tab bar (49 pt, over the home indicator's safe area).
+                .padding(.bottom, 49 + 12)
                 .id(toast.id)
             }
         }
