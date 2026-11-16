@@ -481,7 +481,9 @@ def start(st, txns: list[Transaction], today: date) -> dict:
     from .etransfers import known_people
     from .marks import hidden_categories
     waiting = asks(st, txns, today)
-    return {"suggest": bool(waiting["patterns"] or waiting["trips"]),
+    # The cards themselves too (2026-11-15): the chat opens on them, and
+    # asking /api/chat/asks after this was a second trip for the same answer.
+    return {"suggest": bool(waiting["patterns"] or waiting["trips"]), "asks": waiting,
             "categories": spend_categories(hidden_categories(st)),
             "people": known_people(txns, st.splits(), st.payback_people()),
             "today": today.isoformat()}

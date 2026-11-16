@@ -2,7 +2,7 @@
 reads: the chat's cards change things through the endpoints they already use
 (see finance/chat.py), and only when she taps Yes, Set it or Make it.
 
-* GET  /api/chat                   PB-01's "has a suggestion", her categories and people
+* GET  /api/chat                   PB-01's "has a suggestion", the cards waiting, her categories and people
 * POST /api/chat/tell              {text, category?, days?, people?, ids?}: one proposal per transaction
 * POST /api/chat/spending          {text?, category?, month?, merchant?}: PC-04's answer
 * GET  /api/chat/subscriptions     Find subscriptions
@@ -14,9 +14,10 @@ POST is only for carrying what she said; none of them saves it.
 
 from __future__ import annotations
 
+import time
 from datetime import date
 
-from flask import jsonify, request
+from flask import current_app, g, jsonify, request
 
 from . import api as core
 from . import chat
@@ -48,6 +49,25 @@ def _list(body: dict, key: str) -> list[str] | None:
     if not isinstance(v, list):
         return None
     return [str(x)[:80] for x in v if isinstance(x, (str, int, float))][:31]
+
+
+@bp.before_app_request
+def _chat_clock():
+    if request.path.startswith("/api/chat"):
+        g.chat_began = time.perf_counter()
+
+
+@bp.after_app_request
+def _chat_timing(response):
+    """How long each chat read took on the server (2026-11-15): a
+    Server-Timing header, and a line in the server's log, so a slow chat on
+    the phone can be split into the model, the network and Pearl."""
+    began = g.pop("chat_began", None)
+    if began is not None:
+        ms = (time.perf_counter() - began) * 1000
+        response.headers["Server-Timing"] = f"app;dur={ms:.0f}"
+        current_app.logger.info("chat %s %s %.0f ms", request.method, request.path, ms)
+    return response
 
 
 @bp.get("/chat")

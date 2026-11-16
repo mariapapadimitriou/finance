@@ -36,7 +36,7 @@ struct PearlChatView: View {
     init(api: APIClient, describe: @escaping (Error) -> String, onClose: @escaping () -> Void,
          onSearch: @escaping () -> Void) {
         _engine = StateObject(wrappedValue: ChatEngine(
-            brain: PearlIntelligence.brain(), reader: ChatReader(APIChatReading(api: api)),
+            brain: PearlIntelligence.brain(plans: Features.chatPlans), reader: ChatReader(APIChatReading(api: api)),
             executor: ChatExecutor(writer: APIChatWriting(api: api)), allowsPlans: Features.chatPlans,
             describe: describe))
         self.onClose = onClose

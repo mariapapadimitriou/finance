@@ -341,6 +341,10 @@ class TestAsks:
         review = client.get("/api/review").get_json()
         assert [p["id"] for p in asks["patterns"]] == [p["id"] for p in review["pattern_asks"]]
         assert [t["id"] for t in asks["trips"]] == [t["id"] for t in review["trip_asks"]]
+        # 2026-11-15 (speed): GET /api/chat carries the same cards, so the
+        # chat opens with one trip to the server.
+        start = client.get("/api/chat").get_json()
+        assert start["asks"] == asks and start["suggest"] is bool(asks["patterns"] or asks["trips"])
         for p in asks["patterns"]:
             client.post(f"/api/pattern-sort/asks/{p['id']}/skip")
         assert client.get("/api/chat/asks").get_json()["patterns"] == []
@@ -351,3 +355,20 @@ class TestAsks:
         r = client.get("/api/chat").get_json()
         assert "Dining" in r["categories"] and "Income" not in r["categories"]
         assert r["today"] == TODAY.isoformat()
+
+
+class TestSpeed:
+    """2026-11-15: the chat was slow on her iPhone. Each chat read says how
+    long it took on the server, for the phone's log and the server's."""
+
+    def test_every_chat_read_is_timed(self, client):
+        weekend(client)
+        for r in (client.get("/api/chat"), client.get("/api/chat/asks"),
+                  client.get("/api/chat/subscriptions"),
+                  client.post("/api/chat/spending", json={"category": "Dining"}),
+                  client.post("/api/chat/tell", json={"text": "out Saturday"})):
+            assert r.status_code == 200
+            assert r.headers["Server-Timing"].startswith("app;dur=")
+
+    def test_other_reads_are_not(self, client):
+        assert "Server-Timing" not in client.get("/api/transactions/list").headers
