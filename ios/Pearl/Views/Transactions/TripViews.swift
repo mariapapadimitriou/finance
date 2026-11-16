@@ -468,7 +468,7 @@ struct NameTripSheet: View {
     var body: some View {
         PearlConfirmSheet(overline: "\(count) transaction\(count == 1 ? "" : "s") · \(dates) · \(total)",
                           title: "Name the trip",
-                          message: count == 1 ? "Adds the tag to it." : "Adds the tag to all \(count).",
+                          message: count == 1 ? "Adds the tag." : "Adds the tag to all \(count).",
                           field: .init(label: "Trip name", identifier: "trip-name"), text: $name,
                           primary: primary, secondary: "Cancel", onClose: onClose) {
             do {

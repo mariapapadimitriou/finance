@@ -301,8 +301,12 @@ class TestTilesBySource:
         for gone in ("Next: who paid you back", "Likely · money in after", "What paid back your share?"):
             assert gone not in find, gone
         who = self.src("ios/Pearl/Views/Transactions/PaidBackViews.swift")
-        for words in ('is on this split"', '"your employer"', '"this shop"'):
+        for words in ('"On this split"', '"your employer"', '"this shop"'):
             assert words in who, words
+        # Less text 2: "On this split", not "Sam is on this split"; money
+        # Pearl can't place sits under OTHER MONEY IN.
+        assert "is on this split" not in who
+        assert '("other", "Other money in", other)' in find
         for code in (find, who):
             for stock in (".confirmationDialog(", ".alert(", ".actionSheet("):
                 assert stock not in code, stock

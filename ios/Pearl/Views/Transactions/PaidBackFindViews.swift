@@ -182,8 +182,9 @@ struct PaidBackFindSheet: View {
 
     /// LT-01's groups, the reason said once in the header: YOUR SHARE (work
     /// and refunds), then "SAM'S SHARE" for each person on the split, in the
-    /// order their money came. Money a search found from no one Pearl knows
-    /// sits last, under no header; PB-11 asks who it was.
+    /// order their money came. Money a search found that Pearl can't place
+    /// (not work, a refund or someone on the split) sits last, under OTHER
+    /// MONEY IN (less text 2), rows unchanged; PB-11 asks who it was.
     private var groups: [(key: String, header: String?, rows: [PaidBackFind.Candidate])] {
         var out: [(key: String, header: String?, rows: [PaidBackFind.Candidate])] = []
         let yours = rows.filter { $0.kind == "work" || $0.kind == "shop" }
@@ -200,7 +201,7 @@ struct PaidBackFindSheet: View {
                         rows.filter { $0.kind == "person" && ($0.person ?? $0.payer) == name }))
         }
         let other = rows.filter { $0.who == nil }
-        if !other.isEmpty { out.append(("other", nil, other)) }
+        if !other.isEmpty { out.append(("other", "Other money in", other)) }
         return out
     }
 
