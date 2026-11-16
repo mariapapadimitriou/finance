@@ -25,6 +25,12 @@
                                                   split into part or all. Read-only.
 * POST   /api/transactions/<id>/paid-back         {deposit, person, amount?, let_go?}: link from
                                                   the purchase side, through save_parts.
+* GET    /api/transactions/<id>/paid-back-find    ?q=: PB-22 "What paid back your share?":
+                                                  LIKELY money in, or a search by name or
+                                                  amount, with why each matches. Read-only.
+* POST   /api/transactions/<id>/paid-back-take    {deposit, take?}: PB-24, a deposit already
+                                                  paying back another purchase; its free part,
+                                                  or with `take` more from the other, with Undo.
 """
 
 from __future__ import annotations
@@ -723,6 +729,299 @@ def paid_back_from_purchase(txn_id: str):
     if body.get("let_go"):
         part["let_go"] = True
     return save_parts(st, deposit, {"parts": [part], "later": amount < _cents(whole)})
+
+
+# ── PB-20 to PB-24: Find what paid it back (approved 2026-11-15) ─────────
+# Figma Proposals › "Paid back" 1351:8769, note 1352:10319. Her own row's
+# ••• on a split (PB-20) opens "What paid back your share?" (PB-22): LIKELY
+# is money in after the purchase from work, the shop or someone on the
+# split; from work or the shop it's within $1 of her share or of the whole
+# purchase. Search takes a name or an amount. Nothing found is PB-23. Once
+# she picks one, the app runs the usual steps (PB-11 with the kind picked,
+# PB-13 / PB-13b, T-09w / T-09rs and the S-11 extras) on a free deposit.
+# A deposit already linked to another purchase is PB-24: its free part
+# links at once; taking more from the other purchase always asks first.
+
+FIND_NEAR = 100   # cents: "within $1" of her share or the whole purchase
+
+
+def _query_amount(q: str) -> int | None:
+    """"$60", "60.00", "1,980": an amount in cents; None for words."""
+    import math
+    s = q.replace("$", "").replace(",", "").strip()
+    try:
+        v = float(s)
+    except ValueError:
+        return None
+    return _cents(v) if math.isfinite(v) and v > 0 else None
+
+
+def _employers(st, txns) -> set[str]:
+    """Who pays her: pay and bonuses, and whoever reimbursed her before."""
+    from .categorize import merchant_key
+    from .marks import REIMBURSEMENT
+    kinds = st.payback_kinds()
+    out = set()
+    for x in txns:
+        if x.amount < 0 and (x.income_type in ("salary", "bonus") or kinds.get(x.fingerprint) == REIMBURSEMENT
+                             or (x.raw or {}).get("part_kind") == "reimbursement"):
+            out.add(merchant_key(x.merchant or x.description))
+    out.discard("")
+    return out
+
+
+def _as_parts(st, x) -> tuple[list[dict], bool] | None:
+    """A linked deposit's links as the parts that would say the same:
+    (parts as asked, a rest left to sort). None when it isn't linked, or is
+    linked in a way only its own page changes."""
+    from .marks import REIMBURSEMENT, REFUND_SHARE
+    stored = st.parts().get(x.fingerprint)
+    if stored:
+        return dp.as_asked(stored)
+    whole = _cents(-x.amount)
+    if x.repays:
+        kind = st.payback_kinds().get(x.fingerprint)
+        who = st.payback_people().get(x.fingerprint)
+        named = {"person": who} if who and who != sp.ME else {}
+        out = []
+        for cid in x.repays_all:
+            if kind == REIMBURSEMENT:
+                part = {"kind": "reimbursement"}
+            elif kind == REFUND_SHARE:
+                part = {"kind": "refund", **(named or {"share": True})}
+            elif kind is None:
+                part = {"kind": "payback", **named}
+            else:
+                return None
+            out.append({**part, "charge": cid, "amount": x.part_for(cid)})
+        return out, sum(_cents(p["amount"]) for p in out) < whole
+    if x.refund_of:
+        return [{"kind": "refund", "charge": x.refund_of, "amount": whole / 100}], False
+    return None
+
+
+def _first_name(name: str) -> str:
+    return (name or "").split()[0] if (name or "").split() else name
+
+
+class _Find:
+    """What PB-22 needs about one purchase: her share, what's left of it,
+    who's on the split, who pays her."""
+
+    def __init__(self, st, t, split):
+        from .etransfers import known_people
+        self.st, self.t, self.split = st, t, split
+        self.txns = st.all_transactions()
+        self.people = known_people(self.txns, st.splits(), st.payback_people())
+        mine: dict = {}
+        status = sp.people_status(t, split, self.txns, st.payback_people(), mine=mine)
+        self.owes = {s["name"]: round(s["owes"], 2) for s in status}
+        self.share = round(mine.get("amount", 0.0), 2)
+        self.left = sp.your_share_left(t, split, self.txns, st.payback_people()) or 0.0
+        self.whole = round(sp.split_base(t), 2)
+        self.employers = _employers(st, self.txns)
+        self.after = sp.bought_on(t).isoformat()
+
+    def on_split(self, name: str | None) -> str | None:
+        p = _person(self.split, " ".join(str(name or "").split())) if name else None
+        return p["name"] if p else None
+
+    def detected(self, x) -> tuple[str | None, str | None]:
+        """(work | shop | person, who on the split) from who sent it."""
+        from .categorize import merchant_key
+        from .etransfers import party as etransfer_party
+        sender = x.party or (etransfer_party(x, self.people) or {}).get("name") or ""
+        for p in self.split["people"]:
+            if (sender and sp.same_person(sender, p["name"])) or sp.from_person(x, p["name"]):
+                return "person", p["name"]
+        key = merchant_key(x.merchant or x.description)
+        if key and key == merchant_key(self.t.merchant or self.t.description):
+            return "shop", None
+        if key in self.employers:
+            return "work", None
+        return None, None
+
+    def need(self, kind: str, person: str | None) -> float:
+        return self.owes.get(person, 0.0) if kind == "person" else round(self.left, 2)
+
+    def row(self, x) -> dict | None:
+        """One candidate, or None when it can't be one."""
+        if x.amount >= 0 or (x.excluded and x.excluded != dp.SPLIT) or (x.raw or {}).get("part_of"):
+            return None
+        kind, person = self.detected(x)
+        taken = None
+        is_linked = bool(x.repays or x.refund_of or self.st.parts().get(x.fingerprint))
+        linked = _as_parts(self.st, x) if is_linked else None
+        if (is_linked or x.excluded) and linked is None:
+            return None
+        if linked is not None:
+            asked, _ = linked
+            if any(a.get("charge") == self.t.fingerprint for a in asked):
+                return None   # It already pays this one back.
+            free = _cents(-x.amount) - sum(_cents(a["amount"]) for a in asked)
+            other = next((a for a in asked if a["kind"] in ("payback", "refund", "reimbursement")
+                          and a.get("charge")), None)
+            if other is not None:
+                # PB-24 links at once, so it says what it is by what it already is.
+                if other["kind"] == "reimbursement":
+                    kind, person = "work", None
+                elif other["kind"] == "refund" and not other.get("person"):
+                    kind, person = "shop", None
+                elif self.on_split(other.get("person")):
+                    kind, person = "person", self.on_split(other.get("person"))
+            if kind is None or (other is None and free < 1):
+                return None
+            need = _cents(self.need(kind, person))
+            now = min(need, max(free, 0))
+            more = min(need - now, _cents(other["amount"])) if other is not None else 0
+            charge = self.st.get_transaction(other["charge"]) if other is not None else None
+            taken = {"free": max(free, 0) / 100, "need": need / 100, "more": max(more, 0) / 100,
+                     "other": ({"id": charge.fingerprint, "merchant": charge.merchant or charge.description}
+                               if charge else None)}
+        amount = _cents(-x.amount)
+        bits = []
+        if kind == "person":
+            bits.append(f"{_first_name(person)} is on this split")
+        else:
+            if kind:
+                bits.append({"work": "work", "shop": "a refund"}[kind])
+            if abs(amount - _cents(self.share)) <= FIND_NEAR:
+                bits.append("same as your share")
+            elif abs(amount - _cents(self.whole)) <= FIND_NEAR:
+                bits.append("the whole purchase")
+        near = abs(amount - _cents(self.share)) <= FIND_NEAR or abs(amount - _cents(self.whole)) <= FIND_NEAR
+        return {"id": x.fingerprint, "date": x.date[:10], "payer": x.merchant or x.description,
+                "amount": amount / 100, "kind": kind, "person": person, "why": " · ".join(bits),
+                "likely": kind == "person" or (kind is not None and near), "taken": taken}
+
+
+def _find_or_error(st, txn_id: str):
+    t, split, err = _split_or_error(st, txn_id)
+    if err:
+        return None, err
+    if split.get("mode") == sp.UNSURE or not split.get("me", True) or t.my_share is None:
+        return None, (jsonify({"error": "Find what paid it back is for your share of a split."}), 400)
+    return _Find(st, t, split), None
+
+
+@bp.get("/transactions/<txn_id>/paid-back-find")
+def paid_back_find(txn_id: str):
+    """PB-22 / PB-23, read-only: `q` empty lists LIKELY (money in after the
+    purchase from work, the shop or someone on the split); a name or an
+    amount searches all money in after it. Newest first. Each row says who
+    it's from, why it matches, the kind PB-11 picks, and (PB-24) what of it
+    is free when it already pays back something else."""
+    from datetime import timedelta
+    st = store()
+    f, err = _find_or_error(st, txn_id)
+    if err:
+        return err
+    q = " ".join(str(request.args.get("q") or "").split())[:80]
+    wanted = _query_amount(q) if q else None
+    hi = (date.fromisoformat(f.after) + timedelta(days=CANDIDATE_DAYS_AFTER)).isoformat()
+    rows = []
+    for x in f.txns:
+        if not (f.after <= x.date[:10] <= hi) or x.amount >= 0:
+            continue
+        r = f.row(x)
+        if r is None:
+            continue
+        if not q:
+            keep = r["likely"]
+        elif wanted is not None:
+            keep = abs(_cents(r["amount"]) - wanted) <= FIND_NEAR
+        else:
+            text = " ".join(str(v) for v in (x.merchant, x.description, x.party, r["person"]) if v).lower()
+            keep = q.lower() in text
+        if keep:
+            rows.append(r)
+    rows.sort(key=lambda r: (r["date"], r["id"]), reverse=True)
+    return jsonify({"merchant": f.t.merchant or f.t.description, "date": f.after, "amount": f.whole,
+                    "share": f.share, "left": round(f.left, 2), "query": q,
+                    "about": (wanted / 100) if wanted is not None else f.share,
+                    "candidates": rows[:CANDIDATE_LIMIT]})
+
+
+def _part_for(kind: str, charge: str, amount: float, person: str | None) -> dict:
+    """The part that links money to this purchase, by who it's from."""
+    if kind == "work":
+        return {"kind": "reimbursement", "charge": charge, "amount": amount}
+    if kind == "shop":
+        return {"kind": "refund", "charge": charge, "amount": amount, "share": True}
+    return {"kind": "payback", "charge": charge, "amount": amount, "person": person}
+
+
+@bp.post("/transactions/<txn_id>/paid-back-take")
+def paid_back_take(txn_id: str):
+    """PB-24: a deposit that already pays back another purchase. {deposit,
+    take}: its free part links to this purchase at once ("Linked $20.00 ·
+    Pai Northern Thai"); with `take`, the rest this purchase needs comes off
+    the other one too ("Moved $40.00 from Air Canada"). One Undo puts the
+    deposit back exactly as it was."""
+    from . import unlink
+    from .marks import undo_marks
+    st = store()
+    f, err = _find_or_error(st, txn_id)
+    if err:
+        return err
+    body = _body()
+    x = st.get_transaction(str(body.get("deposit") or ""))
+    row = f.row(x) if x is not None else None
+    if row is None or row["taken"] is None:
+        return jsonify({"error": "Pick the money that paid it back."}), 400
+    taken, take = row["taken"], bool(body.get("take"))
+    free, need, more = _cents(taken["free"]), _cents(taken["need"]), _cents(taken["more"]) if take else 0
+    now = min(need, free)
+    if need < 1:
+        return jsonify({"error": "Nothing of this is left to pay back."}), 400
+    if now + more < 1:
+        return jsonify({"error": "None of this deposit is free."}), 400
+    other = (taken["other"] or {}).get("id")
+
+    def change(asked: list[dict]) -> list[dict]:
+        out, left = [], more
+        for a in asked:
+            a = dict(a)
+            if left and a.get("charge") == other and a["kind"] in ("payback", "refund", "reimbursement"):
+                cut = min(left, _cents(a["amount"]))
+                left -= cut
+                a["amount"] = (_cents(a["amount"]) - cut) / 100
+                if a["amount"] < 0.005:
+                    continue
+            out.append(a)
+        return out + [_part_for(row["kind"], f.t.fingerprint, (now + more) / 100, row["person"])]
+
+    whole = _cents(-x.amount)
+    later = lambda parts: sum(_cents(a["amount"]) for a in parts) < whole
+    if st.parts().get(x.fingerprint):
+        info = unlink._take_down(st, x.fingerprint, change)
+        try:
+            unlink.put_back(st, x.fingerprint, info["new"], later(info["new"]), info["made"], info["cash"])
+        except dp.Problem as exc:
+            unlink.put_back(st, x.fingerprint, info["parts"], info["later"], info["made"], info["cash"])
+            return jsonify({"error": str(exc)}), 400
+        info.pop("new")
+        marks: dict = {"reparts": [info]}
+    else:
+        asked, _ = _as_parts(st, x)
+        marks = {}
+        if x.repays:
+            marks["paybacks"] = {x.fingerprint: {"charge": x.repays, "kind": st.payback_kinds().get(x.fingerprint),
+                                                 "person": st.payback_people().get(x.fingerprint),
+                                                 "amount": x.repays_amount}}
+            marks["payback_more"] = {x.fingerprint: st.payback_more(x.fingerprint)}
+        if x.refund_of:
+            marks["refunds"] = {x.fingerprint: x.refund_of}
+        new = change(asked)
+        try:
+            dp.apply(st, x, new, later(new))
+        except dp.Problem as exc:
+            undo_marks(st, marks)
+            return jsonify({"error": str(exc)}), 400
+    core._reclassify(st)
+    title = (f"Moved ${more / 100:,.2f} from {taken['other']['merchant']}" if more
+             else f"Linked ${now / 100:,.2f} · {f.t.merchant or f.t.description}")
+    return jsonify({"ok": True, "title": title, "undo": {"parts": x.fingerprint, "marks": marks}})
 
 
 def extra_parts(st, t, given) -> tuple[list | None, str | None]:
