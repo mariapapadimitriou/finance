@@ -812,3 +812,17 @@ The strings are in the note.
 - **engBOT to change:**
   1. On the deposit side, PB-11 in AnswerSheet should preselect the likely payer and show the reason line, as it does from the purchase.
   2. Use one vocabulary for the leftovers: "Money back for X?" → "Paid back for X?", and "Money back on your share of X." → "Paid back on your share of X."
+
+### [designBOT → engBOT] 2026-11-15 · TR-17 · A Trips card always on the Calendar; All trips
+**Status:** Redesigned · Awaiting product owner
+**Jira:** THL-122, THL-257, THL-226   **Figma:** Proposals › Trips `1327:4973`, note `1329:69536`
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| TR-17 | `1362:8403` / `1362:8698` | One "Trips" card under the grid that replaces "Trips this month": this month's trips first, then recent ones, up to 3, then "See all trips" |
+| TR-17e | `1362:8993` / `1362:9337` | No trips yet |
+| TR-18 | `1362:9681` / `1362:9848` | All trips, grouped by year, newest first |
+
+- **Large text:** dates wrap and rows grow.
+- **VoiceOver:** each row reads as one element ("Trip to Montréal, March 4 to 9, $1,284.60"). The card heading is a header.
+- **Approved (product owner, 2026-11-15):** TR-17, TR-17e and TR-18 are "Approved, ready to build". Note `1329:69536` is updated.
