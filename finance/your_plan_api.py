@@ -6,8 +6,10 @@ returns the whole page again, so the app adds nothing up.
 * PUT    /api/your-plan/rows/<category>  {amount, source?}: YP-04's Save; the chat's Set it (source "chat")
 * DELETE /api/your-plan/rows/<category>  YP-05's Remove
 * POST   /api/your-plan/use              YP-02's Use this plan: the Allowance follows it from today
-* POST   /api/your-plan/stop             YP-03's Stop using this plan
+* GET    /api/your-plan/categories       YP-08's NOT IN YOUR PLAN, each with her usual
+* POST   /api/your-plan/stop             YP-07's Stop using it (asked first)
 * POST   /api/your-plan/undo             Undo on YP-03's toast: as before Use this plan
+* POST   /api/your-plan/resume           Undo on YP-07's toast: in use again, since the same day
 
 Only use, and a change while it's in use, move the Allowance.
 """
@@ -105,4 +107,19 @@ def your_plan_stop():
 
 @bp.post("/your-plan/undo")
 def your_plan_undo():
-    return _change(lambda st, state: yp.stop(state))
+    return _change(lambda st, state: yp.undo_use(state))
+
+
+@bp.post("/your-plan/resume")
+def your_plan_resume():
+    return _change(lambda st, state: yp.resume(state, _today()))
+
+
+@bp.get("/your-plan/categories")
+def your_plan_categories():
+    from .marks import hidden_categories
+    st = store()
+    today = _today()
+    txns = st.all_transactions()
+    return jsonify({"categories": yp.not_in_plan(yp.load(st), txns, today, _usual(st, txns, today),
+                                                 hidden_categories(st))})

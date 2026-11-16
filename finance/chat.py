@@ -25,7 +25,6 @@ forgotten now."
 
 from __future__ import annotations
 
-import math
 import re
 from collections import defaultdict
 from datetime import date, timedelta
@@ -452,9 +451,11 @@ def asks(st, txns: list[Transaction], today: date) -> dict:
 def plan(st, txns: list[Transaction], today: date, text: str | None = None,
          category: str | None = None) -> dict:
     """"Make a Dining out plan of $220 a month?": her usual month for the
-    category, rounded up to the next $10. Plans keep the nearest $5 (Your
-    plan, note 1353:11493), so $220 stays $220: what she's shown is what Set
-    it keeps, in Your plan and, once the plan is in use, in the Allowance."""
+    category, rounded up to the next $10, the one rule for suggestions that
+    Your plan's Suggest a plan follows too (`your_plan.round_up_10`). Plans
+    keep the nearest $5 (note 1353:11493), so $220 stays $220: what she's
+    shown is what Set it keeps, in Your plan and, once the plan is in use,
+    in the Allowance."""
     from . import category_budgets as cb
     from . import your_plan
     from .api import _unusual_months
@@ -466,7 +467,7 @@ def plan(st, txns: list[Transaction], today: date, text: str | None = None,
         return {"nothing": True, "category": cat,
                 "line": "Pearl needs a month or more of that spending to make a plan."}
     the_usual = info["usual"]
-    amount = your_plan.round_5(math.ceil(the_usual / 10) * 10)
+    amount = your_plan.round_up_10(the_usual)
     state = your_plan.load(st)
     now = next((r["amount"] for r in state["rows"] if r["category"] == cat), None)
     return {"nothing": False, "category": cat, "usual": the_usual, "amount": amount,

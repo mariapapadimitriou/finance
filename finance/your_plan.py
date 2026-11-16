@@ -18,11 +18,17 @@ Profile › Income and bills › Your plan. The rules this keeps (product owner,
 * **While in use, a change counts at once**: Save or Remove (YP-04, YP-05)
   and the chat's Set it (the chat's confirm is the confirm; PC-12/PC-13).
 * **Rounding:** every amount rounds to the nearest $5 (not to the budgets'
-  5% steps), so the chat's $220 stays $220 here and in the Allowance.
+  5% steps), so the chat's $220 stays $220 here and in the Allowance. A
+  suggestion (Suggest a plan, and the chat's) is her usual rounded UP to the
+  next $10, $214 to $220 (note 1353:11493, "one rule for suggestions").
 * Removing the last row stops the plan: an empty plan is never in use.
+* **Stop asks first** (YP-07), and Undo on its toast uses it again the way it
+  was: in use since the same day.
 
 One setting, `your_plan` (JSON): {"rows": [{category, amount, source}],
-"in_use": bool, "since": "YYYY-MM-DD" | null}. `source` is "pearl" (the
+"in_use": bool, "since": "YYYY-MM-DD" | null, "stopped_since": "YYYY-MM-DD"
+| null}. `stopped_since` is the day a plan stopped on YP-07 had been in use
+since, for Undo. `source` is "pearl" (the
 suggestion), "chat" (set in Pearl chat) or "you" (changed on YP-04).
 """
 
@@ -54,6 +60,13 @@ class PlanError(ValueError):
         self.status = status
 
 
+def round_up_10(amount: float) -> int:
+    """A suggestion: her usual rounded UP to the next $10, $214 to $220,
+    $210 stays $210. A multiple of $10 is a multiple of $5, so it's kept as
+    it is shown (YP-06's Suggest a plan, and the chat's PC-12)."""
+    return int(math.ceil(round(float(amount), 2) / 10)) * 10
+
+
 def round_5(amount: float) -> int:
     """To the nearest $5, halves up: $220 stays $220, $214 is $215, $212.50
     is $215. The number shown, kept and set aside are all this one."""
@@ -61,7 +74,7 @@ def round_5(amount: float) -> int:
 
 
 def empty() -> dict:
-    return {"rows": [], "in_use": False, "since": None}
+    return {"rows": [], "in_use": False, "since": None, "stopped_since": None}
 
 
 def load(st) -> dict:
@@ -80,12 +93,15 @@ def load(st) -> dict:
         out["rows"] = rows
         out["in_use"] = bool(data.get("in_use")) and bool(rows)
         out["since"] = data.get("since") if out["in_use"] else None
+        stopped = data.get("stopped_since")
+        out["stopped_since"] = stopped if isinstance(stopped, str) and not out["in_use"] and rows else None
     return out
 
 
 def save(st, state: dict) -> None:
     if not state["rows"]:
         state["in_use"], state["since"] = False, None
+        state["stopped_since"] = None
     st.set_setting(KEY, json.dumps(state))
 
 
@@ -173,6 +189,7 @@ def remove_row(state: dict, category) -> dict:
         raise PlanError("That category isn't in your plan.", 404)
     if not state["rows"]:
         state["in_use"], state["since"] = False, None
+        state["stopped_since"] = None
     return state
 
 
@@ -182,13 +199,34 @@ def use(state: dict, today: date) -> dict:
         raise PlanError("Add a category to your plan first.", 409)
     if not state["in_use"]:
         state["in_use"], state["since"] = True, today.isoformat()
+    state["stopped_since"] = None
     return state
 
 
 def stop(state: dict) -> dict:
-    """Stop using this plan (YP-03), or Undo on its toast: back to her
-    usual amounts. The rows stay, as a proposal again."""
+    """YP-07's Stop using it: back to her usual amounts. The rows stay, as a
+    proposal again, and the day it was in use since is kept for Undo."""
+    if state["in_use"]:
+        state["stopped_since"] = state["since"]
     state["in_use"], state["since"] = False, None
+    return state
+
+
+def undo_use(state: dict) -> dict:
+    """Undo on YP-03's toast: as before Use this plan."""
+    state["in_use"], state["since"], state["stopped_since"] = False, None, None
+    return state
+
+
+def resume(state: dict, today: date) -> dict:
+    """Undo on YP-07's toast: in use again the way it was, since the same
+    day (today if that's not known)."""
+    if not state["rows"]:
+        raise PlanError("Add a category to your plan first.", 409)
+    if not state["in_use"]:
+        state["in_use"] = True
+        state["since"] = state.get("stopped_since") or today.isoformat()
+    state["stopped_since"] = None
     return state
 
 
@@ -196,7 +234,8 @@ def stop(state: dict) -> dict:
 
 def suggestions(transactions: list[Transaction], today: date, usual: dict) -> list[dict]:
     """Her largest spending categories from her usual month (the last three
-    full months), each at its usual rounded to the nearest $5. Left out as
+    full months), each at its usual rounded up to the next $10, as the chat
+    suggests one (note 1353:11493). Left out as
     the budgets leave them out (B2): rent, and a category that's all bills
     (bills are set aside already)."""
     from . import category_budgets as cb
@@ -205,7 +244,7 @@ def suggestions(transactions: list[Transaction], today: date, usual: dict) -> li
     for row in sorted(built["rows"], key=lambda r: (-r["usual"], r["category"])):
         if row["bill"]:
             continue
-        amount = round_5(row["usual"])
+        amount = round_up_10(row["usual"])
         if amount <= 0:
             continue
         out.append({"category": row["category"], "amount": amount, "source": "pearl"})
@@ -228,6 +267,35 @@ def suggest(state: dict, transactions: list[Transaction], today: date, usual: di
     return state
 
 
+# ── YP-08's Add a category ──────────────────────────────────────────────
+
+def not_in_plan(state: dict, transactions: list[Transaction], today: date, usual: dict,
+                hidden: set[str] | None = None) -> list[dict]:
+    """NOT IN YOUR PLAN: every spending category a plan can have that isn't
+    in it, each with her usual and the amount YP-04 starts at (the usual to
+    the nearest $5). Largest usual first; those with no spending in her
+    usual month last, at $0, by name. Left out as Suggest a plan leaves them
+    out (B2): rent, and a category that's all bills, which is set aside as a
+    bill already, so a plan would hold it back twice."""
+    from . import category_budgets as cb
+    from .chat import spend_categories
+    from .categorize import NON_SPEND
+    have = {r["category"] for r in state["rows"]}
+    built = cb.build(transactions, today, usual, {}, [])
+    bills = {r["category"] for r in built["rows"] if r["bill"]}
+    cats = usual.get("categories") or {}
+    names = set(spend_categories(hidden)) | {c for c, info in cats.items() if (info.get("usual") or 0) > 0}
+    out = []
+    for cat in names:
+        if (cat in have or cat in bills or cat in cb.LEFT_OUT or cat in NON_SPEND
+                or cat == "Unsorted transfers" or (hidden and cat in hidden)):
+            continue
+        the_usual = round(float((cats.get(cat) or {}).get("usual") or 0.0), 2)
+        out.append({"category": cat, "usual": the_usual, "amount": round_5(the_usual)})
+    out.sort(key=lambda r: (-r["usual"], r["category"]))
+    return out
+
+
 # ── The page ────────────────────────────────────────────────────────────
 
 def page(state: dict, usual: dict, income: float | None, bills: float) -> dict:
@@ -245,5 +313,7 @@ def page(state: dict, usual: dict, income: float | None, bills: float) -> dict:
         "income": income,
         "bills": bills,
         "allowance": round(income - bills - total, 2) if income else None,
+        # YP-07: the Allowance a month without the plan, her usual amounts.
+        "allowance_without": round(income - bills, 2) if income else None,
         "months": len(usual.get("months") or []),
     }
