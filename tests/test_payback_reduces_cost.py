@@ -105,7 +105,8 @@ def test_a_payback_no_one_is_credited_with_yet_still_comes_off(client, dinner, h
     assert after["row"] == 100.0
     assert after["spent"] == 100.0
     assert after["allowance"] == round(before["allowance"] + 50.0, 2)
-    assert after["note"] == "Split with Sam and Priya · $50.00 to come back"
+    # RC-01: the row costs $100.00 now, and says so.
+    assert after["note"] == "$150.00 split · $50.00 back · $50.00 to come"
 
 
 def test_saying_who_sent_it_changes_nothing_she_spent(client, dinner):

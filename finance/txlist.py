@@ -326,6 +326,7 @@ def describe(t: Transaction, ctx: Context) -> dict:
     # Rule A (TEST-03): a split nobody has paid yet counts in full, so it's
     # still a split when its amount is the whole purchase.
     owed = getattr(t, "split_owed", 0.0) or 0.0
+    cost = None
     split = ((t.my_share is not None or bool(t.paid_back)) and counts == "spending"
              and cat not in ("Transfers", "Unsorted transfers", "Income")
              and (abs(abs(share_amount(t)) - abs(t.amount)) >= 0.005 or owed >= 0.005
@@ -346,16 +347,12 @@ def describe(t: Transaction, ctx: Context) -> dict:
         note = f"Your share of {money(t.amount)}{with_whom}"
         split_info = ctx.splits.get(t.fingerprint)
         if split_info:
-            # T-01r2 (TEST-03, product owner 2026-11-10): under Rule A the row
-            # says how much is still to come back, or that it all has.
-            people = [p["name"] for p in split_info.get("people") or []]
-            if split_info.get("mode") == "unknown":
-                ways = len(people) + (1 if split_info.get("me", True) else 0)
-                note = f"Split {ways} ways · not sure yet · {money(share_amount(t))} still counts"
-            elif owed >= 0.005:
-                note = f"Split with {_short_names(people)} · {money(owed)} to come back"
-            else:
-                note = f"Your share of {money(t.amount)} · all paid back"
+            # RC-01 (ROWCOST-01, product owner 2026-11-16; replaces T-01r2):
+            # the row's amount is what it costs her now (`amount` above, the
+            # same share_amount Spent counts) and the line under it says the
+            # whole purchase, what's come back and what's still to come.
+            cost = cost_now(t, split_info)
+            note = cost["line"]
 
     # A purchase she linked a refund to says so, the way the refund names it.
     refunds_in = sorted(ctx.refunded_by.get(t.fingerprint, []), key=lambda r: r.date)
@@ -461,6 +458,9 @@ def describe(t: Transaction, ctx: Context) -> dict:
         "note_link": note_link,
         "my_note": ctx.notes.get(t.fingerprint, ""),
         "split": split,
+        # RC-01, RC-02: what a split purchase costs her now and its parts,
+        # so the phone shows the server's numbers and works none out.
+        "cost": cost,
         "repays": t.repays,
         "paid_part": t.paid_part if t.repays else None,
         "excluded": "" if copy else (t.excluded or ""),
@@ -787,11 +787,53 @@ def collapse_transfers(rows: list[tuple[Transaction, dict]],
     return kept
 
 
-def _short_names(names: list[str]) -> str:
-    """T-01r2: "Priya", "Priya and Sam", "Priya +2"."""
-    if len(names) <= 2:
-        return " and ".join(names)
-    return f"{names[0]} +{len(names) - 1}"
+def cost_now(t: Transaction, split: dict) -> dict:
+    """ROWCOST-01 (RC-01, RC-02, RC-03; product owner 2026-11-16): what a
+    split purchase costs her now, and the parts the line under it names.
+
+    `now` is `spend_amount`, the number Spent and the Allowance count, so
+    the rows add up to Spent. Rule A stays: what others still owe
+    (`split_owed`) is hers until it comes back, so a split nobody has paid
+    yet still costs the whole purchase. Each payback (linked, cash or
+    another app) and work paying her share lowers it at once.
+
+    * `whole`: what was split (her part of a joint purchase, JOINT-B);
+    * `back`: what the others paid back, as people_status credits it;
+    * `to_come`: what they still owe (`split_owed`);
+    * `work`: what work paid of her own share (`split_reimbursed`, TEST-31);
+    * `ways`: her and the people in it;
+    * `line`: the row's words, "$127.50 split · $30.00 back · $57.50 to come";
+    * `header`: the page's (RC-02), which names the ways from three up,
+      "$150.00 split 5 ways · $40.00 back · $50.00 to come".
+
+    Not sure yet (S-04u) has no shares: "$120.00 split 5 ways · not sure yet".
+    """
+    from .splits import UNSURE, split_base
+    whole = split_base(t)
+    people = split.get("people") or []
+    ways = len(people) + (1 if split.get("me", True) else 0)
+    now = round(abs(spend_amount(t)), 2)
+    if split.get("mode") == UNSURE:
+        line = f"{money(whole)} split {ways} ways · not sure yet"
+        return {"now": now, "whole": whole, "back": round(getattr(t, "unsure_paid", 0.0) or 0.0, 2),
+                "to_come": 0.0, "work": 0.0, "ways": ways, "unsure": True, "line": line, "header": line}
+    owed = round(getattr(t, "split_owed", 0.0) or 0.0, 2)
+    work = round(getattr(t, "split_reimbursed", 0.0) or 0.0, 2)
+    mine = t.my_share or 0.0
+    # A refund shrinks every part the same way (decision 6), so what the
+    # others were to pay is their parts after it.
+    refunded = getattr(t, "refunded", 0.0) or 0.0
+    factor = max(1.0 - refunded / t.amount, 0.0) if t.amount > 0 and refunded else 1.0
+    back = round(max((whole - mine) * factor - owed, 0.0), 2)
+    parts = [f"work paid your {money(work)}"] if work >= 0.005 else []
+    if back >= 0.005:
+        parts.append(f"{money(back)} back")
+    if owed >= 0.005:
+        parts.append(f"{money(owed)} to come")
+    tail = "".join(f" · {p}" for p in parts)
+    return {"now": now, "whole": whole, "back": back, "to_come": owed, "work": work, "ways": ways,
+            "unsure": False, "line": f"{money(whole)} split{tail}",
+            "header": f"{money(whole)} split{f' {ways} ways' if ways >= 3 else ''}{tail}"}
 
 
 def totals(rows: list[tuple[Transaction, dict]]) -> dict:
