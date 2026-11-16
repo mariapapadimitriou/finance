@@ -157,6 +157,9 @@ struct PearlOptionRow: View {
     let title: String
     var sub: String? = nil
     var prominent = false
+    /// PB-22 → PB-11: the answer Pearl picked from the match, with the
+    /// Choice row's Pearl-tint checkmark beside the chevron.
+    var checked = false
     let action: () -> Void
 
     var body: some View {
@@ -171,6 +174,11 @@ struct PearlOptionRow: View {
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
+                if checked {
+                    Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(Pearl.action)
+                        .accessibilityHidden(true)
+                }
                 Image(systemName: "chevron.right").font(.system(size: 14, weight: .medium))
                     .foregroundColor(Pearl.muted)
                     .accessibilityHidden(true)
@@ -182,7 +190,7 @@ struct PearlOptionRow: View {
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel([title, sub].compactMap { $0 }.joined(separator: ", "))
-        .accessibilityAddTraits(.isButton)
+        .accessibilityAddTraits(checked ? [.isButton, .isSelected] : .isButton)
     }
 }
 
@@ -494,35 +502,52 @@ enum PersonChoice {
     /// S-48e (TEST-18b): change what she answered for a payer.
     case changeAnswer
     case view(Transaction.LinkInfo), unlink(Transaction.LinkInfo)
+    /// PB-20 (Paid back, 2026-11-15): her own row's Find what paid it back.
+    case findPaidBack
 }
 
 /// TEST-31 S-40w: the ••• on her own reimbursed row. REIMBURSED BY with View
 /// the deposit and Unlink… (the S-34kr7 sheet), then Change your share. No
 /// Remove: she can't remove herself. S-40m (Money back): REFUNDED BY, the
 /// refund card, View the refund and Unlink… (S-34kr8 "Unlink refund?").
+/// PB-20 (1359:9271, dark 1359:9386; Paid back, approved 2026-11-15): the
+/// options start with Find what paid it back, and the ••• is there before
+/// anything is linked too (`mine` nil): "Your share $60.00 · nothing paid
+/// it back yet" in money-in green, then YOUR SHARE.
 struct MineOptionsSheet: View {
     let t: Transaction
     let split: Transaction.Splitting
-    let mine: Transaction.Splitting.Mine
+    let mine: Transaction.Splitting.Mine?
     let by: String
     let onClose: () -> Void
     let onChoose: (PersonChoice) -> Void
 
     private var ways: Int { split.people.count + 1 }
 
+    private var sub: String {
+        guard let mine = mine else { return "Your share \(Format.amount(split.you)) · nothing paid it back yet" }
+        return mine.full
+            ? "✓ " + (mine.refunded ? "Refunded" : "Reimbursed by \(by)") + (mine.on.map { " · \(Format.short($0))" } ?? "")
+            : "\(mine.refunded ? "Refunded" : "Reimbursed") \(Format.amount(mine.reimbursed)) of \(Format.amount(mine.amount)) · \(Format.amount(mine.stays)) stays yours"
+    }
+
     var body: some View {
         PearlSheet {
             PearlSheetHeader(face: "Me", overline: "\(t.merchant) · split \(ways) ways", title: "You",
-                             sub: mine.full
-                                ? "✓ " + (mine.refunded ? "Refunded" : "Reimbursed by \(by)") + (mine.on.map { " · \(Format.short($0))" } ?? "")
-                                : "\(mine.refunded ? "Refunded" : "Reimbursed") \(Format.amount(mine.reimbursed)) of \(Format.amount(mine.amount)) · \(Format.amount(mine.stays)) stays yours",
-                             subTone: mine.full ? Pearl.moneyIn : Pearl.muted, close: onClose)
-            if let links = mine.links, !links.isEmpty {
+                             sub: sub, subTone: mine.map { $0.full ? Pearl.moneyIn : Pearl.muted } ?? Pearl.moneyIn,
+                             close: onClose)
+            if let mine = mine, let links = mine.links, !links.isEmpty {
                 PearlSectionLabel(text: mine.refunded ? "Refunded by" : "Reimbursed by")
                 ForEach(links) { link in card(link, only: links.count == 1) }
             }
-            PearlSectionLabel(text: "Change the split")
+            PearlSectionLabel(text: mine == nil ? "Your share" : "Change the split")
             PearlOptionCard {
+                // PB-20: first, also before anything is linked. The frame
+                // draws the title alone; what it finds is the VoiceOver hint.
+                PearlOptionRow(symbol: "person.2", title: "Find what paid it back") { onChoose(.findPaidBack) }
+                    .accessibilityHint("Work, a refund, or someone paying you")
+                    .accessibilityIdentifier("find-paid-back")
+                PearlDivider()
                 PearlOptionRow(symbol: "person.2", title: "Change your share") { onChoose(.changeShare) }
             }
         }

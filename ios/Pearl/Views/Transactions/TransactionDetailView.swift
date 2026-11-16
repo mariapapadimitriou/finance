@@ -359,6 +359,8 @@ struct TransactionDetailView: View {
     @State private var newOnes: Bool?
     /// T-38b / T-40b: "Dining out · Undo" after a guess is confirmed.
     @State private var toast: (title: String, undo: (() -> Void)?)?
+    /// PB-22 to PB-24: where Find what paid it back is.
+    @State private var paidBackStep: PaidBackStep?
     /// T-41b: Unlink? before a refund goes back to Needs a look.
     @State private var unlinkingRefund = false
     /// SPLIT-25: S-05o for a PAID BACK or REFUNDED BY row on a purchase that
@@ -754,6 +756,13 @@ struct TransactionDetailView: View {
             }
         }
         .sheet(isPresented: $unlinking) { unlinkSheet }
+        // PB-20 to PB-24 (Paid back, 2026-11-15): Find what paid it back,
+        // from her own row's •••; the toast and Undo land here.
+        .modifier(PaidBackFromPurchase(step: $paidBackStep, purchase: t, api: app.api, done: { title, undo in
+            Task { await run { withAnimation { toast = (title, undoing(undo)) }; return nil } }
+        }, failed: { text in
+            withAnimation { toast = nil; splitToast = PearlToast.Model(text: text, failed: true) }
+        }))
         .sheet(isPresented: $unlinkingRefund) { refundUnlinkSheet }
         .overlay(alignment: .bottom) {
             VStack(spacing: 4) {
@@ -1757,6 +1766,8 @@ struct TransactionDetailView: View {
         case .view(let link): if let id = link.view?.id { Task { await open(id) } }
         case .unlink(let link): unlinkingLink = link
         case .changeShare: splitting = true
+        // PB-20 → PB-22: What paid back your share?
+        case .findPaidBack: paidBackStep = .find
         default: break
         }
     }
@@ -2369,6 +2380,8 @@ struct TransactionDetailView: View {
                     showFailed("Couldn’t remove \(p.name). Nothing changed.") { choose(p, .remove) }
                 }
             }
+        // Her own row's (PB-20); someone else's row has Mark paid back.
+        case .findPaidBack: paidBackStep = .find
         }
     }
 

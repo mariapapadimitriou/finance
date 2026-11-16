@@ -281,6 +281,30 @@ class TestTilesBySource:
                 assert stock not in code, (path, stock)
             assert "safe to spend" not in code.lower()
 
+    def test_find_what_paid_it_back(self):
+        """PB-20 to PB-24's words, as Pearl sheets (note 1352:10319)."""
+        menus = self.src("ios/Pearl/Views/Transactions/SplitMenus.swift")
+        for words in ('"Find what paid it back"', '"Work, a refund, or someone paying you"',
+                      '"Your share \\(Format.amount(split.you)) · nothing paid it back yet"'):
+            assert words in menus, words
+        find = self.src("ios/Pearl/Views/Transactions/PaidBackFindViews.swift")
+        for words in ('"What paid back your share?"', '"Search deposits, or an amount"',
+                      '"Likely · money in after \\(Format.short(f.date))"', '"Next"',
+                      '"No money in matches"', '"Clear search"',
+                      "If it hasn’t arrived yet, Pearl asks when it does.",
+                      '"Take \\(more) from \\(other)?"', '"Take \\(more)"',
+                      '"Leave it on \\(other)"', '"Use only the \\(Format.amount(free))"',
+                      "of this deposit is free, so it pays back your share first.",
+                      '"All of this deposit pays back \\(other).'):
+            assert words in find, words
+        who = self.src("ios/Pearl/Views/Transactions/PaidBackViews.swift")
+        for words in ('is on this split"', '"your employer"', '"this shop"'):
+            assert words in who, words
+        for code in (find, who):
+            for stock in (".confirmationDialog(", ".alert(", ".actionSheet("):
+                assert stock not in code, stock
+            assert "safe to spend" not in code.lower()
+
 
 class TestFromThePurchase:
     """Paid back from the purchase side (2026-11-15, no UI yet): candidates

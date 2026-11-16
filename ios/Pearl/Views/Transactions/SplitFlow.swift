@@ -1425,26 +1425,43 @@ struct SplitPeople: View {
     }
 
     /// S-04r v3: her share on a split with amounts.
+    /// PB-20 (Paid back, 2026-11-15): its ••• is there before anything is
+    /// linked too, for Find what paid it back (S-40w with nothing yet).
     private var setYouRow: some View {
-        Button(action: onEdit) {
-            HStack(spacing: 12) {
-                PearlFace(name: "Me", size: 40)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("You").font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                    Text("Your share").font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
-                    if amountsUnder { youAmount }
+        HStack(spacing: 12) {
+            Button(action: onEdit) {
+                HStack(spacing: 12) {
+                    PearlFace(name: "Me", size: 40)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("You").font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
+                        Text("Your share").font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
+                        if amountsUnder { youAmount }
+                    }
+                    Spacer(minLength: 8)
+                    if !amountsUnder { youAmount }
                 }
-                Spacer(minLength: 8)
-                if !amountsUnder { youAmount }
+                .padding(.vertical, 10).frame(minHeight: 56).contentShape(Rectangle())
             }
-            .padding(.vertical, 10).frame(minHeight: 56).contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .disabled(split.closedAt != nil)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("You, your share, \(Format.amount(split.you))")
+            .accessibilityHint("Opens Edit split")
+            .accessibilityIdentifier("split-you-row")
+            if split.closedAt == nil {
+                PearlMoreButton(label: "Options for you") { mineOptions = true }
+            }
         }
-        .buttonStyle(.plain)
-        .disabled(split.closedAt != nil)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("You, your share, \(Format.amount(split.you))")
-        .accessibilityHint("Opens Edit split")
-        .accessibilityIdentifier("split-you-row")
+        .sheet(isPresented: $mineOptions, onDismiss: {
+            let next = afterMine
+            afterMine = nil
+            next?()
+        }) {
+            MineOptionsSheet(t: t, split: split, mine: nil, by: "", onClose: { mineOptions = false }) { choice in
+                afterMine = { onMine(choice) }
+                mineOptions = false
+            }
+        }
     }
 
     private var youAmount: some View {
