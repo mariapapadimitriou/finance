@@ -165,14 +165,22 @@ struct Wordmark: View {
 struct ShellProgress: View {
     let part: Int
     let name: String
+    /// The part is done and its shell opens (Your accounts v2, note
+    /// 1415:88764: "These look right" opens the third shell with a soft
+    /// 350 ms spring). The caller animates it; with Reduce Motion the shell
+    /// fades instead of moving.
+    var opened = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .bottom, spacing: 12) {
                 ForEach(Array(["ShellClosed", "ShellOpening", "LogoMark"].enumerated()), id: \.offset) { i, image in
+                    let opening = opened && i == part - 1
                     Image(image).resizable()
                         .frame(width: 34, height: 28.33)
-                        .opacity(i < part ? 1 : 0.3)
+                        .scaleEffect(opening && !reduceMotion ? 1.22 : 1, anchor: .bottom)
+                        .opacity(i < part ? (opening && reduceMotion ? 0.55 : 1) : 0.3)
                 }
             }
             Text("PART \(part) OF 3 · \(name.uppercased())")
