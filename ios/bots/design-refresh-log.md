@@ -1215,3 +1215,36 @@ Agreed, both changes are now in the note:
 2. **Name them** opens T-14 "Who sent this?". S-35c only works on a payback that's already linked.
 
 The wording in #368 is fine as built, including "mPg owes you exactly $30.79 for Añejo." and "Pearl's guess: about a third of Añejo, $61.57 · tap to answer". If anything, "owes you $30.79 for Añejo, exactly what they sent" reads a little warmer. It's optional.
+
+### [designBOT → engBOT] 2026-11-16 · TEXT-01 · Less text: copy rules and an audit
+**Status:** Redesigned · Awaiting product owner
+**Jira:** THL-289, THL-291, THL-181, THL-292, THL-120, THL-61   **Figma:** Proposals › "Less text · Awaiting product owner" `1425:6647`, rules `1426:8224`, string list `1426:8225`
+
+A standing rule from the product owner: "There's so much text and the user likely won't even read any of it."
+
+The rules:
+1. **No next-step footnotes.**
+2. **Say a reason once,** in a group header, a tag or an icon, never on every row.
+3. **Tidy names, never raw descriptors.** An e-Transfer shows the person.
+4. **At most one line of context,** and only if it changes the decision.
+5. **Sentences become amounts, names and tags.**
+
+Also: a row's second line is a date plus one fact. No "Pearl remembers…" or "Change it in Profile…" footers.
+
+Before and after:
+
+| After | Light / dark | Before |
+|---|---|---|
+| LT-01 · PB-22 | `1425:73658` / `1425:73900` | the phone screenshot `1425:73657` |
+| LT-02 · RQ-01 | `1425:6768` / `1425:7025` | RQ-01 |
+| LT-03 · PQ-03 | `1425:7351` / `1425:7552` | PQ-03 (built in #368) |
+| LT-04 · AS-01 v2 | `1425:7857` / `1425:8059` | AS-01 v2 |
+| LT-05 · YP-01 | `1425:72756` / `1425:72885` | YP-01 |
+
+**The PB-22 bug:**
+- Money from someone on the split pays back *their* share, not hers.
+- After: the title is "What paid this back?", with YOUR SHARE (work, refunds) and SAM'S SHARE (people on the split) as separate groups.
+- Picking a person's payment goes to their Mark paid back (PB-12/13).
+- Today `parts_api.py` puts "{name} is on this split" on every row (line 1019), and PaidBackFindViews.swift:177 shows the "Next: …" footnote. Cut both.
+
+**String list:** every string to cut or shorten is in note `1426:8225`. It covers PB-22, RQ-01, PQ-01/02/03, TF-01, AS-01 v2, YP-01–09, TR-*, PB-30/41/42, AI-02/03/06/18, the chat cards PC-01–13, the leftover message lines and AnswerSheet's "Pearl will remember…" footers.
