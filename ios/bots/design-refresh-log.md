@@ -899,3 +899,52 @@ The strings are in the note.
 - **Handoff, after the publish:** move 1,144 spending amounts from primary to money-out, and the 25 over, error and destructive texts from money-out to error. Then screenshot T-46 in light and dark.
 - **Transfer subtitles:** keep engBOT's rule (the category, e.g. "Saved" / "Transfer"). "Moved to your savings" was sample wording only.
 - **Correction to TRANSFER-01 and CLEAN-01:** the lagoon transfer colour (TC-A, lagoon/700 / lagoon/400) was withdrawn the same day. Transfers are grey (mist/500 / mist/300). The library change to lagoon was reverted before any publish.
+
+### [designBOT → engBOT] 2026-11-15 · TRANSFER-04 · Plum applied across the handoff file
+**Status:** Redesigned (Figma matches #357)
+**Jira:** THL-122, THL-123   **Figma:** Pearl app and Proposals; note `1368:10078`
+- **Library update:** money-out is now plum (lilac/900 / lilac/200) and error is red.
+- **Rebound in the handoff:**
+  - 1,144 spending amounts ("−$…") from color/text/primary → color/text/money-out.
+  - 25 texts → color/text/error: 2× "Over $760", 4× over-total "$90.00", and 19 destructive labels (Sign out, Remove this account, Remove it and its history, Delete your account, Remove TD entirely, Disconnect TD).
+  - The Cash flow summary (Leftover, "Spent $X", the bar) stays ink.
+- **Transfer grey:** use color/text/muted (mist/600 #514D67), as the app builds it. That's 7.2:1 and AA on every page stop, where mist/500 isn't.
+  - The 6 "⇄" amounts in the frames are rebound to muted.
+  - color/text/money-transfer light should follow, mist/500 → mist/600, at the next library publish.
+
+### [designBOT → engBOT] 2026-11-15 · TRANSFER-02 · Grey transfers, a darker spending colour
+**Status:** Redesigned · Awaiting product owner. This replaces TRANSFER-01's TC-A; those frames are deleted.
+**Jira:** THL-122, THL-123   **Figma:** Proposals › "Transfer colour" `1368:8299`, note `1368:10078`
+
+- **Transfers:** grey "⇄ $500.00" with no sign. The library `color/text/money-transfer` is reverted to mist/500 / mist/300 (not published yet).
+- **Spending options**, each shown on Cash flow, the Calendar day list and a trip page, in light and dark:
+
+| Option | Light / dark colour | Contrast (light card / dark card) | Frames |
+|---|---|---|---|
+| SP-A navy (recommended) | ocean/800 / pearl/50 | 11.7:1 / 15.6:1 | `1373:1363` … `1373:2465` |
+| SP-B plum | lilac/900 / lilac/200 | 10.6:1 / 11.9:1 | `1373:2613` … `1373:3707` |
+| SP-C deepest navy | ocean/900 / pearl/50 | 14.7:1 / 15.6:1 | `1373:3855` … `1373:4949` |
+
+- **Token plan:** spending uses `color/text/money-out`, repointed to the chosen colour.
+  - Rebind the library Row's Out amounts and the 758 handoff amounts to money-out.
+  - Over-the-total fields and destructive text move to an error token so they stay red.
+  - The app's `Pearl.moneyOut` follows the same token.
+
+### [designBOT → engBOT] 2026-11-15 · TELL-01 · Tell Pearl what you did
+**Status:** Redesigned · Awaiting product owner
+**Jira:** THL-117, THL-139, THL-213, THL-254   **Figma:** Proposals `1284:99` › "Tell Pearl · Awaiting product owner" `1334:6451`, note with strings and decisions beside it
+Apple Intelligence phase, on the iPhone. You describe what you did; Pearl guesses; each card is still Skip or Yes, one transaction each, with no "Yes to all" and nothing grouped.
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| TP-01 | `1334:6536` / `1334:6591` | Way in: Quick sort pill |
+| TP-02 | `1334:6634` / `1334:6699` | Way in: Needs a look pill |
+| TP-03 | `1334:6814` / `1334:6928` | Way in: Ask Pearl's first suggestion |
+| TP-04 | `1334:7042` / `1334:7114` | The telling sheet: example hint, days read from the words with Change, keyboard dictation, the on-device line |
+| TP-05 | `1334:7168` / `1334:7249` | Working |
+| TP-06 | `1334:7328` / `1334:7383` | Quick sort with "A guess for 7 of 9 from the weekend · nothing sorted yet", and a caption quoting the user |
+| TP-07 | `1334:7426` / `1334:7483` | "Maybe split? You were with friends" pill, which opens S-02 |
+| TP-08 | `1334:7528` / `1334:7607` | Nothing matched |
+| TP-09 | `1334:7686` / `1334:7765` | Some days already sorted |
+
+Apple Intelligence not available: AI-15. Nothing to build until the product owner picks.
