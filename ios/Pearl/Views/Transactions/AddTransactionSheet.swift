@@ -120,7 +120,7 @@ struct AddTransactionSheet: View {
         ZStack {
             Text(amountText)
                 .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
-                .foregroundColor(value == nil ? Pearl.muted : (moneyIn ? Pearl.moneyIn : Pearl.ink))
+                .foregroundColor(value == nil ? Pearl.muted : (moneyIn ? Pearl.moneyIn : Pearl.moneyOut))
                 .lineLimit(1).minimumScaleFactor(0.5)
                 .accessibilityHidden(true)
             TextField("", text: $amount)

@@ -456,7 +456,7 @@ private struct ChatRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             Text((t.inflow ? "+" : "\u{2212}") + Format.amount(t.shownAmount))
                 .font(Nacre.headline).monospacedDigit()
-                .foregroundColor(t.inflow ? Pearl.moneyIn : Pearl.ink)
+                .foregroundColor(t.inflow ? Pearl.moneyIn : Pearl.moneyOut)
                 .lineLimit(1).fixedSize()
         }
         .padding(.horizontal, 16).padding(.vertical, 11)

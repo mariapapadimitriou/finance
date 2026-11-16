@@ -168,7 +168,7 @@ struct YourDataView: View {
                     .buttonStyle(.plain)
                     RowSeparator()
                     Button { showDelete = true } label: {
-                        DataRow(icon: "DataTrash", title: "Delete your account", tone: Pearl.moneyOut, chevron: true)
+                        DataRow(icon: "DataTrash", title: "Delete your account", tone: Pearl.danger, chevron: true)
                     }
                     .buttonStyle(.plain)
                 }

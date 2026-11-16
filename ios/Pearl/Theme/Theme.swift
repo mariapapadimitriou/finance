@@ -32,6 +32,10 @@ enum Pearl {
     static let blush = Color(hex: 0xFFE4EC)                         // --blush
     static let answered = dynamic(light: 0xF1E9EE, dark: 0x252C5E)  // answered rows
     static let moneyIn = dynamic(light: 0x167A40, dark: 0x6EDB94)   // color/text/money-in (dark #6EDB94, Figma library; product owner 2026-11-09)
+    /// color/text/money-out, SP-B plum (product owner, 2026-11-15): spending
+    /// amounts. Lilac/900 #3D2E60 in light, lilac/200 #E3D4FF in dark.
+    /// Names and body text stay ink; red is `danger`.
+    static let moneyOut = dynamic(light: 0x3D2E60, dark: 0xE3D4FF)
     static let caution = dynamic(light: 0x8A5A12, dark: 0xF3D9A4)   // --caution
     static let cautionBackground = dynamic(light: 0xFBECC8, dark: 0x3A2E14)
 
@@ -39,7 +43,9 @@ enum Pearl {
         colors: [Color(hex: 0xFFD6E0), Color(hex: 0xE3D4FF), Color(hex: 0xCFF3EE)],
         startPoint: .topLeading, endPoint: .bottomTrailing)
 
-    static let moneyOut = dynamic(light: 0xBE2634, dark: 0xFF7B72)  // color/text/money-out
+    /// Red, only for over budget, errors and destructive actions (it was
+    /// `moneyOut` before SP-B gave spending its own plum).
+    static let danger = dynamic(light: 0xBE2634, dark: 0xFF7B72)
     static let rose = Color(hex: 0xE2557F)                          // --rose-500 (icons, badges)
     static let suggested = Color(hex: 0xFF8FB1)                     // --rose-300, a guess's dashed outline
     static let rule = Color(UIColor { $0.userInterfaceStyle == .dark

@@ -411,7 +411,7 @@ struct CalendarCard: View {
         case "on":
             Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundColor(Nacre.teal)
         case "ahead":
-            Image(systemName: "triangle.fill").font(.system(size: 7)).foregroundColor(Pearl.moneyOut.opacity(0.8))
+            Image(systemName: "triangle.fill").font(.system(size: 7)).foregroundColor(Pearl.danger.opacity(0.8))
         default:
             if !cell.due.isEmpty {
                 Circle().fill(Pearl.ink.opacity(0.7)).frame(width: 4, height: 4).padding(.top, 3)
@@ -558,7 +558,7 @@ struct CalendarCard: View {
                         Text(item.1.label).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
                         Spacer(minLength: 8)
                         Text((pay ? "+" : "\u{2212}") + Format.amount(item.1.amount)).font(Nacre.body).monospacedDigit()
-                            .foregroundColor(pay ? Pearl.moneyIn : (item.1.kind == "chest" ? Pearl.muted : Pearl.ink))
+                            .foregroundColor(pay ? Pearl.moneyIn : (item.1.kind == "chest" ? Pearl.muted : Pearl.moneyOut))
                     }
                     .padding(.horizontal, 16).frame(minHeight: 48)
                     .accessibilityElement(children: .combine)
@@ -605,7 +605,7 @@ struct CalendarCard: View {
                             }
                             Spacer(minLength: 8)
                             Text("\u{2212}" + Format.amount(sp.amount)).font(Nacre.body).monospacedDigit()
-                                .foregroundColor(Pearl.ink)
+                                .foregroundColor(Pearl.moneyOut)
                         }
                         .padding(.horizontal, 16).padding(.vertical, 10)
                         .accessibilityElement(children: .combine)
@@ -677,7 +677,7 @@ struct CalendarCard: View {
         VStack(spacing: 2) {
         HStack(spacing: 14) {
             Label { Text("Over your usual pace") } icon: {
-                Image(systemName: "triangle.fill").font(.system(size: 7)).foregroundColor(Pearl.moneyOut.opacity(0.8))
+                Image(systemName: "triangle.fill").font(.system(size: 7)).foregroundColor(Pearl.danger.opacity(0.8))
             }
             Label { Text("On pace") } icon: {
                 Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundColor(Nacre.teal)
@@ -858,7 +858,7 @@ struct DaySheet: View {
                                     if i > 0 { RowSeparator() }
                                     line(s.merchant, sub: [s.category, s.unusual == true ? "unusual" : nil]
                                             .compactMap { $0 }.joined(separator: " · "),
-                                         amount: "\u{2212}" + Format.amount(s.amount), tone: Pearl.ink)
+                                         amount: "\u{2212}" + Format.amount(s.amount), tone: Pearl.moneyOut)
                                 }
                             }
                         }
@@ -870,7 +870,7 @@ struct DaySheet: View {
                                     let pay = d.kind == "pay"
                                     line(d.label, sub: nil,
                                          amount: (pay ? "+" : "\u{2212}") + Format.amount(d.amount),
-                                         tone: pay ? Pearl.moneyIn : (d.kind == "chest" ? Pearl.muted : Pearl.ink))
+                                         tone: pay ? Pearl.moneyIn : (d.kind == "chest" ? Pearl.muted : Pearl.moneyOut))
                                 }
                             }
                         }

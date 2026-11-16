@@ -922,7 +922,7 @@ struct TransactionDetailView: View {
             }
             if t.pending {
                 HStack(spacing: 6) {
-                    Circle().fill(Pearl.moneyOut).frame(width: 8, height: 8)
+                    Circle().fill(Pearl.danger).frame(width: 8, height: 8)
                     Text("Pending · amount may change")
                 }
                 .font(Nacre.footnote).foregroundColor(Pearl.ink)
@@ -1171,7 +1171,7 @@ struct TransactionDetailView: View {
         if t.refundOf != nil { return ("Refund", true, Pearl.moneyIn) }
         switch t.counts {
         case "income": return ("Income", true, Pearl.moneyIn)
-        case "spending": return ("Spending", t.inflow, t.inflow ? Pearl.moneyIn : Pearl.ink)
+        case "spending": return ("Spending", t.inflow, t.inflow ? Pearl.moneyIn : Pearl.moneyOut)
         default: return ("Not counted", t.inflow, Pearl.muted)
         }
     }
@@ -2031,7 +2031,7 @@ struct TransactionDetailView: View {
         }
         if t.manual {
             Button("Delete transaction") { deleting = true }
-                .buttonStyle(NacreTextButtonStyle(tone: Pearl.moneyOut))
+                .buttonStyle(NacreTextButtonStyle(tone: Pearl.danger))
                 .padding(.top, 12)
                 .disabled(busy)
                 .sheet(isPresented: $deleting) {

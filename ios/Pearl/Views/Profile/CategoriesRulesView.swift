@@ -247,7 +247,7 @@ struct CategoriesRulesView: View {
                     }
                     .cardRow(first: i == 0, last: i == rules.count + learned.count - 1)
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button("Delete") { delete(rule) }.tint(Pearl.moneyOut)
+                        Button("Delete") { delete(rule) }.tint(Pearl.danger)
                     }
                 }
                 // AI-05 (1313:4400, AI-03c): rules she said yes to, each opening AI-06.
@@ -337,7 +337,7 @@ struct CategoriesRulesView: View {
                     }
                     .cardRow(first: i == 0, last: i == tags.count - 1)
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button("Remove") { removingTag = tag }.tint(Pearl.moneyOut)
+                        Button("Remove") { removingTag = tag }.tint(Pearl.danger)
                         Button("Rename") { renamingTag = tag }.tint(Pearl.muted)
                     }
                 }

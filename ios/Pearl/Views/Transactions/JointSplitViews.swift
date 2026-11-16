@@ -769,7 +769,7 @@ struct SettleUpSheet: View {
             }
             if split.withMe {
                 PearlDivider()
-                amountRow("You", sub: "What still counts as yours", amount: still, tone: Pearl.ink)
+                amountRow("You", sub: "What still counts as yours", amount: still, tone: Pearl.moneyOut)
             }
         }
         if let failed = failed, !confirming { CautionBanner(text: failed) }
@@ -815,7 +815,7 @@ struct SettleUpSheet: View {
                           amount: p.paid, tone: p.paid >= 0.005 ? Pearl.moneyIn : Pearl.muted)
             }
             PearlDivider()
-            amountRow("Your share", sub: t.label, amount: still, tone: Pearl.ink)
+            amountRow("Your share", sub: t.label, amount: still, tone: Pearl.moneyOut)
             PearlDivider()
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {

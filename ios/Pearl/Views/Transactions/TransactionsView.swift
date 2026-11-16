@@ -355,7 +355,7 @@ struct TransactionsView: View {
                         .overlay(Circle().strokeBorder(Nacre.edge, lineWidth: 1))
                         .overlay(alignment: .topTrailing) {
                             if filtersOn {
-                                Circle().fill(Pearl.moneyOut).frame(width: 10, height: 10)
+                                Circle().fill(Pearl.danger).frame(width: 10, height: 10)
                                     .offset(x: -2, y: 2)
                             }
                         }
@@ -473,7 +473,7 @@ struct TransactionsView: View {
                     Text(pay != nil ? "Spent so far" : over ? "Over" : "Leftover").font(Nacre.footnote)
                         .foregroundColor(pay != nil ? Pearl.muted : Pearl.ink)
                     Text(narrowed ? "—" : Format.whole(pay != nil ? spent : abs(left)))
-                        .font(Pearl.display(.largeTitle)).foregroundColor(over ? Pearl.moneyOut : Pearl.ink)
+                        .font(Pearl.display(.largeTitle)).foregroundColor(over ? Pearl.danger : Pearl.ink)
                         .lineLimit(1).minimumScaleFactor(0.6)
                 }
                 .accessibilityElement(children: .combine)
@@ -493,7 +493,7 @@ struct TransactionsView: View {
                         Text("Pay to come \(Format.whole(pay.toCome))").foregroundColor(Pearl.muted)
                     } else {
                     Text(over ? "Over \(Format.whole(-left))" : "Leftover \(Format.whole(max(left, 0)))")
-                        .foregroundColor(over ? Pearl.moneyOut : Pearl.muted)
+                        .foregroundColor(over ? Pearl.danger : Pearl.muted)
                     }
                     Spacer(minLength: 0)
                 }
@@ -950,7 +950,7 @@ struct TransactionsView: View {
     }
 
     private var pickedTone: Color {
-        pickedRows.reduce(0) { $0 + ($1.inflow ? -$1.amount : $1.amount) } < 0 ? Pearl.moneyIn : Pearl.ink
+        pickedRows.reduce(0) { $0 + ($1.inflow ? -$1.amount : $1.amount) } < 0 ? Pearl.moneyIn : Pearl.moneyOut
     }
 
     /// Their category when they all share one, so Save waits for a change.
@@ -2141,7 +2141,8 @@ struct SheetBackground: View {
 
 extension Transaction {
     /// Red going out, green coming in, grey when it doesn't count.
-    var tone: Color { notCounted ? Pearl.muted : (inflow ? Pearl.moneyIn : Pearl.ink) }
+    /// SP-B: spending in plum (`moneyOut`), money in green, grey when it doesn't count.
+    var tone: Color { notCounted ? Pearl.muted : (inflow ? Pearl.moneyIn : Pearl.moneyOut) }
 
     /// TC-A (1368:8300, 1368:8898, 1368:9480): a row's amount on Cash flow,
     /// the Calendar day list and a trip page. Moved between her accounts is
