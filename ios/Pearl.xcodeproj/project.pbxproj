@@ -65,6 +65,7 @@
 		9AA99A83956F00835F526B9D /* PaidBackFindViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2F9ADED1FAF9A04D0A9D5B9 /* PaidBackFindViews.swift */; };
 		63AA5CAE5BF4CF1173C59B10 /* PaidBackViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A6C2D7708C47DF6B027473F /* PaidBackViews.swift */; };
 		8AF9A0C07760B9758CC9F76D /* PartsFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96396C8A0D0A1C86E81686D9 /* PartsFlow.swift */; };
+		3812F0CFE8572BDDD0FF614B /* PaybackLinkViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE06D62AFA3444FB6874B030 /* PaybackLinkViews.swift */; };
 		2196B0F0FEDADFDC6ADD6BF2 /* PaybackOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21096CABE6FEE63719E2FBE5 /* PaybackOptions.swift */; };
 		00E8B2945E5B9C6B0391813A /* SplitFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53A5D39D9874E14925943286 /* SplitFlow.swift */; };
 		4872AAE25E28798D24E870B2 /* SplitMenus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 558170EF44F3D7B55B10E732 /* SplitMenus.swift */; };
@@ -170,6 +171,7 @@
 		F2F9ADED1FAF9A04D0A9D5B9 /* PaidBackFindViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaidBackFindViews.swift; sourceTree = "<group>"; };
 		1A6C2D7708C47DF6B027473F /* PaidBackViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaidBackViews.swift; sourceTree = "<group>"; };
 		96396C8A0D0A1C86E81686D9 /* PartsFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PartsFlow.swift; sourceTree = "<group>"; };
+		FE06D62AFA3444FB6874B030 /* PaybackLinkViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaybackLinkViews.swift; sourceTree = "<group>"; };
 		21096CABE6FEE63719E2FBE5 /* PaybackOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaybackOptions.swift; sourceTree = "<group>"; };
 		53A5D39D9874E14925943286 /* SplitFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitFlow.swift; sourceTree = "<group>"; };
 		558170EF44F3D7B55B10E732 /* SplitMenus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitMenus.swift; sourceTree = "<group>"; };
@@ -406,6 +408,7 @@
 				F2F9ADED1FAF9A04D0A9D5B9 /* PaidBackFindViews.swift */,
 				1A6C2D7708C47DF6B027473F /* PaidBackViews.swift */,
 				96396C8A0D0A1C86E81686D9 /* PartsFlow.swift */,
+				FE06D62AFA3444FB6874B030 /* PaybackLinkViews.swift */,
 				21096CABE6FEE63719E2FBE5 /* PaybackOptions.swift */,
 				53A5D39D9874E14925943286 /* SplitFlow.swift */,
 				558170EF44F3D7B55B10E732 /* SplitMenus.swift */,
@@ -581,6 +584,7 @@
 				9AA99A83956F00835F526B9D /* PaidBackFindViews.swift in Sources */,
 				63AA5CAE5BF4CF1173C59B10 /* PaidBackViews.swift in Sources */,
 				8AF9A0C07760B9758CC9F76D /* PartsFlow.swift in Sources */,
+				3812F0CFE8572BDDD0FF614B /* PaybackLinkViews.swift in Sources */,
 				2196B0F0FEDADFDC6ADD6BF2 /* PaybackOptions.swift in Sources */,
 				00E8B2945E5B9C6B0391813A /* SplitFlow.swift in Sources */,
 				4872AAE25E28798D24E870B2 /* SplitMenus.swift in Sources */,

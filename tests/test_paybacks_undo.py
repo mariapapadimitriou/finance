@@ -239,3 +239,11 @@ class TestLinkSaysWhatStays:
         link = sam["links"][0]
         assert link["stays"] == ["PAI NORTHERN THAI"]
         assert link["share"] == 26.65
+        assert link["free"] == 0.0
+        assert link["word"] == "e-Transfer"
+
+    def test_free_on_a_payment_with_some_left(self, client):
+        pai, pizza, dep, part = TestPB42Change().setup(client)
+        client.post(f"/api/transactions/{pizza}/paybacks/{part}/change", json={"amount": 20})
+        sam = next(p for p in detail(client, pizza)["splitting"]["people"] if p["name"] == "Sam")
+        assert sam["links"][0]["free"] == 6.65

@@ -101,6 +101,17 @@ def inflow_link(st, charge: Transaction, x: Transaction, who: str | None, by_id:
     on = (st.splits().get(charge.fingerprint) or {}).get("people") or []
     share = next((q.get("amount") for q in on if who and q.get("name") == who), None)
     out["share"] = round(float(share), 2) if share is not None else None
+    # PB-42 How much: what of the same payment isn't linked yet, so "All of
+    # it" knows whether it covers the share (else PB-13b asks first).
+    if parent:
+        free = sum(q["amount"] for q in stored_parts.get(parent) or [] if q["kind"] == "rest")
+    else:
+        free = -x.amount - sum(x.part_for(c) for c in x.repays_all)
+    out["free"] = round(max(free, 0.0), 2)
+    # "View the e-Transfer", "from the e-Transfer on Nov 14": the payment's
+    # own word, also for a part of it.
+    whole_payment = by_id.get(parent or "") or x
+    out["word"] = sp.payment_word(whole_payment)
     return out
 
 

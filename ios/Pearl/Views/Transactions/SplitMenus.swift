@@ -507,6 +507,8 @@ enum PersonChoice {
     case view(Transaction.LinkInfo), unlink(Transaction.LinkInfo)
     /// PB-20 (Paid back, 2026-11-15): her own row's Find what paid it back.
     case findPaidBack
+    /// PB-42 (Paybacks & undo, 2026-11-16): S-40c's How much and Which purchase.
+    case howMuch(Transaction.LinkInfo), whichPurchase(Transaction.LinkInfo)
 }
 
 /// TEST-31 S-40w: the ••• on her own reimbursed row. REIMBURSED BY with View
@@ -684,6 +686,19 @@ struct PersonOptionsSheet: View {
                                    sub: (p.gift ?? 0) >= 0.005 ? "Now: a gift · or you owe \(p.name), or \(possessive(p.name)) share"
                                        : "Now: you owe \(p.name) · or \(possessive(p.name)) share, or a gift") {
                         onChoose(.changeAnswer)
+                    }
+                }
+            }
+            if paidInFull, links.count == 1, let link = links.first, TransactionDetailView.personPayback(link) {
+                // PB-42 note (1397:4698): S-40c keeps its own rows and adds How
+                // much and Which purchase, each opening PB-42 on that step.
+                PearlOptionCard {
+                    PearlOptionRow(symbol: "target", title: "How much", sub: "All of it · \(Format.amount(link.amount))") {
+                        onChoose(.howMuch(link))
+                    }
+                    PearlDivider()
+                    PearlOptionRow(symbol: "cart", title: "Which purchase", sub: "\(t.merchant) · \(Format.weekdayDay(t.date))") {
+                        onChoose(.whichPurchase(link))
                     }
                 }
             }
