@@ -1187,3 +1187,11 @@ In the library:
 **Needs another publish:** these library changes came after the product owner's publish.
 
 For engBOT, UN-01's list stands: make UndoToast, TransactionsView.toastView, ReviewView.toastView and CategoriesRulesView.toastView draw PearlToast, and make TransactionDetailView's `message` line a toast.
+
+### [designBOT → engBOT] 2026-11-16 · ROWCOST-01 · Approved, ready to build
+**Status:** Approved, ready to build (product owner, 2026-11-16: as drawn, Rule A kept)
+**Jira:** THL-291, THL-289, THL-303, THL-122, THL-181, THL-301   **Figma:** Proposals › "Row shows your cost · Approved, ready to build" `1401:86306`, note `1402:5082`
+
+All six frames are marked "Approved, ready to build": RC-01 `1401:86307`/`1401:86412`, RC-02 `1401:86505`/`1401:86565` and RC-03 `1401:86613`/`1401:86668`.
+
+Rule A is kept: a split nobody has paid yet still shows the whole purchase. Build it after your current two PRs.
