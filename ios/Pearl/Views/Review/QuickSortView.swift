@@ -261,7 +261,7 @@ struct QuickSortView: View {
         } else if let trip = trip {
             tripLines(trip)
         } else if let ask = current, drafts[ask.id] == nil, let unsure = ask.item.unsure {
-            unsureLines(ask, unsure)
+            unsureLines(unsure)
         } else {
             hintLines
         }
@@ -289,17 +289,14 @@ struct QuickSortView: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    /// AI-07 (1315:4227): why Pearl isn't sure, in ink; then what Yes does,
-    /// muted. Still Skip or Yes.
-    @ViewBuilder private func unsureLines(_ ask: Ask, _ unsure: Review.Item.Unsure) -> some View {
+    /// AI-07 (1315:4227): why Pearl isn't sure, in ink. What Yes does is the
+    /// dashed guess chip on the card, so no second line (less text 2).
+    /// Still Skip or Yes.
+    @ViewBuilder private func unsureLines(_ unsure: Review.Item.Unsure) -> some View {
         Text(unsure.line)
             .font(Nacre.footnote).foregroundColor(Pearl.ink)
             .multilineTextAlignment(.center).padding(.horizontal, 32)
             .fixedSize(horizontal: false, vertical: true)
-        Text("Yes sorts it as \(guess(ask)). Tap the card for more.")
-            .font(Nacre.footnote).foregroundColor(Pearl.muted)
-            .multilineTextAlignment(.center).padding(.horizontal, 32)
-            .padding(.top, 2)
     }
 
     /// What Yes does, and how to get the other answers.
