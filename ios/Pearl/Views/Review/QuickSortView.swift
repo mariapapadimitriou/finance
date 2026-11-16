@@ -280,17 +280,13 @@ struct QuickSortView: View {
             .padding(.top, 2)
     }
 
-    /// TR-01 (1327:4974): what Pearl saw, in ink; what Yes does, muted.
+    /// TR-01 (1327:4974): what Pearl saw, as a question: "A flight, a
+    /// hotel, 5 days in Montréal. A trip?" (TEXT-01).
     @ViewBuilder private func tripLines(_ trip: TripAsk) -> some View {
-        Text("Did you go on a trip here? " + trip.story)
+        Text(trip.story + " A trip?")
             .font(Nacre.footnote).foregroundColor(Pearl.ink)
             .multilineTextAlignment(.center).padding(.horizontal, 32)
             .fixedSize(horizontal: false, vertical: true)
-        Text("Yes groups them as one trip. They stay in \(trip.months).")
-            .font(Nacre.footnote).foregroundColor(Pearl.muted)
-            .multilineTextAlignment(.center).padding(.horizontal, 32)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.top, 2)
     }
 
     /// AI-07 (1315:4227): why Pearl isn't sure, in ink; then what Yes does,

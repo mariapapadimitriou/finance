@@ -228,7 +228,8 @@ struct ChatDeckView: View {
         case .sort(let s)?:
             pair(deck.echo, sortHint(s))
         case .trip(let t)?:
-            pair("Did you go on a trip here? " + t.story, "Yes groups them as one trip. They stay in \(t.months).")
+            // PC-08 (TEXT-01): "A flight, a hotel, 5 days in Montréal. A trip?"
+            pair(t.story + " A trip?", nil)
         case .pattern(let p)?:
             pair(p.because, p.yesSkip)
         case .plan?, nil:
@@ -245,12 +246,14 @@ struct ChatDeckView: View {
         return "Yes saves this."
     }
 
-    private func pair(_ ink: String?, _ muted: String) -> some View {
+    private func pair(_ ink: String?, _ muted: String?) -> some View {
         VStack(spacing: 0) {
             if let ink = ink {
                 Text(ink).foregroundColor(Pearl.ink)
             }
-            Text(muted).foregroundColor(Pearl.muted)
+            if let muted = muted {
+                Text(muted).foregroundColor(Pearl.muted)
+            }
         }
         .font(Nacre.subheadline)
         .lineSpacing(1)

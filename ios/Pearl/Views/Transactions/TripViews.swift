@@ -51,7 +51,8 @@ struct TripDetail: Decodable {
 
 /// TR-02 (`1327:5084` / `1327:5267`): the trip's dates and count, its total,
 /// the month it counts in, its transactions (each opens its page) and
-/// "Counts in March, as usual · Tagged “Trip to Montréal”". In two currencies
+/// its tag, "Trip to Montréal" (TEXT-01 cut "Counts in March, as usual").
+/// In two currencies
 /// (TR-02m `1332:70213` / `1332:70317`) the total is "$1,240 CAD + $310 USD",
 /// "in 2 currencies" joins the line above it, the Counts in column goes (the
 /// footer still says it) and a row in the other currency carries its code.
@@ -213,10 +214,12 @@ struct TripPage: View {
                     }
                 }
             }
-            Text("Counts in \(t.months), as usual · Tagged \u{201C}\(t.name)\u{201D}")
+            // TEXT-01: the tag only; that it still counts in March goes unsaid.
+            Label(t.name, systemImage: "tag")
                 .font(Nacre.footnote).foregroundColor(Pearl.muted)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 4)
+                .accessibilityLabel("Tag, \(t.name)")
             // TR-02c (1347:74145): "By category" opens TR-03.
             if category == nil {
                 NavigationLink { TripByCategory(trip: t) } label: {
@@ -385,10 +388,8 @@ struct TripOptionsSheet: View {
             PearlSectionLabel(text: "The trip")
             PearlOptionCard {
                 PearlOptionRow(symbol: "pencil", title: "Rename the trip", sub: "Renames its tag too", action: onRename)
-                PearlOptionRow(symbol: "xmark", title: "It wasn\u{2019}t a trip",
-                               sub: trip.count == 1 ? "Asks first · it stays sorted as it is"
-                                   : "Asks first · the \(trip.count) stay sorted as they are",
-                               action: onNotATrip)
+                // TR-04 (TEXT-01): no second line; TR-09 asks.
+                PearlOptionRow(symbol: "xmark", title: "It wasn\u{2019}t a trip", action: onNotATrip)
             }
         }
     }
@@ -428,7 +429,7 @@ struct NotATripSheet: View {
 
     var body: some View {
         PearlConfirmSheet(overline: "\(trip.name) · \(Format.span(trip.start, trip.end))", title: "Not a trip?",
-                          message: "The trip and its tag go. \(Trip.stayLine(trip.count)), in \(trip.months). Pearl won\u{2019}t ask about these dates again.",
+                          message: "\(Trip.stayLine(trip.count)).",
                           primary: "Not a trip", busyLabel: "Ending\u{2026}", secondary: "Keep it",
                           failure: "Couldn\u{2019}t end the trip. Nothing changed. Try again.", onClose: onClose) {
             struct Ended: Decodable { let count: Int? }
@@ -467,7 +468,7 @@ struct NameTripSheet: View {
     var body: some View {
         PearlConfirmSheet(overline: "\(count) transaction\(count == 1 ? "" : "s") · \(dates) · \(total)",
                           title: "Name the trip",
-                          message: "It shows on each of the \(count) and on the trip\u{2019}s own page, and adds a tag with the same name. They still count in \(months).",
+                          message: count == 1 ? "Adds the tag to it." : "Adds the tag to all \(count).",
                           field: .init(label: "Trip name", identifier: "trip-name"), text: $name,
                           primary: primary, secondary: "Cancel", onClose: onClose) {
             do {

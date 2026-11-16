@@ -2058,12 +2058,12 @@ struct TripAsk: Decodable, Identifiable, Hashable {
     /// "Mar 4–9 · 23 transactions".
     var line: String { "\(Format.span(start, end)) · \(count) transaction\(count == 1 ? "" : "s")" }
 
-    /// TR-01's caption: "A flight, a hotel, then 5 days in Montréal." With
-    /// no place it ends "then 5 days away." (note 1329:69536, Wording).
+    /// TR-01's caption: "A flight, a hotel, 5 days in Montréal." With no
+    /// place it ends "5 days away." (note 1329:69536, Wording; TEXT-01).
     var story: String {
         let lead = [flight == true ? "a flight" : nil, hotel == true ? "a hotel" : nil].compactMap { $0 }
         let stay = "\(days) day\(days == 1 ? "" : "s")" + (place.map { " in \($0)" } ?? " away")
-        let text = lead.isEmpty ? stay : lead.joined(separator: ", ") + ", then " + stay
+        let text = lead.isEmpty ? stay : lead.joined(separator: ", ") + ", " + stay
         return text.prefix(1).uppercased() + text.dropFirst() + "."
     }
 
@@ -2111,10 +2111,10 @@ struct Trip: Decodable, Identifiable, Hashable {
     /// "March", "March and April".
     var months: String { Format.andList(monthNames ?? [Format.monthName(String(start.prefix(7)))]) }
 
-    /// TR-09, TR-13: "The 23 transactions stay as they are"; one row reads
+    /// TR-09, TR-13: "The 23 stay as they are" (TEXT-01); one row reads
     /// "The transaction stays as it is" (note 1329:69536, Wording).
     static func stayLine(_ n: Int) -> String {
-        n == 1 ? "The transaction stays as it is" : "The \(n) transactions stay as they are"
+        n == 1 ? "The transaction stays as it is" : "The \(n) stay as they are"
     }
 }
 
