@@ -733,13 +733,17 @@ struct AnswerSheet: View {
         }
     }
 
-    /// RQ-01 (1389:23274, dark 1389:23646; THL-292, THL-295, THL-297).
+    /// RQ-01 (1389:23274, dark 1389:23646; THL-292, THL-295, THL-297), as
+    /// LT-02 shortens it (1425:6768, dark 1425:7025; TEXT-01): the schedule
+    /// is the caption ("EVERY MONTH SINCE MARCH"), the card says the money
+    /// ("$374.16 from TD Chequing, around the 2nd") and "Next: around Tue,
+    /// Dec 2"; no footer.
     @ViewBuilder private var recurringTiles: some View {
         let s = ask.item.series
-        QuestionCaption(text: "Why Pearl is asking")
+        QuestionCaption(text: recurringCaption)
         WhyCard(sentence: recurringSentence, dates: s?.dates ?? [], amount: s?.amount ?? abs(t.amount),
                 ringed: String(t.date.prefix(10)),
-                footer: s?.next.map { "Next one around \(Format.weekdayDay($0))" })
+                footer: s?.next.map { "Next: around \(Format.weekdayDay($0))" })
         QuestionCaption(text: "Yes, it’s…")
         AnswerGrid {
             AnswerTile(title: "Rent", line: "Spending on rent", symbol: "house") { recurring("rent", "Rent") }
@@ -757,8 +761,7 @@ struct AnswerSheet: View {
         }
         // THL-292: each one is asked on its own.
         AnswerRow(symbol: "person.crop.circle.badge.xmark", title: "No, it isn’t regular",
-                  line: "Ask me about each one on its own") { onAnswer(.dismiss(ask.item.key)) }
-        QuestionFooter(text: "One answer sorts \(seriesAll) and the ones to come. Change it any time in Profile › Recurring transfers.")
+                  line: "Ask about each one") { onAnswer(.dismiss(ask.item.key)) }
     }
 
     /// "all 9", or "both" for two.
@@ -773,21 +776,39 @@ struct AnswerSheet: View {
                             toast: "\(label) · \(seriesAll) sorted, and the ones to come"))
     }
 
-    /// "The same $374.16 left TD Chequing around the 2nd, every month since March."
+    /// LT-02's caption: "Every month since March", "Every payday since
+    /// March", "Every two weeks since March".
+    private var recurringCaption: String {
+        let s = ask.item.series
+        let since = s?.first.map { " since \(Self.sinceMonth($0))" } ?? ""
+        let every: String
+        switch s?.cadence {
+        case "monthly": every = "Every month"
+        case "payday": every = "Every payday"
+        default:
+            let w = s?.when?.components(separatedBy: ", ").first ?? ""
+            every = w.prefix(1).uppercased() + w.dropFirst()
+        }
+        let text = (every + since).trimmingCharacters(in: .whitespaces)
+        return text.isEmpty ? "Why Pearl is asking" : text
+    }
+
+    /// "$374.16 from TD Chequing, around the 2nd" (LT-02): the amount, the
+    /// account and the day; the schedule is in the caption.
     private var recurringSentence: String {
         let s = ask.item.series
         let money = Format.amount(s?.amount ?? abs(t.amount))
         let account = (t.accountName ?? "").components(separatedBy: " ••").first.flatMap { $0.isEmpty ? nil : $0 }
-        let left = "The same \(money) left \(account ?? "your account")"
-        let since = s?.first.map { " since \(Self.sinceMonth($0))" } ?? ""
+        let from = "\(money) from \(account ?? "your account")"
         switch s?.cadence {
         case "monthly":
             let day = Format.localDay(s?.dates?.last ?? t.date).map { Calendar.current.component(.day, from: $0) }
-            return "\(left)\(day.map { " around the \(ordinal($0))," } ?? "") every month\(since)."
+            return "\(from)\(day.map { ", around the \(ordinal($0))" } ?? "")"
         case "payday":
-            return "\(left) every payday\(since)."
+            return from
         default:
-            return "\(left)\(s?.when.map { " \($0)," } ?? "")\(since)."
+            let rest = s?.when?.components(separatedBy: ", ").dropFirst().joined(separator: ", ") ?? ""
+            return rest.isEmpty ? from : "\(from), \(rest)"
         }
     }
 
@@ -802,13 +823,14 @@ struct AnswerSheet: View {
 
     /// PQ-01 (1393:83919, dark 1393:84293; THL-305, THL-232): Me, each person
     /// on the account, Both of us. It answers for every deposit from them.
+    /// TEXT-01 string list: the card says "Every 2 weeks since September";
+    /// no "It's a joint account…" line and no "Pearl remembers…" footer.
     @ViewBuilder private var jointTiles: some View {
         let people = ask.item.people ?? []
         let share = Int((ask.item.share ?? 50).rounded())
         QuestionCaption(text: "Why Pearl is asking")
         WhyCard(sentence: jointSentence, dates: deposits?.dates ?? [], amount: abs(t.amount),
-                ringed: String(t.date.prefix(10)),
-                footer: "It’s a joint account, so Pearl needs to know whose it is.")
+                ringed: String(t.date.prefix(10)))
         QuestionCaption(text: "It’s…")
         AnswerGrid(columns: 3) {
             AnswerTile(title: "Me", line: "Counts as your pay", symbol: "briefcase", current: choice == "me") {
@@ -831,30 +853,29 @@ struct AnswerSheet: View {
                 onAnswer(.joint(t.id, who: "both", person: nil, remember: true))
             }
         }
-        QuestionFooter(text: "Pearl remembers this for every deposit from \(who).")
     }
 
-    /// "Maple Co has paid $1,980.00 into your joint account every 2 weeks since September."
+    /// "Every 2 weeks since September" (TEXT-01); "4 deposits since
+    /// September" when there's no schedule.
     private var jointSentence: String {
         let since = deposits?.first.map { " since \(Self.sinceMonth($0))" } ?? ""
         let money = Format.amount(abs(t.amount))
         guard let d = deposits, d.count > 1 else { return "\(who) paid \(money) into your joint account." }
         if let every = Self.every(d.cadence) {
-            return "\(who) has paid \(money) into your joint account \(every)\(since)."
+            return every.prefix(1).uppercased() + every.dropFirst() + since
         }
-        return "\(who) has paid into your joint account \(d.count) times\(since)."
+        return "\(d.count) deposits\(since)"
     }
 
     /// PQ-02 (1393:84663, dark 1393:85042; THL-232, THL-296): six tiles,
-    /// Pearl's guess dashed and never picked for her.
+    /// Pearl's guess dashed and never picked for her. TEXT-01 string list:
+    /// "5 deposits, about 2 weeks apart", no "Next one around…" line and no
+    /// "Pearl counts every deposit…" footer.
     @ViewBuilder private var cadenceTiles: some View {
         let guess = deposits?.cadence
         QuestionCaption(text: "What Pearl sees")
         WhyCard(sentence: cadenceSentence, dates: deposits?.dates ?? [], amount: abs(t.amount),
-                ringed: String(t.date.prefix(10)),
-                footer: deposits.flatMap { d in
-                    d.next.flatMap { next in Self.every(d.cadence).map { "Next one around \(Format.weekdayDay(next)) if it’s \($0)" } }
-                })
+                ringed: String(t.date.prefix(10)))
         QuestionCaption(text: "It comes…")
         AnswerGrid {
             ForEach(Self.cadences, id: \.key) { c in
@@ -871,7 +892,6 @@ struct AnswerSheet: View {
                 }
             }
         }
-        QuestionFooter(text: "Pearl counts every deposit from \(who) as pay, and plans your Allowance around it.")
     }
 
     private static let cadences: [(key: String, title: String, line: String)] = [
@@ -880,10 +900,9 @@ struct AnswerSheet: View {
         ("changes", "It changes", "Pearl works it out"), ("once", "Just this once", "Not regular pay"),
     ]
 
-    /// "Northwind Ltd has paid you 5 times since September, about 2 weeks apart."
+    /// "5 deposits, about 2 weeks apart" (TEXT-01).
     private var cadenceSentence: String {
         guard let d = deposits, d.count > 1 else { return "This is the first deposit from \(who) Pearl has seen." }
-        let since = d.first.map { " since \(Self.sinceMonth($0))" } ?? ""
         let apart: String
         switch d.cadence {
         case "weekly": apart = ", about a week apart"
@@ -892,7 +911,7 @@ struct AnswerSheet: View {
         case "monthly": apart = ", about a month apart"
         default: apart = ""
         }
-        return "\(who) has paid you \(d.count) times\(since)\(apart)."
+        return "\(d.count) deposits\(apart)"
     }
 
     /// "every 2 weeks", for Pearl's guess at a schedule.
@@ -1237,17 +1256,15 @@ struct AnswerSheet: View {
         }
     }
 
-    /// "Pearl will remember this for M. Papas."
+    /// The line under the answers. TEXT-01 cuts every "Pearl will remember
+    /// this for {who}." footer (the Always toggle says it), so only PB-15's
+    /// is left.
     private var footer: String? {
         switch step {
-        case .accounts where !rememberAnswer: return nil
-        // T-09rs: no "Pearl will remember" on a refund, as T-09r has none.
-        case .charges where refunding: return nil
         // PB-15 (1351:10581): what picking does, and where splitting is.
-        case .charges where payerName != nil:
+        case .charges where payerName != nil && !refunding:
             let first = firstName(payerName ?? who)
             return "Pick a purchase and it counts as paid back by \(first). To split it with \(first) first, open the purchase."
-        case .accounts, .charges: return "Pearl will remember this for \(who)."
         default: return nil
         }
     }
