@@ -1425,6 +1425,7 @@ struct TransactionRow: View {
                 .font(Nacre.headline).monospacedDigit()
                 .foregroundColor(t.rowTone)
                 .lineLimit(1).fixedSize()
+                .costCountDown(t.amount)
                 .accessibilityLabel(t.movedBetweenAccounts
                                     ? Format.movedSpoken(t.amount, to: t.movedTo) : Format.spoken(shownMoney))
         }
@@ -1432,6 +1433,7 @@ struct TransactionRow: View {
         .padding(.vertical, 12)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+        .costSpoken(costSpoken)
         .accessibilityHint(t.suggested ? "Pearl’s guess. Opens it to check." : "")
         .accessibilityAction(named: "Confirm \(t.label)") {
             if t.suggested, !t.asks { onConfirm?() }
@@ -1455,22 +1457,28 @@ struct TransactionRow: View {
             .joined(separator: " · ")
     }
 
-    /// T-01r2 (TEST-25): the server's note on a split row, "Split with Priya
-    /// +2 · $87.50 to come back", "Split 5 ways · not sure yet · $45.00 still
-    /// counts" or "Your share of $59.33 · all paid back". The app used to make
-    /// its own "Your share of …" and showed only what still counts.
+    /// RC-01 (ROWCOST-01; replaces T-01r2, TEST-25): the server's line on a
+    /// split row, "$127.50 split · $30.00 back · $57.50 to come", "$59.33
+    /// split · $39.54 back" or "$120.00 split 5 ways · not sure yet". The
+    /// app makes none of its own.
     private var splitNote: String? {
         guard t.split, !t.inflow, let note = t.note, !note.isEmpty else { return nil }
         return note
     }
 
-    /// T-01r2 and Rule A: the whole purchase while some is still to come
-    /// back or not settled ("Split …"); her share once it's all paid back.
+    /// RC-01: what it costs her now, the server's `amount`, which Spent and
+    /// the Allowance count too. Rule A stays on the server: a split nobody
+    /// has paid yet costs the whole purchase, and each payback lowers it.
     private var shownMoney: String {
-        if let note = splitNote, note.hasPrefix("Split "), let full = t.fullAmount {
-            return "\u{2212}" + Format.amount(full)
-        }
-        return Format.row(t) + (currency.map { " \($0)" } ?? "")
+        Format.row(t) + (currency.map { " \($0)" } ?? "")
+    }
+
+    /// RC-01 VoiceOver (note 1402:5082): "Gusto, costs you $97.50 now,
+    /// $127.50 split, $30.00 back, $57.50 to come."
+    private var costSpoken: String? {
+        guard let cost = t.cost, splitNote != nil else { return nil }
+        return "\(t.merchant), costs you \(Format.amount(t.amount)) now, "
+            + cost.line.replacingOccurrences(of: " · ", with: ", ")
     }
 
     /// "Your share of $86", "Refunded in full · Nov 10".
@@ -2133,6 +2141,41 @@ extension Transaction {
     /// grey, like anything else that doesn’t count (product owner,
     /// 2026-11-15); spending stays ink and money in green.
     var rowTone: Color { movedBetweenAccounts ? Pearl.muted : tone }
+}
+
+/// RC-03 (note 1402:5082, Motion): when a payback lands, the amount counts
+/// down, 400 ms ease-out; with Reduce Motion the new number cross-fades.
+/// No haptic beyond the toast's.
+struct CostCountDown: ViewModifier {
+    let value: Double
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        if #available(iOS 17.0, *), !reduceMotion {
+            content.contentTransition(.numericText(value: value))
+                .animation(.easeOut(duration: 0.4), value: value)
+        } else {
+            content.contentTransition(.opacity)
+                .animation(.easeInOut(duration: 0.25), value: value)
+        }
+    }
+}
+
+/// RC-01's one spoken label for a split row; any other row keeps what its
+/// parts say.
+struct CostSpoken: ViewModifier {
+    let label: String?
+
+    func body(content: Content) -> some View {
+        if let label = label { content.accessibilityLabel(label) } else { content }
+    }
+}
+
+extension View {
+    /// RC-03: the amount counts down (or up) when it changes.
+    func costCountDown(_ value: Double) -> some View { modifier(CostCountDown(value: value)) }
+    /// RC-01: "Gusto, costs you $97.50 now, $127.50 split, …".
+    func costSpoken(_ label: String?) -> some View { modifier(CostSpoken(label: label)) }
 }
 
 extension Format {

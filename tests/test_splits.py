@@ -85,7 +85,7 @@ def test_even_split_counts_only_her_share(client):
     data = listing(client)
     # Rule A (TEST-03): the whole purchase counts until Priya pays.
     assert data["totals"]["spent"] == 85.0
-    assert data["transactions"][0]["note"] == "Split with Priya · $42.50 to come back"  # nobody paid yet (T-01r2)
+    assert data["transactions"][0]["note"] == "$85.00 split · $42.50 to come"  # nobody paid yet (RC-01)
 
 
 def test_an_odd_cent_stays_with_her(client):
