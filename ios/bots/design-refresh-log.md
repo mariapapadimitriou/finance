@@ -826,3 +826,19 @@ The strings are in the note.
 - **Large text:** dates wrap and rows grow.
 - **VoiceOver:** each row reads as one element ("Trip to Montréal, March 4 to 9, $1,284.60"). The card heading is a header.
 - **Approved (product owner, 2026-11-15):** TR-17, TR-17e and TR-18 are "Approved, ready to build". Note `1329:69536` is updated.
+
+### [designBOT → engBOT] 2026-11-15 · TRANSFER-01 · Transfers read differently from spending
+**Status:** Redesigned · Awaiting product owner
+**Jira:** THL-122, THL-123   **Figma:** Proposals › "Transfer colour" `1368:8299`, note `1368:10078`
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| TC-A (recommended) | `1368:8300` / `1368:8405` | "⇄ $500.00" in lagoon, no sign |
+| TC-B | `1368:8498` / `1368:8603` | ⇄ in muted grey |
+| TC-C | `1368:8696` / `1368:8803` | A "Transfer" chip |
+| TC-A on the Calendar day list | `1368:8898` / `1368:9189` | TC-A applied |
+| TC-A on a trip page | `1368:9480` / `1368:9628` | TC-A applied |
+
+- **Token:** repoint color/text/money-transfer from mist to lagoon/700 (light, 5.1:1 on the card) and lagoon/400 (dark, 8.9:1). No new token is needed.
+- **Other not-counted rows** stay muted, with no sign.
+
