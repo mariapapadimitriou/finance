@@ -684,8 +684,9 @@ final class Round1FixesUITests: XCTestCase {
         }
         // TEST-14: the hero's amount reads as words, not an unread U+2212.
         app.swipeDown(); app.swipeDown(); app.swipeDown()
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'spent $'")).firstMatch
-                        .waitForExistence(timeout: 4), "TEST-14: the hero amount should say spent $127.50")
+        // RC-02: a split's hero reads "Costs you $127.50 now".
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'spent $' OR label BEGINSWITH 'Costs you $'"))
+                        .firstMatch.waitForExistence(timeout: 4), "TEST-14: the hero amount should say Costs you $127.50 now")
     }
 
     private func allowance() -> Double {
@@ -745,8 +746,9 @@ final class Round1FixesUITests: XCTestCase {
         XCTAssertGreaterThan(moved, -10.8, "TEST-24: only by Priya's extra (moved \(moved))")
     }
 
-    /// TEST-25 (T-01r2): Cash flow's Gusto row is the whole purchase with
-    /// the server's note, not "Your share of …" and what still counts.
+    /// RC-01 (ROWCOST-01; replaces TEST-25's T-01r2): once Priya's $42.50
+    /// is back, Cash flow's Gusto row costs $85.00 now, with the server's
+    /// line, not "Your share of …".
     func testCashFlowRowSaysWhatsStillToComeBack() {
         launch()
         openTransaction("Gusto")
@@ -771,8 +773,8 @@ final class Round1FixesUITests: XCTestCase {
         sleep(2)
         let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Gusto'")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 8), "No Gusto row")
-        XCTAssertTrue(row.label.contains("Split with Priya +2 · $45.00 to come back"), "TEST-25: \(row.label)")
-        XCTAssertTrue(row.label.contains("127.50"), "TEST-25: the row should show the whole purchase: \(row.label)")
+        XCTAssertTrue(row.label.contains("costs you $85.00 now, $127.50 split, $42.50 back, $45.00 to come"),
+                      "RC-01: \(row.label)")
         XCTAssertFalse(row.label.contains("Your share of"), "TEST-25: the app's own note: \(row.label)")
     }
 

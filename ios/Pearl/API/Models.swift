@@ -631,6 +631,33 @@ struct Transaction: Decodable, Identifiable, Hashable {
     /// TR-05 / TR-06: the trip it's in ("Shopping · Trip to Montréal"),
     /// boxed so Transaction stays small (Boxed.swift).
     @Boxed var trip: TripRef?
+    /// RC-01, RC-02 (ROWCOST-01): what a split purchase costs her now and
+    /// the parts its line names, as the server works them out
+    /// (finance/txlist.py `cost_now`); boxed so Transaction stays small.
+    @Boxed var cost: Cost?
+
+    /// RC-01 / RC-02: `amount` is already the cost now; these are for the
+    /// line under it and the RC-03 count-up of what's back.
+    struct Cost: Decodable, Hashable {
+        let now: Double
+        let whole: Double
+        let back: Double
+        let toCome: Double
+        let work: Double
+        let ways: Int
+        /// Her share as split, before any share she let go ("your share
+        /// $30.00", RC-02); nil on Not sure yet.
+        var share: Double? = nil
+        let unsure: Bool
+        /// The row's: "$127.50 split · $30.00 back · $57.50 to come".
+        let line: String
+        /// The page's: "$150.00 split 5 ways · $40.00 back · $50.00 to come".
+        let header: String
+        enum CodingKeys: String, CodingKey {
+            case now, whole, back, work, ways, share, unsure, line, header
+            case toCome = "to_come"
+        }
+    }
 
     /// A trip, as a row names it (finance/api.py `_with_trip`).
     struct TripRef: Decodable, Hashable {
@@ -973,7 +1000,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         case repaidBy = "repaid_by"
         case repaysCharge = "repays_charge"
         case mergedInto = "merged_into"
-        case trip
+        case trip, cost
     }
 
     init(from decoder: Decoder) throws {
@@ -1039,6 +1066,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         repaysCharge = opt(Brief.self, .repaysCharge)
         mergedInto = opt(String.self, .mergedInto)
         trip = opt(TripRef.self, .trip)
+        cost = opt(Cost.self, .cost)
     }
 
     /// The name to show: the merchant, else the bank's description.
@@ -1090,6 +1118,8 @@ struct Transaction: Decodable, Identifiable, Hashable {
             && a.split == b.split && a.splitting == b.splitting
             // TR-05: made into a trip, renamed, or taken out of one.
             && a.trip == b.trip
+            // RC-03: a payback changes what's back and to come.
+            && a.cost == b.cost
     }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }

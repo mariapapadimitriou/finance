@@ -976,16 +976,23 @@ struct TransactionDetailView: View {
             }
             Text(heroAmount)
                 .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
+                // RC-03: a payback counts it down, 400 ms ease-out.
+                .costCountDown(t.amount)
                 // T-41w: money that paid a purchase back is money in, green.
                 // T-41m: a refund of her share too. TF-01: a transfer in
                 // money-transfer grey, with no sign.
                 .foregroundColor(paidBackAnswer != nil || t.refundOf?.share == true ? Pearl.moneyIn
                                  : t.transfer != nil ? Pearl.muted : t.tone)
                 .lineLimit(1).minimumScaleFactor(0.5)
-                .accessibilityLabel(t.transfer != nil ? "Moved \(heroAmount)" : Format.spoken(heroAmount))
-            Text(t.transfer.map { transferDates($0) } ?? dateLine)
-                .font(Nacre.footnote).foregroundColor(Pearl.ink)
-                .multilineTextAlignment(.center)
+                .accessibilityLabel(heroSpoken)
+            if let line = costLine {
+                // RC-02 (1401:86515): the split's line, then the date and her share.
+                CostHeaderLines(line: line, back: t.cost?.back ?? 0, date: costDateLine)
+            } else {
+                Text(t.transfer.map { transferDates($0) } ?? dateLine)
+                    .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    .multilineTextAlignment(.center)
+            }
             if t.transfer != nil {
                 // TF-01's Counts pill: "⇄  Doesn’t count".
                 Text("\u{21C4}  Doesn’t count")
@@ -1037,16 +1044,37 @@ struct TransactionDetailView: View {
         .padding(.top, 4)
     }
 
-    /// S-04r v2 (Rule A, TEST-03): a split with shares shows the whole
-    /// purchase, as on the card statement, with "Your share" under it. Not
-    /// sure yet keeps what it counts as so far (S-04u).
+    /// RC-02 (ROWCOST-01; replaces S-04r v2's header): what it costs her
+    /// now, the server's `amount`, as on her Cash flow row. Rule A stays:
+    /// nobody paid yet is the whole purchase; each payback, and work paying
+    /// her share, lowers it at once (RC-03). Not sure yet keeps what it
+    /// counts as so far (S-04u).
     private var heroAmount: String {
         // TF-01: a transfer has no sign; it didn't leave her.
         if t.transfer != nil { return Format.amount(t.amount) }
-        if let s = t.splitting, !s.unsure, !t.inflow, let full = t.fullAmount {
-            return "\u{2212}" + Format.amount(full)
-        }
         return Format.money(t)
+    }
+
+    /// VoiceOver: "Moved $500.00" (TF-01); RC-02 "Costs you $110.00 now";
+    /// otherwise "spent $24.80".
+    private var heroSpoken: String {
+        if t.transfer != nil { return "Moved \(heroAmount)" }
+        if costLine != nil { return "Costs you \(Format.amount(t.amount)) now" }
+        return Format.spoken(heroAmount)
+    }
+
+    /// RC-02: the server's line under the header on a split with shares;
+    /// nil for Not sure yet, which keeps S-04u's date line.
+    private var costLine: String? {
+        guard let cost = t.cost, !cost.unsure, !t.inflow, t.transfer == nil, t.splitting != nil else { return nil }
+        return cost.header
+    }
+
+    /// RC-02: "Wed, Nov 11 · your share $30.00"; TR-06's trip after it.
+    private var costDateLine: String {
+        let when = Format.relativeDay(t.date) == "Today" ? "Today" : Format.weekdayDay(t.date)
+        let share = t.cost?.share.map { "your share \(Format.amount($0))" }
+        return [when, share, t.trip?.name].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     /// The card that says what it is: Pearl's guess, its parts, a joint
@@ -3174,4 +3202,27 @@ struct DepositLink: Identifiable {
     let date: String
     let owes: Double
     var id: String { link.id }
+}
+
+
+/// RC-02 (1401:86515, dark 1401:86575): under the header, "$150.00 split 5
+/// ways · $40.00 back · $50.00 to come", then "Wed, Nov 11 · your share
+/// $30.00", 15 pt muted. RC-03: what's back counts up as a payback lands.
+/// Its own view so TransactionDetailView's header stays small (check_stack).
+struct CostHeaderLines: View {
+    let line: String
+    let back: Double
+    let date: String
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Text(line).costCountDown(back)
+                .accessibilityLabel(line.replacingOccurrences(of: " · ", with: ", "))
+            Text(date)
+        }
+        .font(Nacre.subheadline).foregroundColor(Pearl.muted)
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .combine)
+    }
 }

@@ -1041,3 +1041,26 @@ Product owner decisions:
 2. **PB-30o.** When the ticks come to more than the deposit, should the newest be part-paid automatically (with Change on its row), or should Pearl always ask? Recommended: automatic, with Change.
 3. **Publish the library.** It now has Toast Tone=Ink.
 
+
+### [designBOT → engBOT] 2026-11-16 · ROWCOST-01 · A purchase shows what it costs you now
+**Status:** Redesigned · Approved by the product owner (2026-11-16); the section is named "Awaiting product owner" as asked
+**Jira:** THL-291, THL-289, THL-303, THL-122, THL-181, THL-301   **Figma:** Proposals › "Row shows your cost · Awaiting product owner" `1401:86306`, note `1402:5082`
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| RC-01 | `1401:86307` / `1401:86412` | Cash flow rows. Gusto −$97.50, "$127.50 split · $30.00 back · $57.50 to come". Nopa −$19.79, "$59.33 split · $39.54 back". Pizza Nova (not sure yet) −$45.00. Pai Northern Thai −$60.00, "work paid your $60.00 · $60.00 to come" |
+| RC-02 | `1401:86505` / `1401:86565` | Loblaws page header −$110.00, "$150.00 split 5 ways · $40.00 back · $50.00 to come", then the date and your share |
+| RC-03 | `1401:86613` / `1401:86668` | Right after Sam pays $15.00: the header counts down from $120.00 to $105.00, with the ink toast |
+
+What stays from Rule A:
+- What's still owed counts as yours until it comes back.
+- A split nobody has paid yet still shows the whole purchase.
+
+What changes:
+- The row (TransactionsView `shownMoney`) and the header (TransactionDetailView `heroAmount`) show the whole purchase minus what's come back, the moment each payback, cash or app payment, or work payment lands.
+- Today they show the whole purchase until the last person pays.
+- Spent and the Allowance don't move. They already use this cost (`split_owed`, `split_reimbursed`), so the rows now add up to Spent.
+- The note becomes "{whole} split · {back} back · {owed} to come".
+- Settled at $0 still reads "Paid back in full · not your spending".
+
+**Replaces when built:** T-01r2 (`1244:26496` / `1244:26635`) and S-04r v2's header (`1090:1743` / `1093:3991`).
