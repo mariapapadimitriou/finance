@@ -606,9 +606,8 @@ enum ReviewAnswer {
             case "paying_back": return "Paying back a loan"
             case "work": return "Work expense"
             case "not_mine": return "Not mine"
-            case "refund": return "Money back"
-            case "payback": return "Paying me back"
-            case "reimbursement": return "Work paying me back"
+            // PB-10 (Paid back, 2026-11-15): the one tile these three came from.
+            case "refund", "payback", "reimbursement": return "Paid back"
             case "borrowed": return "Lent me this"
             case "out_of_savings": return "Out of savings"
             case "lent_back": return "Money I lent, back"

@@ -158,7 +158,10 @@ final class Test31UITests: XCTestCase {
             let card = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Pearl’s guess' OR label BEGINSWITH 'Other' OR label CONTAINS[c] 'income'")).firstMatch
             tap(card, "the deposit's card")
             sleep(2)
-            tap(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Work paying me back'")).firstMatch, "Work paying me back")
+            // PB-10 / PB-11: one Paid back tile, then Who paid you back? › Work.
+            tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Paid back'")).firstMatch, "Paid back")
+            sleep(2)
+            tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Work'")).firstMatch, "Work")
             sleep(2)
             step("T-09w what did this pay back")
             let share = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Your share of Pai Northern Thai'")).firstMatch
@@ -249,7 +252,10 @@ final class Test31UITests: XCTestCase {
             let card = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Pearl’s guess' OR label BEGINSWITH 'Other' OR label CONTAINS[c] 'refund' OR label CONTAINS[c] 'income'")).firstMatch
             tap(card, "the deposit's card")
             sleep(2)
-            tap(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Money back'")).firstMatch, "Money back")
+            // PB-10 / PB-11: one Paid back tile, then Who paid you back? › The shop.
+            tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Paid back'")).firstMatch, "Paid back")
+            sleep(2)
+            tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'The shop'")).firstMatch, "The shop")
             sleep(2)
             step("T-09rs what was this a refund for")
             XCTAssertTrue(element(containing: "What was this a refund for?").exists, "T-09rs: T-09r's title")

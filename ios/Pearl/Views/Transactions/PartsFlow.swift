@@ -68,6 +68,12 @@ struct PartsSheet: View {
     /// Quick sort (S-11x on its card): the answer is held for the card's Yes
     /// as the parts request and a label ("A gift?"); nothing is saved here.
     var onHeld: (([String: Any], String) -> Void)? = nil
+    /// PB-11 › A person (Paid back, 2026-11-15): the sender's own splits
+    /// first, one to pick (PB-12), then how much of their share (PB-13).
+    /// From someone Pearl can't name, S-35's ticks, then PB-13 for each.
+    var paidBack = false
+    /// Who sent it, for PB-12's "$15.00 · Paid back · Sam Lee".
+    var payer: String? = nil
     let onSaved: (MarkReply) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -114,10 +120,26 @@ struct PartsSheet: View {
     @State private var error: String?
     /// TEST-31 S-11m: Something else shows the shared What was this? tiles.
     @State private var allTiles = false
+    /// PB-12: the share picked; nil is Pearl's likeliest, the first.
+    @State private var pick: String?
+    /// PB-13: the shares still to answer, in the order ticked (S-35's ticks,
+    /// or PB-12's one), and what's being said about the first.
+    @State private var shareQueue: [Owing] = []
+    @State private var allOfIt = false
+    @State private var partText = ""
+    @State private var editingPart = false
+    @FocusState private var partFocused: Bool
+    /// Whether the queue came from S-35a/S-35b, for where its rest goes next.
+    @State private var queueAsked = false
+    /// PB-13b: All of it, but the money is less than they owe.
+    @State private var letGoAsk: Owing?
+    /// PB-11 from S-11 v2's Paid back tile.
+    @State private var whoPaid = false
 
-    /// `work`: Work paying me back, the expense it pays (T-09, as on the shared page).
+    /// `work`: Work's reimbursement, the expense it pays (T-09, as on the shared page).
     /// `otherKind`: S-11k (SPLIT-18), which kind Other income is.
-    enum Step { case loading, cash, owing, progress, kind, otherKind, refund, work, review }
+    /// `whose`: PB-12, which of the sender's splits. `howMuch`: PB-13, part or all.
+    enum Step { case loading, cash, owing, progress, kind, otherKind, refund, work, review, whose, howMuch }
 
     struct Part: Identifiable, Hashable {
         let id = UUID()
@@ -135,6 +157,8 @@ struct PartsSheet: View {
         var held = false
         /// TEST-31 Money back: a refund part that's her own share.
         var share = false
+        /// PB-13b Let it go: once linked, what they still owe becomes hers.
+        var letGo = false
 
         /// A part as saved, to edit (S-10e).
         init(saved p: DepositPart) {
@@ -151,8 +175,9 @@ struct PartsSheet: View {
 
         init(kind: String, amount: Double, charge: String? = nil, merchant: String? = nil, person: String? = nil,
              incomeKind: String? = nil, cashIds: [Int] = [], date: String? = nil, held: Bool = false,
-             category: String? = nil, share: Bool = false) {
+             category: String? = nil, share: Bool = false, letGo: Bool = false) {
             self.share = share
+            self.letGo = letGo
             self.category = category
             self.kind = kind
             self.amount = amount
@@ -185,8 +210,9 @@ struct PartsSheet: View {
             case "category": return category ?? "Other"
             case "cash": return "\(person ?? "Their") cash"
             case "overpaid": return "\(person ?? "They") overpaid"
-            // S-11 v2's other tiles, as parts.
-            case "reimbursement": return "Work paying me back · \(merchant ?? "an expense")"
+            // S-11 v2's other tiles, as parts. Paid back (PB-11 › Work)
+            // replaced the "Work paying me back" tile, so the part says Work.
+            case "reimbursement": return "Work · \(merchant ?? "an expense")"
             case "loan": return "Lent me this"
             case "lent_back": return "Money I lent, back"
             default: return "Part"
@@ -218,6 +244,7 @@ struct PartsSheet: View {
             if kind == "category", let c = category { b["category"] = c }
             if !cashIds.isEmpty { b["cash_ids"] = cashIds }
             if share { b["share"] = true }
+            if letGo { b["let_go"] = true }
             return b
         }
     }
@@ -248,10 +275,12 @@ struct PartsSheet: View {
         /// SPLIT-C (S-09u): a Not sure yet split; `owes` is what it still
         /// costs her, the most this can take (decision 2).
         var unknown: Bool? = nil
+        /// PB-12's "split 2 ways".
+        var ways: Int? = nil
 
         enum CodingKeys: String, CodingKey {
             case charge = "id"
-            case merchant, date, owes, person, theirs, pending, unknown
+            case merchant, date, owes, person, theirs, pending, unknown, ways
         }
 
         /// One row per person per purchase (2026-11-09): a dinner four people
@@ -280,8 +309,11 @@ struct PartsSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     // S-11xm (THL-301): the whole deposit here, "The $30.00" in the title.
+                    // PB-12 / PB-13: "$15.00 · Paid back · Sam Lee".
                     QuestionHeader(name: deposit.name, amount: Format.amount(deposit.whole ?? deposit.amount),
-                                   tone: Pearl.ink, sub: Format.short(deposit.date))
+                                   tone: Pearl.ink,
+                                   sub: paidBack ? (["Paid back", payer ?? sender].compactMap { $0 }.joined(separator: " · "))
+                                       : Format.short(deposit.date))
                     content
                     // S-11x shows its error under the grid instead (T-08k).
                     if let error = error, whole == nil || step != .kind {
@@ -321,6 +353,20 @@ struct PartsSheet: View {
                 dismiss()
             }
         }
+        .sheet(item: $letGoAsk) { o in
+            // PB-13b: Let it go, or record it as Part of it (PB-14); ✕ is back to PB-13.
+            PaidBackLetGoSheet(name: firstName(o.person ?? who), merchant: o.merchant, paid: left, owes: o.owes,
+                               onLetGo: { letGoAsk = nil; addShare(o, amount: left, letGo: true) },
+                               onStillOwes: { letGoAsk = nil; addShare(o, amount: left) },
+                               onClose: { letGoAsk = nil })
+        }
+        .sheet(isPresented: $whoPaid) {
+            // PB-11 from S-11 v2's Paid back tile: who paid back this part.
+            PaidBackWhoSheet(face: deposit.name,
+                             sub: "+\(Format.amount(deposit.whole ?? deposit.amount)) · \(deposit.name) · \(Format.short(deposit.date))",
+                             onPick: { who in whoPaid = false; takePaidBack(who) },
+                             onClose: { whoPaid = false })
+        }
         .sheet(item: $splitCharge) { t in
             // S-24 (SPLIT-07): "Split and link" holds the split; the deposit's
             // Save does both in one go.
@@ -359,7 +405,7 @@ struct PartsSheet: View {
             return sender == nil ? "Who paid you back?" : "What did this pay back?"
         // T-09r's title (SPLIT-12): the same question as anywhere else.
         case .refund: return "What was this a refund for?"
-        // T-09's title, as the shared page asks it for Work paying me back.
+        // T-09's title, as the shared page asks it for Paid back › Work (T-09w).
         case .work: return "What did this pay back?"
         case .progress:
             if !editing.isEmpty { return "Edit the \(Format.whole(deposit.amount))" }
@@ -374,6 +420,12 @@ struct PartsSheet: View {
             if parts.isEmpty { return "What was the \(Format.amount(left))?" }
             return extra ? "What’s the extra \(Format.amount(left))?" : "What’s the other \(Format.amount(left))?"
         case .review: return "Check and save"
+        // PB-12: "What did Sam pay back?"
+        case .whose: return "What did \(firstName(sender ?? who)) pay back?"
+        // PB-13: "How much of Sam’s $60.00?"
+        case .howMuch:
+            guard let o = shareQueue.first else { return "" }
+            return "How much of \(possessive(firstName(o.person ?? who))) \(Format.amount(o.owes))?"
         }
     }
 
@@ -387,6 +439,8 @@ struct PartsSheet: View {
         case .kind: kindList
         case .otherKind: otherKindList
         case .review: reviewList
+        case .whose: whoseList
+        case .howMuch: howMuchView
         }
     }
 
@@ -504,6 +558,268 @@ struct PartsSheet: View {
                     first: "\(Format.amount(sortedDone + picked.values.reduce(0, +))) of \(Format.amount(deposit.amount))",
                     second: "\(Format.amount(max(0, deposit.amount - sortedDone - picked.values.reduce(0, +)))) left")
             }
+        }
+    }
+
+    // MARK: PB-12 Which of their splits (Paid back, 1351:9586)
+
+    /// The sender's own shares with an amount, for PB-12. A Not sure yet
+    /// split has no share to be part or all of, so it stays on S-09u.
+    private var theirShares: [Owing] {
+        guard sender != nil else { return [] }
+        return owing.filter { $0.theirs == true && $0.unknown != true && $0.person != nil && $0.owes >= 0.005 }
+    }
+
+    /// Where A person starts: PB-12 when the sender owes on a split, else
+    /// S-09 / S-35's list (who it was, then PB-13 for each).
+    private var personStep: Step { paidBack && editing.isEmpty && !theirShares.isEmpty ? .whose : .owing }
+
+    private var picked12: Owing? {
+        let rows = theirShares
+        return rows.first { $0.id == pick } ?? rows.first
+    }
+
+    /// PB-12: search, LIKELY, "Sam’s share of Pai Northern Thai · owes
+    /// $60.00" over "Wed, Nov 12 · split 2 ways" with a checkmark (one
+    /// pick), and "$15.00 is part of the $60.00. Next: all of it or part."
+    private var whoseList: some View {
+        let typed = query.trimmingCharacters(in: .whitespaces)
+        let rows = theirShares.filter { typed.isEmpty || $0.merchant.localizedCaseInsensitiveContains(typed) }
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundColor(Pearl.muted)
+                TextField("", text: $query, prompt: Text("Search purchases").foregroundColor(Pearl.muted))
+                    .font(Nacre.body).autocorrectionDisabled().textInputAutocapitalization(.never)
+            }
+            .padding(.horizontal, 14).frame(height: 44)
+            .background(Capsule().fill(Pearl.ink.opacity(0.08)))
+            if rows.isEmpty {
+                Text("No purchases match.").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    .padding(.horizontal, 16)
+            } else {
+                label("Likely")
+                GlassCard {
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { i, o in
+                        if i > 0 { RowSeparator() }
+                        whoseRow(o, on: picked12?.id == o.id)
+                    }
+                }
+            }
+            if let o = picked12, cents(left) < cents(o.owes) {
+                Text("\(Format.amount(left)) is part of the \(Format.amount(o.owes)). Next: all of it or part.")
+                    .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    .frame(maxWidth: .infinity).multilineTextAlignment(.center)
+            }
+        }
+    }
+
+    private func whoseRow(_ o: Owing, on: Bool) -> some View {
+        let first = firstName(o.person ?? who)
+        let sub = [o.pending == true ? "Pending" : Format.weekdayDay(o.date), o.ways.map { "split \($0) ways" }]
+            .compactMap { $0 }.joined(separator: " · ")
+        return Button { pick = o.id } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(possessive(first)) share of \(o.merchant) · owes \(Format.amount(o.owes))")
+                        .font(Nacre.body).foregroundColor(Pearl.ink).fixedSize(horizontal: false, vertical: true)
+                    Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                }
+                Spacer(minLength: 8)
+                if on {
+                    Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold)).foregroundColor(Pearl.action)
+                }
+            }
+            .padding(.horizontal, 16).frame(minHeight: 52).padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    // MARK: PB-13 How much of their share (Paid back, 1352:716)
+
+    /// What's left of the deposit for the share being answered.
+    private var shareRoom: Double { left }
+
+    /// "Part of it" is offered while the money is less than they owe; at or
+    /// over it, All of it is the answer (more is the extra, S-11 v2 next).
+    private func canPart(_ o: Owing) -> Bool { cents(shareRoom) < cents(o.owes) }
+
+    /// Part of it: what she typed, or all of what's left of the deposit.
+    private var partValue: Double {
+        let text = partText.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return shareRoom }
+        return Double(text.replacingOccurrences(of: "$", with: "").replacingOccurrences(of: ",", with: "")) ?? 0
+    }
+
+    private func partFits(_ o: Owing) -> Bool {
+        let v = cents(partValue)
+        return v >= 1 && v <= cents(shareRoom) && v < cents(o.owes)
+    }
+
+    /// PB-13: the purchase and what they owe in small caps, "Part of it ·
+    /// $15.00" over "Sam still owes $45.00 · tap to change the amount", "All
+    /// of it · $60.00" over "Sam’s paid in full · Pearl asks what the other
+    /// $45.00 is", and "Sam’s share of Pai Northern Thai · Wed, Nov 12".
+    @ViewBuilder private var howMuchView: some View {
+        if let o = shareQueue.first {
+            let first = firstName(o.person ?? who)
+            let other = abs(shareRoom - o.owes)
+            VStack(alignment: .leading, spacing: 8) {
+                label("\(o.merchant) · \(first) owes \(Format.amount(o.owes))")
+                GlassCard {
+                    if canPart(o) {
+                        let owesAfter = Text("\(first) still owes \(Format.amount(max(0, o.owes - partValue))) · tap to change the amount")
+                            .font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                        if editingPart && !allOfIt {
+                            // Tapped again: the amount changes in place (no
+                            // frame draws a field; the row's words say so).
+                            choiceLine(on: true) {
+                                HStack(spacing: 0) {
+                                    Text("Part of it · ").font(Nacre.body).foregroundColor(Pearl.ink)
+                                    TextField("", text: $partText, prompt: Text(Format.amount(shareRoom)).foregroundColor(Pearl.ink))
+                                        .font(Nacre.body).monospacedDigit().keyboardType(.decimalPad)
+                                        .focused($partFocused)
+                                        .accessibilityLabel("Part of it")
+                                        .accessibilityHint("Up to \(Format.amount(shareRoom)), less than \(Format.amount(o.owes))")
+                                }
+                                owesAfter.fixedSize(horizontal: false, vertical: true)
+                            }
+                        } else {
+                            Button {
+                                if !allOfIt { editingPart = true; partFocused = true }
+                                allOfIt = false
+                            } label: {
+                                choiceLine(on: !allOfIt) {
+                                    Text("Part of it · \(Format.amount(partValue))").font(Nacre.body).foregroundColor(Pearl.ink)
+                                    owesAfter.fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityAddTraits(!allOfIt ? .isSelected : [])
+                        }
+                        RowSeparator()
+                    }
+                    Button {
+                        allOfIt = true
+                        editingPart = false
+                        partFocused = false
+                    } label: {
+                        choiceLine(on: allOfIt) {
+                            Text("All of it · \(Format.amount(o.owes))").font(Nacre.body).foregroundColor(Pearl.ink)
+                            Text("\(first)’s paid in full" + (other >= 0.005 ? " · Pearl asks what the other \(Format.amount(other)) is" : ""))
+                                .font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(allOfIt ? .isSelected : [])
+                }
+                Text("\(possessive(first)) share of \(o.merchant) · \(Format.weekdayDay(o.date))")
+                    .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    .frame(maxWidth: .infinity).multilineTextAlignment(.center)
+            }
+        } else {
+            // Saving the last share (Save on PB-13).
+            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
+        }
+    }
+
+    /// A radio row: the words, then the checkmark when it's the one.
+    private func choiceLine<Words: View>(on: Bool, @ViewBuilder _ words: () -> Words) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2, content: words)
+            Spacer(minLength: 8)
+            if on {
+                Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold)).foregroundColor(Pearl.action)
+            }
+        }
+        .padding(.horizontal, 16).frame(minHeight: 52).padding(.vertical, 6)
+        .contentShape(Rectangle())
+    }
+
+    /// PB-13's button: Save when this answer sorts the last of it, else Next.
+    private var howMuchFinishes: Bool {
+        guard let o = shareQueue.first, shareQueue.count == 1 else { return false }
+        if allOfIt { return cents(shareRoom) <= cents(o.owes) }
+        return cents(partValue) == cents(shareRoom)
+    }
+
+    private var howMuchReady: Bool {
+        guard let o = shareQueue.first else { return false }
+        return allOfIt || partFits(o)
+    }
+
+    /// Opens PB-13 on the first share; All of it is chosen when the money
+    /// covers it, Part of it (the deposit's amount) when it doesn't.
+    private func startHowMuch(_ queue: [Owing], asked: Bool = false) {
+        shareQueue = queue
+        queueAsked = asked
+        nextShareSetup()
+        step = .howMuch
+    }
+
+    private func nextShareSetup() {
+        partText = ""
+        editingPart = false
+        partFocused = false
+        allOfIt = shareQueue.first.map { !canPart($0) } ?? false
+    }
+
+    /// PB-13 Save / Next. All of it with less money than they owe asks first (PB-13b).
+    private func takeHowMuch() {
+        guard let o = shareQueue.first else { return }
+        if allOfIt {
+            if canPart(o) { letGoAsk = o; return }
+            addShare(o, amount: o.owes)
+        } else {
+            guard partFits(o) else { return }
+            addShare(o, amount: Double(cents(partValue)) / 100)
+        }
+    }
+
+    /// Their payback, for the amount she chose (PB-14), then the next share,
+    /// or the rest of the deposit: saved at once when nothing is left,
+    /// otherwise on to what the rest is (S-11 v2) or the extra.
+    private func addShare(_ o: Owing, amount: Double, letGo: Bool = false) {
+        let held = heldSplit?.charge == o.charge && o.person == who
+        parts.removeAll { $0.charge == o.charge && $0.person == o.person && $0.kind == "payback" }
+        parts.append(Part(kind: "payback", amount: amount, charge: o.charge, merchant: o.merchant, person: o.person,
+                          date: o.date, held: held, letGo: letGo))
+        if !shareQueue.isEmpty { shareQueue.removeFirst() }
+        // Nothing left of the deposit for the others ticked.
+        if leftCents == 0 { shareQueue = [] }
+        if !shareQueue.isEmpty { nextShareSetup(); return }
+        partFocused = false
+        if leftCents == 0 {
+            Task {
+                await save(later: false)
+                // A failed save keeps what she said, on Check and save to try again.
+                if error != nil { step = .review }
+            }
+            return
+        }
+        step = parts.isEmpty || queueAsked ? .kind : .progress
+    }
+
+    /// PB-11 from S-11 v2's Paid back tile.
+    private func takePaidBack(_ who: PaidBackWho) {
+        switch who {
+        case .person:
+            if !editing.isEmpty {
+                // S-10e: the purchases it already pays back stay listed, ticked.
+                for p in parts where p.kind == "payback" && !p.held {
+                    if let c = p.charge { picked[c + "|" + (p.person ?? "")] = p.amount }
+                }
+                parts.removeAll { $0.kind == "payback" && !$0.held }
+            }
+            step = personStep
+        case .shop, .work:
+            picked = [:]
+            step = who == .shop ? .refund : .work
+            Task { await search() }
         }
     }
 
@@ -704,14 +1020,22 @@ struct PartsSheet: View {
         heldSplit = HeldSplit(charge: t.id, merchant: t.merchant, body: body)
         found.removeAll { $0.charge == t.id }
         query = ""
-        add(Part(kind: "payback", amount: min(share, left), charge: t.id, merchant: t.merchant, person: who,
-                 date: t.date, held: true), then: .progress)
+        // Paid back (PB-13): their new share, part or all of it, is her
+        // choice; no longer min(share, what's left) on its own.
+        startHowMuch([Owing(charge: t.id, merchant: t.merchant, date: t.date, owes: share, person: who, theirs: true)])
     }
 
     /// A part taken out; a held split goes with its part.
     private func remove(_ p: Part) {
         parts.removeAll { $0.id == p.id }
         if p.held { heldSplit = nil }
+    }
+
+    /// A tick on someone's share with an amount: PB-13 asks how much of it.
+    /// Not while editing (S-10e keeps what each part was), and not a Not
+    /// sure yet split (S-09u) or a purchase found by search with no one on it.
+    private func asksHowMuch(_ o: Owing) -> Bool {
+        editing.isEmpty && step == .owing && o.person != nil && o.unknown != true && o.notSplit != true
     }
 
     private func toggle(_ o: Owing) {
@@ -721,6 +1045,11 @@ struct PartsSheet: View {
         }
         if picked[o.id] != nil {
             picked[o.id] = nil
+        } else if asksHowMuch(o) {
+            // Paid back (2026-11-15): a tick says who; how much of their
+            // share it was is asked next, part or all (PB-13). It no
+            // longer takes min(their share, what's left) on its own.
+            picked[o.id] = o.owes
         } else {
             let room = wholeCents - sortedCents - picked.values.map { cents($0) }.reduce(0, +)
             guard room > 0 else { return }
@@ -1110,6 +1439,15 @@ struct PartsSheet: View {
                     .buttonStyle(NacreButtonStyle())
                     .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
             }
+        case .whose:
+            // PB-12: Next goes to PB-13 for the share picked.
+            Button("Next") { if let o = picked12 { query = ""; startHowMuch([o]) } }
+                .buttonStyle(NacreButtonStyle()).disabled(picked12 == nil)
+                .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
+        case .howMuch:
+            Button(shareQueue.isEmpty || howMuchFinishes ? "Save" : "Next") { takeHowMuch() }
+                .buttonStyle(NacreButtonStyle(busy: busy)).disabled(!howMuchReady || busy)
+                .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
         case .refund, .work:
             Button("Next") { takeRefund() }
                 .buttonStyle(NacreButtonStyle()).disabled(picked.isEmpty)
@@ -1162,15 +1500,18 @@ struct PartsSheet: View {
     }
 
     private func afterCash() {
-        step = leftCents == 0 ? .review : .owing
+        step = leftCents == 0 ? .review : personStep
     }
 
     private func takeOwing() {
         // S-35b: what it didn't pay back goes on to "What's the other $x?" (S-11 v2).
         let asked = asking
         let all = owing + found
+        // S-35 now leads into PB-13: each ticked share, in the list's order.
+        var seen = Set<String>()
+        let queue = all.filter { picked[$0.id] != nil && asksHowMuch($0) && seen.insert($0.id).inserted }
         for (id, amount) in picked {
-            guard let o = all.first(where: { $0.id == id }) else { continue }
+            guard let o = all.first(where: { $0.id == id }), !queue.contains(where: { $0.id == id }) else { continue }
             let person = o.person ?? sender
             parts.removeAll { $0.charge == o.charge && $0.person == person && ["payback", "refund"].contains($0.kind) }
             // The same shop sending money back is a refund; anyone else, a payback.
@@ -1180,6 +1521,10 @@ struct PartsSheet: View {
         }
         picked = [:]
         query = ""
+        if !queue.isEmpty {
+            startHowMuch(queue, asked: asked)
+            return
+        }
         step = leftCents == 0 ? .review : (parts.isEmpty || asked ? .kind : .progress)
     }
 
@@ -1215,19 +1560,8 @@ struct PartsSheet: View {
         case "other":
             otherAmount = amount
             step = .otherKind
-        case "paid_back":
-            if !editing.isEmpty {
-                // S-10e: the purchases it already pays back stay listed, ticked.
-                for p in parts where p.kind == "payback" && !p.held {
-                    if let c = p.charge { picked[c + "|" + (p.person ?? "")] = p.amount }
-                }
-                parts.removeAll { $0.kind == "payback" && !$0.held }
-            }
-            step = .owing
-        case "refund", "reimbursement":
-            picked = [:]
-            step = key == "refund" ? .refund : .work
-            Task { await search() }
+        // PB-10: the one Paid back tile asks who first (PB-11).
+        case "paid_back": whoPaid = true
         case "own": add(Part(kind: "moved", amount: amount))
         case "loan": add(Part(kind: "loan", amount: amount))
         case "out_of_savings": add(Part(kind: "savings", amount: amount))
@@ -1295,7 +1629,7 @@ struct PartsSheet: View {
             owing = items.filter { $0.theirs == true } + items.filter { $0.theirs != true }.sorted(by: close)
         }
         if whole != nil {
-            // S-11x: straight to the tiles; Paying me back opens S-09 with
+            // S-11x: straight to the tiles; Paid back › A person opens S-09 with
             // these shares (the purchase it was on isn't one: nobody owes there).
             step = .kind
             return
@@ -1304,7 +1638,7 @@ struct PartsSheet: View {
             step = .progress
             return
         }
-        step = !cash.isEmpty ? .cash : .owing
+        step = !cash.isEmpty ? .cash : personStep
         if step == .owing {
             // Pearl's likeliest: their shares, up to what came in.
             for o in owing where sender != nil && o.theirs == true { toggle(o) }

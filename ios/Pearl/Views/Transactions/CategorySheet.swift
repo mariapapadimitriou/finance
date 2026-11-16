@@ -383,11 +383,12 @@ struct CaseTile: Identifiable, Hashable {
     /// TR-07: Leave out, under Mark as… when Confirm takes its place on Select's bar.
     static let leaveOut = CaseTile(key: "leave_out", label: "Leave out", symbol: "eye.slash")
 
-    /// T-12: money in that isn't income.
+    /// T-12: money in that isn't income. PB-10 (Paid back, 1351:8770,
+    /// approved 2026-11-15): one "Paid back" tile replaces Paying me back,
+    /// Money back and Work paying me back; "Who paid you back?" (PB-11)
+    /// asks the rest. Six tiles; the four income tiles stay as they are.
     static let notIncome: [CaseTile] = [
-        CaseTile(key: "paid_back", label: "Paying me back", symbol: "person.2"),
-        CaseTile(key: "refund", label: "Money back", symbol: "arrow.uturn.backward"),
-        CaseTile(key: "reimbursement", label: "Work paying me back", symbol: "briefcase"),
+        CaseTile(key: "paid_back", label: "Paid back", symbol: "person.2"),
         CaseTile(key: "own", label: "My own money", symbol: "arrow.left.arrow.right"),
         CaseTile(key: "loan", label: "Lent me this", symbol: "banknote"),
         CaseTile(key: "out_of_savings", label: "Out of savings", symbol: "lifepreserver"),

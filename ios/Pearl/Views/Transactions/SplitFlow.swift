@@ -1654,11 +1654,14 @@ struct SplitPeople: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    /// "Owes you", "Paid $20.00 of $28.04", "Cash · Nov 13", "Let go · Nov 20".
+    /// "Owes you", "Paid $15.00 of $60.00 · owes $45.00" (PB-14, Paid back
+    /// 1351:10402), "Cash · Nov 13", "Let go · Nov 20".
     private func status(_ p: Transaction.Splitting.Person) -> String {
         if let gone = p.letGo { return "Let go · \(Format.short(gone.day))" }
         if p.owes >= 0.005 {
-            return p.paid >= 0.005 ? "Paid \(Format.amount(p.paid)) of \(Format.amount(p.amount))" : "Owes you"
+            return p.paid >= 0.005
+                ? "Paid \(Format.amount(p.paid)) of \(Format.amount(p.amount)) · owes \(Format.amount(p.owes))"
+                : "Owes you"
         }
         let how = (p.cash ?? 0) >= p.paid - 0.005 && (p.cash ?? 0) > 0 ? "Cash" : "Paid back"
         // SPLIT-14 (S-06 v3): "Paid back · PayPal · Nov 13", or "Another app" when unnamed.

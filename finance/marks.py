@@ -1610,6 +1610,17 @@ def undo_marks(store, marks: dict) -> int:
                 part = was.get("joint_part")
                 store.set_joint_part(tid, None if part is None else float(part))
             n += 1
+    # PB-13b (Paid back): a share let go with its payback; Undo makes them
+    # owe it again (None) or puts back the let-go it replaced.
+    for tid, people in (marks.get("let_go") or {}).items():
+        if tid not in known or not isinstance(people, dict):
+            continue
+        for name, was in people.items():
+            if isinstance(was, dict) and was.get("day"):
+                store.set_let_go(tid, str(name), float(was.get("was") or 0), str(was["day"]))
+            else:
+                store.clear_let_go(tid, str(name))
+            n += 1
     # SPLIT-C (S-46): That's everything, or a payback that reopened it.
     for tid, day in (marks.get("split_closed") or {}).items():
         if tid in known and (day is None or isinstance(day, str)):
