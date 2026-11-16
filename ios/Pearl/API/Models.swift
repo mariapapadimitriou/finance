@@ -1086,7 +1086,7 @@ struct DepositPart: Decodable, Hashable, Identifiable {
         case "overpaid": return "\(person ?? "They") overpaid"
         case "category": return category ?? "Other"
         // S-11 v2 (SPLIT-04).
-        case "reimbursement": return "Work paying me back" + (charge.map { " · \($0.merchant)" } ?? "")
+        case "reimbursement": return "Paid back · work" + (charge.map { " · \($0.merchant)" } ?? "")
         case "loan": return "Lent me this"
         case "lent_back": return "Money I lent, back"
         default: return "Left to sort"

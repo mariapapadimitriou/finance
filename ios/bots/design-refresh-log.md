@@ -742,3 +742,43 @@ The strings and toasts are in note `1329:69536`.
 
 Not-income tiles go from 8 to 6. T-08's "Split into parts" on money in is out of date and should be corrected.
 
+### [designBOT → engBOT] 2026-11-15 · PAID-01 (cont.) · Paid back from the purchase
+**Status:** Redesigned · Awaiting product owner
+**Jira:** THL-289, THL-291, THL-181   **Figma:** Proposals › Paid back `1351:8769`, note `1352:10319`
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| PB-20 | `1359:9271` / `1359:9386` | Your ••• on the split card offers "Find what paid it back", even before anything is linked. Other people's rows already have Mark paid back → S-06rb. |
+| PB-22 | `1359:9489` / `1359:9694` | "What paid back your share?": a search field and likely deposits (amount, date after the purchase, known payer) |
+| PB-23 | `1359:9897` / `1359:9978` | Nothing found |
+| PB-24 | `1359:10057` / `1359:10117` | "Move this deposit?" when it's already linked, with "Move it" · "Leave it on {other}" |
+
+- **After picking a deposit**, the existing steps are reused: PB-11 with the payer preselected, PB-13/13b, then the result on the split card (PB-14 / S-04w / S-04m) with a toast and Undo.
+- **On the deposit's own page**, the link shows as in T-41w / T-41m.
+- **A deposit bigger than the share** goes to S-11w / S-11m / S-11c.
+- **Approved (product owner, 2026-11-15):** PB-20, PB-22, PB-23 and PB-24 are "Approved, ready to build".
+- **PB-24 rule:** the free part of the deposit is used first, with no question. Taking more always asks.
+  - Title: "Take {$more} from {other}?"
+  - Body: "{$free} of this deposit is free, so it pays back your share first. The other {$more} pays back {other}. Taking it means {other} counts {$more} more again."
+  - Buttons: "Take {$more}" · "Use only the {$free}"
+  - Toasts: "Linked {$free} · {purchase}" (free part) and "Moved {$more} from {other}" (after Take), both with Undo.
+- Note `1352:10319` is updated.
+
+### [designBOT → engBOT] 2026-11-15 · PAID-02 · Paid back built (#351): frames moved, labels settled
+**Status:** Redesigned (Figma matches the build). PAID-01's "Awaiting product owner" is now approved (2026-11-15) and built.
+**Jira:** THL-289, THL-291, THL-181, THL-231, THL-232   **Figma:** Pearl app › Sorting › Paid back `1361:67898`
+
+- **Moved** into Pearl app › Sorting › Paid back and marked "built (#351)": PB-10 to PB-15 and PB-13b.
+- **Tile grids:**
+  - T-08 `348:11846` / `348:14648`: "Paid back" replaces the three tiles.
+  - T-08n `877:37854` / `877:38944` and T-37n `877:38331` / `877:39393`: the separate Refund tile is gone. "Loan" now reads "Lent me this", to match the built tiles.
+- **engBOT's undrawn choices:** all agreed.
+  - The inline Part-of-it field disables Save when the amount isn't valid.
+  - PB-11's preselected option is listed first and carries the reason in its subtitle ("Sam is on this split", "your employer", "this shop"). No extra frame is needed.
+  - With several people, PB-13 reads "Next" until the last person, then "Save".
+- **Old labels:** every link now reads "Paid back · {who}". Change these:
+  - SplitMenus "Deposit · Work paying me back" → "Paid back · work"
+  - SplitMenus "Refund · Money back" → "Paid back · refund"
+  - T-41w's category row "Work paying me back" → "Paid back · work". The frame is updated.
+  - Onboarding "Paying me back" (SetupPayQuestions) → "Paid back", to match the tile.
+  - The cash-extra tile "Paying me back" (S-11c) → "Pays back something else". There it means the extra covers a different purchase.

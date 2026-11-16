@@ -359,6 +359,8 @@ struct TransactionDetailView: View {
     @State private var newOnes: Bool?
     /// T-38b / T-40b: "Dining out · Undo" after a guess is confirmed.
     @State private var toast: (title: String, undo: (() -> Void)?)?
+    /// PB-22 to PB-24: where Find what paid it back is.
+    @State private var paidBackStep: PaidBackStep?
     /// T-41b: Unlink? before a refund goes back to Needs a look.
     @State private var unlinkingRefund = false
     /// SPLIT-25: S-05o for a PAID BACK or REFUNDED BY row on a purchase that
@@ -754,6 +756,13 @@ struct TransactionDetailView: View {
             }
         }
         .sheet(isPresented: $unlinking) { unlinkSheet }
+        // PB-20 to PB-24 (Paid back, 2026-11-15): Find what paid it back,
+        // from her own row's •••; the toast and Undo land here.
+        .modifier(PaidBackFromPurchase(step: $paidBackStep, purchase: t, api: app.api, done: { title, undo in
+            Task { await run { withAnimation { toast = (title, undoing(undo)) }; return nil } }
+        }, failed: { text in
+            withAnimation { toast = nil; splitToast = PearlToast.Model(text: text, failed: true) }
+        }))
         .sheet(isPresented: $unlinkingRefund) { refundUnlinkSheet }
         .overlay(alignment: .bottom) {
             VStack(spacing: 4) {
@@ -1114,15 +1123,22 @@ struct TransactionDetailView: View {
 
     /// T-41w (1297:64759, built from T-41): a deposit that pays a purchase
     /// back reads as her answer on What was this?, with its tile's icon:
-    /// "Work paying me back" (briefcase) or "Paying me back" (person.2).
+    /// PAID-02: "Paid back · work" (briefcase), "Paid back · refund", or
+    /// "Paid back · Priya" (person.2), "Paid back" with no name.
     /// A "Paid back" chip and a green amount go with it.
     private var paidBackAnswer: (label: String, symbol: String)? {
         // T-41m: a refund of her share stays a refund page (T-41).
         guard t.inflow, t.transfer == nil, t.excluded.isEmpty, t.refundOf == nil,
               let charge = t.repaysCharge else { return nil }
-        // PB-10 folded these tiles into Paid back; T-41w's words stay as its
-        // frame draws them until designBOT redraws it.
-        return charge.kind == "reimbursement" ? ("Work paying me back", "briefcase") : ("Paying me back", "person.2")
+        // PB-10 folded these tiles into Paid back; PAID-02 redrew T-41w:
+        // every link reads "Paid back · {who}".
+        switch charge.kind {
+        case "reimbursement": return ("Paid back · work", "briefcase")
+        case "refund_share": return ("Paid back · refund", "arrow.uturn.backward")
+        default:
+            let who = charge.person.flatMap { $0.isEmpty || $0 == "me" ? nil : $0 }
+            return (who.map { "Paid back · \($0)" } ?? "Paid back", "person.2")
+        }
     }
 
     /// Money in that could be her pay: not a refund, a payback or a transfer.
@@ -1643,7 +1659,7 @@ struct TransactionDetailView: View {
         case "cash": return "Cash you were paid"
         case "overpaid": return "You owe \(p.person ?? "them") this"
         // S-11 v2 (SPLIT-04).
-        case "reimbursement": return [p.charge?.category, "Work paying me back"].compactMap { $0 }.joined(separator: " · ")
+        case "reimbursement": return [p.charge?.category, "Paid back · work"].compactMap { $0 }.joined(separator: " · ")
         case "loan": return "Borrowed · Lent me this"
         case "lent_back": return "Lent · Money I lent, back"
         case "rest": return p.sorted == true ? "Sorted" : "Left to sort"
@@ -1757,6 +1773,8 @@ struct TransactionDetailView: View {
         case .view(let link): if let id = link.view?.id { Task { await open(id) } }
         case .unlink(let link): unlinkingLink = link
         case .changeShare: splitting = true
+        // PB-20 → PB-22: What paid back your share?
+        case .findPaidBack: paidBackStep = .find
         default: break
         }
     }
@@ -2369,6 +2387,8 @@ struct TransactionDetailView: View {
                     showFailed("Couldn’t remove \(p.name). Nothing changed.") { choose(p, .remove) }
                 }
             }
+        // Her own row's (PB-20); someone else's row has Mark paid back.
+        case .findPaidBack: paidBackStep = .find
         }
     }
 

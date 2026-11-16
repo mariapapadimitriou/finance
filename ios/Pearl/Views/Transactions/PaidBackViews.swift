@@ -22,8 +22,20 @@ struct PaidBackWhoSheet: View {
     let face: String
     /// "+$15.00 · e-Transfer from Sam Lee · Nov 16".
     let sub: String
+    /// From the purchase (PB-22 → PB-11): the kind the match was, picked
+    /// for her and listed first with why (PAID-02); any row still answers.
+    var picked: PaidBackWho? = nil
+    /// Who on the split it was from, for "Sam is on this split".
+    var pickedPerson: String? = nil
     let onPick: (PaidBackWho) -> Void
     let onClose: () -> Void
+
+    /// A person first (decision 3), unless Pearl picked another.
+    private var order: [PaidBackWho] {
+        let all: [PaidBackWho] = [.person, .shop, .work]
+        guard let p = picked else { return all }
+        return [p] + all.filter { $0 != p }
+    }
 
     var body: some View {
         PearlSheet {
@@ -31,13 +43,31 @@ struct PaidBackWhoSheet: View {
                              subTone: Pearl.moneyIn, close: onClose)
             PearlSectionLabel(text: "Pick one")
             PearlOptionCard {
-                PearlOptionRow(symbol: "person.2", title: "A person") { onPick(.person) }
-                PearlDivider()
-                PearlOptionRow(symbol: "arrow.uturn.backward", title: "The shop",
-                               sub: "A refund · which purchase, all of it or your share") { onPick(.shop) }
-                PearlDivider()
-                PearlOptionRow(symbol: "briefcase", title: "Work") { onPick(.work) }
+                ForEach(Array(order.enumerated()), id: \.element) { i, who in
+                    if i > 0 { PearlDivider() }
+                    row(who)
+                }
             }
+        }
+    }
+
+    /// PAID-02: the picked row says why ("Sam is on this split", "your
+    /// employer", "this shop"); The shop otherwise keeps its line.
+    private func row(_ who: PaidBackWho) -> some View {
+        let on = picked == who
+        switch who {
+        case .person:
+            let first = pickedPerson?.split(separator: " ").first.map(String.init)
+            return PearlOptionRow(symbol: "person.2", title: "A person",
+                                  sub: on ? first.map { "\($0) is on this split" } : nil,
+                                  checked: on) { onPick(.person) }
+        case .shop:
+            return PearlOptionRow(symbol: "arrow.uturn.backward", title: "The shop",
+                                  sub: on ? "this shop" : "A refund · which purchase, all of it or your share",
+                                  checked: on) { onPick(.shop) }
+        case .work:
+            return PearlOptionRow(symbol: "briefcase", title: "Work", sub: on ? "your employer" : nil,
+                                  checked: on) { onPick(.work) }
         }
     }
 }

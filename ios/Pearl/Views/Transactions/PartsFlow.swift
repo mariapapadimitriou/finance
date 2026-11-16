@@ -74,6 +74,10 @@ struct PartsSheet: View {
     var paidBack = false
     /// Who sent it, for PB-12's "$15.00 · Paid back · Sam Lee".
     var payer: String? = nil
+    /// From the purchase (PB-22, Paid back 2026-11-15): the purchase she
+    /// came from, so A person skips PB-12 and asks PB-13 for `payer`'s
+    /// share of it straight away.
+    var forCharge: String? = nil
     let onSaved: (MarkReply) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -1636,6 +1640,15 @@ struct PartsSheet: View {
         }
         if !editing.isEmpty {
             step = .progress
+            return
+        }
+        if paidBack, let charge = forCharge, editing.isEmpty,
+           let o = owing.first(where: { o in
+               o.charge == charge && o.unknown != true && o.owes >= 0.005
+                   && (payer.map { o.person == $0 } ?? (o.theirs == true && o.person != nil))
+           }) {
+            // PB-22 → PB-11 › A person: PB-13 for their share of this purchase.
+            startHowMuch([o])
             return
         }
         step = !cash.isEmpty ? .cash : personStep

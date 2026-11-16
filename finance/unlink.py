@@ -123,11 +123,11 @@ def _inflow_link(st, charge: Transaction, x: Transaction, who: str | None, by_id
             waits = was_waiting(st, cid) and not rest
         payer = x.merchant or "work"
         out.update(kind="reimbursement", was_waiting=waits, goes="needs_a_look", noun="reimbursement",
-                   message=f"{payer} · Work paying me back",
+                   message=f"{payer} · Paid back · work",
                    view={"id": parent.fingerprint if parent else x.fingerprint, "label": "View the deposit"},
                    dialog=f"{payer} paid back {_money(here)}",
                    sheet={"title": "Unlink?", "name": payer,
-                          "sub": f"{_money(here)} · {_day(x.date)} · Work paying me back", "ask": None,
+                          "sub": f"{_money(here)} · {_day(x.date)} · Paid back · work", "ask": None,
                           # REFRESH-03 (S-34kr7): "Loblaws waits to be reimbursed again.
                           # The $84.12 goes back to Needs a look."
                           "line": (f"{charge.merchant} waits to be reimbursed again. "

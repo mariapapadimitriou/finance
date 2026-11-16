@@ -281,6 +281,30 @@ class TestTilesBySource:
                 assert stock not in code, (path, stock)
             assert "safe to spend" not in code.lower()
 
+    def test_find_what_paid_it_back(self):
+        """PB-20 to PB-24's words, as Pearl sheets (note 1352:10319)."""
+        menus = self.src("ios/Pearl/Views/Transactions/SplitMenus.swift")
+        for words in ('"Find what paid it back"', '"Work, a refund, or someone paying you"',
+                      '"Your share \\(Format.amount(split.you)) · nothing paid it back yet"'):
+            assert words in menus, words
+        find = self.src("ios/Pearl/Views/Transactions/PaidBackFindViews.swift")
+        for words in ('"What paid back your share?"', '"Search deposits, or an amount"',
+                      '"Likely · money in after \\(Format.short(f.date))"', '"Next"',
+                      '"No money in matches"', '"Clear search"',
+                      "If it hasn’t arrived yet, Pearl asks when it does.",
+                      '"Take \\(more) from \\(other)?"', '"Take \\(more)"',
+                      '"Leave it on \\(other)"', '"Use only the \\(Format.amount(free))"',
+                      "of this deposit is free, so it pays back your share first.",
+                      '"All of this deposit pays back \\(other).'):
+            assert words in find, words
+        who = self.src("ios/Pearl/Views/Transactions/PaidBackViews.swift")
+        for words in ('is on this split"', '"your employer"', '"this shop"'):
+            assert words in who, words
+        for code in (find, who):
+            for stock in (".confirmationDialog(", ".alert(", ".actionSheet("):
+                assert stock not in code, stock
+            assert "safe to spend" not in code.lower()
+
 
 class TestFromThePurchase:
     """Paid back from the purchase side (2026-11-15, no UI yet): candidates
@@ -404,3 +428,155 @@ class TestSameAsTheDepositSide:
                    json={"deposit": i["E-TRANSFER FROM SAM LEE"], "person": "Sam", "amount": 20})
         assert r.status_code == 400 and r.get_json()["error"] == "Make it between $0.01 and $15.00."
         assert _state(b, i)[1] == [("Sam", 60.0, 0.0, 60.0, None)]
+
+
+class TestFindWhatPaidItBack:
+    """PB-20 to PB-24 (approved 2026-11-15, Proposals › "Paid back" 1351:8769,
+    note 1352:10319): from her own row on a split, "What paid back your
+    share?" lists LIKELY money in after the purchase from work, the shop or
+    someone on the split, newest first, with why each matches; search takes
+    a name or an amount (PB-23 when nothing does). PB-24: a deposit already
+    paying back another purchase links its free part at once, and only
+    takes more from the other purchase when she says Take."""
+
+    def setup(self, client):
+        i = add(client, tx("PAI NORTHERN THAI", 120.0, "Dining", when=day(10)),
+                tx("NORTHWIND LTD PAYROLL", -1980.0, "Income", when=day(20), merchant="Northwind Ltd"),
+                tx("NORTHWIND LTD EXPENSES", -60.0, when=day(8), merchant="Northwind Ltd"),
+                tx("PAI NORTHERN THAI REFUND", -120.0, when=day(7), merchant="PAI NORTHERN THAI"),
+                tx("E-TRANSFER FROM SAM LEE", -15.0, when=day(6), merchant="Sam Lee"),
+                tx("COFFEE CO", -60.4, when=day(5)),
+                tx("AIR CANADA", 40.0, "Travel", when=day(12)),
+                tx("E-TRANSFER FROM SAM BEFORE", -60.0, when=day(14), merchant="Sam Lee"))
+        client.put(f"/api/transactions/{i['PAI NORTHERN THAI']}/split", json={
+            "mode": "amount", "people": [{"name": "Sam", "amount": 60}]})
+        return i
+
+    def find(self, client, i, q=None):
+        r = client.get(f"/api/transactions/{i['PAI NORTHERN THAI']}/paid-back-find",
+                       query_string={"q": q} if q is not None else {})
+        assert r.status_code == 200, r.get_json()
+        return r.get_json()
+
+    def test_likely_is_work_the_shop_and_the_split_after_the_purchase_newest_first(self, client):
+        i = self.setup(client)
+        body = self.find(client, i)
+        assert (body["merchant"], body["amount"], body["share"], body["left"], body["date"]) == \
+            ("PAI NORTHERN THAI", 120.0, 60.0, 60.0, day(10))
+        rows = [(r["id"], r["payer"], r["amount"], r["kind"], r["person"], r["why"]) for r in body["candidates"]]
+        assert rows == [
+            (i["E-TRANSFER FROM SAM LEE"], "Sam Lee", 15.0, "person", "Sam", "Sam is on this split"),
+            (i["PAI NORTHERN THAI REFUND"], "PAI NORTHERN THAI", 120.0, "shop", None, "a refund · the whole purchase"),
+            (i["NORTHWIND LTD EXPENSES"], "Northwind Ltd", 60.0, "work", None, "work · same as your share"),
+        ]
+        # Before the purchase, or from no one she knows: not likely.
+        assert all(r["taken"] is None for r in body["candidates"])
+
+    def test_search_by_amount_or_name(self, client):
+        i = self.setup(client)
+        sixty = self.find(client, i, "$60")
+        assert [(r["payer"], r["why"]) for r in sixty["candidates"]] == [
+            ("COFFEE CO", "same as your share"), ("Northwind Ltd", "work · same as your share")]
+        assert [r["payer"] for r in self.find(client, i, "northwind")["candidates"]] == ["Northwind Ltd"]
+        # PB-23: nothing for about $999, said back to her.
+        none = self.find(client, i, "999")
+        assert none["candidates"] == [] and none["about"] == 999.0
+
+    def test_finding_changes_nothing(self, client, tmp_path):
+        i = self.setup(client)
+        before = TestFromThePurchase().dump(client, tmp_path)
+        for q in (None, "$60", "northwind"):
+            self.find(client, i, q)
+        assert TestFromThePurchase().dump(client, tmp_path) == before
+
+    def test_only_her_share_of_a_split(self, client):
+        i = self.setup(client)
+        r = client.get(f"/api/transactions/{i['AIR CANADA']}/paid-back-find")
+        assert r.status_code == 404
+
+    def taken(self, client, i):
+        dep = i["NORTHWIND LTD EXPENSES"]
+        r = parts(client, dep, {"kind": "reimbursement", "amount": 40.0, "charge": i["AIR CANADA"]}, later=True)
+        assert r.status_code == 200, r.get_json()
+        return dep
+
+    def deposit_parts(self, client, dep):
+        return [(p["kind"], p["amount"], (p.get("charge") or {}).get("merchant")) for p in detail(client, dep)["parts"]]
+
+    def test_pb24_says_what_is_free_and_what_it_would_take(self, client):
+        i = self.setup(client)
+        self.taken(client, i)
+        row = self.find(client, i, "northwind")["candidates"][0]
+        assert row["kind"] == "work"
+        assert row["taken"] == {"free": 20.0, "need": 60.0, "more": 40.0,
+                                "other": {"id": i["AIR CANADA"], "merchant": "AIR CANADA"}}
+
+    @pytest.mark.parametrize("take", [False, True])
+    def test_pb24_links_the_free_part_or_takes_more_with_one_undo(self, client, take):
+        i = self.setup(client)
+        dep, pai = self.taken(client, i), i["PAI NORTHERN THAI"]
+        before = self.deposit_parts(client, dep)
+        r = client.post(f"/api/transactions/{pai}/paid-back-take", json={"deposit": dep, "take": take})
+        assert r.status_code == 200, r.get_json()
+        if take:
+            assert r.get_json()["title"] == "Moved $40.00 from AIR CANADA"
+            assert self.deposit_parts(client, dep) == [("reimbursement", 60.0, "PAI NORTHERN THAI")]
+            assert detail(client, pai)["splitting"]["mine"]["reimbursed"] == 60.0
+        else:
+            assert r.get_json()["title"] == "Linked $20.00 · PAI NORTHERN THAI"
+            assert self.deposit_parts(client, dep) == [("reimbursement", 40.0, "AIR CANADA"),
+                                                       ("reimbursement", 20.0, "PAI NORTHERN THAI")]
+            mine = detail(client, pai)["splitting"]["mine"]
+            assert (mine["reimbursed"], mine["stays"]) == (20.0, 40.0)
+        undo(client, r.get_json())
+        assert self.deposit_parts(client, dep) == before
+        assert detail(client, pai)["splitting"].get("mine") is None
+
+    def test_pb24_when_the_free_part_covers_it(self, client):
+        i = self.setup(client)
+        i.update(add(client, tx("NORTHWIND LTD TRAVEL", -100.0, when=day(4), merchant="Northwind Ltd")))
+        dep, pai = i["NORTHWIND LTD TRAVEL"], i["PAI NORTHERN THAI"]
+        parts(client, dep, {"kind": "reimbursement", "amount": 40.0, "charge": i["AIR CANADA"]}, later=True)
+        row = next(r for r in self.find(client, i, "northwind")["candidates"] if r["id"] == dep)
+        assert row["taken"]["more"] == 0.0
+        r = client.post(f"/api/transactions/{pai}/paid-back-take", json={"deposit": dep})
+        assert r.status_code == 200 and r.get_json()["title"] == "Linked $60.00 · PAI NORTHERN THAI"
+
+    def test_pb24_with_nothing_free_needs_take(self, client):
+        i = self.setup(client)
+        dep, pai = i["NORTHWIND LTD EXPENSES"], i["PAI NORTHERN THAI"]
+        parts(client, dep, {"kind": "reimbursement", "amount": 40.0, "charge": i["AIR CANADA"]},
+              {"kind": "gift", "amount": 20.0})
+        row = next(r for r in self.find(client, i, "northwind")["candidates"] if r["id"] == dep)
+        assert row["taken"]["free"] == 0.0 and row["taken"]["more"] == 40.0
+        r = client.post(f"/api/transactions/{pai}/paid-back-take", json={"deposit": dep, "take": False})
+        assert r.status_code == 400 and r.get_json()["error"] == "None of this deposit is free."
+        r = client.post(f"/api/transactions/{pai}/paid-back-take", json={"deposit": dep, "take": True})
+        assert r.status_code == 200 and r.get_json()["title"] == "Moved $40.00 from AIR CANADA"
+
+    def test_pb24_on_a_payback_linked_whole(self, client):
+        i = self.setup(client)
+        i.update(add(client, tx("TACOS", 80.0, "Dining", when=day(11)),
+                     tx("E-TRANSFER FROM SAM AGAIN", -60.0, when=day(3), merchant="Sam Lee")))
+        tacos, dep, pai = i["TACOS"], i["E-TRANSFER FROM SAM AGAIN"], i["PAI NORTHERN THAI"]
+        client.put(f"/api/transactions/{tacos}/split", json={"mode": "amount", "people": [{"name": "Sam", "amount": 40}]})
+        client.st.link_payback(tacos, dep, "Sam", amount=40.0)
+        row = next(r for r in self.find(client, i)["candidates"] if r["id"] == dep)
+        assert (row["kind"], row["person"]) == ("person", "Sam")
+        assert row["taken"] == {"free": 20.0, "need": 60.0, "more": 40.0,
+                                "other": {"id": tacos, "merchant": "TACOS"}}
+        r = client.post(f"/api/transactions/{pai}/paid-back-take", json={"deposit": dep})
+        assert r.status_code == 200 and r.get_json()["title"] == "Linked $20.00 · PAI NORTHERN THAI"
+        assert owing(client, pai)["Sam"] == (20.0, 40.0)
+        assert owing(client, tacos)["Sam"] == (40.0, 0.0)
+        undo(client, r.get_json())
+        x = client.st.get_transaction(dep)
+        assert (x.repays, x.repays_amount, client.st.payback_people().get(dep)) == (tacos, 40.0, "Sam")
+        assert owing(client, pai)["Sam"] == (0.0, 60.0)
+
+    def test_a_deposit_already_on_this_purchase_isnt_listed(self, client):
+        i = self.setup(client)
+        dep, pai = i["NORTHWIND LTD EXPENSES"], i["PAI NORTHERN THAI"]
+        r = client.post(f"/api/transactions/{dep}/mark", json={"case": "reimbursement", "charge": pai, "share": True})
+        assert r.status_code == 200, r.get_json()
+        assert dep not in [c["id"] for c in self.find(client, i, "northwind")["candidates"]]
