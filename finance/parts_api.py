@@ -942,6 +942,50 @@ def paid_back_find(txn_id: str):
                     "candidates": rows[:CANDIDATE_LIMIT]})
 
 
+@bp.get("/transactions/<txn_id>/paid-back-who")
+def paid_back_who(txn_id: str):
+    """PB-11 from the deposit (PAID-03): the kind Pearl picks for "Who paid
+    you back?", read from who sent it the way PB-22 reads it from the
+    purchase side (`_Find.detected`): someone on a split of a purchase in
+    the year before it (one still open first) is "person"; the same shop as
+    such a purchase is "shop"; whoever pays her is "work". {kind, person},
+    both None when nothing says. Read-only."""
+    from datetime import timedelta
+    from .categorize import merchant_key
+    from .etransfers import known_people
+    from .etransfers import party as etransfer_party
+    st = store()
+    x = st.get_transaction(txn_id)
+    if x is None:
+        return jsonify({"error": "Transaction not found"}), 404
+    nothing = {"kind": None, "person": None}
+    if x.amount >= 0:
+        return jsonify(nothing)
+    txns = st.all_transactions()
+    by_id = {t.fingerprint: t for t in txns}
+    day = x.date[:10]
+    lo = (date.fromisoformat(day) - timedelta(days=CANDIDATE_DAYS_AFTER)).isoformat()
+    bought = [t for t in txns if t.amount > 0 and lo <= sp.bought_on(t).isoformat() <= day]
+    splits = st.splits()
+    people = known_people(txns, splits, st.payback_people())
+    sender = x.party or (etransfer_party(x, people) or {}).get("name") or ""
+    # Open splits first, the newest of each first.
+    on_splits = sorted(((split, by_id[cid]) for cid, split in splits.items()
+                        if cid in by_id and lo <= sp.bought_on(by_id[cid]).isoformat() <= day),
+                       key=lambda pair: (pair[0].get("closed_at") is not None,
+                                         -sp.bought_on(pair[1]).toordinal()))
+    for split, _ in on_splits:
+        for p in split["people"]:
+            if (sender and sp.same_person(sender, p["name"])) or sp.from_person(x, p["name"]):
+                return jsonify({"kind": "person", "person": p["name"]})
+    key = merchant_key(x.merchant or x.description)
+    if key and any(merchant_key(t.merchant or t.description) == key for t in bought):
+        return jsonify({"kind": "shop", "person": None})
+    if key and key in _employers(st, txns):
+        return jsonify({"kind": "work", "person": None})
+    return jsonify(nothing)
+
+
 def _part_for(kind: str, charge: str, amount: float, person: str | None) -> dict:
     """The part that links money to this purchase, by who it's from."""
     if kind == "work":

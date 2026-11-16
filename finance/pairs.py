@@ -119,7 +119,7 @@ def pair_for(item: dict, t: Transaction, txns: list[Transaction], outs: dict[str
         same = near
     if len(same) == 1 and not who:
         c = same[0]
-        return {"kind": "refund", "question": f"Money back for {c['merchant']}?",
+        return {"kind": "refund", "question": f"Paid back for {c['merchant']}?",
                 "evidence": (f"Same store and amount as {_on(c['date'])}." if c.get("exact")
                              else f"From the store you paid {_money(c['amount'])} on {_on(c['date'])}."),
                 "line": f"Yes takes {_money(got)} off that purchase.",

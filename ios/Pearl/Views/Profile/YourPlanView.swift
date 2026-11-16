@@ -12,6 +12,13 @@ import SwiftUI
 //                                 Remove from plan
 // YP-05  1353:11157 / 1353:11213  Remove {category} from your plan?
 // YP-06  1353:11257 / 1353:11337  empty: Suggest a plan
+// YP-07  1356:9351 / 1356:9411    Stop using this plan? (asks first), and the
+//                                 toast after it, with Undo
+// YP-08  1356:9456 / 1356:9661    Add a category: NOT IN YOUR PLAN, Next, then
+//                                 YP-04 with her usual filled in and "Add"
+//
+// The tick on a plan row was decoration and is gone (YP-01, YP-03); Remove
+// lives in YP-04.
 //
 // A plan only proposes: the Allowance follows it only after Use this plan and
 // YP-02 (finance/your_plan.py). Every write returns the whole page again, so
@@ -36,11 +43,28 @@ struct YourPlan: Decodable {
     /// The Allowance a month this plan leaves with her income and bills;
     /// nil until she has an income.
     let allowance: Double?
+    /// YP-07: the Allowance a month without the plan; nil until she has an
+    /// income.
+    var allowanceWithout: Double? = nil
 
     enum CodingKeys: String, CodingKey {
         case rows, since, total, allowance
         case inUse = "in_use"
+        case allowanceWithout = "allowance_without"
     }
+}
+
+/// GET /api/your-plan/categories: YP-08's NOT IN YOUR PLAN.
+struct PlanCategories: Decodable {
+    struct Category: Decodable, Identifiable, Hashable {
+        let category: String
+        let usual: Double
+        /// What YP-04 starts at: her usual to the nearest $5.
+        let amount: Double
+        var id: String { category }
+    }
+
+    let categories: [Category]
 }
 
 @MainActor
@@ -48,18 +72,22 @@ struct YourPlanView: View {
     @EnvironmentObject private var app: AppModel
     @State private var plan: YourPlan?
     @State private var sheet: Sheet?
-    /// YP-03: "Plan in use · Allowance $1,180 a month" · Undo.
-    @State private var toast: String?
+    /// YP-03: "Plan in use · Allowance $1,180 a month" · Undo; YP-07: "Plan
+    /// stopped · Allowance $1,240 a month" · Undo. Each Undo calls its own path.
+    @State private var toast: (text: String, undo: String)?
     @State private var busy = false
     @State private var error: String?
 
     enum Sheet: Identifiable {
-        case use, edit(YourPlan.Row), remove(YourPlan.Row)
+        case use, stop, add, edit(YourPlan.Row), adding(YourPlan.Row), remove(YourPlan.Row)
 
         var id: String {
             switch self {
             case .use: return "use"
+            case .stop: return "stop"
+            case .add: return "add"
             case .edit(let r): return "edit:" + r.id
+            case .adding(let r): return "adding:" + r.id
             case .remove(let r): return "remove:" + r.id
             }
         }
@@ -76,9 +104,8 @@ struct YourPlanView: View {
         } bottom: {
             if let plan = plan, !plan.rows.isEmpty {
                 if plan.inUse {
-                    // YP-03. The note asks first, "like YP-05", but has no
-                    // words for it yet: it stops at once (engBOT, 2026-11-15).
-                    Button("Stop using this plan") { Task { await stop() } }
+                    // YP-03; asks first (YP-07).
+                    Button("Stop using this plan") { sheet = .stop }
                         .buttonStyle(SecondaryButtonStyle())
                         .disabled(busy)
                 } else {
@@ -90,7 +117,9 @@ struct YourPlanView: View {
         }
         .overlay(alignment: .top) {
             if let toast = toast {
-                UndoToast(text: toast, undo: { Task { await undo() } }) { withAnimation { self.toast = nil } }
+                UndoToast(text: toast.text, undo: { Task { await undo(toast.undo) } }) {
+                    withAnimation { self.toast = nil }
+                }
             }
         }
         .refreshable { await load() }
@@ -110,9 +139,12 @@ struct YourPlanView: View {
             CardCaption("Each month · Plan · Your usual")
             GlassCard {
                 ForEach(Array(plan.rows.enumerated()), id: \.element.id) { i, row in
-                    if i > 0 { RowSeparator(inset: 50) }
+                    if i > 0 { RowSeparator(inset: 16) }
                     PlanLine(row: row) { sheet = .edit(row) }
                 }
+                RowSeparator(inset: 16)
+                // YP-01, YP-03: "⊕ Add a category" opens YP-08.
+                AddLine(title: "Add a category") { sheet = .add }
             }
             CardCaption("What it means")
             Text(meaning(plan)).font(Nacre.footnote).foregroundColor(Pearl.ink)
@@ -166,11 +198,35 @@ struct YourPlanView: View {
                 sheet = nil
                 saved(reply)
                 withAnimation {
-                    toast = "Plan in use" + (reply.allowance.map { " \u{00B7} Allowance \(Format.whole($0)) a month" } ?? "")
+                    toast = ("Plan in use" + allowanceWords(reply.allowance), "api/your-plan/undo")
                 }
+            }
+        case .stop:
+            // YP-07.
+            PearlConfirmSheet(overline: "Your plan", title: "Stop using this plan?", message: stopMessage,
+                              primary: "Stop using it", secondary: "Keep using it",
+                              onClose: { sheet = nil }) {
+                let reply: YourPlan = try await app.api.post("api/your-plan/stop")
+                sheet = nil
+                saved(reply)
+                withAnimation {
+                    toast = ("Plan stopped" + allowanceWords(reply.allowanceWithout), "api/your-plan/resume")
+                }
+            }
+        case .add:
+            AddCategorySheet(close: { sheet = nil }) { picked in
+                sheet = .adding(YourPlan.Row(category: picked.category, amount: picked.amount,
+                                             source: "you", usual: picked.usual))
             }
         case .edit(let row):
             PlanAmountSheet(row: row, close: { sheet = nil }, remove: { sheet = .remove(row) }) { amount in
+                let reply: YourPlan = try await app.api.put("api/your-plan/rows/\(row.category)", ["amount": amount])
+                sheet = nil
+                saved(reply)
+            }
+        case .adding(let row):
+            // YP-08's Next: YP-04 with her usual filled in, and "Add".
+            PlanAmountSheet(row: row, adding: true, close: { sheet = nil }, remove: {}) { amount in
                 let reply: YourPlan = try await app.api.put("api/your-plan/rows/\(row.category)", ["amount": amount])
                 sheet = nil
                 saved(reply)
@@ -185,6 +241,20 @@ struct YourPlanView: View {
                 saved(reply)
             }
         }
+    }
+
+    /// " · Allowance $1,180 a month" on a toast, once she has an income.
+    private func allowanceWords(_ allowance: Double?) -> String {
+        allowance.map { " \u{00B7} Allowance \($0 < 0 ? "-" : "")\(Format.whole($0)) a month" } ?? ""
+    }
+
+    /// YP-07's body. Without an income there's no Allowance to name, so that
+    /// clause waits for one, as on YP-02.
+    private var stopMessage: String {
+        guard let without = plan?.allowanceWithout else {
+            return "Your usual amounts come back. The plan stays here to use again."
+        }
+        return "Your usual amounts come back, and your Allowance goes back to \(without < 0 ? "-" : "")\(Format.whole(without)) a month. The plan stays here to use again."
     }
 
     /// YP-02's body. Without an income there's no Allowance to name, so the
@@ -227,21 +297,18 @@ struct YourPlanView: View {
     /// YP-06's Suggest a plan.
     private func suggest() async { await run("api/your-plan/suggest") }
 
-    private func stop() async {
-        await run("api/your-plan/stop")
+    /// Undo on a toast: YP-03's goes back to before Use this plan
+    /// (api/your-plan/undo); YP-07's uses it again, since the same day
+    /// (api/your-plan/resume).
+    private func undo(_ path: String) async {
         withAnimation { toast = nil }
-    }
-
-    /// Undo on YP-03's toast: back as it was before Use this plan.
-    private func undo() async {
-        withAnimation { toast = nil }
-        await run("api/your-plan/undo")
+        await run(path)
     }
 }
 
-/// YP-01's Plan row: "✓ Groceries · Usual $412   $400  Edit", and
-/// "Usual $214 · set in Pearl chat" for a plan set there. The tick says it's
-/// in the plan; the row opens YP-04.
+/// YP-01's Plan row: "Groceries · Usual $412   $400  Edit", and "Usual $214
+/// · set in Pearl chat" for a plan set there. The row opens YP-04. No tick:
+/// it was decoration (note 1353:11493).
 private struct PlanLine: View {
     let row: YourPlan.Row
     let edit: () -> Void
@@ -249,9 +316,6 @@ private struct PlanLine: View {
     var body: some View {
         Button(action: edit) {
             HStack(spacing: 12) {
-                Image(systemName: "checkmark.circle.fill").font(.system(size: 22))
-                    .foregroundColor(Pearl.action)
-                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(row.category).font(Nacre.body).foregroundColor(Pearl.ink)
                         .fixedSize(horizontal: false, vertical: true)
@@ -280,9 +344,11 @@ private struct PlanLine: View {
 }
 
 /// YP-04: one category's amount a month. Save keeps it to the nearest $5
-/// (the server rounds); Remove from plan asks first (YP-05).
+/// (the server rounds); Remove from plan asks first (YP-05). From YP-08 it
+/// starts at her usual and its button reads "Add"; there's nothing to remove.
 private struct PlanAmountSheet: View {
     let row: YourPlan.Row
+    var adding = false
     let close: () -> Void
     let remove: () -> Void
     let save: (Double) async throws -> Void
@@ -326,12 +392,13 @@ private struct PlanAmountSheet: View {
             }
             if let failed = failed { CautionBanner(text: failed) }
         } footer: {
-            PearlSheetButtons(primary: failed != nil ? "Try again" : "Save", busy: busy,
-                              secondary: "Remove from plan",
+            PearlSheetButtons(primary: failed != nil ? "Try again" : (adding ? "Add" : "Save"), busy: busy,
+                              secondary: adding ? nil : "Remove from plan",
                               onPrimary: { Task { await go() } }, onSecondary: remove)
         }
         .onAppear {
-            text = String(Int(row.amount.rounded()))
+            // A category with no spending starts empty (usual $0).
+            text = row.amount > 0 ? String(Int(row.amount.rounded())) : ""
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { typing = true }
         }
     }
@@ -349,5 +416,104 @@ private struct PlanAmountSheet: View {
         } catch {
             failed = "Something went wrong. Nothing changed. Try again."
         }
+    }
+}
+
+/// YP-08: Add a category. "NOT IN YOUR PLAN", one row a category, "{Category}
+/// · usual {$x}" (those with no spending last, at $0), one picked at a time
+/// with Pearl's tick, then Next.
+@MainActor
+private struct AddCategorySheet: View {
+    @EnvironmentObject private var app: AppModel
+    let close: () -> Void
+    let next: (PlanCategories.Category) -> Void
+
+    @State private var categories: [PlanCategories.Category]?
+    @State private var picked: PlanCategories.Category?
+    @State private var failed: String?
+
+    var body: some View {
+        PearlSheet {
+            // The centred title, then Your plan's row (1356:9490, 1356:9494).
+            HStack {
+                Spacer()
+                Text("Add a category").font(Nacre.headline).foregroundColor(Pearl.ink)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer()
+            }
+            .frame(minHeight: 44)
+            .overlay(alignment: .trailing) { PearlCloseButton(action: close) }
+            HStack(spacing: 12) {
+                PearlFace(name: "Your plan", size: 48)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Your plan").font(Pearl.heading(22, relativeTo: .title2)).foregroundColor(Pearl.ink)
+                    Text("Categories not in your plan yet").font(Pearl.text(.subheadline))
+                        .foregroundColor(Pearl.muted)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityElement(children: .combine)
+            if let categories = categories {
+                if !categories.isEmpty {
+                    PearlSectionLabel(text: "Not in your plan")
+                    PearlOptionCard {
+                        ForEach(Array(categories.enumerated()), id: \.element.id) { i, c in
+                            if i > 0 { PearlDivider() }
+                            CategoryChoice(category: c, on: picked == c) { picked = c }
+                        }
+                    }
+                }
+            } else if failed == nil {
+                ProgressView().frame(maxWidth: .infinity, minHeight: 120)
+            }
+            if let failed = failed { CautionBanner(text: failed) }
+        } footer: {
+            VStack(spacing: 0) {
+                Text("Next: how much each month (starts at your usual).")
+                    .font(Pearl.text(.footnote)).foregroundColor(Pearl.ink)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 16)
+                PearlSheetButtons(primary: "Next", onPrimary: { if let p = picked { next(p) } })
+                    .disabled(picked == nil)
+            }
+        }
+        .task { await load() }
+    }
+
+    private func load() async {
+        do {
+            let reply: PlanCategories = try await app.api.get("api/your-plan/categories")
+            categories = reply.categories
+            failed = nil
+        } catch {
+            failed = app.handle(error)
+        }
+    }
+}
+
+/// YP-08's row: "Health · usual $84", with Pearl's tick when picked.
+private struct CategoryChoice: View {
+    let category: PlanCategories.Category
+    let on: Bool
+    let pick: () -> Void
+
+    var body: some View {
+        Button(action: pick) {
+            HStack(spacing: 12) {
+                Text("\(category.category) \u{00B7} usual \(Format.whole(category.usual))")
+                    .font(Pearl.text(.body)).foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(Pearl.action)
+                    .opacity(on ? 1 : 0)
+                    .accessibilityHidden(true)
+            }
+            .frame(minHeight: 52)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? [.isSelected] : [])
     }
 }

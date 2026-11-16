@@ -87,6 +87,10 @@ struct AnswerSheet: View {
     /// picked, acted on once it has closed.
     @State private var whoPaid = false
     @State private var pickedWho: PaidBackWho?
+    /// PAID-03: who Pearl thinks it was (GET paid-back-who), picked for her
+    /// on PB-11 with why, as from the purchase side (PAID-02).
+    @State private var likelyWho: PaidBackWho?
+    @State private var likelyPerson: String?
     /// PB-15: a person who isn't on a split; T-09's purchase list counts
     /// the whole amount as paid back by them.
     @State private var payerName: String?
@@ -265,6 +269,7 @@ struct AnswerSheet: View {
         }) {
             // PB-11 (1351:9324): A person · The shop · Work.
             PaidBackWhoSheet(face: payer, sub: "\(amountText) · \(who) · \(Format.short(t.date))",
+                             picked: likelyWho, pickedPerson: likelyPerson,
                              onPick: { pickedWho = $0; whoPaid = false },
                              onClose: { whoPaid = false })
         }
@@ -291,6 +296,22 @@ struct AnswerSheet: View {
     }
 
     // MARK: Options
+
+    /// PB-11 from the deposit (PAID-03): Pearl's pick first, read from who
+    /// sent it as the purchase side reads it; with nothing to go on (or
+    /// offline) it opens as before, A person first and nothing picked.
+    private func askWhoPaid() async {
+        struct Likely: Decodable { let kind: String?; let person: String? }
+        let likely: Likely? = try? await api.get("api/transactions/\(t.id)/paid-back-who")
+        switch likely?.kind {
+        case "person": likelyWho = .person
+        case "shop": likelyWho = .shop
+        case "work": likelyWho = .work
+        default: likelyWho = nil
+        }
+        likelyPerson = likely?.person
+        whoPaid = true
+    }
 
     private func loadOptions() async {
         guard step == .out || step == .into, full == nil else { return }
@@ -593,7 +614,7 @@ struct AnswerSheet: View {
         }
         switch key {
         // PB-10: one Paid back tile; PB-11 asks who paid her back.
-        case "paid_back": whoPaid = true
+        case "paid_back": Task { await askWhoPaid() }
         case "own": onAnswer(.mark(t.id, ["case": "own", "remember": learnable && rememberInto]))
         case "loan": onAnswer(.mark(t.id, ["case": "borrowed"]))
         case "out_of_savings": onAnswer(.mark(t.id, ["case": "out_of_savings"]))

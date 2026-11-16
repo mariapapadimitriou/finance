@@ -209,10 +209,25 @@ struct IncomeBills: Decodable {
     var rentQuestion: RentQuestion? = nil
     /// What a bill's removal took away, for Undo.
     var removed: Removed? = nil
+    /// YP-09's Your plan card.
+    var yourPlan: PlanCard? = nil
 
     enum CodingKeys: String, CodingKey {
         case pays, candidates, bills, asks, checked, expected, totals, removed
         case rentQuestion = "rent_question"
+        case yourPlan = "your_plan"
+    }
+
+    /// YP-09: none yet (no rows), not in use, or in use with its total a month.
+    struct PlanCard: Decodable, Hashable {
+        let rows: Int
+        let inUse: Bool
+        let total: Double
+
+        enum CodingKeys: String, CodingKey {
+            case rows, total
+            case inUse = "in_use"
+        }
     }
 
     struct Checked: Decodable, Hashable {

@@ -33,6 +33,8 @@ def _payload(st) -> dict:
     from .safe_to_spend import usual_income
     usual = usual_income(txns, today)
     estimate = usual["average"] if usual else None
+    from . import your_plan as yp
+    plan = yp.load(st)
     return {
         "today": today.isoformat(),
         "checked": {"income": state["income_on"], "bills": state["bills_on"]},
@@ -47,6 +49,10 @@ def _payload(st) -> dict:
         "rent_question": ib.rent_question(rows),
         "totals": {"income": ib.income_each_month(state, told, estimate),
                    "bills": ib.bills_each_month(rows, st.float_setting("home_rent", 0.0))},
+        # YP-09's Your plan card: in use (with its total a month), not in
+        # use, or none yet.
+        "your_plan": {"rows": len(plan["rows"]), "in_use": plan["in_use"],
+                      "total": sum(r["amount"] for r in plan["rows"])},
     }
 
 

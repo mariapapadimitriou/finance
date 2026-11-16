@@ -580,3 +580,31 @@ class TestFindWhatPaidItBack:
         r = client.post(f"/api/transactions/{dep}/mark", json={"case": "reimbursement", "charge": pai, "share": True})
         assert r.status_code == 200, r.get_json()
         assert dep not in [c["id"] for c in self.find(client, i, "northwind")["candidates"]]
+
+
+class TestWhoFromTheDeposit(TestFindWhatPaidItBack):
+    """PB-11 from the deposit (PAID-03): Pearl picks the kind the way PB-22
+    reads it from the purchase side, by who sent it: someone on a split
+    before it, the same shop, or whoever pays her."""
+
+    def who(self, client, tid):
+        r = client.get(f"/api/transactions/{tid}/paid-back-who")
+        assert r.status_code == 200, r.get_json()
+        return r.get_json()
+
+    def test_a_person_on_a_split_the_shop_and_work(self, client):
+        i = self.setup(client)
+        assert self.who(client, i["E-TRANSFER FROM SAM LEE"]) == {"kind": "person", "person": "Sam"}
+        assert self.who(client, i["PAI NORTHERN THAI REFUND"]) == {"kind": "shop", "person": None}
+        assert self.who(client, i["NORTHWIND LTD EXPENSES"]) == {"kind": "work", "person": None}
+        assert self.who(client, i["COFFEE CO"]) == {"kind": None, "person": None}
+
+    def test_only_a_split_from_before_it(self, client):
+        i = self.setup(client)
+        # Sam's e-Transfer on day(14) came before the split purchase (day(10)).
+        assert self.who(client, i["E-TRANSFER FROM SAM BEFORE"])["kind"] is None
+
+    def test_money_out_and_unknown(self, client):
+        i = self.setup(client)
+        assert self.who(client, i["AIR CANADA"]) == {"kind": None, "person": None}
+        assert client.get("/api/transactions/nope/paid-back-who").status_code == 404
