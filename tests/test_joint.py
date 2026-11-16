@@ -419,3 +419,14 @@ def test_someone_elses_joint_deposit_doesnt_take_her_rule(client):
     st.set_override("Costco", "Groceries")
     tid = next(x.fingerprint for x in st.all_transactions() if x.merchant == "Costco")
     assert answer(client, tid, "them").get_json()["title"] is None
+
+
+def test_whose_answer_has_an_undo(client):
+    """POLISH-01: Whose was it? answers with a toast and Undo; Undo puts her
+    share back as it was."""
+    i = ids(client)
+    r = client.put(f"/api/transactions/{i['LOBLAWS']}/share", json={"my_share": 0}).get_json()
+    assert month(client)["spend"] == 80
+    assert r["undo"]["marks"] == {"shares": {i["LOBLAWS"]: None}}
+    assert client.post("/api/transactions/undo", json=r["undo"]).status_code == 200
+    assert month(client)["spend"] == 200

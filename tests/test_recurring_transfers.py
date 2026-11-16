@@ -335,3 +335,17 @@ def test_the_next_payday_is_never_a_weekend():
     pays = [date(2026, 9, 15), date(2026, 9, 30), date(2026, 10, 15)]
     nxt = rt.next_payday(pays, date(2026, 10, 28))
     assert nxt == date(2026, 11, 2)            # Oct 31 is a Saturday
+
+
+class TestRhythm:
+    """RQ-01 (POLISH-01): the question draws each payment, and says when the
+    next one is due."""
+
+    def test_each_date_and_the_next(self, client):
+        rent(client, months=4)
+        [it] = asked(client)
+        s = it["series"]
+        assert s["dates"] == sorted(s["dates"]) and len(s["dates"]) == s["count"] == 4
+        assert s["dates"][0] == s["first"] and s["dates"][-1] == s["last"]
+        assert s["next"] > TODAY.isoformat()
+        assert s["next"][8:] == "01"

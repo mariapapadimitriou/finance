@@ -492,3 +492,41 @@ def income_bills_etransfer():
     from .api import _reclassify
     _reclassify(st)
     return jsonify(_payload(st))
+
+
+# How many paydays PQ-01 and PQ-02 draw: the rhythm is one pill each.
+DEPOSITS_SHOWN = 9
+
+
+@bp.get("/transactions/<txn_id>/deposits")
+def payer_deposits(txn_id: str):
+    """PQ-01 Whose pay is this? and PQ-02 How often is this pay? (POLISH-01):
+    the deposits from this one's payer into the same account, so the sheet
+    can say what Pearl sees and draw them. `dates` are the last few, oldest
+    first; `count` and `first` are all of them. `cadence` is Pearl's guess
+    at the schedule (dashed on PQ-02, never picked for her), and `next` when
+    it would be due on that guess."""
+    from .categorize import merchant_key
+    st = store()
+    t = st.get_transaction(txn_id)
+    if t is None:
+        return _error("No such transaction.", 404)
+    if t.amount >= 0:
+        return _error("Only money coming in.")
+    key = merchant_key(t.merchant or "")
+    rows = sorted((x for x in st.all_transactions()
+                   if x.amount < 0 and x.account_id == t.account_id and not x.excluded
+                   and merchant_key(x.merchant or "") == key),
+                  key=lambda x: x.date)
+    days = sorted({date.fromisoformat(x.date[:10]) for x in rows})
+    cadence = ib._cadence_of(days) if len(days) >= 3 else None
+    nxt = ib.predict_next(days, cadence, date.fromisoformat(_today_iso())).isoformat() if cadence else None
+    shown = rows[-DEPOSITS_SHOWN:]
+    return jsonify({
+        "dates": [x.date[:10] for x in shown],
+        "ids": [x.fingerprint for x in shown],
+        "count": len(rows),
+        "first": rows[0].date[:10] if rows else None,
+        "cadence": cadence,
+        "next": nxt,
+    })
