@@ -255,18 +255,21 @@ struct YourPlanView: View {
     }
 
     /// YP-07's body: "Allowance back to $1,240 a month." (TEXT-01). Without
-    /// an income there's no Allowance to name, so there's no body.
+    /// an income there's no Allowance to name, so it says how to get one.
     private var stopMessage: String? {
-        guard let without = plan?.allowanceWithout else { return nil }
+        guard let without = plan?.allowanceWithout else { return Self.noIncome }
         return "Allowance back to \(without < 0 ? "-" : "")\(Format.whole(without)) a month."
     }
 
     /// YP-02's body: "Allowance $1,180 a month, from today." (TEXT-01).
-    /// Without an income there's no Allowance to name, so there's no body.
+    /// Without an income there's no Allowance to name, so it says how to get one.
     private var useMessage: String? {
-        guard let allowance = plan?.allowance else { return nil }
+        guard let allowance = plan?.allowance else { return Self.noIncome }
         return "Allowance \(allowance < 0 ? "-" : "")\(Format.whole(allowance)) a month, from today."
     }
+
+    /// YP-02 and YP-07 with no income: the one body line (designBOT, less text 2).
+    private static let noIncome = "Add your income to see your Allowance."
 
     // MARK: Loading and saving
 
