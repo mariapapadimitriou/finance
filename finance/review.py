@@ -581,6 +581,10 @@ def for_store(st, today: str | None = None) -> dict:
             row["merchant"] = full
     from .pairs import annotate
     annotate(st, review, txns, today)
+    # PQ-03 (Payback question, note 1419:89986): "Is mPg paying you back?"
+    # in the server's words, with the likely purchases as tiles.
+    from . import payback_question
+    payback_question.annotate(st, review, txns)
     # Questions about her plan (finance/checks.py): Yes or No cards.
     from . import checks
     from . import api as core_api
