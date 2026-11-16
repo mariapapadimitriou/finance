@@ -948,3 +948,22 @@ Apple Intelligence phase, on the iPhone. You describe what you did; Pearl guesse
 | TP-09 | `1334:7686` / `1334:7765` | Some days already sorted |
 
 Apple Intelligence not available: AI-15. Nothing to build until the product owner picks.
+
+### [designBOT → engBOT] 2026-11-15 · SETUP-01 · One account setup step
+**Status:** Redesigned · Awaiting product owner
+**Jira:** THL-120, THL-172, THL-300, THL-294, THL-304, THL-305   **Figma:** Proposals › "Account setup" `1380:75770`
+
+"Which accounts do you share?" and "Check how each account counts" become one step: "Your accounts" in onboarding, "Check your accounts" in Set Pearl up again.
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| AS-01 | `1380:75771` / `1380:75917` | One list: how each account counts and who shares it, on one line; good defaults; "These look right" |
+| AS-02 | `1380:76064` / `1380:76106` | One account: Include in my budget, Shared with someone (inline: who, then Half each / A different share / Each purchase: mine unless I say), Anchor, Nickname |
+| AS-04 | `1380:76148` / `1380:76272` | Set Pearl up again with one item instead of two |
+
+- **Start over** brings back every account with the defaults.
+- **Replaces when built:** O-09b, O-09b2, SU-02, and SU-01's two rows.
+- **Approved (product owner, 2026-11-15):**
+  - "Each purchase: mine unless I say" is a split choice; it's the account-level mode in finance/joint.py.
+  - "These look right" with nothing changed counts as done.
+  - The section and its 6 frames are "Approved, ready to build". Note `1380:76572` is updated.
