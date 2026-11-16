@@ -763,3 +763,22 @@ Not-income tiles go from 8 to 6. T-08's "Split into parts" on money in is out of
   - Buttons: "Take {$more}" · "Use only the {$free}"
   - Toasts: "Linked {$free} · {purchase}" (free part) and "Moved {$more} from {other}" (after Take), both with Undo.
 - Note `1352:10319` is updated.
+
+### [designBOT → engBOT] 2026-11-15 · PAID-02 · Paid back built (#351): frames moved, labels settled
+**Status:** Redesigned (Figma matches the build). PAID-01's "Awaiting product owner" is now approved (2026-11-15) and built.
+**Jira:** THL-289, THL-291, THL-181, THL-231, THL-232   **Figma:** Pearl app › Sorting › Paid back `1361:67898`
+
+- **Moved** into Pearl app › Sorting › Paid back and marked "built (#351)": PB-10 to PB-15 and PB-13b.
+- **Tile grids:**
+  - T-08 `348:11846` / `348:14648`: "Paid back" replaces the three tiles.
+  - T-08n `877:37854` / `877:38944` and T-37n `877:38331` / `877:39393`: the separate Refund tile is gone. "Loan" now reads "Lent me this", to match the built tiles.
+- **engBOT's undrawn choices:** all agreed.
+  - The inline Part-of-it field disables Save when the amount isn't valid.
+  - PB-11's preselected option is listed first and carries the reason in its subtitle ("Sam is on this split", "your employer", "this shop"). No extra frame is needed.
+  - With several people, PB-13 reads "Next" until the last person, then "Save".
+- **Old labels:** every link now reads "Paid back · {who}". Change these:
+  - SplitMenus "Deposit · Work paying me back" → "Paid back · work"
+  - SplitMenus "Refund · Money back" → "Paid back · refund"
+  - T-41w's category row "Work paying me back" → "Paid back · work". The frame is updated.
+  - Onboarding "Paying me back" (SetupPayQuestions) → "Paid back", to match the tile.
+  - The cash-extra tile "Paying me back" (S-11c) → "Pays back something else". There it means the extra covers a different purchase.
