@@ -422,7 +422,8 @@ struct CaseTile: Identifiable, Hashable {
     /// S-11c (SPLIT-19): what the extra from cash or another app can be.
     static func cashExtra(who: String, app: Bool) -> [CaseTile] {
         [CaseTile(key: "overpaid", label: "\(who) overpaid", symbol: "person.crop.circle.badge.xmark"),
-         CaseTile(key: "payback", label: "Paying me back", symbol: "person.2"),
+         // PAID-02: the extra covers a different purchase.
+         CaseTile(key: "payback", label: "Pays back something else", symbol: "person.2"),
          CaseTile(key: "gift", label: "A gift", symbol: "gift"),
          CaseTile(key: "returned", label: app ? "I sent it back" : "I gave it back", symbol: "arrow.uturn.backward")]
     }

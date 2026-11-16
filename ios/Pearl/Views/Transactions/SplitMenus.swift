@@ -553,7 +553,7 @@ struct MineOptionsSheet: View {
         }
     }
 
-    /// "Northwind Ltd · Nov 14" over "Deposit · Work paying me back", $60.00.
+    /// "Northwind Ltd · Nov 14" over "Paid back · work", $60.00.
     private func card(_ link: Transaction.LinkInfo, only: Bool) -> some View {
         VStack(spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
@@ -561,7 +561,8 @@ struct MineOptionsSheet: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(link.sheet.face) · \(Format.short(link.date))")
                         .font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                    Text(link.kind == "refund" ? "Refund · Money back" : "Deposit · Work paying me back")
+                    // PAID-02: a link reads "Paid back · {who}".
+                    Text(link.kind == "refund" ? "Paid back · refund" : "Paid back · work")
                         .font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
                 }
                 .fixedSize(horizontal: false, vertical: true)

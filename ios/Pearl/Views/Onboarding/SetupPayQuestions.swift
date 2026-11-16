@@ -119,7 +119,7 @@ struct WhatIsItSheet: View {
                     GlassCard {
                         choiceRow("\(who)’s share of a bill", detail: nil, on: choice == "share") { choice = "share" }
                         RowSeparator()
-                        choiceRow("Paying me back", detail: nil, on: choice == "payback") { choice = "payback" }
+                        choiceRow("Paid back", detail: nil, on: choice == "payback") { choice = "payback" }
                         RowSeparator()
                         choiceRow("Something else", detail: nil, on: choice == "else") { choice = "else" }
                     }

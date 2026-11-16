@@ -1123,15 +1123,22 @@ struct TransactionDetailView: View {
 
     /// T-41w (1297:64759, built from T-41): a deposit that pays a purchase
     /// back reads as her answer on What was this?, with its tile's icon:
-    /// "Work paying me back" (briefcase) or "Paying me back" (person.2).
+    /// PAID-02: "Paid back · work" (briefcase), "Paid back · refund", or
+    /// "Paid back · Priya" (person.2), "Paid back" with no name.
     /// A "Paid back" chip and a green amount go with it.
     private var paidBackAnswer: (label: String, symbol: String)? {
         // T-41m: a refund of her share stays a refund page (T-41).
         guard t.inflow, t.transfer == nil, t.excluded.isEmpty, t.refundOf == nil,
               let charge = t.repaysCharge else { return nil }
-        // PB-10 folded these tiles into Paid back; T-41w's words stay as its
-        // frame draws them until designBOT redraws it.
-        return charge.kind == "reimbursement" ? ("Work paying me back", "briefcase") : ("Paying me back", "person.2")
+        // PB-10 folded these tiles into Paid back; PAID-02 redrew T-41w:
+        // every link reads "Paid back · {who}".
+        switch charge.kind {
+        case "reimbursement": return ("Paid back · work", "briefcase")
+        case "refund_share": return ("Paid back · refund", "arrow.uturn.backward")
+        default:
+            let who = charge.person.flatMap { $0.isEmpty || $0 == "me" ? nil : $0 }
+            return (who.map { "Paid back · \($0)" } ?? "Paid back", "person.2")
+        }
     }
 
     /// Money in that could be her pay: not a refund, a payback or a transfer.
@@ -1652,7 +1659,7 @@ struct TransactionDetailView: View {
         case "cash": return "Cash you were paid"
         case "overpaid": return "You owe \(p.person ?? "them") this"
         // S-11 v2 (SPLIT-04).
-        case "reimbursement": return [p.charge?.category, "Work paying me back"].compactMap { $0 }.joined(separator: " · ")
+        case "reimbursement": return [p.charge?.category, "Paid back · work"].compactMap { $0 }.joined(separator: " · ")
         case "loan": return "Borrowed · Lent me this"
         case "lent_back": return "Lent · Money I lent, back"
         case "rest": return p.sorted == true ? "Sorted" : "Left to sort"
