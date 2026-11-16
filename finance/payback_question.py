@@ -3,21 +3,19 @@ question" 1418:88290, note 1419:89986; approved by the product owner
 2026-11-16; THL-289, THL-291, THL-181, THL-231, THL-232, THL-301). It
 replaces T-70 and the app's old list of three answers.
 
-Worked out here so the app shows the server's sentences, never its own:
+Worked out here so the app shows the server's words, never its own. Less
+text (LT-03 1425:7351, dark 1425:7552; TEXT-01, approved 2026-11-16): the
+Why card, the runner-up line and what Yes does are gone. The reason sits in
+the tile.
 
-- `why`: why Pearl is asking. On a split: "mPg is on your Añejo split and
-  still owes you $30.79. $20.00 is part of it." Not on one, the amount and
-  the timing: "mPg sent $20.00 two days after Añejo. That’s about a third of
-  the $61.57, like a share of a meal for three." From a message: "mPg’s
-  message says “tacos”."
-- `line`: the runner-up when there is one ("Uber Eats also fits: $20.00 is
-  about half of $40.10, two days before."), otherwise what Yes does ("You
-  haven’t split Añejo, so Yes takes $20.00 off it: $41.57 stays yours.").
 - `tiles`: up to three likely purchases, best first (PQ-03, PQ-03b). Only
   the first is Pearl's guess, drawn dashed. Each carries its category, the
-  short card name (account_names.py) and how the money compares: "about a
-  third", or on a split "$20.00 of mPg’s $30.79 · $10.79 still to come".
-- `card`: the dashed question card on the deposit's own page (PQ-03p).
+  short card name (account_names.py), its title ("Añejo · $61.57") and the
+  reason in a few words, `compare`: "about a third · 2 days before", on a
+  split "$20.00 of mPg’s $30.79 · $10.79 still to come", or from a message
+  "“tacos”".
+- `card`: the dashed question card on the deposit's own page (PQ-03p):
+  "Pearl’s guess · about a third".
 
 A tile answers through the payback path that already exists (POST
 /api/transactions/<id>/mark {"case": "payback", "charge": …}); nothing here
@@ -31,12 +29,8 @@ from datetime import date
 from .models import Transaction
 
 MAX_TILES = 3
-# Spending a friend's share of is a meal: "like a share of a meal for three".
-MEALS = {"Dining", "Food Delivery"}
 
 _FRACTION = {2: "half", 3: "a third", 4: "a quarter", 5: "a fifth", 6: "a sixth"}
-_WORDS = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven",
-          8: "eight", 9: "nine", 10: "ten"}
 
 
 def _money(x: float) -> str:
@@ -52,22 +46,13 @@ def _gap(t: Transaction, day: str) -> int:
     return (date.fromisoformat(t.date[:10]) - date.fromisoformat(day[:10])).days
 
 
-def _after(gap: int, merchant: str) -> str:
-    """"two days after Añejo"."""
-    if gap <= 0:
-        return f"the same day as {merchant}"
-    if gap == 1:
-        return f"the day after {merchant}"
-    return f"{_WORDS.get(gap, str(gap))} days after {merchant}"
-
-
 def _before(gap: int) -> str:
-    """"two days before": when the purchase was, from the money."""
+    """"2 days before": when the purchase was, from the money (LT-03)."""
     if gap <= 0:
         return "the same day"
     if gap == 1:
         return "the day before"
-    return f"{_WORDS.get(gap, str(gap))} days before"
+    return f"{gap} days before"
 
 
 def share_of(got: float, amount: float) -> int | None:
@@ -156,7 +141,7 @@ def build(t: Transaction, transactions: list[Transaction], splits: dict | None =
             if rest >= 0.005:
                 compare += f" · {_money(rest)} still to come"
             tiles.append(_tile(c, cards, kind="split", person=name, owes=r["owes"],
-                               title=f"Yes, {c.merchant} · {_whose(name)} share",
+                               title=f"{c.merchant} · {_whose(name)} share",
                                compare=compare, toast=f"{who} paid back {_money(got)} for {c.merchant}"))
 
     # 2. The purchase the sender's message names.
@@ -165,9 +150,10 @@ def build(t: Transaction, transactions: list[Transaction], splits: dict | None =
         c = by_id[said["id"]]
         seen.add(c.fingerprint)
         n = share_of(got, c.amount)
-        tiles.append(_tile(c, cards, kind="memo", ways=n, memo=memo(t),
-                           title=f"Yes, {c.merchant} · {_money(c.amount)}",
-                           compare=f"about {_FRACTION[n]}" if n else "",
+        said_words = memo(t)
+        tiles.append(_tile(c, cards, kind="memo", ways=n, memo=said_words,
+                           title=f"{c.merchant} · {_money(c.amount)}",
+                           compare=f"“{said_words}”" if said_words else (f"about {_FRACTION[n]}" if n else ""),
                            toast=f"{who} paid back {_money(got)} for {c.merchant}"))
 
     # 3. An even share of a purchase, best first (review.charge_candidates).
@@ -177,9 +163,11 @@ def build(t: Transaction, transactions: list[Transaction], splits: dict | None =
             continue
         seen.add(c.fingerprint)
         n = cand.get("split") or share_of(got, c.amount)
+        reason = [f"about {_FRACTION[n]}"] if n in _FRACTION else []
+        reason.append(_before(_gap(t, c.date)))
         tiles.append(_tile(c, cards, kind="share", ways=n,
-                           title=f"Yes, {c.merchant} · {_money(c.amount)}",
-                           compare=f"about {_FRACTION[n]}" if n in _FRACTION else "",
+                           title=f"{c.merchant} · {_money(c.amount)}",
+                           compare=" · ".join(reason),
                            toast=f"{who} paid back {_money(got)} for {c.merchant}"))
 
     tiles = tiles[:MAX_TILES]
@@ -187,58 +175,22 @@ def build(t: Transaction, transactions: list[Transaction], splits: dict | None =
         return None
     best = tiles[0]
     best["guess"] = True
-    first = by_id[best["charge"]]
-    m, amount = best["merchant"], _money(best["amount"])
 
-    # Why Pearl is asking.
-    if best["kind"] == "split":
-        if abs(best["owes"] - got) < 0.005:
-            why = f"{best['person']} owes you exactly {_money(got)} for {m}."
-        else:
-            why = (f"{best['person']} is on your {m} split and still owes you "
-                   f"{_money(best['owes'])}. {_money(got)} is part of it.")
-    elif best["kind"] == "memo":
-        why = f"{_whose(who)} message says “{best['memo']}”."
-    else:
-        n = best.get("ways")
-        why = f"{who} sent {_money(got)} {_after(_gap(t, best['date']), m)}."
-        if n in _FRACTION:
-            why += f" That’s about {_FRACTION[n]} of the {amount}"
-            why += (f", like a share of a meal for {_WORDS[n]}." if best["category"] in MEALS
-                    else ".")
-
-    # The second line: the runner-up, or what Yes does.
-    runner = next((x for x in tiles[1:] if x["kind"] != "split" and x.get("ways") in _FRACTION), None)
-    line = None
-    if runner:
-        line = (f"{runner['merchant']} also fits: {_money(got)} is about {_FRACTION[runner['ways']]} "
-                f"of {_money(runner['amount'])}, {_before(_gap(t, runner['date']))}.")
-    elif best["kind"] != "split":
-        if first.my_share is None:
-            left = round(first.amount - (first.paid_back or 0.0) - got, 2)
-            line = f"You haven’t split {m}, so Yes takes {_money(got)} off it"
-            line += f": {_money(left)} stays yours." if left >= 0.005 else "."
-        else:
-            line = f"Yes takes {_money(got)} off {m}."
-
-    # The guess tile reads "$20.00 is about a third" (PQ-03); a split's
-    # compares already start with the money.
-    if best["kind"] != "split" and best["compare"]:
-        best["compare"] = f"{_money(got)} is {best['compare']}"
-
-    # PQ-03p: the dashed card on the deposit's page.
+    # PQ-03p: the dashed card on the deposit's page, "Pearl’s guess · about
+    # a third" (TEXT-01).
+    m = best["merchant"]
     if best["kind"] == "split":
         guess = best["compare"]
     elif best.get("ways") in _FRACTION:
-        guess = f"about {_FRACTION[best['ways']]} of {m}, {amount}"
+        guess = f"about {_FRACTION[best['ways']]}"
     else:
-        guess = f"{m}, {amount}"
+        guess = best["compare"]
     return {
-        "who": who, "named": named, "why": why, "line": line, "tiles": tiles,
-        # PQ-03b's footer: a part payment stays on the split.
+        "who": who, "named": named, "tiles": tiles,
+        # PQ-03b: a part payment stays on the split.
         "part": best["kind"] == "split" and abs(best["owes"] - got) >= 0.005,
         "card": {"title": f"Paying you back for {m}?",
-                 "line": f"Pearl’s guess: {guess} · tap to answer"},
+                 "line": f"Pearl’s guess · {guess}" if guess else "Pearl’s guess"},
     }
 
 

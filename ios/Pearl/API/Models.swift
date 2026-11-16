@@ -2142,8 +2142,6 @@ struct PaybackQuestion: Decodable, Hashable {
     let who: String
     /// She named them, or it isn't an e-Transfer: no "Name them".
     let named: Bool
-    let why: String
-    let line: String?
     let tiles: [Tile]
     /// PQ-03b: a part payment stays on the split.
     let part: Bool
@@ -2158,9 +2156,10 @@ struct PaybackQuestion: Decodable, Hashable {
         let card: String
         /// "split" (they're on it), "memo" (their message names it) or "share".
         let kind: String
-        /// "Yes, Añejo · $61.57", "Yes, Añejo · mPg’s share".
+        /// "Añejo · $61.57", "Añejo · mPg’s share" (LT-03).
         let title: String
-        /// "$20.00 is about a third", "about half", "$20.00 of mPg’s $30.79 · $10.79 still to come".
+        /// The reason, in the tile (LT-03): "about a third · 2 days before",
+        /// "$20.00 of mPg’s $30.79 · $10.79 still to come", "“tacos”".
         let compare: String
         /// PQ-03c: "mPg paid back $20.00 for Añejo".
         let toast: String
@@ -2168,10 +2167,10 @@ struct PaybackQuestion: Decodable, Hashable {
         var guess: Bool? = nil
         var id: String { charge }
 
-        /// "Sat, Oct 31 · Amex Cobalt · $20.00 is about a third"; a split's
-        /// tile says only how it compares (PQ-03b).
+        /// "Oct 31 · about a third · 2 days before" (LT-03); a split's tile
+        /// says only how it compares (PQ-03b).
         var line: String {
-            let parts = kind == "split" ? [compare] : [Format.weekdayDay(date), card, compare]
+            let parts = kind == "split" ? [compare] : [Format.short(date), compare]
             return parts.filter { !$0.isEmpty }.joined(separator: " · ")
         }
     }
@@ -2179,7 +2178,7 @@ struct PaybackQuestion: Decodable, Hashable {
     struct Card: Decodable, Hashable {
         /// "Paying you back for Añejo?".
         let title: String
-        /// "Pearl’s guess: about a third of Añejo, $61.57 · tap to answer".
+        /// "Pearl’s guess · about a third" (TEXT-01).
         let line: String
     }
 }
