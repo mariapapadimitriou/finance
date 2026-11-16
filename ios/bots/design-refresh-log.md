@@ -1064,3 +1064,39 @@ What changes:
 - Settled at $0 still reads "Paid back in full · not your spending".
 
 **Replaces when built:** T-01r2 (`1244:26496` / `1244:26635`) and S-04r v2's header (`1090:1743` / `1093:3991`).
+
+### [designBOT → engBOT] 2026-11-16 · PAYBACK2-01 · Who paid picker; a transfer that was someone paying you back
+**Status:** Redesigned · Awaiting product owner
+**Jira:** THL-289, THL-291, THL-181, THL-301, THL-305, THL-172   **Figma:** Proposals › "Paybacks 2 · Awaiting product owner" `1406:5084`
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| PP-01 | `1406:5216` / `1406:5547` | Who paid you back? The people on this split first (today's answer ticked), then people from past splits, then Someone new (S-35c). A tap answers (#362) |
+| PP-02 | `1406:5860` / `1406:5984` | Back on PB-42 with Priya; ink toast "Priya paid this back, not Sam. Sam owes $26.65 again." with Undo |
+| TP-01 | `1406:6098` / `1406:6232` | Transfer page for money in from a joint account: "Mom paid me back" above "This isn't a transfer" |
+| TP-02 | `1407:6398` / `1407:6648` | What was this? on the money-in end opens the money-in answers, so Paid back is there; My own money is ringed as today's answer |
+| TP-03 | `1407:6896` / `1407:7113` | PB-30 with Mom picked from the joint account: $240.00 of Mom's shares ticked; one line on what happens to the pair |
+| TP-04 | `1407:7328` / `1407:7487` | After: "From Mom · Joint ••1123", paid back 3 purchases, the joint side is Mom's money; ink toast with Undo, which puts the transfer back |
+| TP-05 | `1406:6361` / `1406:6494` | Two accounts that are only yours: no Paid back, with a callout saying why and pointing to "This isn't a transfer" |
+
+Notes: `1406:5084` section, overview, PP, TP and decisions.
+
+**The bug.** AnswerSheet.swift:158 sends `.transfer` to `.out`, so even the money-in end of a transfer opens the money-out sheet. That sheet has no Paid back. On the money-in end it should open `.into`.
+
+What each side counts as after TP-03:
+- **Money in:** a payback, not income and not a transfer. Under Rule A, each linked share stops counting as hers, so Spent drops by $240.00 and the Allowance rises by $240.00.
+- **Money out of the joint account:** the other owner's money, nothing of hers. It's marked the way a joint charge said to be the other person's is (her share 0 / "them").
+- **The joint ratio:** this money out isn't a spending category, so `joint.ratios` doesn't count it.
+- **"Mine unless I say":** it's one "I say" exception.
+- **A set share (50/50):** the whole amount is still Mom's (decision 1).
+- **Undo:** unlinks the purchases and puts the transfer pairing back.
+
+When the offer shows:
+- Money into her own account from a joint account she shares. With two other owners, PP-01 asks who first.
+- Never for money she moves into the joint account.
+- Never between two accounts that are only hers (TP-05). There, "This isn't a transfer" unpairs it, and then Paid back is offered like any money in.
+
+Product owner decisions:
+1. **50/50 joint account:** is money Mom sends her from it all Mom's, or half hers? Recommended: all Mom's.
+2. **Joint ratio:** take the $240.00 off Mom's "them" deposits for that month? Recommended: yes. It only matters on accounts without a set share.
+3. **When to offer it:** on every transfer in from a joint account, or only once Mom has deposited there? Recommended: every one.
