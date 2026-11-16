@@ -4,7 +4,7 @@ import SwiftUI
 /// full-screen Pearl sheet, Close top left, that starts fresh each time.
 /// One exchange at a time, as the frames draw it:
 ///
-/// PC-03 (1338:7879 / 1338:8040)  start: Start with…, "Message Pearl", "Worked out on this iPhone."
+/// PC-03 (1338:7879 / 1338:8040)  start: Start with…, "Message Pearl", "On this iPhone only" (TEXT-01)
 /// PC-04 (1338:8200 / 1338:8355)  an answer: her words, a summary, the totals, the rows (each opens its page)
 /// PC-05/06/08/09                 the cards (ChatCards.swift)
 /// PC-07 (1338:8755 / 1338:8875)  "Sorted 7. 2 left for later." · See the 2
@@ -257,7 +257,7 @@ struct PearlChatView: View {
     /// chat is open; otherwise there's no Pearl button to open it.
     private var unavailable: some View {
         EmptyStateBlock(title: "Pearl chat needs Apple Intelligence",
-                        line: "This iPhone can\u{2019}t run it, so the Pearl button doesn\u{2019}t show. Search, Quick sort and your rules work as before.",
+                        line: "Pearl chat needs a newer iPhone.",
                         action: "Search instead", act: onSearch)
     }
 
@@ -398,14 +398,14 @@ struct PearlChatView: View {
 }
 
 /// PC-07, PC-10, PC-11 and Your plan's YP-06: the Empty state. Icon in a
-/// blush bubble, a Fraunces title, one line, a text action.
+/// blush bubble, a Fraunces title, one line (or none), a text action.
 struct EmptyStateBlock: View {
     let title: String
-    let line: String
+    let line: String?
     let action: String?
     let act: () -> Void
 
-    init(title: String, line: String, action: String?, act: @escaping () -> Void) {
+    init(title: String, line: String?, action: String?, act: @escaping () -> Void) {
         self.title = title
         self.line = line
         self.action = action
@@ -423,10 +423,12 @@ struct EmptyStateBlock: View {
                 Text(title).font(Pearl.heading(18, relativeTo: .title3)).foregroundColor(Pearl.ink)
                     .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)
-                Text(line).font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
-                    .foregroundColor(Pearl.muted)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let line = line {
+                    Text(line).font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+                        .foregroundColor(Pearl.muted)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             if let action = action {
                 Button(action, action: act)

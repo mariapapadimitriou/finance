@@ -226,7 +226,9 @@ struct ChatDeckView: View {
     @ViewBuilder private var lines: some View {
         switch deck.current {
         case .sort(let s)?:
-            pair(deck.echo, sortHint(s))
+            // PC-05 / PC-06 (TEXT-01): "Dining out · from “Out with friends
+            // Saturday”"; a draft's own line under it.
+            pair(ChatWords.told(s.category, said: deck.said), sortHint(s))
         case .trip(let t)?:
             // PC-08 (TEXT-01): "A flight, a hotel, 5 days in Montréal. A trip?"
             pair(t.story + " A trip?", nil)
@@ -237,10 +239,8 @@ struct ChatDeckView: View {
         }
     }
 
-    private func sortHint(_ s: SortProposal) -> String {
-        guard let draft = drafts[s.id] else {
-            return ChatWords.yesSorts(s.category, split: !s.splitWith.isEmpty && !s.txn.inflow)
-        }
+    private func sortHint(_ s: SortProposal) -> String? {
+        guard let draft = drafts[s.id] else { return nil }
         // T-98s (Quick sort): a held split goes when she skips.
         if draft.split != nil { return "Skip forgets the split." }
         return "Yes saves this."
