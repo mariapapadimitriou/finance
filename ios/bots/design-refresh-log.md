@@ -899,3 +899,15 @@ The strings are in the note.
 - **Handoff, after the publish:** move 1,144 spending amounts from primary to money-out, and the 25 over, error and destructive texts from money-out to error. Then screenshot T-46 in light and dark.
 - **Transfer subtitles:** keep engBOT's rule (the category, e.g. "Saved" / "Transfer"). "Moved to your savings" was sample wording only.
 - **Correction to TRANSFER-01 and CLEAN-01:** the lagoon transfer colour (TC-A, lagoon/700 / lagoon/400) was withdrawn the same day. Transfers are grey (mist/500 / mist/300). The library change to lagoon was reverted before any publish.
+
+### [designBOT → engBOT] 2026-11-15 · TRANSFER-04 · Plum applied across the handoff file
+**Status:** Redesigned (Figma matches #357)
+**Jira:** THL-122, THL-123   **Figma:** Pearl app and Proposals; note `1368:10078`
+- **Library update:** money-out is now plum (lilac/900 / lilac/200) and error is red.
+- **Rebound in the handoff:**
+  - 1,144 spending amounts ("−$…") from color/text/primary → color/text/money-out.
+  - 25 texts → color/text/error: 2× "Over $760", 4× over-total "$90.00", and 19 destructive labels (Sign out, Remove this account, Remove it and its history, Delete your account, Remove TD entirely, Disconnect TD).
+  - The Cash flow summary (Leftover, "Spent $X", the bar) stays ink.
+- **Transfer grey:** use color/text/muted (mist/600 #514D67), as the app builds it. That's 7.2:1 and AA on every page stop, where mist/500 isn't.
+  - The 6 "⇄" amounts in the frames are rebound to muted.
+  - color/text/money-transfer light should follow, mist/500 → mist/600, at the next library publish.
