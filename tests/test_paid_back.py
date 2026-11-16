@@ -288,8 +288,8 @@ class TestTilesBySource:
                       '"Your share \\(Format.amount(split.you)) · nothing paid it back yet"'):
             assert words in menus, words
         find = self.src("ios/Pearl/Views/Transactions/PaidBackFindViews.swift")
-        for words in ('"What paid back your share?"', '"Search deposits, or an amount"',
-                      '"Likely · money in after \\(Format.short(f.date))"', '"Next"',
+        for words in ('"What paid this back?"', '"Search deposits, or an amount"',
+                      '"Your share"', '"\\(whose) share"', '"Next"',
                       '"No money in matches"', '"Clear search"',
                       "If it hasn’t arrived yet, Pearl asks when it does.",
                       '"Take \\(more) from \\(other)?"', '"Take \\(more)"',
@@ -297,6 +297,9 @@ class TestTilesBySource:
                       "of this deposit is free, so it pays back your share first.",
                       '"All of this deposit pays back \\(other).'):
             assert words in find, words
+        # LT-01 (TEXT-01): no "Next: …" footnote, no reason on every row.
+        for gone in ("Next: who paid you back", "Likely · money in after", "What paid back your share?"):
+            assert gone not in find, gone
         who = self.src("ios/Pearl/Views/Transactions/PaidBackViews.swift")
         for words in ('is on this split"', '"your employer"', '"this shop"'):
             assert words in who, words
@@ -465,9 +468,9 @@ class TestFindWhatPaidItBack:
             ("PAI NORTHERN THAI", 120.0, 60.0, 60.0, day(10))
         rows = [(r["id"], r["payer"], r["amount"], r["kind"], r["person"], r["why"]) for r in body["candidates"]]
         assert rows == [
-            (i["E-TRANSFER FROM SAM LEE"], "Sam Lee", 15.0, "person", "Sam", "Sam is on this split"),
-            (i["PAI NORTHERN THAI REFUND"], "PAI NORTHERN THAI", 120.0, "shop", None, "a refund · the whole purchase"),
-            (i["NORTHWIND LTD EXPENSES"], "Northwind Ltd", 60.0, "work", None, "work · same as your share"),
+            (i["E-TRANSFER FROM SAM LEE"], "Sam", 15.0, "person", "Sam", ""),
+            (i["PAI NORTHERN THAI REFUND"], "PAI NORTHERN THAI", 120.0, "shop", None, "refund"),
+            (i["NORTHWIND LTD EXPENSES"], "Northwind Ltd", 60.0, "work", None, "work"),
         ]
         # Before the purchase, or from no one she knows: not likely.
         assert all(r["taken"] is None for r in body["candidates"])
@@ -476,7 +479,7 @@ class TestFindWhatPaidItBack:
         i = self.setup(client)
         sixty = self.find(client, i, "$60")
         assert [(r["payer"], r["why"]) for r in sixty["candidates"]] == [
-            ("COFFEE CO", "same as your share"), ("Northwind Ltd", "work · same as your share")]
+            ("COFFEE CO", "same as your share"), ("Northwind Ltd", "work")]
         assert [r["payer"] for r in self.find(client, i, "northwind")["candidates"]] == ["Northwind Ltd"]
         # PB-23: nothing for about $999, said back to her.
         none = self.find(client, i, "999")

@@ -1014,20 +1014,30 @@ class _Find:
                      "other": ({"id": charge.fingerprint, "merchant": charge.merchant or charge.description}
                                if charge else None)}
         amount = _cents(-x.amount)
-        bits = []
-        if kind == "person":
-            bits.append(f"{_first_name(person)} is on this split")
-        else:
-            if kind:
-                bits.append({"work": "work", "shop": "a refund"}[kind])
-            if abs(amount - _cents(self.share)) <= FIND_NEAR:
-                bits.append("same as your share")
-            elif abs(amount - _cents(self.whole)) <= FIND_NEAR:
-                bits.append("the whole purchase")
+        # LT-01 (1425:73658; TEXT-01): the second line is the date plus one
+        # fact. A person's payment says nothing more: its group header
+        # ({NAME}'S SHARE) gives the reason once, not on every row.
+        why = None
+        if kind in ("work", "shop"):
+            why = {"work": "work", "shop": "refund"}[kind]
+        elif kind is None and abs(amount - _cents(self.share)) <= FIND_NEAR:
+            why = "same as your share"
+        elif kind is None and abs(amount - _cents(self.whole)) <= FIND_NEAR:
+            why = "the whole purchase"
         near = abs(amount - _cents(self.share)) <= FIND_NEAR or abs(amount - _cents(self.whole)) <= FIND_NEAR
-        return {"id": x.fingerprint, "date": x.date[:10], "payer": x.merchant or x.description,
-                "amount": amount / 100, "kind": kind, "person": person, "why": " · ".join(bits),
+        return {"id": x.fingerprint, "date": x.date[:10], "payer": self.payer(x, kind, person),
+                "amount": amount / 100, "kind": kind, "person": person, "why": why or "",
                 "likely": kind == "person" or (kind is not None and near), "taken": taken}
+
+    def payer(self, x, kind: str | None, person: str | None) -> str:
+        """LT-01's tidy name: someone on the split by their first name
+        ("Anastasia", not "Cash Received - Anastasiapapas"), an e-Transfer
+        by its sender, anything else by its merchant."""
+        from .etransfers import party as etransfer_party
+        if kind == "person" and person:
+            return _first_name(person)
+        who = (etransfer_party(x, self.people) or {}).get("name")
+        return who or x.merchant or x.description
 
 
 def _find_or_error(st, txn_id: str):
