@@ -2475,12 +2475,9 @@ struct TransactionDetailView: View {
             }
             Button { unpairing = true } label: {
                 HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("This isn’t a transfer").font(Nacre.body).foregroundColor(Pearl.ink)
-                        Text("Pearl asks first, then you say what each side was")
-                            .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
+                    // TEXT-01: no second line; the sheet asks.
+                    Text("This isn’t a transfer").font(Nacre.body).foregroundColor(Pearl.ink)
+                        .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
                     Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
                 }
