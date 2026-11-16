@@ -79,6 +79,9 @@ struct AnswerSheet: View {
     @State private var chargeCase: String?
     /// TEST-31 Money back (T-09rs): the purchase list is for a refund.
     @State private var refunding = false
+    /// TP-02 › Paid back on money in from a joint account (Paybacks 2):
+    /// PB-30 with its other owner picked, or PP-01 first with more.
+    @State private var jointStart: JointPaybackStart?
     /// PB-11 "Who paid you back?" (Paid back, 2026-11-15), and what she
     /// picked, acted on once it has closed.
     @State private var whoPaid = false
@@ -155,7 +158,9 @@ struct AnswerSheet: View {
         // T-52: straight to the categories, on the page with every other answer.
         case .category: first = ask.t.inflow ? .into : .out
         case .duplicate, .check: first = .guess
-        case .transfer: first = ask.savedTo(accounts) != nil ? .guess : .out
+        // TP-02 (Paybacks 2): the money-in end of a transfer asks the money-in
+        // answers, so Paid back is there; only the money-out end asks T-06.
+        case .transfer: first = ask.savedTo(accounts) != nil ? .guess : (ask.t.inflow ? .into : .out)
         case .moneyIn:
             switch ask.item.guess?.action {
             // A nameless e-Transfer isn't "Interac" paying her back, and a guess
@@ -227,6 +232,7 @@ struct AnswerSheet: View {
         }
         .presentationDragIndicator(.visible)
         .task(id: step) { await loadOptions() }
+        .modifier(JointPaybackFlow(start: $jointStart, api: api) { reply in onAnswer(.done(reply)) })
         .sheet(isPresented: $whosing) {
             if let f = full {
                 WhoseSheet(t: f, api: api) { said, _ in
@@ -327,6 +333,14 @@ struct AnswerSheet: View {
             return
         }
         whoPaid = true
+    }
+
+    /// TP-02: money in from a joint account into one only hers, as a
+    /// transfer, can be its other owner paying her back.
+    private var jointPayback: JointPaybackStart? {
+        guard t.inflow, let transfer = full?.transfer, let j = transfer.joint, let out = transfer.otherId else { return nil }
+        return JointPaybackStart(deposit: PartsDeposit(id: t.id, name: who, amount: t.amount, date: t.date),
+                                 people: j.people, account: j.account, out: out)
     }
 
     private func loadOptions() async {
@@ -559,6 +573,12 @@ struct AnswerSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     QuestionHeader(name: who, amount: amountText, tone: tone, sub: ask.evidence)
+                    if let j = full?.transfer?.joint, ask.kind == .transfer {
+                        // TP-02: "Paired with Joint ··1123 (you and Mom). Today it counts as your own money."
+                        Text("Paired with \(j.account) (you and \(Format.andList(j.people))). Today it counts as your own money.")
+                            .font(Nacre.body).foregroundColor(Pearl.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     if learnable && pageAlways == nil {
                         Toggle(isOn: $rememberInto) {
                             Text("Always for \(who)").font(Nacre.body).foregroundColor(Pearl.ink)
@@ -571,7 +591,8 @@ struct AnswerSheet: View {
                     CaseGrid(cases: CaseTile.income, chosen: answer(income: true))
                     Text("NOT INCOME").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
                         .padding(.horizontal, 16).padding(.top, 4).accessibilityAddTraits(.isHeader)
-                    CaseGrid(cases: CaseTile.notIncome, chosen: answer(income: false))
+                    // TP-02: on a transfer, My own money is today's answer, ringed.
+                    CaseGrid(cases: CaseTile.notIncome, chosen: answer(income: false, current: ask.kind == .transfer ? "own" : nil))
                 }
                 .padding(.horizontal, 16).padding(.bottom, 12)
                 .sheetPart()
@@ -582,8 +603,8 @@ struct AnswerSheet: View {
     }
 
     /// A tile answers at once.
-    private func answer(income: Bool) -> Binding<String?> {
-        Binding(get: { nil }, set: { key in
+    private func answer(income: Bool, current: String? = nil) -> Binding<String?> {
+        Binding(get: { current }, set: { key in
             guard let key = key else { return }
             incomeSide = income
             intoChoice = key
@@ -633,7 +654,13 @@ struct AnswerSheet: View {
         }
         switch key {
         // PB-10: one Paid back tile; PB-11 asks who paid her back.
-        case "paid_back": Task { await askWhoPaid() }
+        case "paid_back":
+            if let start = jointPayback {
+                // TP-03: PB-11 is skipped; it's the joint account's other owner.
+                jointStart = start
+            } else {
+                Task { await askWhoPaid() }
+            }
         case "own": onAnswer(.mark(t.id, ["case": "own", "remember": learnable && rememberInto]))
         case "loan": onAnswer(.mark(t.id, ["case": "borrowed"]))
         case "out_of_savings": onAnswer(.mark(t.id, ["case": "out_of_savings"]))

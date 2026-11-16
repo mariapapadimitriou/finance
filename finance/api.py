@@ -499,6 +499,25 @@ def transaction_detail(txn_id: str):
                              "other_id": other_id, "other_date": other.date[:10]}
             if (r.get("chip") or {}).get("label") == "Transfer" and not txlist_card_payment(t):
                 r["note"] = "Transfer between your accounts · not counted"
+            if txn_id in back and txn_id not in pairs:
+                # Paybacks 2 (TP-01, TP-05): on the money in, who on the joint
+                # account it came from could have paid her back; between two
+                # accounts only hers, why there's no Paid back.
+                from .joint import payback_offer
+                offer = payback_offer(t, other)
+                if offer:
+                    r["transfer"]["joint"] = {"people": offer["people"], "account": offer["account"]}
+                elif not t.joint and not other.joint:
+                    r["transfer"]["mine_only"] = True
+        if t.amount < 0:
+            # TP-04: money in that a joint account's other owner paid her back with.
+            from .joint import payback_of
+            jp = payback_of(st, txn_id)
+            out = st.get_transaction(jp[0]) if jp else None
+            if out is not None:
+                r["joint_payback"] = {"person": jp[1]["person"], "out_id": out.fingerprint,
+                                      "account": (out.account_label or "Joint").replace("••", "··"),
+                                      "into": (t.account_label or "").replace("••", "··")}
         if t.repays:
             charge = next((x for x in txns if x.fingerprint == t.repays), None)
             if charge is not None:
@@ -1034,13 +1053,18 @@ def people_recent():
         for p in split["people"]:
             rows.append((charge.date[:10], charge.merchant, p["name"], cid))
     rows.sort(key=lambda r: r[0], reverse=True)
+    # PP-01 (Paybacks 2): "Your joint account · 4 splits", "Last split Oct 2".
+    holders = [p for people in st.joint_people().values() for p in people or []]
     out: list[dict] = []
     for day, merchant, name, cid in rows:
         if any(sp.same_person(name, h) for h in hide):
             continue
-        if any(sp.same_person(name, o["name"]) for o in out):
+        same = next((o for o in out if sp.same_person(name, o["name"])), None)
+        if same is not None:
+            same["splits"] += 1
             continue
-        out.append({"name": name, "merchant": merchant, "date": day, "charge_id": cid})
+        out.append({"name": name, "merchant": merchant, "date": day, "charge_id": cid, "splits": 1,
+                    "joint": any(sp.same_person(name, h) for h in holders)})
     return jsonify({"people": out[:50], "hidden": hide})
 
 

@@ -1564,6 +1564,11 @@ def undo_marks(store, marks: dict) -> int:
         if tid in known:
             store.set_share(tid, None if share is None else float(share))
             n += 1
+    # Paybacks 2 (TP-04): joint money out that paid her back, as it was.
+    for tid, was in (marks.get("joint_paybacks") or {}).items():
+        if tid in known and (was is None or (isinstance(was, dict) and was.get("inflow") and was.get("person"))):
+            store.set_joint_payback(tid, was)
+            n += 1
     for tid, amount in (marks.get("invested") or {}).items():
         if tid in known:
             store.set_invested(tid, None if amount is None else float(amount))

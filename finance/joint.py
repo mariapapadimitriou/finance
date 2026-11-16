@@ -39,9 +39,56 @@ from .categorize import is_spend_category
 ME, THEM, BOTH = "me", "them", "both"
 
 
+# Paybacks 2 (approved 2026-11-16, decision 2): money the other owner took
+# out of the joint account to pay her back didn't pay for joint spending, so
+# it comes OFF their "them" deposits for that month. The sign is this one
+# constant; +1 would count it toward them instead.
+THEIR_PAYBACK_SIGN = -1
+
+
+def payback_reduces_their_contribution(theirs: float, paid_back: float) -> float:
+    """What the other owners put in that month once `paid_back` (money out
+    of the joint account that paid her back, TP-03) is taken into account."""
+    return theirs + THEIR_PAYBACK_SIGN * paid_back
+
+
+def their_contributions(store) -> dict[tuple[str, str], float]:
+    """{(account_id, "YYYY-MM"): what the other owners put in} on joint
+    accounts without a set share: deposits answered "them", less what they
+    took out to pay her back (`payback_reduces_their_contribution`)."""
+    with store.conn() as c:
+        rows = c.execute(
+            """SELECT t.account_id AS account_id, SUBSTR(t.date, 1, 7) AS month,
+                      SUM(CASE WHEN t.amount < 0 AND COALESCE(jdx.who, jrx.who) = 'them'
+                               THEN -t.amount ELSE 0 END) AS theirs
+                 FROM transactions t
+                 JOIN joint_accounts jax ON jax.account_id = t.account_id
+                                        AND jax.share IS NULL
+                 LEFT JOIN joint_deposits jdx ON jdx.txn_id = t.id
+                 LEFT JOIN joint_deposit_rules jrx ON jrx.account_id = t.account_id
+                                                  AND jrx.sender_key = LOWER(t.merchant)
+                WHERE NOT EXISTS (SELECT 1 FROM txn_exclusions e
+                                   WHERE e.txn_id = t.id AND e.kept = 0)
+                GROUP BY t.account_id, SUBSTR(t.date, 1, 7)""").fetchall()
+        back = c.execute(
+            """SELECT t.account_id AS account_id, SUBSTR(t.date, 1, 7) AS month,
+                      SUM(t.amount) AS paid_back
+                 FROM txn_joint_paybacks p
+                 JOIN transactions t ON t.id = p.txn_id
+                 JOIN joint_accounts jax ON jax.account_id = t.account_id
+                                        AND jax.share IS NULL
+                GROUP BY t.account_id, SUBSTR(t.date, 1, 7)""").fetchall()
+    out = {(r["account_id"], r["month"]): float(r["theirs"] or 0) for r in rows}
+    for r in back:
+        key = (r["account_id"], r["month"])
+        out[key] = round(payback_reduces_their_contribution(out.get(key, 0.0), float(r["paid_back"] or 0)), 2)
+    return out
+
+
 def ratios(store) -> dict[tuple[str, str], float]:
     """{(account_id, "YYYY-MM"): the part of that month's joint spending on
-    that account that is hers}, for joint accounts without a set share."""
+    that account that is hers}, for joint accounts without a set share.
+    What the others put in is `their_contributions` (Paybacks 2)."""
     with store.conn() as c:
         rows = c.execute(
             """SELECT t.account_id AS account_id, SUBSTR(t.date, 1, 7) AS month,
@@ -63,12 +110,11 @@ def ratios(store) -> dict[tuple[str, str], float]:
                                    WHERE e.txn_id = t.id AND e.kept = 0)
                 GROUP BY t.account_id, SUBSTR(t.date, 1, 7), t.category""").fetchall()
     spent: dict[tuple[str, str], float] = {}
-    theirs: dict[tuple[str, str], float] = {}
     for r in rows:
         key = (r["account_id"], r["month"])
         if is_spend_category(r["category"] or "Other"):
             spent[key] = spent.get(key, 0.0) + float(r["spent"] or 0)
-        theirs[key] = theirs.get(key, 0.0) + float(r["theirs"] or 0)
+    theirs = their_contributions(store)
     out = {}
     for key in set(spent) | set(theirs):
         s, p = spent.get(key, 0.0), theirs.get(key, 0.0)
@@ -272,3 +318,57 @@ def save_plan(store, plan: list[tuple], marks: dict, joint: bool = True) -> None
             store.set_share(t.fingerprint, None)
         else:
             store.set_share(t.fingerprint, round(part - sum(p["amount"] for p in people), 2))
+
+
+# ── Paybacks 2 (approved 2026-11-16): a transfer that was really someone
+# paying her back (TP-01 to TP-05). Money out of a joint account into one
+# only hers can be the other owner paying her back: the money in links to
+# their shares as any payback does (Rule A), and the money out becomes
+# theirs, marked the way a joint charge she says is theirs is (her share 0,
+# one "I say" on an account that's hers unless she says), all of it even on
+# a 50/50 account (decision 1). Undo and Unlink all put both back, and with
+# them the transfer pairing (finance/transfers.py pairs only what's hers).
+
+def payback_offer(t, other) -> dict | None:
+    """TP-01: for money in `t` whose other end is `other`, the joint
+    account's other owners who could have paid her back ({people,
+    account, out}); None when it's not money out of a joint account into
+    one only hers (TP-05, or money she moved into the joint account)."""
+    if t is None or other is None or t.amount >= 0 or other.amount <= 0:
+        return None
+    if t.joint or not other.joint or other.account_id == t.account_id:
+        return None
+    people = [p for p in (other.joint_people or []) if p]
+    if not people:
+        return None
+    return {"people": people, "account": (other.account_label or other.joint or "Joint").replace("••", "··"),
+            "out": other.fingerprint}
+
+
+def mark_payback(store, out, inflow_id: str, person: str) -> dict:
+    """TP-03: joint money out `out` was `person` paying her back with money
+    in `inflow_id`. It becomes theirs (her share 0). Returns Undo's marks."""
+    was = out.my_share if out.share_set else None
+    store.set_share(out.fingerprint, 0.0)
+    store.set_joint_payback(out.fingerprint, {"inflow": inflow_id, "person": person, "was": was})
+    return {"shares": {out.fingerprint: was}, "joint_paybacks": {out.fingerprint: None}}
+
+
+def release_payback(store, inflow_id: str) -> dict:
+    """Unlink all on the money in (TP-04): the joint money out is as it was
+    before, so the two pair as a transfer again. Returns Undo's marks."""
+    marks: dict = {}
+    for out_id, rec in store.joint_paybacks().items():
+        if rec["inflow"] != inflow_id:
+            continue
+        marks.setdefault("shares", {})[out_id] = 0.0
+        marks.setdefault("joint_paybacks", {})[out_id] = rec
+        store.set_share(out_id, rec["was"])
+        store.set_joint_payback(out_id, None)
+    return marks
+
+
+def payback_of(store, inflow_id: str) -> tuple[str, dict] | None:
+    """(joint money out id, {inflow, person, was}) for money in that a
+    joint account's other owner paid her back with; None otherwise."""
+    return next(((o, r) for o, r in store.joint_paybacks().items() if r["inflow"] == inflow_id), None)

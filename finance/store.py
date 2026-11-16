@@ -521,6 +521,18 @@ CREATE TABLE IF NOT EXISTS txn_joint_parts (
     txn_id TEXT PRIMARY KEY,
     part   REAL NOT NULL
 );
+-- Paybacks 2 (TP-03, approved 2026-11-16): money out of a joint account
+-- that was the other owner paying her back. `txn_id` is that money out;
+-- `inflow_id` the money in it paid her with; `person` the owner; `was`
+-- her share of the money out before (txn_shares, NULL for none), for Undo
+-- and Unlink all. While the row is here the money out is theirs (her share
+-- 0) and comes off their contributions that month (finance/joint.py).
+CREATE TABLE IF NOT EXISTS txn_joint_paybacks (
+    txn_id    TEXT PRIMARY KEY,
+    inflow_id TEXT NOT NULL,
+    person    TEXT NOT NULL,
+    was       REAL
+);
 CREATE TABLE IF NOT EXISTS txn_split_people (
     txn_id TEXT NOT NULL,
     pos    INTEGER NOT NULL,
@@ -717,7 +729,8 @@ _ROW_TABLES = ("txn_shares", "txn_invested", "piggy_allocations", "piggy_optouts
                "txn_exclusions", "txn_income_type", "txn_confirmed", "txn_notes",
                "txn_splits", "txn_split_people", "txn_oneoff", "txn_duplicates",
                "joint_deposits", "txn_party", "txn_tags", "txn_saved_to", "sorted_range_rows",
-               "txn_split_cash", "txn_split_let_go", "txn_split_not_me", "txn_parts", "txn_joint_parts")
+               "txn_split_cash", "txn_split_let_go", "txn_split_not_me", "txn_parts", "txn_joint_parts",
+               "txn_joint_paybacks")
 
 # What friends have sent back for each charge, as a positive total.
 _PAYBACKS = """(
@@ -2451,6 +2464,7 @@ class Store:
             ("joint_shares_kept", "joint purchases held at an earlier share"),
             ("joint_deposits", "who put money into a joint account"),
             ("joint_deposit_rules", "senders into a joint account"),
+            ("txn_joint_paybacks", "joint money that paid you back"),
             ("txn_party", "names on e-Transfers"),
             ("dismissed_insights", "dismissed findings"),
             ("txn_exclusions", "excluded transactions"),
@@ -3347,6 +3361,24 @@ class Store:
                               "WHERE raw LIKE ? AND category_source = 'merchant_override'",
                               (f'%"merchant_entity_id": "{eid}"%',))
         return True
+
+    def joint_paybacks(self) -> dict[str, dict]:
+        """Paybacks 2: {joint money out id: {inflow, person, was}} for money
+        out of a joint account that was the other owner paying her back."""
+        with self.conn() as c:
+            rows = c.execute("SELECT txn_id, inflow_id, person, was FROM txn_joint_paybacks").fetchall()
+        return {r["txn_id"]: {"inflow": r["inflow_id"], "person": r["person"],
+                              "was": None if r["was"] is None else float(r["was"])} for r in rows}
+
+    def set_joint_payback(self, txn_id: str, was: dict | None) -> None:
+        """Paybacks 2: note (or with None, forget) that joint money out
+        `txn_id` paid her back: {inflow, person, was}."""
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_joint_paybacks WHERE txn_id = ?", (txn_id,))
+            if was:
+                c.execute("INSERT INTO txn_joint_paybacks (txn_id, inflow_id, person, was) VALUES (?, ?, ?, ?)",
+                          (txn_id, str(was["inflow"]), str(was["person"]),
+                           None if was.get("was") is None else float(was["was"])))
 
     def set_joint_deposit(self, txn_id: str, who: str | None,
                           person: str | None = None) -> None:
