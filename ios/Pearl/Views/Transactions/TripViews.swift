@@ -60,6 +60,11 @@ struct TripPage: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
     let id: String
+    /// TR-03's category rows (TR-16): the trip's page for one category,
+    /// "{Category} · {trip name}", with only its rows and its total. The
+    /// trip's options and By category act on the whole trip, so they stay
+    /// on the trip's own page.
+    var category: String? = nil
     @State private var detail: TripDetail?
     @State private var error: String?
     @State private var options = false
@@ -86,11 +91,11 @@ struct TripPage: View {
             }
         }
         .nacreScreen()
-        .navigationTitle(detail?.trip.name ?? "")
+        .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                if detail != nil {
+                if detail != nil, category == nil {
                     Button { options = true } label: {
                         Image(systemName: "ellipsis").font(.system(size: 17, weight: .semibold))
                             .foregroundColor(Pearl.ink)
@@ -141,6 +146,12 @@ struct TripPage: View {
         }
     }
 
+    /// "Trip to Montréal", or "Dining · Trip to Montréal" for one category (TR-16).
+    private var title: String {
+        guard let name = detail?.trip.name else { return "" }
+        return category.map { "\($0) · \(name)" } ?? name
+    }
+
     private func pick(_ which: Next) {
         next = which
         options = false
@@ -160,14 +171,17 @@ struct TripPage: View {
 
     @ViewBuilder private func content(_ d: TripDetail) -> some View {
         let t = d.trip
-        let mixed = t.totals.mixed
-        let main = t.totals.first?.currency
+        // One category (TR-16): its rows and what it came to; else the whole trip.
+        let totals = category.flatMap { c in t.categories?.first { $0.category == c }?.money } ?? t.totals
+        let rows = category.map { c in d.rows.filter { ($0.category ?? "Other") == c } } ?? d.rows
+        let mixed = totals.mixed
+        let main = totals.first?.currency
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(t.line + (mixed ? " · in \(t.totals.count) currencies" : ""))
+                    Text(t.line + (mixed ? " · in \(totals.count) currencies" : ""))
                         .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                    Text(t.totals.shown)
+                    Text(totals.shown)
                         .font(Pearl.heading(mixed ? 17 : 22, relativeTo: .title2)).foregroundColor(Pearl.ink)
                         .lineLimit(1).minimumScaleFactor(0.7)
                 }
@@ -184,9 +198,9 @@ struct TripPage: View {
             .padding(.horizontal, 16).padding(.vertical, 14)
             .glassCard(radius: 22)
             .accessibilityElement(children: .combine)
-            if !d.rows.isEmpty {
+            if !rows.isEmpty {
                 GlassCard(radius: 22) {
-                    ForEach(Array(d.rows.enumerated()), id: \.element.id) { i, row in
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
                         if i > 0 { RowSeparator(inset: 72) }
                         NavigationLink { TransactionByID(id: row.id, categories: app.categories) } label: {
                             TransactionRow(t: row, showsTrip: false,
@@ -201,14 +215,16 @@ struct TripPage: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 4)
             // TR-02c (1347:74145): "By category" opens TR-03.
-            NavigationLink { TripByCategory(trip: t) } label: {
-                Text("By category").font(Nacre.subheadline).foregroundColor(Pearl.ink)
-                    .padding(.horizontal, 24).frame(minHeight: 44)
-                    .background(Capsule().fill(Pearl.control))
-                    .contentShape(Capsule())
+            if category == nil {
+                NavigationLink { TripByCategory(trip: t) } label: {
+                    Text("By category").font(Nacre.subheadline).foregroundColor(Pearl.ink)
+                        .padding(.horizontal, 24).frame(minHeight: 44)
+                        .background(Capsule().fill(Pearl.control))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 4)
             }
-            .buttonStyle(.plain)
-            .padding(.top, 4)
         }
     }
 
@@ -253,9 +269,10 @@ struct TripPick {
 /// TR-03 (`1327:5447` / `1327:5671`), from TR-02c's "By category": the trip as
 /// Cash flow's By category is, "Mar 4–9 · Montréal   23 transactions", the
 /// trip total, then what it spent in each category with its count.
-/// Cash flow's Spent / Saved / Leftover bar, the ⌄ by the dates and the
-/// rows' chevrons are left out: a trip has no Saved or Leftover, and there
-/// is no frame for what the ⌄ or a row opens (engBOT, trips follow-ups).
+/// Cash flow's Spent / Saved / Leftover bar and the ⌄ by the dates are left
+/// out: a trip has no Saved or Leftover. Each category row has its chevron
+/// and opens the trip's page for that category, "{Category} · {trip name}"
+/// (TR-16).
 struct TripByCategory: View {
     let trip: Trip
 
@@ -289,15 +306,20 @@ struct TripByCategory: View {
                     GlassCard(radius: 22) {
                         ForEach(Array(cats.enumerated()), id: \.element.category) { i, c in
                             if i > 0 { RowSeparator() }
-                            HStack(spacing: 10) {
-                                Text(c.category).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
-                                Text("\(c.count)").font(Nacre.footnote).foregroundColor(Pearl.muted)
-                                Spacer(minLength: 8)
-                                Text(Self.whole(c.money)).font(Nacre.body).foregroundColor(Pearl.ink)
-                                    .monospacedDigit().pearlAmountFit()
+                            NavigationLink { TripPage(id: trip.id, category: c.category) } label: {
+                                HStack(spacing: 10) {
+                                    Text(c.category).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                                    Text("\(c.count)").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                                    Spacer(minLength: 8)
+                                    Text(Self.whole(c.money)).font(Nacre.body).foregroundColor(Pearl.ink)
+                                        .monospacedDigit().pearlAmountFit()
+                                    RowChevron()
+                                }
+                                .padding(.horizontal, 16).frame(minHeight: 50)
+                                .contentShape(Rectangle())
+                                .accessibilityElement(children: .combine)
                             }
-                            .padding(.horizontal, 16).frame(minHeight: 50)
-                            .accessibilityElement(children: .combine)
+                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -361,7 +383,8 @@ struct TripOptionsSheet: View {
             PearlOptionCard {
                 PearlOptionRow(symbol: "pencil", title: "Rename the trip", sub: "Renames its tag too", action: onRename)
                 PearlOptionRow(symbol: "xmark", title: "It wasn\u{2019}t a trip",
-                               sub: "Asks first · the \(trip.count) stay\(trip.count == 1 ? "s" : "") sorted as \(trip.count == 1 ? "it is" : "they are")",
+                               sub: trip.count == 1 ? "Asks first · it stays sorted as it is"
+                                   : "Asks first · the \(trip.count) stay sorted as they are",
                                action: onNotATrip)
             }
         }

@@ -2534,7 +2534,7 @@ class Store:
         "carryover",
         # Budgets and plan.
         "category_budgets", "monthly_amount", "savings_target", "savings_rate",
-        "rec_dismissed", "subscription_choices", "budget_focus",
+        "rec_dismissed", "subscription_choices", "budget_focus", "your_plan",
         # Categories: always Fixed or Variable, and the ones kept out of pickers.
         "category_kinds", "hidden_categories",
         # Debts, the Anchor, and Quick sort's place.

@@ -11,7 +11,7 @@ import SwiftUI
 /// PC-10 (1338:9238 / 1338:9356)  nothing matched · Tell it differently
 /// PC-11 (1338:9474 / 1338:9587)  unavailable · Search instead (if it stops while open)
 /// PC-12 (1344:8893 / 1344:9043)  a plan to set: Set it · Not now
-/// PC-13 (1344:9178 / 1344:9285)  "Done. Dining plan set to $225 a month."
+/// PC-13 (1344:9178 / 1344:9285)  "Done. Dining out plan set to $220 a month." · See it in Your plan
 @MainActor
 struct PearlChatView: View {
     @EnvironmentObject private var app: AppModel
@@ -29,6 +29,8 @@ struct PearlChatView: View {
         case needsALook
         case trip(String)
         case rules
+        /// PC-13's See it in Your plan: YP-03 while the plan is in use, else YP-01.
+        case plan
     }
 
     init(api: APIClient, describe: @escaping (Error) -> String, onClose: @escaping () -> Void,
@@ -56,6 +58,7 @@ struct PearlChatView: View {
                 case .needsALook: ReviewView()
                 case .trip(let id): TripPage(id: id)
                 case .rules: CategoriesRulesView()
+                case .plan: YourPlanView()
                 }
             }
         }
@@ -320,13 +323,14 @@ struct PearlChatView: View {
         }
     }
 
-    /// Where a confirmation lives. Your plan (AI-22) isn't built yet, so
-    /// PC-13's "See it in Your plan" has nowhere to go (Features.chatPlans).
+    /// Where a confirmation lives. PC-13's "See it in Your plan" opens Your
+    /// plan, which shows YP-03 while the plan is in use and YP-01 otherwise.
     private func route(_ link: DoneLink?) -> Route? {
         switch link {
         case .trip(let id)?: return .trip(id)
         case .rules?: return .rules
-        case .plan?, nil: return nil
+        case .plan?: return .plan
+        case nil: return nil
         }
     }
 
@@ -393,9 +397,9 @@ struct PearlChatView: View {
     }
 }
 
-/// PC-07, PC-10, PC-11: the Empty state. Icon in a blush bubble, a Fraunces
-/// title, one line, a text action.
-private struct EmptyStateBlock: View {
+/// PC-07, PC-10, PC-11 and Your plan's YP-06: the Empty state. Icon in a
+/// blush bubble, a Fraunces title, one line, a text action.
+struct EmptyStateBlock: View {
     let title: String
     let line: String
     let action: String?

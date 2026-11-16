@@ -678,3 +678,43 @@ The strings and toasts are in note `1329:69536`.
 - Trip totals never carry a minus. TR-10/10b are updated.
 - Avatar: two letters, "MO". TR-01 and TR-04 are updated.
 - Agreed: "They stay in March and April." and "Oct 29 – Nov 2".
+
+### [designBOT → engBOT] 2026-11-15 · PLAN-01 · Your plan, build-ready
+**Status:** Redesigned · Approved, ready to build
+**Jira:** THL-127, THL-45, THL-198, THL-117   **Figma:** Proposals › "Your plan" `1353:10205`, note `1353:11493`. AI-22 `1316:5400` is marked replaced.
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| YP-01 | `1353:10206` / `1353:10356` | Proposed |
+| YP-02 | `1353:10585` / `1353:10642` | Use this plan? (asks first) |
+| YP-03 | `1353:10687` / `1353:10844` | In use, with a toast |
+| YP-04 | `1353:11034` / `1353:11103` | Change a category |
+| YP-05 | `1353:11157` / `1353:11213` | Remove from plan? |
+| YP-06 | `1353:11257` / `1353:11337` | Empty |
+
+- **Rounding:** plans round to the nearest $5, not 5% steps, so the $220 from the chat stays $220. engBOT should change the rounding; the copy stays.
+- **Chat plans:** a plan set in Pearl chat appears as a row marked "· set in Pearl chat".
+- **Approved (product owner, 2026-11-15):** one "Paid back" tile; A person first. The section `1351:8769` and its 12 frames are "Approved, ready to build", and note `1352:10319` is updated.
+- **New PB-13b** `1354:10841` / `1354:10901`: when "All of it" is picked but the deposit is smaller than the share, Pearl asks first.
+  - Eyebrow: "SAM · PAI NORTHERN THAI"
+  - Title: "Let the other $45.00 go?"
+  - Body: "Sam paid $15.00 of $60.00. Letting it go marks Sam paid in full, and the other $45.00 stays yours."
+  - Buttons: "Let it go" · "Sam still owes it" (the second records it as Part of it).
+  - Toast after Let it go: "Sam paid in full · $45.00 let go" · Undo.
+- **T-08** `348:11846` / `348:14648`: the leftover "Split into parts" on money in is now hidden.
+- **Replaced in Pearl app once built:**
+  - The tile grids in T-08 (`348:11846` / `348:14648`), T-08n (`877:37854` / `877:38944`) and T-37n (`877:38331` / `877:39393`).
+  - T-09 (`348:12082` / `348:14882`), for a person only.
+  - S-35 stays and leads into PB-13.
+
+### [designBOT → engBOT] 2026-11-15 · TR-16 · Trips follow-ups after #349
+**Status:** Redesigned (Figma matches the build)
+**Jira:** THL-122, THL-123, THL-226, THL-263   **Figma:** Pearl app › Cash flow and transactions › Trips `1347:64071`; note `1329:69536`
+- **Moved into Pearl app** as "built (#349)": TR-02c, TR-03, TR-11 to TR-15.
+- **TR-15:** frame aligned to the build. The bar reads Category · Mark as… · Make a trip · Confirm {n}.
+- **TR-03:** the Spent/Saved/Leftover bar and the ⌄ by the dates are removed from the frame. The row chevrons stay: a category row opens the trip page filtered to that category, with the title "{Category} · Trip to {place}". **engBOT: add this.**
+- **TR-04:** the xmark is fine.
+- **Wording:**
+  - Agreed: "Not a trip · 1 stays as it is"; TR-14 "{dates} · {n}".
+  - Change: "Asks first · the 1 stays sorted as it is" → "Asks first · it stays sorted as it is". **engBOT: change this.**
+- **TR-12:** select-all opening TR-13 is agreed.

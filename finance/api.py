@@ -3022,7 +3022,7 @@ def home():
 def _home_sts(st, txns, today, debts: dict | None = None) -> dict:
     """Safe to spend this month, from the ledger and what she told us, with
     debt minimums among the bills (THL-49 D1, D2)."""
-    from . import debts as debt_math, income_bills, safe_to_spend, savings
+    from . import debts as debt_math, income_bills, safe_to_spend, savings, your_plan
     debts = debts if debts is not None else _debts(st, txns, today)
     return safe_to_spend.compute(
         txns, today,
@@ -3036,6 +3036,8 @@ def _home_sts(st, txns, today, debts: dict | None = None) -> dict:
         # From last month (decision 4) is worked out in compute.
 
         moved_to_savings=savings.put_away_month(st, txns, today.strftime("%Y-%m")),
+        # Your plan, only once she uses it (YP-02): {} until then.
+        plan=your_plan.in_use(your_plan.load(st)),
     )
 
 
@@ -3431,3 +3433,4 @@ from . import pattern_sort_api  # noqa: E402,F401
 from . import trips_api  # noqa: E402,F401
 from . import recurring_api  # noqa: E402,F401
 from . import chat_api  # noqa: E402,F401
+from . import your_plan_api  # noqa: E402,F401

@@ -165,35 +165,33 @@ struct ChatAsks: Decodable {
     }
 }
 
-/// POST /api/chat/plan: PC-12's "Make a Dining plan of $225 a month?". The
-/// amount is on the budgets' 5% steps, so it's what Set it keeps.
+/// POST /api/chat/plan: PC-12's "Make a Dining out plan of $220 a month?".
+/// Plans keep the nearest $5 (note 1353:11493), so $220 stays $220: what
+/// she's shown is what Set it keeps in Your plan.
 struct PlanProposal: Decodable, Hashable {
     let nothing: Bool
     let category: String?
     let usual: Double?
-    let pct: Int?
     let amount: Double?
     let months: Int?
     let line: String?
 
-    enum CodingKeys: String, CodingKey { case nothing, category, usual, pct, amount, months, line }
+    enum CodingKeys: String, CodingKey { case nothing, category, usual, amount, months, line }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         nothing = (try? c.decode(Bool.self, forKey: .nothing)) ?? true
         category = try? c.decodeIfPresent(String.self, forKey: .category)
         usual = try? c.decodeIfPresent(Double.self, forKey: .usual)
-        pct = try? c.decodeIfPresent(Int.self, forKey: .pct)
         amount = try? c.decodeIfPresent(Double.self, forKey: .amount)
         months = try? c.decodeIfPresent(Int.self, forKey: .months)
         line = try? c.decodeIfPresent(String.self, forKey: .line)
     }
 
-    init(category: String, usual: Double, pct: Int, amount: Double, months: Int) {
+    init(category: String, usual: Double, amount: Double, months: Int) {
         nothing = false
         self.category = category
         self.usual = usual
-        self.pct = pct
         self.amount = amount
         self.months = months
         line = nil
@@ -290,7 +288,7 @@ struct ChatFindings {
 /// findings they collect for the chat to show. No writer, no engine.
 actor ChatTools {
     private let reader: ChatReader
-    /// PC-12 is off until Your plan exists (Features.chatPlans).
+    /// PC-12 is on with Your plan (Features.chatPlans).
     nonisolated let allowsPlans: Bool
     private(set) var found = ChatFindings()
 
@@ -435,7 +433,7 @@ enum Performed: Equatable {
     case trip(id: String, name: String, line: String)
     /// "Done. Ana’s deposits rule made."
     case pattern(title: String)
-    /// "Done. Dining plan set to $225 a month."
+    /// "Done. Dining out plan set to $220 a month."
     case plan(category: String, amount: Double)
 }
 
@@ -465,8 +463,10 @@ struct ChatExecutor {
             let _: ChatOK = try await writer.post("api/pattern-sort/asks/\(p.id)/yes", ["how": "pc09"])
             return .pattern(title: p.title)
         case .yes(.plan(let p)):
-            guard let category = p.category, let pct = p.pct, let amount = p.amount else { return .nothing }
-            let _: ChatOK = try await writer.put("api/category-budgets", ["category": category, "pct": pct])
+            // Your plan's row, marked as set in Pearl chat. With the plan in
+            // use, this tap is the confirm and the Allowance follows at once.
+            guard let category = p.category, let amount = p.amount else { return .nothing }
+            let _: ChatOK = try await writer.put("api/your-plan/rows/\(category)", ["amount": amount, "source": "chat"])
             return .plan(category: category, amount: amount)
         case .skip(.sort), .skip(.plan):
             // PC-07: skipped ones stay in Needs a look; Not now changes nothing.

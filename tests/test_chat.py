@@ -245,12 +245,12 @@ class TestNothingChangesUntilSheConfirms:
     def test_a_plan_changes_only_on_set_it(self, client):
         months(client)
         p = client.post("/api/chat/plan", json={"category": "Dining"}).get_json()
-        assert client.get("/api/category-budgets").get_json()["rows"]
-        assert client.st.setting("category_budgets") in (None, "", "{}")
-        client.put("/api/category-budgets", json={"category": p["category"], "pct": p["pct"]})
-        row = next(r for r in client.get("/api/category-budgets").get_json()["rows"]
-                   if r["category"] == "Dining")
-        assert row["budget"] == pytest.approx(p["amount"], abs=0.01)
+        assert client.get("/api/your-plan").get_json()["rows"] == []
+        assert client.st.setting("your_plan") in (None, "")
+        # Set it: Your plan's own endpoint, as the chat's executor calls it.
+        r = client.put(f"/api/your-plan/rows/{p['category']}", json={"amount": p["amount"], "source": "chat"})
+        row = next(x for x in r.get_json()["rows"] if x["category"] == "Dining")
+        assert (row["amount"], row["source"]) == (p["amount"], "chat")
 
 
 # ── Ask about my spending (PC-04), subscriptions, a plan (PC-12) ───────────
@@ -295,12 +295,14 @@ class TestSpending:
 
 
 class TestPlan:
-    def test_rounded_up_on_the_budgets_steps(self, client):
+    def test_rounded_up_to_ten_and_kept_to_the_nearest_five(self, client):
         months(client)
         p = client.post("/api/chat/plan", json={"text": "Make me a plan for eating out"}).get_json()
         assert p["category"] == "Dining" and p["usual"] == pytest.approx(214.0)
-        # $214 → at least $220, on a 5% step: 105% is $224.70.
-        assert p["pct"] == 105 and p["amount"] == pytest.approx(224.70)
+        # $214 → $220, and plans keep the nearest $5, so $220 stays $220
+        # (note 1353:11493): not the budgets' 5% steps ($224.70).
+        assert p["amount"] == 220 and "pct" not in p
+        assert p["current"] is None and p["in_use"] is False
         # The first month began on the 10th, so two whole months count.
         assert p["months"] == 2
 

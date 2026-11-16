@@ -120,7 +120,7 @@ let pattern = """
 """
 
 let plan = """
-{"nothing": false, "category": "Dining", "usual": 214.0, "pct": 105, "amount": 224.7, "months": 3}
+{"nothing": false, "category": "Dining", "usual": 214.0, "amount": 220, "months": 3}
 """
 
 let spending = """
@@ -274,7 +274,7 @@ struct ChatChecks {
             let e = engine(r, w)
             await e.send("Make me a plan for eating out.")
             guard case .plan(_, let p) = e.screen else { expect(false, "PC-12"); return }
-            expect(ChatWords.planQuestion("Dining", p.amount!) == "Make a Dining plan of $225 a month?", "PC-12 question")
+            expect(ChatWords.planQuestion("Dining", p.amount!) == "Make a Dining plan of $220 a month?", "PC-12 question")
             expect(ChatWords.planLead(months: 3) == "Here’s a plan from your last 3 months. Nothing changes until you set it.",
                    "PC-12 lead")
             await e.decide(.skip(.plan(p)), tap: UserTap("not-now"))
@@ -285,11 +285,12 @@ struct ChatChecks {
             await e.send("Make me a plan for eating out.")
             guard case .plan(_, let p2) = e.screen else { expect(false, "PC-12 again"); return }
             await e.decide(.yes(.plan(p2)), tap: UserTap("set-it"))
-            expect(w.writes.count == 1 && w.writes[0].method == "PUT" && w.writes[0].path == "api/category-budgets",
-                   "Set it: the budgets endpoint")
-            expect(w.writes[0].body["pct"] as? Int == 105, "on the 5% step shown")
+            expect(w.writes.count == 1 && w.writes[0].method == "PUT" && w.writes[0].path == "api/your-plan/rows/Dining",
+                   "Set it: Your plan's row")
+            expect(w.writes[0].body["amount"] as? Double == 220, "the $220 shown, not a 5% step")
+            expect(w.writes[0].body["source"] as? String == "chat", "marked as set in Pearl chat")
             if case .done(_, let notes) = e.screen {
-                expect(notes.first?.line == "Done. Dining plan set to $225 a month.", "PC-13: \(notes.first?.line ?? "")")
+                expect(notes.first?.line == "Done. Dining plan set to $220 a month.", "PC-13: \(notes.first?.line ?? "")")
             } else {
                 expect(false, "PC-13")
             }
