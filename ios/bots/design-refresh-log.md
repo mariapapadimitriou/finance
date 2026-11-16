@@ -1003,3 +1003,41 @@ Product owner decisions:
 Keep Save where you type or set an amount: WhoseSheet "Part of it", CategorySheet with Remember, WhoSentSheet, notes, tags, renames.
 
 New library component: none. The tiles are the What was this? tile, and the icons are the handoff's Category icon set.
+
+### [designBOT → engBOT] 2026-11-16 · PAYUNDO-01 · One Undo look; one e-Transfer for several purchases; link first, edit later
+**Status:** Redesigned · Awaiting product owner
+**Jira:** THL-289, THL-291, THL-181, THL-301   **Figma:** Proposals › "Paybacks & undo · Awaiting product owner" `1395:3376`
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| PB-30 | `1395:3405` / `1395:3628` | What did Sam pay back? Pearl ticks the set that adds up to the e-Transfer; untick or tick, then one tap "Mark 2 paid back" |
+| PB-30u | `1395:3847` / `1395:4068` | Less ticked than the deposit: "$13.35 left over", then the button "Next: the other $13.35" goes to S-11c |
+| PB-30o | `1395:4287` / `1395:4511` | More ticked than the deposit: the oldest are paid in full, the newest part-paid on its row with "Change" (PB-13) |
+| PB-41 | `1395:4794` / `1395:4922` | Deposit page: what it paid back, a row each. Options: Change what it paid back (reopens PB-30), Unlink both |
+| PB-42 | `1395:5050` / `1395:5168` | One link's options, from the purchase or the deposit: How much, Who paid, Which purchase, View the e-Transfer, Unlink… |
+| UN-01a | `1396:4365` / `1396:4517` | The one Undo: ink toast at the bottom, after PB-30 |
+| UN-01b | `1396:4669` / `1396:4766` | The same toast on a purchase page, moved from the top to the bottom (PB-14 had it at the top) |
+
+Notes: `1397:4696` (overview), `1397:4697` (PB-30 logic), `1397:4698` (PB-41/42), `1397:4699` (UN-01 audit).
+
+**Undo.** The one look is PearlToast as built (SplitMenus.swift:421): fill color/text/primary, words and Undo in color/surface/page. It sits at the bottom, stays 6 s (15 s with VoiceOver) and swipes away. I added it to the library as Toast `Tone=Ink` (`330:751`); it isn't published yet. What to change:
+1. `UndoToast` (AccountsViews.swift:111) is a glass capsule with a link-coloured Undo, used app-wide. Make it draw PearlToast.
+2. `TransactionsView.toastView` (896) and `ReviewView.toastView` (475) are the light pink capsule you see after confirming a dashed guess. Switch both to PearlToast.
+3. `CategoriesRulesView.toastView` (364): switch to PearlToast.
+4. TransactionDetailView's `message` line: switch to PearlToast with Undo (see POLISH-01).
+
+**Several purchases.**
+- The likely set is purchases from the same person, dated before the deposit, oldest first, whose total is the deposit or the nearest under it.
+- All is the default. Pearl asks about part only when the ticks come to more than the deposit.
+- Send one request for the whole set, so a single Undo puts every link back.
+- When the e-Transfer names someone Pearl knows, skip PB-11.
+
+**PB-42** adds How much, Who paid and Which purchase to S-05or. S-40c gains How much and Which purchase.
+
+**Replaces when built:** S-35 ticks then PB-13 for each person; PB-12's single pick when one person owes several. Toasts in 70 Figma frames get swapped once Tone=Ink is published; Neutral and Positive are then retired.
+
+Product owner decisions:
+1. **Dark mode.** Should the ink toast invert there (a light toast on dark, as iOS does), or stay dark? Recommended: invert.
+2. **PB-30o.** When the ticks come to more than the deposit, should the newest be part-paid automatically (with Change on its row), or should Pearl always ask? Recommended: automatic, with Change.
+3. **Publish the library.** It now has Toast Tone=Ink.
+
