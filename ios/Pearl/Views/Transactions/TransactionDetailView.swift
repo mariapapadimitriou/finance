@@ -387,7 +387,140 @@ struct TransactionDetailView: View {
 
     private var t: Transaction { detail ?? transaction }
 
+    // 2026-11-16 (stack check, TransactionDetailView.body.getter at 40,960
+    // bytes on main): the page's sheets are put on in stages, each in its own
+    // body (OwnBody), so no one Debug frame holds the whole modifier chain.
+    // Same views, same modifiers, same order; only where they're built.
     var body: some View {
+        OwnBody { linkSheets }
+        .sheet(item: $unlinkingPayback) { link in paybackUnlinkSheet(link) }
+        .sheet(item: $unlinkingLink) { link in
+            // S-34s / S-34k (SPLIT-25), then S-05t's toast with Undo.
+            UnlinkLinkSheet(link: link, charge: t.id, api: app.api, onCancel: { unlinkingLink = nil }) { title, undo in
+                unlinkingLink = nil
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                Task {
+                    await load()
+                    app.changed()
+                    // S-44a; its Undo links it back (S-44g "Linked again").
+                    showSplit(title, undo: undo.map { u in { try await postUndo(u); return "Linked again" } })
+                }
+            }
+        }
+        .sheet(item: $linkOptions, onDismiss: {
+            // The choice runs once S-05o has gone, so its next sheet can open.
+            linkStart = .options
+            let next = afterOptions
+            afterOptions = nil
+            next?()
+        }) { link in
+            if Self.personPayback(link) {
+                // PB-42 (Paybacks & undo, 1395:5050): S-05or grows How much, Who
+                // paid and Which purchase; S-40c's rows open it on their step.
+                PaybackLinkSheet(link: link, charge: t.id, merchant: t.merchant, date: t.date, owes: owesOn(link),
+                                 start: linkStart, api: app.api,
+                                 onClose: { linkOptions = nil },
+                                 onView: {
+                                     afterOptions = { if let id = link.view?.id { Task { await open(id) } } }
+                                     linkOptions = nil
+                                 },
+                                 onUnlink: {
+                                     afterOptions = { unlinkingLink = link }
+                                     linkOptions = nil
+                                 },
+                                 onDone: { title, undo in
+                                     linkOptions = nil
+                                     linkChanged(title, undo)
+                                 })
+            } else {
+                // S-05or (REFRESH-02): View… opens it here in Pearl; Unlink… → S-34kr.
+                PaybackOptionsSheet(link: link, overline: link.kind == "refund" ? "REFUNDED BY" : "PAID BACK",
+                                    onClose: { linkOptions = nil },
+                                    onView: {
+                                        afterOptions = { if let id = link.view?.id { Task { await open(id) } } }
+                                        linkOptions = nil
+                                    },
+                                    onUnlink: {
+                                        afterOptions = { unlinkingLink = link }
+                                        linkOptions = nil
+                                    })
+            }
+        }
+        .sheet(item: $depositLink, onDismiss: {
+            let next = afterOptions
+            afterOptions = nil
+            next?()
+        }) { d in
+            // PB-42 from the deposit (PB-41): she's on the e-Transfer, so no View.
+            PaybackLinkSheet(link: d.link, charge: d.charge, merchant: d.merchant, date: d.date, owes: d.owes,
+                             fromDeposit: true, api: app.api,
+                             onClose: { depositLink = nil },
+                             onView: {},
+                             onUnlink: {
+                                 afterOptions = { depositUnlink = d }
+                                 depositLink = nil
+                             },
+                             onDone: { title, undo in
+                                 depositLink = nil
+                                 linkChanged(title, undo)
+                             })
+        }
+        .sheet(item: $depositUnlink) { d in
+            // S-34kr for one purchase this deposit paid back (PB-42 › Unlink…).
+            UnlinkLinkSheet(link: d.link, charge: d.charge, api: app.api, onCancel: { depositUnlink = nil }) { title, undo in
+                depositUnlink = nil
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                Task {
+                    await load()
+                    app.changed()
+                    showSplit(title, undo: undo.map { u in { try await postUndo(u); return "Linked again" } })
+                }
+            }
+        }
+        .navigationDestination(isPresented: Binding(get: { viewing != nil }, set: { if !$0 { viewing = nil } })) {
+            if let viewing = viewing {
+                TransactionDetailView(transaction: viewing, categories: categories)
+            }
+        }
+        .sheet(isPresented: $renaming) {
+            RenameSheet(title: "Rename merchant", label: "Call it", initial: t.merchant,
+                        hint: "Bank: \(t.bankMerchant ?? t.merchant)", other: "Use the bank’s name",
+                        onSave: { name in
+                            renaming = false
+                            Task { await rename(to: name) }
+                        }, onOther: {
+                            renaming = false
+                            Task { await rename(to: "") }
+                        })
+        }
+        .sheet(isPresented: $whose) {
+            WhoseSheet(t: t, api: app.api) { said, undo in
+                whose = false
+                // "Yours." (POLISH-01): a toast with Undo, not a line under the page.
+                Task { await run { withAnimation { toast = (said, undoing(undo)) }; return nil } }
+            }
+            .fitsContent()
+            .presentationDragIndicator(.visible)
+        }
+        .navigationDestination(isPresented: $seeingOwed) { OwedView() }
+        .sheet(isPresented: $editingNote) {
+            NoteSheet(note: t.myNote) { note in
+                editingNote = false
+                Task { await save(note: note) }
+            }
+            .presentationDetents([.medium])
+        }
+        .sheet(isPresented: $editingTags) {
+            TagsSheet(tags: t.tags, known: knownTags) { tags in
+                editingTags = false
+                Task { await save(tags: tags) }
+            }
+            .presentationDetents([.medium, .large])
+        }
+    }
+
+    /// The page, its bar and its title: what `body` used to start with.
+    private var page: some View {
         ScrollView {
             // 2026-11-14 (stack overflow on the product owner's iPhone): each
             // section is built in its own body (OwnBody), so no one body's
@@ -462,6 +595,11 @@ struct TransactionDetailView: View {
                 newOnes = draft.always
             }
         }
+    }
+
+    /// What was this? and the money-in questions.
+    private var sortSheets: some View {
+        OwnBody { page }
         .sheet(item: $sorting, onDismiss: {
             // Closed without an answer: TF-01c doesn't go on to the other end.
             otherSide = nil
@@ -542,6 +680,11 @@ struct TransactionDetailView: View {
                 Task { await answered(answer) }
             }
         }
+    }
+
+    /// Split, your share, settle up, That's everything, Remove the split?
+    private var splitSheets: some View {
+        OwnBody { sortSheets }
         .sheet(isPresented: $splitting) {
             // T-98s (SPLIT-06): from a Quick sort card's page the split is
             // held for the card, like every other edit here; Yes saves it.
@@ -666,6 +809,12 @@ struct TransactionDetailView: View {
                 }
             }
         }
+    }
+
+    /// One person in a split: Mark paid back, Let go, Remind, answer again,
+    /// change their share, remove them.
+    private var personSheets: some View {
+        OwnBody { splitSheets }
         .sheet(item: $marking) { person in
             MarkPaidSheet(t: t, person: person, api: app.api, onUndoable: { title, undo in
                 // SPLIT-19 (S-11c): Undo takes back the whole payment and its extra.
@@ -748,6 +897,12 @@ struct TransactionDetailView: View {
                 showSplit(title, undo: undo)
             }
         }
+    }
+
+    /// Parts, Who sent this?, Unlink, Find what paid it back, the toasts,
+    /// Add to bills and Pay from a piggy bank.
+    private var linkSheets: some View {
+        OwnBody { personSheets }
         .sheet(item: $parting, onDismiss: { editingParts = false; repicking = false; partsExtra = nil }) { deposit in
             // S-33's Edit opens S-10e with the parts it has (SPLIT-03); PB-41's
             // Change what it paid back opens PB-30 with today's ticks.
@@ -810,130 +965,6 @@ struct TransactionDetailView: View {
                 payingFromBank = false
                 Task { await run { said } }
             }
-        }
-        .sheet(item: $unlinkingPayback) { link in paybackUnlinkSheet(link) }
-        .sheet(item: $unlinkingLink) { link in
-            // S-34s / S-34k (SPLIT-25), then S-05t's toast with Undo.
-            UnlinkLinkSheet(link: link, charge: t.id, api: app.api, onCancel: { unlinkingLink = nil }) { title, undo in
-                unlinkingLink = nil
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
-                Task {
-                    await load()
-                    app.changed()
-                    // S-44a; its Undo links it back (S-44g "Linked again").
-                    showSplit(title, undo: undo.map { u in { try await postUndo(u); return "Linked again" } })
-                }
-            }
-        }
-        .sheet(item: $linkOptions, onDismiss: {
-            // The choice runs once S-05o has gone, so its next sheet can open.
-            linkStart = .options
-            let next = afterOptions
-            afterOptions = nil
-            next?()
-        }) { link in
-            if Self.personPayback(link) {
-                // PB-42 (Paybacks & undo, 1395:5050): S-05or grows How much, Who
-                // paid and Which purchase; S-40c's rows open it on their step.
-                PaybackLinkSheet(link: link, charge: t.id, merchant: t.merchant, date: t.date, owes: owesOn(link),
-                                 start: linkStart, api: app.api,
-                                 onClose: { linkOptions = nil },
-                                 onView: {
-                                     afterOptions = { if let id = link.view?.id { Task { await open(id) } } }
-                                     linkOptions = nil
-                                 },
-                                 onUnlink: {
-                                     afterOptions = { unlinkingLink = link }
-                                     linkOptions = nil
-                                 },
-                                 onDone: { title, undo in
-                                     linkOptions = nil
-                                     linkChanged(title, undo)
-                                 })
-            } else {
-                // S-05or (REFRESH-02): View… opens it here in Pearl; Unlink… → S-34kr.
-                PaybackOptionsSheet(link: link, overline: link.kind == "refund" ? "REFUNDED BY" : "PAID BACK",
-                                    onClose: { linkOptions = nil },
-                                    onView: {
-                                        afterOptions = { if let id = link.view?.id { Task { await open(id) } } }
-                                        linkOptions = nil
-                                    },
-                                    onUnlink: {
-                                        afterOptions = { unlinkingLink = link }
-                                        linkOptions = nil
-                                    })
-            }
-        }
-        .sheet(item: $depositLink, onDismiss: {
-            let next = afterOptions
-            afterOptions = nil
-            next?()
-        }) { d in
-            // PB-42 from the deposit (PB-41): she's on the e-Transfer, so no View.
-            PaybackLinkSheet(link: d.link, charge: d.charge, merchant: d.merchant, date: d.date, owes: d.owes,
-                             fromDeposit: true, api: app.api,
-                             onClose: { depositLink = nil },
-                             onView: {},
-                             onUnlink: {
-                                 afterOptions = { depositUnlink = d }
-                                 depositLink = nil
-                             },
-                             onDone: { title, undo in
-                                 depositLink = nil
-                                 linkChanged(title, undo)
-                             })
-        }
-        .sheet(item: $depositUnlink) { d in
-            // S-34kr for one purchase this deposit paid back (PB-42 › Unlink…).
-            UnlinkLinkSheet(link: d.link, charge: d.charge, api: app.api, onCancel: { depositUnlink = nil }) { title, undo in
-                depositUnlink = nil
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
-                Task {
-                    await load()
-                    app.changed()
-                    showSplit(title, undo: undo.map { u in { try await postUndo(u); return "Linked again" } })
-                }
-            }
-        }
-        .navigationDestination(isPresented: Binding(get: { viewing != nil }, set: { if !$0 { viewing = nil } })) {
-            if let viewing = viewing {
-                TransactionDetailView(transaction: viewing, categories: categories)
-            }
-        }
-        .sheet(isPresented: $renaming) {
-            RenameSheet(title: "Rename merchant", label: "Call it", initial: t.merchant,
-                        hint: "Bank: \(t.bankMerchant ?? t.merchant)", other: "Use the bank’s name",
-                        onSave: { name in
-                            renaming = false
-                            Task { await rename(to: name) }
-                        }, onOther: {
-                            renaming = false
-                            Task { await rename(to: "") }
-                        })
-        }
-        .sheet(isPresented: $whose) {
-            WhoseSheet(t: t, api: app.api) { said, undo in
-                whose = false
-                // "Yours." (POLISH-01): a toast with Undo, not a line under the page.
-                Task { await run { withAnimation { toast = (said, undoing(undo)) }; return nil } }
-            }
-            .fitsContent()
-            .presentationDragIndicator(.visible)
-        }
-        .navigationDestination(isPresented: $seeingOwed) { OwedView() }
-        .sheet(isPresented: $editingNote) {
-            NoteSheet(note: t.myNote) { note in
-                editingNote = false
-                Task { await save(note: note) }
-            }
-            .presentationDetents([.medium])
-        }
-        .sheet(isPresented: $editingTags) {
-            TagsSheet(tags: t.tags, known: knownTags) { tags in
-                editingTags = false
-                Task { await save(tags: tags) }
-            }
-            .presentationDetents([.medium, .large])
         }
     }
 
