@@ -285,4 +285,9 @@ extension View {
     func fitsContent() -> some View {
         modifier(FitsContent())
     }
+
+    /// `.large`, unless the sheet sizes itself (`fitsContent()`).
+    @ViewBuilder func largeUnless(_ fits: Bool) -> some View {
+        if fits { self } else { presentationDetents([.large]) }
+    }
 }

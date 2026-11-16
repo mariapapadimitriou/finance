@@ -37,6 +37,14 @@ struct IncomeBillsView: View {
         case bill(IncomeBills.Bill), addBill
         case ask(IncomeBills.Ask), expected
 
+        /// O-10f, O-10g and Income each month (POLISH-01 audits 8 and 9) size to their content.
+        var fits: Bool {
+            switch self {
+            case .ask, .expected: return true
+            default: return false
+            }
+        }
+
         var id: String {
             switch self {
             case .candidate(let c): return "c" + c.id
@@ -80,7 +88,8 @@ struct IncomeBillsView: View {
         .reloads { await load() }
         .sheet(item: $sheet) { which in
             sheetView(which)
-                .presentationDetents([.large])
+                // POLISH-01: the questions and Income each month size to their content.
+                .largeUnless(which.fits)
                 .presentationDragIndicator(.visible)
         }
         .sheet(item: $rent) { q in
@@ -396,6 +405,7 @@ struct ExpectedIncomeSheet: View {
     private var own: Double? { expected?.amount.flatMap { $0 > 0 ? $0 : nil } }
 
     var body: some View {
+        // POLISH-01 audit 9: one field and a switch, so sized to what it shows.
         SheetFrame(title: "Income each month", subtitle: subtitle, symbol: "chart.line.uptrend.xyaxis",
                    heading: "Your own amount", close: { dismiss() }) {
             FieldRow(label: "Each month, after tax", text: $amount, prompt: varies ? "Pearl works it out" : "$0.00")
@@ -432,6 +442,7 @@ struct ExpectedIncomeSheet: View {
             varies = expected?.varies ?? false
             if let own = own, !varies { amount = String(format: "%.2f", own) }
         }
+        .fitsContent()
     }
 
     private var subtitle: String {
