@@ -628,6 +628,8 @@ struct Transaction: Decodable, Identifiable, Hashable {
     /// end (TransferEnds).
     var mergedInto: String? = nil
     @Boxed var repaysCharge: Brief?
+    /// Paybacks 2 (TP-04), boxed so Transaction stays small.
+    @Boxed var jointPayback: JointPayback?
     /// TR-05 / TR-06: the trip it's in ("Shopping · Trip to Montréal"),
     /// boxed so Transaction stays small (Boxed.swift).
     @Boxed var trip: TripRef?
@@ -958,11 +960,38 @@ struct Transaction: Decodable, Identifiable, Hashable {
         let to: String
         let otherId: String?
         let otherDate: String?
+        /// Paybacks 2 (TP-01): on money in from a joint account into one
+        /// only hers, who else is on it ("Mom paid me back").
+        var joint: JointFrom? = nil
+        /// TP-05: between two accounts only hers, so no Paid back.
+        var mineOnly: Bool? = nil
+
+        struct JointFrom: Decodable, Hashable {
+            let people: [String]
+            /// "Joint ··1123".
+            let account: String
+        }
 
         enum CodingKeys: String, CodingKey {
-            case from, to
+            case from, to, joint
             case otherId = "other_id"
             case otherDate = "other_date"
+            case mineOnly = "mine_only"
+        }
+    }
+
+    /// Paybacks 2 (TP-04): money in that a joint account's other owner paid
+    /// her back with; the money out of the joint account is theirs.
+    struct JointPayback: Decodable, Hashable {
+        let person: String
+        /// The joint money out, "Joint ··1123", and "Chequing ··4417".
+        let outId: String
+        let account: String
+        let into: String
+
+        enum CodingKeys: String, CodingKey {
+            case person, account, into
+            case outId = "out_id"
         }
     }
 
@@ -1001,6 +1030,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         case repaysCharge = "repays_charge"
         case mergedInto = "merged_into"
         case trip, cost
+        case jointPayback = "joint_payback"
     }
 
     init(from decoder: Decoder) throws {
@@ -1067,6 +1097,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         mergedInto = opt(String.self, .mergedInto)
         trip = opt(TripRef.self, .trip)
         cost = opt(Cost.self, .cost)
+        jointPayback = opt(JointPayback.self, .jointPayback)
     }
 
     /// The name to show: the merchant, else the bank's description.
@@ -1138,6 +1169,18 @@ struct Transaction: Decodable, Identifiable, Hashable {
     @inline(never)
     private static func sameAnswers(_ a: Transaction, _ b: Transaction) -> Bool {
         a.oneOff == b.oneOff && a.tags == b.tags && a.jointFrom == b.jointFrom && a.bankId == b.bankId
+            && sameLinks(a, b)
+    }
+
+    /// What it's linked to (Paybacks 2): a reload that only links or unlinks
+    /// it, or changes who paid, redraws the page. The arrays compare by
+    /// their buffers first and the boxed ones as boxes (Boxed.==), so no
+    /// link is copied out of its box onto this frame.
+    @inline(never)
+    private static func sameLinks(_ a: Transaction, _ b: Transaction) -> Bool {
+        a.refundedBy == b.refundedBy && a.repaidBy == b.repaidBy && a._refundOf == b._refundOf
+            && a._repaysCharge == b._repaysCharge && a._transfer == b._transfer
+            && a._jointPayback == b._jointPayback
     }
 
     @inline(never)
