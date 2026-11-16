@@ -20,6 +20,11 @@
 * GET    /api/transactions/<id>/credit            S-35c: a linked payback credited to no one, and
                                                   the open shares it could be (SPLIT-22b).
 * POST   /api/transactions/<id>/credit            {person, charge?}: who sent it, with Undo.
+* GET    /api/transactions/<id>/paid-back-candidates  ?person=: money in that could be their
+                                                  payback on this purchase, and how each would
+                                                  split into part or all. Read-only.
+* POST   /api/transactions/<id>/paid-back         {deposit, person, amount?, let_go?}: link from
+                                                  the purchase side, through save_parts.
 """
 
 from __future__ import annotations
@@ -607,6 +612,117 @@ def _paid_back_title(parts, let_go: float) -> str | None:
     except (TypeError, ValueError):
         return None
     return f"{names[0]} paid back ${paid:,.2f}"
+
+
+# ── Paid back from the purchase side (2026-11-15; no UI yet) ─────────────
+# From her own row on a split, "Find what paid it back" will list money in
+# that could be one person's payback and run the same Paid back steps
+# (PB-13, PB-13b). designBOT is still drawing it; the server is ready. The
+# link goes through save_parts, the one path the deposit side uses.
+
+CANDIDATE_DAYS_BEFORE = 30   # a payback can arrive before the purchase posts
+CANDIDATE_DAYS_AFTER = 365
+CANDIDATE_LIMIT = 20
+
+
+def _share_or_error(st, charge_id: str, name: str):
+    """(purchase, split, person, what they owe) or an error reply."""
+    t, split, err = _split_or_error(st, charge_id)
+    if err:
+        return None, err
+    if split.get("mode") == sp.UNSURE:
+        return None, (jsonify({"error": "Pick someone on this split."}), 400)
+    p = _person(split, " ".join(str(name or "").split()))
+    if p is None:
+        return None, (jsonify({"error": "Pick someone on this split."}), 400)
+    status = next(s for s in sp.people_status(t, split, st.all_transactions(), st.payback_people())
+                  if s["name"] == p["name"])
+    return (t, split, p, round(status["owes"], 2)), None
+
+
+def _free_deposit(st, x: Transaction) -> bool:
+    """Money in that isn't linked, in parts, a part or left out: one the
+    Paid back steps could still sort. (An e-Transfer reads as Transfers
+    until it's sorted, so the category doesn't rule it out.)"""
+    return (x.amount < 0 and not x.repays and not x.excluded and not (x.raw or {}).get("part_of")
+            and not st.parts().get(x.fingerprint))
+
+
+def _split_preview(amount: float, owes: float) -> dict:
+    """How a deposit would split against what they owe: PB-13's Part of it
+    (less than owed: what it pays and what PB-13b would let go), All of it,
+    and the extra over it (S-11 v2 next)."""
+    got, due = _cents(amount), _cents(owes)
+    if got < due:
+        return {"kind": "part", "part": got / 100, "all": due / 100, "let_go": (due - got) / 100, "extra": 0.0}
+    return {"kind": "all" if got == due else "more", "part": None, "all": due / 100, "let_go": 0.0,
+            "extra": (got - due) / 100}
+
+
+@bp.get("/transactions/<txn_id>/paid-back-candidates")
+def paid_back_candidates(txn_id: str):
+    """Read-only: money in that could be `person`'s payback on this purchase,
+    theirs first (sent by them), then closest to what they owe. Each says
+    how it would split into part or all. Changes nothing."""
+    from datetime import timedelta
+    from .etransfers import known_people, party as etransfer_party
+    st = store()
+    share, err = _share_or_error(st, txn_id, request.args.get("person"))
+    if err:
+        return err
+    t, split, p, owes = share
+    day = date.fromisoformat(t.date[:10])
+    lo = (day - timedelta(days=CANDIDATE_DAYS_BEFORE)).isoformat()
+    hi = (day + timedelta(days=CANDIDATE_DAYS_AFTER)).isoformat()
+    txns = st.all_transactions()
+    people = known_people(txns, st.splits(), st.payback_people())
+    rows = []
+    for x in txns:
+        if not (lo <= x.date[:10] <= hi) or not _free_deposit(st, x):
+            continue
+        sender = x.party or (etransfer_party(x, people) or {}).get("name") or x.merchant or ""
+        rows.append({"id": x.fingerprint, "date": x.date[:10], "merchant": x.merchant or x.description,
+                     "amount": round(-x.amount, 2), "from_person": sp.same_person(sender, p["name"]),
+                     "split": _split_preview(-x.amount, owes)})
+    rows.sort(key=lambda r: (not r["from_person"], abs(_cents(r["amount"]) - _cents(owes)), r["date"]))
+    return jsonify({"person": p["name"], "owes": owes, "share": round(float(p["amount"]), 2),
+                    "candidates": rows[:CANDIDATE_LIMIT]})
+
+
+@bp.post("/transactions/<txn_id>/paid-back")
+def paid_back_from_purchase(txn_id: str):
+    """Link a deposit to this person's share from the purchase side:
+    {deposit, person, amount?, let_go?}. `amount` is Part of it (default:
+    all of the deposit, up to what they owe); `let_go` is PB-13b's Let it go.
+    It builds the payback part PB-13 sends and saves it through save_parts,
+    so the link, the toast and the Undo are the deposit side's. Whatever the
+    deposit holds past this share stays "left to sort" in Needs a look."""
+    st = store()
+    body = _body()
+    share, err = _share_or_error(st, txn_id, body.get("person"))
+    if err:
+        return err
+    t, split, p, owes = share
+    deposit = st.get_transaction(str(body.get("deposit") or ""))
+    if deposit is None or not _free_deposit(st, deposit):
+        return jsonify({"error": "Pick the money that paid it back."}), 400
+    if owes < 0.005:
+        return jsonify({"error": f"{p['name']} doesn’t owe anything on this."}), 400
+    whole = round(-deposit.amount, 2)
+    room = min(_cents(whole), _cents(owes))
+    if body.get("amount") is None:
+        amount = room
+    else:
+        try:
+            amount = _cents(body.get("amount"))
+        except (TypeError, ValueError):
+            return jsonify({"error": "How much they paid back has to be an amount."}), 400
+        if amount < 1 or amount > room:
+            return jsonify({"error": f"Make it between $0.01 and ${room / 100:,.2f}."}), 400
+    part = {"kind": "payback", "amount": amount / 100, "charge": t.fingerprint, "person": p["name"]}
+    if body.get("let_go"):
+        part["let_go"] = True
+    return save_parts(st, deposit, {"parts": [part], "later": amount < _cents(whole)})
 
 
 def extra_parts(st, t, given) -> tuple[list | None, str | None]:

@@ -280,3 +280,127 @@ class TestTilesBySource:
             for stock in (".confirmationDialog(", ".alert(", ".actionSheet("):
                 assert stock not in code, (path, stock)
             assert "safe to spend" not in code.lower()
+
+
+class TestFromThePurchase:
+    """Paid back from the purchase side (2026-11-15, no UI yet): candidates
+    for one person's share, read-only, and a link that goes through the
+    same save as PB-13 on the deposit side."""
+
+    def setup(self, client, sent=15.0):
+        i = add(client, tx("PAI NORTHERN THAI", 120.0, "Dining", when=day(10)),
+                tx("E-TRANSFER FROM SAM LEE", -sent, when=day(1), merchant="Sam Lee"),
+                tx("E-TRANSFER FROM PRIYA", -58.0, when=day(2), merchant="Priya"),
+                tx("NORTHWIND LTD PAYROLL", -1980.0, "Income", when=day(5)))
+        client.put(f"/api/transactions/{i['PAI NORTHERN THAI']}/split", json={
+            "mode": "amount", "people": [{"name": "Sam", "amount": 60}]})
+        return i
+
+    def dump(self, client, tmp_path):
+        import sqlite3
+        con = sqlite3.connect(str(tmp_path / "paid_back.db"))
+        try:
+            return "\n".join(con.iterdump())
+        finally:
+            con.close()
+
+    def test_candidates_list_theirs_first_and_how_each_splits(self, client):
+        i = self.setup(client)
+        r = client.get(f"/api/transactions/{i['PAI NORTHERN THAI']}/paid-back-candidates",
+                       query_string={"person": "Sam"})
+        assert r.status_code == 200, r.get_json()
+        body = r.get_json()
+        assert (body["person"], body["owes"], body["share"]) == ("Sam", 60.0, 60.0)
+        first = body["candidates"][0]
+        assert (first["id"], first["amount"], first["from_person"]) == (i["E-TRANSFER FROM SAM LEE"], 15.0, True)
+        assert first["split"] == {"kind": "part", "part": 15.0, "all": 60.0, "let_go": 45.0, "extra": 0.0}
+        ids = [c["id"] for c in body["candidates"]]
+        # Closest to what Sam owes next; pay is still money in, so it can be listed, last.
+        assert ids.index(i["E-TRANSFER FROM PRIYA"]) < ids.index(i["NORTHWIND LTD PAYROLL"])
+        payroll = next(c for c in body["candidates"] if c["id"] == i["NORTHWIND LTD PAYROLL"])
+        assert payroll["split"] == {"kind": "more", "part": None, "all": 60.0, "let_go": 0.0, "extra": 1920.0}
+
+    def test_listing_changes_nothing(self, client, tmp_path):
+        i = self.setup(client)
+        before = self.dump(client, tmp_path)
+        for _ in range(2):
+            client.get(f"/api/transactions/{i['PAI NORTHERN THAI']}/paid-back-candidates",
+                       query_string={"person": "Sam"})
+        assert self.dump(client, tmp_path) == before
+
+    def test_someone_not_on_the_split(self, client):
+        i = self.setup(client)
+        r = client.get(f"/api/transactions/{i['PAI NORTHERN THAI']}/paid-back-candidates",
+                       query_string={"person": "Jordan"})
+        assert r.status_code == 400 and r.get_json()["error"] == "Pick someone on this split."
+
+    def test_a_linked_deposit_is_no_longer_a_candidate(self, client):
+        i = self.setup(client)
+        pai, dep = i["PAI NORTHERN THAI"], i["E-TRANSFER FROM SAM LEE"]
+        parts(client, dep, {"kind": "payback", "amount": 15.0, "charge": pai, "person": "Sam"})
+        ids = [c["id"] for c in client.get(f"/api/transactions/{pai}/paid-back-candidates",
+                                           query_string={"person": "Sam"}).get_json()["candidates"]]
+        assert dep not in ids
+
+
+def _two(tmp_path):
+    """Two apps with the same rows, to link one from each side."""
+    from app import create_app
+    out = []
+    for n in ("deposit", "purchase"):
+        app = create_app(str(tmp_path / f"{n}.db"))
+        app.config.update(TESTING=True)
+        c = app.test_client()
+        c.st = app.config["STORE"]
+        out.append(c)
+    return out
+
+
+def _state(c, i):
+    pai, dep = i["PAI NORTHERN THAI"], i["E-TRANSFER FROM SAM LEE"]
+    split = detail(c, pai)["splitting"]
+    people = [(p["name"], p["amount"], p["paid"], p["owes"], (p["let_go"] or {}).get("was"))
+              for p in split["people"]]
+    kinds = sorted((p["kind"], p["amount"], p.get("person")) for p in detail(c, dep).get("parts") or [])
+    return split["you"], people, kinds
+
+
+class TestSameAsTheDepositSide:
+    """Linking from the purchase side is the deposit side's link: same
+    state, same toast, and the same Undo."""
+
+    def rows(self):
+        return (tx("PAI NORTHERN THAI", 120.0, "Dining", when=day(10)),
+                tx("E-TRANSFER FROM SAM LEE", -15.0, when=day(1), merchant="Sam Lee"))
+
+    @pytest.mark.parametrize("ask", [{}, {"let_go": True}, {"amount": 10.0}])
+    def test_both_sides_agree(self, tmp_path, ask):
+        a, b = _two(tmp_path)
+        ia, ib = add(a, *self.rows()), add(b, *self.rows())
+        for c, i in ((a, ia), (b, ib)):
+            c.put(f"/api/transactions/{i['PAI NORTHERN THAI']}/split", json={
+                "mode": "amount", "people": [{"name": "Sam", "amount": 60}]})
+        amount = ask.get("amount", 15.0)
+        part = {"kind": "payback", "amount": amount, "charge": ia["PAI NORTHERN THAI"], "person": "Sam"}
+        if ask.get("let_go"):
+            part["let_go"] = True
+        ra = parts(a, ia["E-TRANSFER FROM SAM LEE"], part, later=amount < 15.0)
+        rb = b.post(f"/api/transactions/{ib['PAI NORTHERN THAI']}/paid-back",
+                    json={"deposit": ib["E-TRANSFER FROM SAM LEE"], "person": "Sam", **ask})
+        assert ra.status_code == rb.status_code == 200, (ra.get_json(), rb.get_json())
+        assert ra.get_json()["title"] == rb.get_json()["title"]
+        assert _state(a, ia) == _state(b, ib)
+        undo(a, ra.get_json())
+        undo(b, rb.get_json())
+        assert _state(a, ia) == _state(b, ib)
+        assert _state(b, ib)[1] == [("Sam", 60.0, 0.0, 60.0, None)]
+
+    def test_more_than_they_owe_or_the_deposit_is_refused(self, tmp_path):
+        _, b = _two(tmp_path)
+        i = add(b, *self.rows())
+        b.put(f"/api/transactions/{i['PAI NORTHERN THAI']}/split", json={
+            "mode": "amount", "people": [{"name": "Sam", "amount": 60}]})
+        r = b.post(f"/api/transactions/{i['PAI NORTHERN THAI']}/paid-back",
+                   json={"deposit": i["E-TRANSFER FROM SAM LEE"], "person": "Sam", "amount": 20})
+        assert r.status_code == 400 and r.get_json()["error"] == "Make it between $0.01 and $15.00."
+        assert _state(b, i)[1] == [("Sam", 60.0, 0.0, 60.0, None)]
