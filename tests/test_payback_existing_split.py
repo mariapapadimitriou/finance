@@ -22,6 +22,7 @@ Now (splits.payer_on_split, marks._payer_on_splits):
 from __future__ import annotations
 
 from datetime import date, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -31,6 +32,7 @@ from finance.models import Transaction
 from finance.pipeline import ingest
 
 TODAY = date.today()
+IOS = Path(__file__).resolve().parent.parent / "ios" / "Pearl"
 
 
 def ago(n: int) -> str:
@@ -265,3 +267,28 @@ class TestHerRealDataUndoes:
         assert people(client, charge) == {"Anastasia": (30.0, 0.0)}
         assert client.st.get_transaction(charge).my_share == 60.0
 
+
+class TestTheAppAsks:
+    """The app's side: the tile sends whose share, and a 409 `who_paid`
+    opens PP-01 with only the split's people, never Someone new."""
+
+    def src(self, path):
+        return (IOS / path).read_text()
+
+    def test_the_tile_sends_its_person(self):
+        assert "person: $0.person" in self.src("Views/Review/AnswerSheet.swift")
+        review = self.src("Views/Review/ReviewView.swift")
+        assert 'if let person = person { body["person"] = person }' in review
+
+    def test_who_paid_is_decoded_and_asked_where_answers_are_sent(self):
+        assert 'case whoPaid = "who_paid"' in self.src("API/APIClient.swift")
+        for path in ("Views/Review/ReviewView.swift", "Views/Review/QuickSortView.swift",
+                     "Views/Transactions/TransactionDetailView.swift"):
+            s = self.src(path)
+            assert "e.whoPaid != nil" in s and "WhoPaidAskSheet(" in s, path
+
+    def test_the_picker_lists_only_the_split(self):
+        s = self.src("Views/Transactions/JointPaybackViews.swift")
+        sheet = s[s.index("struct WhoPaidAskSheet"):]
+        sheet = sheet[:sheet.index("\n}\n")]
+        assert "pastSplits: false, someoneNew: false" in sheet and 'topLabel: "On this split"' in sheet

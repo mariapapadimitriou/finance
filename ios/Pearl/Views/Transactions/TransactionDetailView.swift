@@ -273,6 +273,8 @@ struct TransactionDetailView: View {
     /// A money-in question opened from here (THL-198): its kind, how often
     /// it pays, or What was this?.
     @State private var asking: Asking?
+    /// PP-01 for a payback the server couldn't place on the split.
+    @State private var whoPaid: WhoPaidAsk?
     /// PQ-03p (Payback question): Pearl's guess on an unsorted deposit, in words.
     @State private var paybackAsk: PaybackQuestion?
 
@@ -695,6 +697,12 @@ struct TransactionDetailView: View {
                 asking = nil
                 Task { await answered(answer) }
             }
+        }
+        .sheet(item: $whoPaid) { w in
+            WhoPaidAskSheet(ask: w, api: app.api, onPick: { answer in
+                whoPaid = nil
+                Task { await answered(answer) }
+            }, onClose: { whoPaid = nil })
         }
     }
 
@@ -2699,8 +2707,14 @@ struct TransactionDetailView: View {
     /// says what it did, with the server's Undo.
     private func answered(_ answer: ReviewAnswer) async {
         await run {
-            let reply = try await answer.send(app.api)
-            withAnimation { splitToast = nil; toast = (reply.title ?? answer.done, undoing(reply.undo)) }
+            do {
+                let reply = try await answer.send(app.api)
+                withAnimation { splitToast = nil; toast = (reply.title ?? answer.done, undoing(reply.undo)) }
+            } catch let e where e.whoPaid != nil {
+                // Nothing saved: ask who, once the answer's sheet has gone (2026-11-16).
+                try? await Task.sleep(nanoseconds: 450_000_000)
+                whoPaid = e.whoPaid
+            }
             return nil
         }
     }

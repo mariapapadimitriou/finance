@@ -103,6 +103,8 @@ struct QuickSortView: View {
     /// An answer on its way: a closing sheet mustn't bring the card back.
     @State private var busy = false
     @State private var error: String?
+    /// PP-01 for a payback the server couldn't place on the split, and its card.
+    @State private var whoPaid: QuickWhoPaid?
 
     /// Edits made on a card's page, waiting for Yes on the card.
     @State private var drafts: [String: CardDraft] = [:]
@@ -190,6 +192,12 @@ struct QuickSortView: View {
                 onDraft: { drafts[ask.id] = $0 },
                 draft: drafts[ask.id] ?? CardDraft()),
                       categories: categories)
+        }
+        .sheet(item: $whoPaid) { w in
+            WhoPaidAskSheet(ask: w.who, api: app.api, onPick: { answer in
+                whoPaid = nil
+                Task { await answered(w.ask, answer) }
+            }, onClose: { whoPaid = nil })
         }
         .sheet(item: Binding(get: { asking.flatMap { $0.opensPage(accounts) ? nil : $0 } },
                              set: { asking = $0 }), onDismiss: comeBack) { ask in
@@ -887,6 +895,12 @@ struct QuickSortView: View {
                                    ask: ask, undo: reply.undo, deck: before, index: at)
                 }
             }
+        } catch let e where e.whoPaid != nil {
+            // Nothing saved: the card comes back and PP-01 asks who (2026-11-16).
+            busy = false
+            comeBack()
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            if let who = e.whoPaid { whoPaid = QuickWhoPaid(ask: ask, who: who) }
         } catch {
             busy = false
             self.error = app.handle(error)
@@ -1031,4 +1045,11 @@ private struct CardFace: ViewModifier {
                                              startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.2))
             .shadow(color: Color(red: 0.4, green: 0.3, blue: 0.6).opacity(0.15), radius: 16, y: 10)
     }
+}
+
+/// A Quick sort card's payback waiting on PP-01's answer (2026-11-16).
+struct QuickWhoPaid: Identifiable {
+    let ask: Ask
+    let who: WhoPaidAsk
+    var id: String { who.id }
 }

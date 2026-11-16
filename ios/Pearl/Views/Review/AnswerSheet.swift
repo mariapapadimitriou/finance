@@ -936,7 +936,7 @@ struct AnswerSheet: View {
             ScrollView {
                 PaybackQuestionBody(
                     question: q, amount: amountText, date: t.date,
-                    onTile: { onAnswer(.payback(t.id, charge: $0.charge, toast: $0.toast)) },
+                    onTile: { onAnswer(.payback(t.id, charge: $0.charge, toast: $0.toast, person: $0.person)) },
                     // "Find the purchase": PB-11's A person, with the sender
                     // known: their splits (PB-12), or PB-15's purchase search.
                     onElse: { paidBack(.person) },

@@ -24,6 +24,8 @@ struct ReviewView: View {
     @State private var sorting = false
     @State private var toast: Toast?
     @State private var busy = false
+    /// PP-01 for a payback the server couldn't place on the split.
+    @State private var whoPaid: WhoPaidAsk?
     @State private var error: String?
     /// AI-03: why Pearl sorted this row, from Pearl sorted.
     @State private var why: WhyID?
@@ -137,6 +139,12 @@ struct ReviewView: View {
                     Task { await send(answer) }
                 }
             }
+        }
+        .sheet(item: $whoPaid) { w in
+            WhoPaidAskSheet(ask: w, api: app.api, onPick: { answer in
+                whoPaid = nil
+                Task { await send(answer) }
+            }, onClose: { whoPaid = nil })
         }
     }
 
@@ -512,6 +520,10 @@ struct ReviewView: View {
             error = nil
             await load()
             app.changed()
+        } catch let e where e.whoPaid != nil {
+            // Nothing saved: ask who, once the answer's sheet has gone.
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            whoPaid = e.whoPaid
         } catch {
             self.error = app.handle(error)
         }
@@ -580,7 +592,7 @@ enum ReviewAnswer {
     /// PQ-03 / PQ-03c (Payback question): a purchase tile, linked through
     /// the payback mark as any other, with the server's toast ("mPg paid
     /// back $20.00 for Añejo") and Undo.
-    case payback(String, charge: String, toast: String)
+    case payback(String, charge: String, toast: String, person: String? = nil)
 
     /// What a Quick sort card asks once this answer is held for its Yes. Nil is
     /// an answer that has already happened, or that isn't one to hold.
@@ -712,8 +724,11 @@ enum ReviewAnswer {
             return try await api.post("api/transactions/\(id)/credit", ["person": person])
         case .extra(let id, let body, _):
             return try await api.post("api/transactions/\(id)/parts", body)
-        case .payback(let id, let charge, let toast):
-            let reply: MarkReply = try await api.post("api/transactions/\(id)/mark", ["case": "payback", "charge": charge])
+        case .payback(let id, let charge, let toast, let person):
+            // PQ-03b's tile says whose share; Who paid you back? says who (2026-11-16).
+            var body: [String: Any] = ["case": "payback", "charge": charge]
+            if let person = person { body["person"] = person }
+            let reply: MarkReply = try await api.post("api/transactions/\(id)/mark", body)
             return MarkReply(title: toast, detail: nil, undo: reply.undo)
         case .split(let id, let body, let label):
             // The split and its category together (finance/api.py), so the
