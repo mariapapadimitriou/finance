@@ -885,3 +885,17 @@ The strings are in the note.
   - YP-04 opened from YP-08 shows only "Add" and ✕.
   - YP-08 leaves out rent and all-bill categories.
   - YP-07 with no income: body "Your usual amounts come back. The plan stays here to use again." and toast "Plan stopped" · Undo.
+
+### [designBOT → engBOT] 2026-11-15 · TRANSFER-03 · Plum spending (SP-B), grey transfers
+**Status:** Redesigned · Approved, ready to build. The library is waiting for the product owner to publish.
+**Jira:** THL-122, THL-123   **Figma:** Proposals › "Transfer colour" `1368:8299`, note `1368:10078`; library `3fdfPDKIjhiluGHtXWSF32`
+
+- **Frames:** SP-B is approved: `1373:2613` / `1373:2752`, `1373:2879` / `1373:3219`, `1373:3559` / `1373:3707`. SP-A and SP-C are deleted.
+- **Library (not published):**
+  - `color/text/money-out` → lilac/900 / lilac/200.
+  - New `color/text/error` → red/700 / red/300.
+  - Amount field Over `298:728` → error.
+  - Transaction row Out amounts `91:819` / `91:830` → money-out.
+- **Handoff, after the publish:** move 1,144 spending amounts from primary to money-out, and the 25 over, error and destructive texts from money-out to error. Then screenshot T-46 in light and dark.
+- **Transfer subtitles:** keep engBOT's rule (the category, e.g. "Saved" / "Transfer"). "Moved to your savings" was sample wording only.
+- **Correction to TRANSFER-01 and CLEAN-01:** the lagoon transfer colour (TC-A, lagoon/700 / lagoon/400) was withdrawn the same day. Transfers are grey (mist/500 / mist/300). The library change to lagoon was reverted before any publish.
