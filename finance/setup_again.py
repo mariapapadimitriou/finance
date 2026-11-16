@@ -7,14 +7,18 @@ banks send back comes back on its own; what only she can say doesn't. So
 Start over leaves a short list of those things, shown after it and on Home
 until each is done or she hides it:
 
-    shared    Which accounts do you share?   (answered here, or "none")
+    accounts  Check your accounts            (AS-01: done when she taps
+                                              "These look right", changed or
+                                              not, or saves any account)
     income    Confirm your income and bills  (done once both are confirmed)
-    accounts  Check how each account counts  (done once she opens Accounts)
     debts     Add your debt details          (with a card or loan linked;
                                               done once she opens Debts)
 
-First-time setup asks "Which accounts do you share?" too, after linking a
-bank, so the two match.
+Account setup (2026-11-15, AS-04) made "Which accounts do you share?" and
+"Check how each account counts" one item: both asked about the same
+accounts, one setting at a time. First-time setup asks the same step (AS-01)
+after linking a bank, so the two match. "shared", the old key, still marks
+it, for a page that hasn't caught up.
 """
 
 from __future__ import annotations
@@ -25,16 +29,17 @@ from datetime import date
 KEY = "setup_again"
 
 STEPS = (
-    ("shared", "Which accounts do you share?",
-     "Mark joint accounts so only your share counts."),
+    # AS-04 (Account setup, 2026-11-15).
+    ("accounts", "Check your accounts",
+     "How each counts and who shares it"),
     ("income", "Confirm your income and bills",
      "Pearl found them again. Say which are right."),
-    ("accounts", "Check how each account counts",
-     "Nicknames, which count in your budget, and your Anchor."),
     ("debts", "Add your debt details",
      "Interest rates and minimum payments, for your cards and loans."),
 )
 KEYS = tuple(k for k, _, _ in STEPS)
+# The two account items before AS-04, both now "accounts".
+OLD_KEYS = {"shared": "accounts"}
 
 
 def _load(st) -> dict | None:
@@ -80,7 +85,7 @@ def status(st) -> dict:
     data = _load(st)
     if not data:
         return {"active": False, "steps": [], "left": 0}
-    done = set(data.get("done") or [])
+    done = {OLD_KEYS.get(k, k) for k in data.get("done") or []}
     if _income_done(st):
         done.add("income")
     owes = _has_debts(st)
@@ -93,6 +98,7 @@ def status(st) -> dict:
 
 def mark(st, step: str) -> dict:
     """One step done."""
+    step = OLD_KEYS.get(step, step)
     if step not in KEYS:
         raise ValueError("No such step.")
     data = _load(st)

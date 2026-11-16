@@ -2,7 +2,7 @@ import SwiftUI
 import UserNotifications
 
 /// Signed in, setup not finished (THL-119): Face ID, linking a bank with
-/// Plaid, joint accounts, pay and bills, and the first Allowance. A new
+/// Plaid, your accounts (AS-01), pay and bills, and the first Allowance. A new
 /// account starts at Face ID (O-04); coming back later starts at O-00.
 @MainActor
 struct SetupFlow: View {
@@ -26,7 +26,7 @@ struct SetupFlow: View {
                 case .linked: BankLinkedView(path: $path)
                 case .failed(let bank): LinkProblemView(path: $path, problem: .failed(bank))
                 case .notSupported(let bank): LinkProblemView(path: $path, problem: .notSupported(bank))
-                case .joint: JointAccountsView(path: $path)
+                case .accounts: AccountSetupView(path: $path)
                 case .payBills: PayAndBillsView(path: $path)
                 case .saving: SavingShareView(path: $path)
                 case .allowance: AllowanceView(path: $path, skipped: false)
@@ -38,12 +38,12 @@ struct SetupFlow: View {
         .environmentObject(plaid)
         #if DEBUG
         // For checking a screen against Figma without linking a bank first:
-        // launch with `-pearl-setup joint|payBills|allowance`.
+        // launch with `-pearl-setup accounts|payBills|allowance`.
         .onAppear {
             let args = ProcessInfo.processInfo.arguments
             guard let i = args.firstIndex(of: "-pearl-setup"), i + 1 < args.count else { return }
             switch args[i + 1] {
-            case "joint": path = [.joint]
+            case "accounts", "joint": path = [.accounts]
             case "payBills": path = [.payBills]
             case "saving": path = [.saving]
             case "allowance": path = [.allowance]
@@ -61,7 +61,8 @@ enum SetupRoute: Hashable {
     case linked
     case failed(String)
     case notSupported(String)
-    case joint
+    /// AS-01 Your accounts (part 3).
+    case accounts
     case payBills
     /// O-10s: how much of each paycheque to save.
     case saving
@@ -391,12 +392,12 @@ struct BankLinkedView: View {
                     Button("Link chequing") { Task { error = await openPlaid(plaid, api: app.api, path: $path) } }
                         .buttonStyle(NacreButtonStyle())
                 } else {
-                    Button("Continue") { path.append(.joint) }
+                    Button("Continue") { path.append(.accounts) }
                         .buttonStyle(NacreButtonStyle())
                 }
             } secondary: {
                 if cardOnly {
-                    Button("Continue with just my card") { path.append(.joint) }
+                    Button("Continue with just my card") { path.append(.accounts) }
                         .buttonStyle(NacreTextButtonStyle())
                 } else {
                     Button("Link another bank") { Task { error = await openPlaid(plaid, api: app.api, path: $path) } }
@@ -519,196 +520,8 @@ struct LinkProblemView: View {
     }
 }
 
-// MARK: - O-09b Any joint accounts? (O-09b2, O-09c)
-
-@MainActor
-struct JointAccountsView: View {
-    @EnvironmentObject private var app: AppModel
-    @Environment(\.dismiss) private var dismiss
-    @Binding var path: [SetupRoute]
-    /// Home's "Which accounts do you share?" after Start over (SU-01): the
-    /// same question, without setup's progress, ending back on Home.
-    var onDone: (() -> Void)? = nil
-    @State private var accounts: [AccountsOverview.Account] = []
-    @State private var editing: AccountsOverview.Account?
-    @State private var error: String?
-
-    var body: some View {
-        NacreScreen {
-            if onDone == nil { ShellProgress(part: 3, name: "Your money") }
-            Text(onDone == nil ? "Any joint accounts?" : "Which accounts do you share?")
-                .font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
-            Text("Tap one you share.").font(Nacre.body)
-            if !accounts.isEmpty {
-                GlassCard {
-                    ForEach(Array(accounts.enumerated()), id: \.element.id) { i, account in
-                        if i > 0 { RowSeparator(inset: 60) }
-                        Button { editing = account } label: {
-                            AccountLine(account: account, sub: shared(account),
-                                        trailing: AnyView(Image(systemName: "chevron.right")
-                                            .font(.system(size: 13, weight: .semibold))))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            if let error = error { Hint(text: error) }
-        } actions: {
-            BottomActions {
-                Button(onDone == nil ? "Continue" : "Done") {
-                    if let onDone = onDone {
-                        onDone()
-                        dismiss()
-                    } else {
-                        path.append(.payBills)
-                    }
-                }
-                .buttonStyle(NacreButtonStyle())
-            } secondary: {
-                // SU-02 (THL-300): saying none are shared answers the step too.
-                if let onDone = onDone, !accounts.contains(where: { $0.joint == true }) {
-                    Button("None of these are shared") {
-                        onDone()
-                        dismiss()
-                    }
-                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
-                }
-            }
-        }
-        .task { await load() }
-        .sheet(item: $editing) { account in
-            JointSheet(account: account) { await load() }
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-                .background(SheetBackground())  // REFRESH-05: the sheet surface is the page's
-        }
-    }
-
-    /// O-09b2: "Your share · 50%", and who with on the line under it.
-    private func shared(_ account: AccountsOverview.Account) -> String {
-        guard account.joint == true else { return "Just you" }
-        let people = (account.jointPeople ?? []).joined(separator: " and ")
-        let share = account.jointShare.map { "Your share · \(Int($0.rounded()))%" } ?? "Joint account"
-        return people.isEmpty ? share : "\(share)\nJoint with \(people)"
-    }
-
-    private func load() async {
-        do {
-            let overview: AccountsOverview = try await app.api.get("api/accounts/overview")
-            accounts = overview.linked
-        } catch {
-            self.error = app.handle(error)
-        }
-    }
-}
-
-/// O-09c: who it's shared with, and her share.
-@MainActor
-struct JointSheet: View {
-    @EnvironmentObject private var app: AppModel
-    @Environment(\.dismiss) private var dismiss
-    let account: AccountsOverview.Account
-    let saved: () async -> Void
-    /// O-09cr (JOINT-A): who it's shared with, picked, not typed.
-    @State private var names: [String] = []
-    @State private var picking = false
-    @State private var share = 50
-    @State private var error: String?
-    @State private var busy = false
-
-    var body: some View {
-        VStack(spacing: 0) {
-            // Scrolls, so the keyboard shortens the sheet instead of squeezing
-            // its rows into each other.
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack {
-                        Spacer()
-                        Text("Joint account").font(Nacre.headline).accessibilityAddTraits(.isHeader)
-                        Spacer()
-                    }
-                    .overlay(alignment: .trailing) { CloseButton { dismiss() } }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(account.name).font(Nacre.title2)
-                        Text(account.mask.map { "••\($0)" } ?? "").font(Nacre.subheadline)
-                    }
-                    VStack(spacing: 0) {
-                        Button { picking = true } label: {
-                            HStack(spacing: 12) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Shared with").font(Nacre.body).foregroundColor(Pearl.ink)
-                                    Text(names.isEmpty ? "Pick who" : names.joined(separator: ", "))
-                                        .font(Nacre.subheadline).foregroundColor(Pearl.muted)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                                Spacer(minLength: 8)
-                                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(Pearl.muted).accessibilityHidden(true)
-                            }
-                            .padding(.horizontal, 16).frame(minHeight: 56).contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityElement(children: .combine)
-                        .accessibilityHint("Opens the people you’ve split with and your contacts")
-                        RowSeparator()
-                        // The percentage is its own text and the stepper has no
-                        // label, so the − / + sits on the row's line.
-                        // O-09c: "Your share   50%", typed.
-                        FieldRow(label: "Your share", text: Binding(get: { "\(share)%" }, set: { v in
-                            if let n = Int(v.filter(\.isNumber)), (1...99).contains(n) { share = n }
-                        }), prompt: "50%")
-                        .keyboardType(.numberPad)
-                    }
-                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Pearl.card))
-                    // O-09cr (REFRESH-03).
-                    Text("Only you see this. Nothing is sent.")
-                        .font(Nacre.footnote)
-                    if let error = error { Hint(text: error) }
-                }
-                .padding(16)
-            }
-            .scrollDismissesKeyboard(.interactively)
-            VStack(spacing: 6) {
-                Button("Save") { Task { await save(joint: true) } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
-                Button("Not a joint account") { Task { await save(joint: false) } }
-                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
-            }
-            .padding(.horizontal, 16).padding(.bottom, 8)
-        }
-        .foregroundColor(Pearl.ink)
-        .onAppear {
-            names = account.jointPeople ?? []
-            share = Int((account.jointShare ?? 50).rounded())
-        }
-        .sheet(isPresented: $picking) {
-            // AM-08p from setup: the same picker. Nothing saves until Save.
-            PeoplePicker(api: app.api, overline: "\(account.name) · Joint", title: "Shared with",
-                         sub: "Up to six. Only you see this.", already: [], limit: 6,
-                         onClose: { picking = false }) { picked in
-                names = Array((names + picked.filter { !names.contains($0) }).prefix(6))
-                picking = false
-            }
-        }
-    }
-
-    private func save(joint: Bool) async {
-        busy = true
-        defer { busy = false }
-        do {
-            // "Not a joint account" sends no people.
-            var body: [String: Any] = ["joint_share": joint ? share as Any : NSNull()]
-            if joint && names != (account.jointPeople ?? []) {
-                body["joint_people"] = names
-            }
-            let _: OK = try await app.api.put("api/accounts/\(account.id)/settings", body)
-            await saved()
-            dismiss()
-        } catch {
-            self.error = app.handle(error)
-        }
-    }
-}
+// AS-01 / AS-02 Account setup (part 3) replaced O-09b, O-09b2 and O-09c:
+// AccountSetupViews.swift.
 
 /// The round × that closes a sheet.
 struct CloseButton: View {
