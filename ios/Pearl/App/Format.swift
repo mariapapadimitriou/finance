@@ -56,6 +56,16 @@ enum Format {
             : shortDay.string(from: a) + " \u{2013} " + shortDay.string(from: b)
     }
 
+    /// What VoiceOver reads for `span`: "March 4 to 9", "October 29 to
+    /// November 2", "March 4" (TR-17, TR-18; note 1329:69536).
+    static func spokenSpan(_ start: String, _ end: String) -> String {
+        guard let a = date(start), let b = date(end) else { return start }
+        if start.prefix(10) == end.prefix(10) { return monthDayFormat.string(from: a) }
+        let sameMonth = start.prefix(7) == end.prefix(7)
+        return monthDayFormat.string(from: a) + " to "
+            + (sameMonth ? dayOnly.string(from: b) : monthDayFormat.string(from: b))
+    }
+
     private static let dayOnly = formatter("d")
 
     /// "2026-03-04" moved by whole days ("2026-03-01" for −3): TR-11's window.

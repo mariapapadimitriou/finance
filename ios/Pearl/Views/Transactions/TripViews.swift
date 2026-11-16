@@ -20,6 +20,9 @@ import SwiftUI
 // TR-11  Add transactions · TR-12 Remove some… (TransactionsView with a TripPick)
 // TR-13  Not a trip? (NotATripSheet)
 // TR-14  Tap TR-01's card: its rows, AI-09's plain list (QuickSortView)
+// TR-17  The Calendar's Trips card (CalendarCard; its rows are TripCardRow)
+// TR-17e The Trips card with no trips yet (CalendarCard)
+// TR-18  All trips (AllTripsPage)
 
 /// GET /api/trips/<id>: the trip, and its rows newest first, each with its
 /// billing currency (TR-02m).
@@ -474,5 +477,171 @@ struct NameTripSheet: View {
                 throw e
             }
         }
+    }
+}
+
+// MARK: - TR-17 / TR-18
+
+/// One row of the Calendar's Trips card (TR-17 `1362:8403` / `1362:8698`):
+/// "Mar 4–9   Trip to Montréal   $1,284.60". The dates sit in an 84 pt
+/// column that wraps ("Oct 29 –" over "Nov 2"); at accessibility text
+/// sizes the dates go under the name and the total under them, so the row
+/// grows and nothing is cut (note 1329:69536). VoiceOver reads it as one
+/// element: "Trip to Montréal, March 4 to 9, $1,284.60".
+struct TripCardRow: View {
+    @Environment(\.dynamicTypeSize) private var textSize
+    let name: String
+    let start: String
+    let end: String
+    let totals: [MoneyTotal]
+
+    var body: some View {
+        Group {
+            if textSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name).foregroundColor(Pearl.ink)
+                    Text(Format.span(start, end)).foregroundColor(Pearl.muted)
+                    // A trip's total is a total: no minus (TR-02m; note 1329:69536, Wording).
+                    Text(totals.shown).foregroundColor(Pearl.ink).monospacedDigit()
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack(spacing: 12) {
+                    Text(Format.span(start, end)).foregroundColor(Pearl.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(width: 84, alignment: .leading)
+                    Text(name).foregroundColor(Pearl.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(totals.shown).foregroundColor(Pearl.ink).monospacedDigit().pearlAmountFit()
+                }
+            }
+        }
+        .font(Nacre.body)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(name), \(Format.spokenSpan(start, end)), \(totals.shown)")
+    }
+}
+
+/// TR-18 (`1362:9681` / `1362:9848`): All trips, from "See all trips" on
+/// the Calendar's Trips card. Grouped by year ("2026" over its card),
+/// newest first; each row "Trip to Lisbon" over "Oct 29 – Nov 2 · 31" with
+/// its total on the right, opening its page (TR-02). GET /api/trips.
+@MainActor
+struct AllTripsPage: View {
+    @EnvironmentObject private var app: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var trips: [Trip]?
+    @State private var error: String?
+
+    var body: some View {
+        ScrollView {
+            if let trips = trips {
+                content(trips)
+                    .padding(.horizontal, Pearl.gutter).padding(.top, 8).padding(.bottom, 32)
+            } else {
+                LoadState(error: error) { Task { await load() } }
+                    .padding(.top, 40)
+            }
+        }
+        .nacreScreen()
+        .navigationTitle("All trips")
+        .navigationBarTitleDisplayMode(.inline)
+        .reloads { await load() }
+    }
+
+    /// The years, newest first, each with its trips newest first.
+    private func years(_ trips: [Trip]) -> [(year: String, trips: [Trip])] {
+        let sorted = trips.sorted { ($0.start, $0.end) > ($1.start, $1.end) }
+        var out: [(year: String, trips: [Trip])] = []
+        for t in sorted {
+            let y = String(t.start.prefix(4))
+            if out.last?.year == y { out[out.count - 1].trips.append(t) } else { out.append((y, [t])) }
+        }
+        return out
+    }
+
+    private func content(_ trips: [Trip]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(years(trips), id: \.year) { group in
+                Text(group.year).font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    .accessibilityAddTraits(.isHeader)
+                GlassCard {
+                    ForEach(Array(group.trips.enumerated()), id: \.element.id) { i, trip in
+                        if i > 0 { RowSeparator(inset: 68) }
+                        NavigationLink { TripPage(id: trip.id) } label: { AllTripsRow(trip: trip) }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Opens the trip")
+                    }
+                }
+            }
+        }
+    }
+
+    private func load() async {
+        do {
+            let reply: Reply = try await app.api.get("api/trips")
+            // No frame for an empty All trips: it opens only from a card that
+            // has trips, so if the last one has gone, go back to that card.
+            if reply.trips.isEmpty && trips != nil { dismiss(); return }
+            trips = reply.trips
+            error = nil
+        } catch {
+            self.error = app.handle(error)
+        }
+    }
+
+    private struct Reply: Decodable {
+        let trips: [Trip]
+
+        init(from decoder: Decoder) throws {
+            enum Keys: String, CodingKey { case trips }
+            let c = try decoder.container(keyedBy: Keys.self)
+            trips = (try? c.decode([Lenient<Trip>].self, forKey: .trips))?.compactMap { $0.value } ?? []
+        }
+    }
+}
+
+/// A TR-18 row: the trip's two-letter avatar ("LI", "QC"), "Trip to Lisbon"
+/// over "Oct 29 – Nov 2 · 31", the total on the right. At accessibility
+/// text sizes the total goes under the dates, so nothing is cut.
+private struct AllTripsRow: View {
+    @Environment(\.dynamicTypeSize) private var textSize
+    let trip: Trip
+
+    /// The place for the avatar: Pearl's, or the name after "Trip to".
+    private var place: String {
+        if let p = trip.place, !p.isEmpty { return p }
+        return trip.name.hasPrefix("Trip to ") ? String(trip.name.dropFirst(8)) : trip.name
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Initials(name: place, size: 40, trip: true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(trip.name).font(Nacre.body).foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("\(Format.span(trip.start, trip.end)) · \(trip.count)")
+                    .font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                if textSize.isAccessibilitySize {
+                    Text(trip.totals.shown).font(Nacre.headline).foregroundColor(Pearl.ink).monospacedDigit()
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if !textSize.isAccessibilitySize {
+                Text(trip.totals.shown).font(Nacre.headline).foregroundColor(Pearl.ink).monospacedDigit()
+                    .pearlAmountFit()
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 11)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(trip.name), \(Format.spokenSpan(trip.start, trip.end)), "
+            + "\(trip.count) transaction\(trip.count == 1 ? "" : "s"), \(trip.totals.shown)")
     }
 }

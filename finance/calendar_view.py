@@ -256,6 +256,24 @@ def trip_spans(st, first: str, last: str, month: str) -> list[dict]:
     return out
 
 
+def trip_card(st, transactions: list[Transaction], month: str, limit: int = 3) -> dict:
+    """TR-17: the Calendar's one Trips card. Up to `limit` trips: the ones
+    that touch this month first (earliest first), then the most recent
+    others (newest first). `total` is how many trips there are at all, so
+    the card can show TR-17e and the legend can drop the band's line."""
+    from . import trips
+    every = list(trips.all_trips(st).values())
+    here = sorted((t for t in every if t["start"][:7] <= month <= t["end"][:7]), key=lambda t: t["start"])
+    seen = {t["id"] for t in here}
+    rest = sorted((t for t in every if t["id"] not in seen), key=lambda t: t["start"], reverse=True)
+    rows = []
+    for t in (here + rest)[:limit]:
+        s = trips.summary(st, t, transactions)
+        rows.append({"id": t["id"], "name": t["name"], "start": t["start"], "end": t["end"],
+                     "count": s["count"], "totals": s["totals"], "this_month": t["id"] in seen})
+    return {"trips": rows, "total": len(every)}
+
+
 def trips_on(st, iso: str) -> list[dict]:
     """TR-10b: the trips a day is part of, for the row that starts its list."""
     from . import trips
@@ -307,6 +325,7 @@ def month_view(st, transactions: list[Transaction], today: date, month: str,
     every = sorted_ranges.listed(st, transactions)
     return {
         "trips": trip_spans(st, grid_start.isoformat(), grid_end.isoformat(), month),
+        "trip_card": trip_card(st, transactions, month),
         "ranges": every,
         "bands": [r for r in every
                   if r["first"] <= grid_end.isoformat() and r["last"] >= grid_start.isoformat()],
