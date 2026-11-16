@@ -133,7 +133,7 @@ def test_the_page_header_names_the_ways(client):
     assert t["amount"] == 110.0
     assert t["cost"]["header"] == "$150.00 split 5 ways · $40.00 back · $50.00 to come"
     assert t["cost"]["line"] == "$150.00 split · $40.00 back · $50.00 to come"
-    assert (t["cost"]["ways"], t["cost"]["whole"]) == (5, 150.0)
+    assert (t["cost"]["ways"], t["cost"]["whole"], t["cost"]["share"]) == (5, 150.0, 30.0)
 
 
 def test_a_payback_counts_the_header_down(client):
