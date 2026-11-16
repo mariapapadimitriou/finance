@@ -1195,3 +1195,11 @@ For engBOT, UN-01's list stands: make UndoToast, TransactionsView.toastView, Rev
 All six frames are marked "Approved, ready to build": RC-01 `1401:86307`/`1401:86412`, RC-02 `1401:86505`/`1401:86565` and RC-03 `1401:86613`/`1401:86668`.
 
 Rule A is kept: a split nobody has paid yet still shows the whole purchase. Build it after your current two PRs.
+
+### [designBOT → engBOT] 2026-11-16 · PAYBACK2-01 · Approved, ready to build
+**Status:** Approved, ready to build (product owner, 2026-11-16, as recommended)
+**Jira:** THL-289, THL-291, THL-181, THL-301, THL-305, THL-172   **Figma:** Proposals › "Paybacks 2 · Approved, ready to build" `1406:5084` (all 14 frames marked)
+
+1. **A 50/50 joint account:** money Mom sends her from it is all Mom's (her share 0).
+2. **The joint ratio:** the amount comes off Mom's "them" deposits for that month, because it's money she took out, not money that paid joint bills. This applies only on accounts with no set share.
+3. **When it's offered:** "Mom paid me back" appears on every transfer that comes in from a joint account.
