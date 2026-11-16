@@ -260,3 +260,33 @@ def test_the_calendar_gives_each_trips_days_per_month(client):
     day = client.get("/api/calendar/day/2026-03-31").get_json()["trips"]
     assert [t["name"] for t in day] == ["Easter"]
     assert client.get("/api/calendar/day/2026-03-28").get_json()["trips"] == []
+
+
+def test_the_calendar_trips_card_puts_this_month_first(client):
+    """TR-17: up to three trips, this month's first (earliest first), then the
+    most recent others; `total` says whether there are any (TR-17e)."""
+    home(client)
+    assert client.get("/api/calendar?month=2026-03").get_json()["trip_card"] == {"trips": [], "total": 0}
+    made = {}
+    for name, a, b in [("Halifax", "2025-08-08", "2025-08-12"), ("Lisbon", "2025-10-29", "2025-11-02"),
+                       ("Québec City", "2026-03-13", "2026-03-15"), ("Montréal", "2026-03-04", "2026-03-09"),
+                       ("Ottawa", "2025-05-02", "2025-05-03")]:
+        rows = add(client, tx(f"{name.upper()} HOTEL", 100.0, a), tx(f"{name.upper()} CAFE", 12.5, b))
+        ids = [rows[f"{name.upper()} HOTEL"].fingerprint, rows[f"{name.upper()} CAFE"].fingerprint]
+        made[name] = client.post("/api/trips", json={"ids": ids, "name": f"Trip to {name}"}).get_json()["trip"]
+    card = client.get("/api/calendar?month=2026-03").get_json()["trip_card"]
+    assert [t["name"] for t in card["trips"]] == ["Trip to Montréal", "Trip to Québec City", "Trip to Lisbon"]
+    assert [t["this_month"] for t in card["trips"]] == [True, True, False]
+    assert card["total"] == 5
+    first = card["trips"][0]
+    assert first["start"] == "2026-03-04" and first["end"] == "2026-03-09" and first["count"] == 2
+    assert first["totals"] == [{"currency": "CAD", "amount": 112.5}]
+    # A month with no trip of its own: the most recent, newest first.
+    june = client.get("/api/calendar?month=2026-06").get_json()["trip_card"]["trips"]
+    assert [t["name"] for t in june] == ["Trip to Québec City", "Trip to Montréal", "Trip to Lisbon"]
+    assert not any(t["this_month"] for t in june)
+    # A trip across two months is this month's in both.
+    nov = client.get("/api/calendar?month=2025-11").get_json()["trip_card"]["trips"]
+    assert nov[0]["name"] == "Trip to Lisbon" and nov[0]["this_month"]
+    oct_ = client.get("/api/calendar?month=2025-10").get_json()["trip_card"]["trips"]
+    assert oct_[0]["name"] == "Trip to Lisbon" and oct_[0]["this_month"]
