@@ -9,7 +9,9 @@
 * GET    /api/split/apps                          apps she has named before (SPLIT-14).
 * GET    /api/transactions/<id>/cash-matches      cash a deposit could be holding.
 * POST   /api/transactions/<id>/parts             {parts, later, replace?, split?}: split a
-                                                  deposit into parts.
+                                                  deposit into parts. A payback part with
+                                                  `let_go` lets the rest of that person's
+                                                  share go once it's linked (PB-13b).
 * POST   /api/transactions/<id>/parts/preview     {parts}: what saving them changes (S-12 v2).
 * DELETE /api/transactions/<id>/parts             unlink every part, on the deposit or a part.
 * GET    /api/transactions/<id>/owing             what the sender still owes, for a deposit's
@@ -476,6 +478,11 @@ def save_parts(st, t, body: dict):
     held, problem = _held_split(st, body.get("split"))
     if problem:
         return jsonify({"error": problem}), 400
+    # PB-13b (Paid back, approved 2026-11-15): "All of it" when this money is
+    # less than their share; Let it go marks them paid in full once it's linked.
+    letting, problem = _let_go_asks(st, body.get("parts"))
+    if problem:
+        return jsonify({"error": problem}), 400
     was = None
     # SPLIT-22b (S-35c, extra to S-11 v2): a payback already linked becomes
     # parts, so its Undo links it back as it was, not just unlinked.
@@ -502,8 +509,15 @@ def save_parts(st, t, body: dict):
             from .marks import undo_marks
             undo_marks(st, {"splits": {held[0].fingerprint: was}})
         return jsonify({"error": str(exc)}), 400
+    let_marks, let_total = _let_go_after(st, letting)
     core._reclassify(st)
     undo: dict = {"parts": txn_id}
+    if let_marks:
+        # One Undo: the parts go, and what they owed is theirs again.
+        undo["marks"] = let_marks
+    person_title = None if (kept or held or out.get("rest")) else _paid_back_title(body.get("parts"), let_total)
+    if person_title:
+        out["title"] = person_title
     if kept:
         # The toast counts her answer, not the credit it kept (S-11xm).
         n = len(out["parts"]) - kept - (1 if out["rest"] else 0)
@@ -511,7 +525,8 @@ def save_parts(st, t, body: dict):
                         if out["rest"] else f"Sorted into {n} part{'' if n == 1 else 's'}.")
     if held:
         # One Undo puts the parts, the link and the split back (S-12d).
-        undo["marks"] = {"splits": {held[0].fingerprint: was}}
+        marks = undo.get("marks") or {}
+        undo["marks"] = {**marks, "splits": {**(marks.get("splits") or {}), held[0].fingerprint: was}}
         out["title"] = f"{held[0].merchant} split and ${round(-t.amount):,} sorted"
     if linked_was:
         undo["marks"] = {**(undo.get("marks") or {}), **linked_was}
@@ -519,6 +534,79 @@ def save_parts(st, t, body: dict):
         # SPLIT-C decision 4: Undo closes the split it opened again.
         undo["marks"] = {**(undo.get("marks") or {}), "split_closed": out.pop("reopened")}
     return jsonify({"ok": True, **out, "undo": undo})
+
+
+def _let_go_asks(st, parts) -> tuple[list[tuple[str, str]], str | None]:
+    """PB-13b: the payback parts that say `let_go`, as (purchase, person on
+    its split), checked before anything is saved. A share can only be let go
+    on a split with amounts, by someone on it."""
+    out: list[tuple[str, str]] = []
+    if not isinstance(parts, list):
+        return out, None
+    splits = st.splits()
+    for p in parts:
+        if not isinstance(p, dict) or not p.get("let_go"):
+            continue
+        if p.get("kind") != "payback":
+            return [], "Only a payback can let the rest go."
+        cid = str(p.get("charge") or "")
+        split = splits.get(cid)
+        if not split or split.get("mode") == sp.UNSURE:
+            return [], "Pick someone on this split."
+        who = _person(split, " ".join(str(p.get("person") or "").split()))
+        if who is None:
+            return [], "Pick someone on this split."
+        if (cid, who["name"]) not in out:
+            out.append((cid, who["name"]))
+    return out, None
+
+
+def _let_go_after(st, asks: list[tuple[str, str]]) -> tuple[dict, float]:
+    """PB-13b Let it go, once the payback is linked: what they still owe
+    becomes hers, as S-08's Let it go does (their part shrinks to what
+    they've paid). Returns the Undo's marks (the split as it was, the let-go
+    cleared) and how much was let go."""
+    marks: dict = {}
+    total = 0
+    for cid, name in asks:
+        t = st.get_transaction(cid)
+        split = st.splits().get(cid)
+        if t is None or split is None:
+            continue
+        p = _person(split, name)
+        status = next((s for s in sp.people_status(t, split, st.all_transactions(), st.payback_people())
+                       if s["name"] == name), None)
+        if p is None or status is None or status["owes"] < 0.005 or p.get("let_go"):
+            continue
+        was = {"split": st.splits().get(cid), "share": t.my_share if t.share_set else None}
+        marks.setdefault("splits", {}).setdefault(cid, was)
+        marks.setdefault("let_go", {}).setdefault(cid, {})[name] = None
+        st.set_let_go(cid, name, p["amount"], _today().isoformat())
+        p["amount"] = round(status["paid"], 2)
+        _reshare(st, t, split)
+        total += _cents(status["owes"])
+    return marks, total / 100
+
+
+def _paid_back_title(parts, let_go: float) -> str | None:
+    """PB-14's toast, "Sam paid back $15.00", or PB-13b's "Sam paid in full ·
+    $45.00 let go", when every part pays back one person's share. None
+    keeps the parts' own title."""
+    if not isinstance(parts, list) or not parts:
+        return None
+    if any(not isinstance(p, dict) or p.get("kind") != "payback" or not str(p.get("person") or "").strip()
+           for p in parts):
+        return None
+    names = [" ".join(str(p["person"]).split()) for p in parts]
+    if any(not sp.same_person(n, names[0]) for n in names):
+        return None
+    if let_go >= 0.005:
+        return f"{names[0]} paid in full · ${let_go:,.2f} let go"
+    try:
+        paid = sum(_cents(p.get("amount")) for p in parts) / 100
+    except (TypeError, ValueError):
+        return None
+    return f"{names[0]} paid back ${paid:,.2f}"
 
 
 def extra_parts(st, t, given) -> tuple[list | None, str | None]:
