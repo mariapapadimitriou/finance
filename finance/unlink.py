@@ -85,6 +85,22 @@ def inflow_link(st, charge: Transaction, x: Transaction, who: str | None, by_id:
     out = _inflow_link(st, charge, x, who, by_id, kinds, stored_parts)
     face = x.merchant if out["kind"] == "reimbursement" else (who or sp.sender_name(x) or x.merchant)
     out["sheet"]["face"] = face or "Payment"
+    # PB-42 (Paybacks & undo): Unlink… says what stays: "Sam will owe you
+    # $26.65 again on Pizza Nova. Pai Northern Thai stays paid." Every other
+    # purchase the same payment pays back, whole or in parts; and their share.
+    parent = (x.raw or {}).get("part_of")
+    stays = list(out.get("others") or [])
+    for q in stored_parts.get(parent or "") or []:
+        cid = (q.get("detail") or {}).get("charge")
+        if q["part_id"] != x.fingerprint and q["kind"] in ("payback", "refund", "reimbursement") and cid \
+                and cid != charge.fingerprint:
+            name = by_id[cid].merchant if cid in by_id else "another purchase"
+            if name not in stays:
+                stays.append(name)
+    out["stays"] = stays
+    on = (st.splits().get(charge.fingerprint) or {}).get("people") or []
+    share = next((q.get("amount") for q in on if who and q.get("name") == who), None)
+    out["share"] = round(float(share), 2) if share is not None else None
     return out
 
 

@@ -356,11 +356,16 @@ def listed(st, deposit_id: str) -> list[dict]:
     """A deposit's parts as the detail shows them: kind, amount, and what it
     pays back or who it's for."""
     by_id = {t.fingerprint: t for t in st.all_transactions()}
+    splits = st.splits()
     out = []
     for p in st.parts().get(deposit_id) or []:
         d = p["detail"]
         charge = by_id.get(d.get("charge") or "")
         row = by_id.get(p["part_id"])
+        # PB-41: "Sam’s share · all of it": their share of the split it pays back.
+        on = (splits.get(charge.fingerprint) or {}).get("people") or [] if charge else []
+        share = next((q.get("amount") for q in on if p["kind"] == "payback" and d.get("person")
+                      and q.get("name") == d.get("person")), None)
         out.append({"id": p["part_id"], "kind": p["kind"], "amount": p["amount"],
                     "person": d.get("person"), "income_kind": d.get("income_kind"),
                     "category": (row.category if row else d.get("category")),
@@ -369,7 +374,8 @@ def listed(st, deposit_id: str) -> list[dict]:
                                 "category": charge.category} if charge else None),
                     # S-10e: a cash part goes back with the same cash (SPLIT-03).
                     "cash_ids": d.get("cash_ids") or [],
-                    "sorted": not (row is not None and row.excluded == REST)})
+                    "sorted": not (row is not None and row.excluded == REST),
+                    "share": round(float(share), 2) if share is not None else None})
     return out
 
 
