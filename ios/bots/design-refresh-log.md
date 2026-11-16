@@ -1140,3 +1140,31 @@ Product owner decisions:
 - Not-counted accounts from one bank collapse into one row.
 - The groups are Everyday, Savings & borrowing and Not in your budget.
 - The library Account row stays as it is for now, so no publish is needed. Build these rows like AM-01's rows, with the library Status pill and the Category icons.
+
+### [designBOT → engBOT] 2026-11-16 · POLISH-02 · Is mPg paying you back?
+**Status:** Redesigned · Awaiting product owner
+**Jira:** THL-289, THL-291, THL-181, THL-231, THL-232, THL-301   **Figma:** Proposals › "Payback question · Awaiting product owner" `1418:88290`
+
+The product owner: "This screen is also very bland and doesn't look finished." It was item 6 on POLISH-01's audit.
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| Before | `1418:88291` | The phone screenshot |
+| PQ-03 | `1418:88292` / `1418:88584` | Why Pearl is asking (amount and timing); the likely purchase as a dashed tile showing how $20.00 compares; Something else; Not a payback; a tap answers |
+| PQ-03b | `1418:88874` / `1418:89179` | mPg is on the split and part-pays it ("$20.00 of mPg's $30.79 · $10.79 still to come"), with a second likely purchase |
+| PQ-03c | `1419:89682` / `1419:89834` | After a tap: the card leaves Needs a look; ink toast "mPg paid back $20.00 for Añejo" with Undo |
+| PQ-03p | `1419:89482` / `1419:89582` | The deposit page: a dashed question card in place of the grey "Not sorted yet" bar; "Name them" under the sender |
+
+Build notes:
+- **The reason** is the one review.py already writes (split, message or share-of-charge). Show it as a full sentence, plus a line saying what Yes does.
+- **Candidates:** show up to three, best first. Only the best is dashed.
+- **Short card names:** use the AS-01 v2 rule, so "Amex Cobalt".
+- **Something else** opens PB-22. **Not a payback** goes on to T-08.
+- **Name them** opens the existing T-14 / S-35c Who sent this? sheet.
+- **Answers apply on tap,** with the ink toast and Undo. AnswerSheet `.payback` currently uses Continue; this replaces it.
+
+### [designBOT → engBOT] 2026-11-16 · POLISH-02 · Approved, ready to build
+**Status:** Approved, ready to build (product owner, 2026-11-16)
+**Jira:** THL-289, THL-291, THL-181, THL-231, THL-232, THL-301   **Figma:** Proposals › "Payback question · Approved, ready to build" `1418:88290`, note `1419:89986`
+
+The frames are PQ-03, PQ-03b, PQ-03c and PQ-03p, in light and dark. Build them as described in the POLISH-02 entry above.
