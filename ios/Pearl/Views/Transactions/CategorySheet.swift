@@ -109,7 +109,7 @@ struct CategorySheet: View {
     /// Every answer on one scroll: the Always switch, the categories, then Not spending.
     private var onePage: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: title) { dismiss() }
+            SheetTitle(title: title) { dismiss() }.sheetPart()
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     header
@@ -156,10 +156,12 @@ struct CategorySheet: View {
                     if let extras = extras { extras }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 16)
+                .sheetPart()
             }
         }
         .background(SheetBackground())
-        .presentationDetents([.large])
+        // POLISH-01 audit 1: sized to what it shows.
+        .fitsContent()
         .presentationDragIndicator(.visible)
         .task { if available.isEmpty { await app.loadCategories() } }
     }

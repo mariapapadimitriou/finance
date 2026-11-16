@@ -47,8 +47,6 @@ struct AnswerSheet: View {
     @State private var step: Step
     @State private var choice: String?
     @State private var text = ""
-    /// T-13: remember the joint answer for every deposit from them.
-    @State private var rememberAll = true
     @State private var charges: [BriefTransaction] = []
     /// For a category picked as part of another answer (a purchase, a
     /// recurring payment): what to do with it.
@@ -68,8 +66,6 @@ struct AnswerSheet: View {
     /// T-08 / T-12: which side of money in is showing.
     @State private var incomeSide = true
     @State private var intoChoice: String?
-    /// Her confirmed pay, for T-31's hint.
-    @State private var pays: [IncomeBills.Pay] = []
     /// The transaction in full, for the options.
     @State private var full: Transaction?
     /// Whether a rule for this name could match the right rows (not "Interac e-Transfer").
@@ -106,6 +102,16 @@ struct AnswerSheet: View {
     @State private var regularBill = false
     @State private var billing: BillStart?
     @State private var pending: (() -> Void)?
+    /// PQ-01 / PQ-02: the deposits from this payer, and Pearl's guess at how often.
+    @State private var deposits: Deposits?
+
+    struct Deposits: Decodable {
+        let dates: [String]
+        let count: Int
+        let first: String?
+        let cadence: String?
+        let next: String?
+    }
     /// T-08k (SPLIT-18): the kind being saved from this page, and what went wrong.
     @State private var savingKind: String?
     @State private var kindError: String?
@@ -211,6 +217,10 @@ struct AnswerSheet: View {
                 }
             } else if step == .guess {
                 guessSheet
+            } else if step == .recurring || step == .joint || step == .cadence {
+                // RQ-01, PQ-01, PQ-02 (POLISH-01): why Pearl asks, the
+                // payments so far, and tiles that answer at once.
+                tilesSheet
             } else {
                 choiceSheet
             }
@@ -470,11 +480,13 @@ struct AnswerSheet: View {
                 Button("Just this one") { yes(remember: false) }
                     .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
             }
-            Spacer(minLength: 0)
         }
+        .padding(.bottom, 8)
+        .sheetPart()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(SheetBackground())
-        .presentationDetents(ask.kind == .duplicate ? [.large] : [.height(320)])
+        // POLISH-01: sized to what it shows (Same purchase? was .large).
+        .fitsContent()
     }
 
     /// "CO  Costco · Groceries · Nov 9 · TD Visa ••9021   −$142.60".
@@ -537,7 +549,7 @@ struct AnswerSheet: View {
 
     private var intoSheet: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: "What was this?") { dismiss() }
+            SheetTitle(title: "What was this?") { dismiss() }.sheetPart()
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     QuestionHeader(name: who, amount: amountText, tone: tone, sub: ask.evidence)
@@ -556,10 +568,11 @@ struct AnswerSheet: View {
                     CaseGrid(cases: CaseTile.notIncome, chosen: answer(income: false))
                 }
                 .padding(.horizontal, 16).padding(.bottom, 12)
+                .sheetPart()
             }
         }
         .background(SheetBackground())
-        .presentationDetents([.large])
+        .fitsContent()
     }
 
     /// A tile answers at once.
@@ -655,6 +668,207 @@ struct AnswerSheet: View {
         }
     }
 
+    // MARK: RQ-01, PQ-01, PQ-02: tiles that answer at once (POLISH-01)
+
+    private var tilesSheet: some View {
+        VStack(spacing: 0) {
+            SheetTitle(title: title) { dismiss() }.sheetPart()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    // RQ-01: the amount and the account only; the schedule is in the card.
+                    QuestionHeader(name: who, amount: amountText, tone: tone,
+                                   sub: t.accountName ?? (step == .joint ? "Joint" : nil))
+                    switch step {
+                    case .recurring: recurringTiles
+                    case .joint: jointTiles
+                    default: cadenceTiles
+                    }
+                }
+                .padding(.horizontal, 16).padding(.bottom, 12)
+                .sheetPart()
+            }
+        }
+        .background(SheetBackground())
+        .fitsContent()
+        .task(id: step) {
+            guard step == .joint || step == .cadence, deposits == nil else { return }
+            deposits = try? await api.get("api/transactions/\(t.id)/deposits")
+        }
+    }
+
+    /// RQ-01 (1389:23274, dark 1389:23646; THL-292, THL-295, THL-297).
+    @ViewBuilder private var recurringTiles: some View {
+        let s = ask.item.series
+        QuestionCaption(text: "Why Pearl is asking")
+        WhyCard(sentence: recurringSentence, dates: s?.dates ?? [], amount: s?.amount ?? abs(t.amount),
+                ringed: String(t.date.prefix(10)),
+                footer: s?.next.map { "Next one around \(Format.weekdayDay($0))" })
+        QuestionCaption(text: "Yes, it’s…")
+        AnswerGrid {
+            AnswerTile(title: "Rent", line: "Spending on rent", symbol: "house") { recurring("rent", "Rent") }
+            AnswerTile(title: "Into savings", line: "Counts as saved", symbol: "lifepreserver") {
+                recurring("saved", "Into savings")
+            }
+            AnswerTile(title: "My other account", line: "Doesn’t count", symbol: "arrow.left.arrow.right") {
+                recurring("moved", "My other account")
+            }
+            // Opens the category step, as before.
+            AnswerTile(title: "Something I pay for", line: "Pick a category next", symbol: "bag") {
+                then = .recurring
+                go(.category)
+            }
+        }
+        // THL-292: each one is asked on its own.
+        AnswerRow(symbol: "person.crop.circle.badge.xmark", title: "No, it isn’t regular",
+                  line: "Ask me about each one on its own") { onAnswer(.dismiss(ask.item.key)) }
+        QuestionFooter(text: "One answer sorts \(seriesAll) and the ones to come. Change it any time in Profile › Recurring transfers.")
+    }
+
+    /// "all 9", or "both" for two.
+    private var seriesAll: String {
+        let n = ask.item.series?.count ?? 0
+        return n == 2 ? "both" : n > 2 ? "all \(n)" : "it"
+    }
+
+    /// RQ-01b (1389:24086): "Rent · all 9 sorted, and the ones to come", with Undo.
+    private func recurring(_ kind: String?, _ label: String, category: String? = nil) {
+        onAnswer(.recurring(key: ask.item.key, kind: kind, category: category,
+                            toast: "\(label) · \(seriesAll) sorted, and the ones to come"))
+    }
+
+    /// "The same $374.16 left TD Chequing around the 2nd, every month since March."
+    private var recurringSentence: String {
+        let s = ask.item.series
+        let money = Format.amount(s?.amount ?? abs(t.amount))
+        let account = (t.accountName ?? "").components(separatedBy: " ••").first.flatMap { $0.isEmpty ? nil : $0 }
+        let left = "The same \(money) left \(account ?? "your account")"
+        let since = s?.first.map { " since \(Self.sinceMonth($0))" } ?? ""
+        switch s?.cadence {
+        case "monthly":
+            let day = Format.localDay(s?.dates?.last ?? t.date).map { Calendar.current.component(.day, from: $0) }
+            return "\(left)\(day.map { " around the \(ordinal($0))," } ?? "") every month\(since)."
+        case "payday":
+            return "\(left) every payday\(since)."
+        default:
+            return "\(left)\(s?.when.map { " \($0)," } ?? "")\(since)."
+        }
+    }
+
+    /// "March", or "March 2025" for one more than a year back.
+    static func sinceMonth(_ iso: String) -> String {
+        guard let d = Format.localDay(iso) else { return iso }
+        let f = DateFormatter()
+        let thisYear = Calendar.current.component(.year, from: Date()) == Calendar.current.component(.year, from: d)
+        f.dateFormat = thisYear ? "MMMM" : "MMMM yyyy"
+        return f.string(from: d)
+    }
+
+    /// PQ-01 (1393:83919, dark 1393:84293; THL-305, THL-232): Me, each person
+    /// on the account, Both of us. It answers for every deposit from them.
+    @ViewBuilder private var jointTiles: some View {
+        let people = ask.item.people ?? []
+        let share = Int((ask.item.share ?? 50).rounded())
+        QuestionCaption(text: "Why Pearl is asking")
+        WhyCard(sentence: jointSentence, dates: deposits?.dates ?? [], amount: abs(t.amount),
+                ringed: String(t.date.prefix(10)),
+                footer: "It’s a joint account, so Pearl needs to know whose it is.")
+        QuestionCaption(text: "It’s…")
+        AnswerGrid(columns: 3) {
+            AnswerTile(title: "Me", line: "Counts as your pay", symbol: "briefcase", current: choice == "me") {
+                onAnswer(.joint(t.id, who: "me", person: nil, remember: true))
+            }
+            if people.isEmpty {
+                AnswerTile(title: ask.item.label ?? "Someone else", line: "Not in your numbers",
+                           symbol: "person.crop.circle.badge.xmark", current: choice == "them") {
+                    onAnswer(.joint(t.id, who: "them", person: nil, remember: true))
+                }
+            } else {
+                ForEach(people, id: \.self) { person in
+                    AnswerTile(title: person, line: "Not in your numbers", symbol: "person.crop.circle.badge.xmark",
+                               current: choice == "them:" + person) {
+                        onAnswer(.joint(t.id, who: "them", person: person, remember: true))
+                    }
+                }
+            }
+            AnswerTile(title: "Both of us", line: "Your \(share)% counts", symbol: "person.2", current: choice == "both") {
+                onAnswer(.joint(t.id, who: "both", person: nil, remember: true))
+            }
+        }
+        QuestionFooter(text: "Pearl remembers this for every deposit from \(who).")
+    }
+
+    /// "Maple Co has paid $1,980.00 into your joint account every 2 weeks since September."
+    private var jointSentence: String {
+        let since = deposits?.first.map { " since \(Self.sinceMonth($0))" } ?? ""
+        let money = Format.amount(abs(t.amount))
+        guard let d = deposits, d.count > 1 else { return "\(who) paid \(money) into your joint account." }
+        if let every = Self.every(d.cadence) {
+            return "\(who) has paid \(money) into your joint account \(every)\(since)."
+        }
+        return "\(who) has paid into your joint account \(d.count) times\(since)."
+    }
+
+    /// PQ-02 (1393:84663, dark 1393:85042; THL-232, THL-296): six tiles,
+    /// Pearl's guess dashed and never picked for her.
+    @ViewBuilder private var cadenceTiles: some View {
+        let guess = deposits?.cadence
+        QuestionCaption(text: "What Pearl sees")
+        WhyCard(sentence: cadenceSentence, dates: deposits?.dates ?? [], amount: abs(t.amount),
+                ringed: String(t.date.prefix(10)),
+                footer: deposits.flatMap { d in
+                    d.next.flatMap { next in Self.every(d.cadence).map { "Next one around \(Format.weekdayDay(next)) if it’s \($0)" } }
+                })
+        QuestionCaption(text: "It comes…")
+        AnswerGrid {
+            ForEach(Self.cadences, id: \.key) { c in
+                AnswerTile(title: c.title, line: guess == c.key ? "Looks like this" : c.line,
+                           current: choice == c.key || (choice == "irregular" && c.key == "changes"),
+                           guess: guess == c.key) {
+                    if c.key == "once" {
+                        // Pay that won't repeat isn't a salary.
+                        onAnswer(.mark(t.id, ["case": "pay", "income_kind": "other"]))
+                    } else {
+                        // Her answer is the schedule in Income and bills, not Pearl's guess.
+                        onAnswer(.regularPay(t, cadence: c.key == "changes" ? "irregular" : c.key))
+                    }
+                }
+            }
+        }
+        QuestionFooter(text: "Pearl counts every deposit from \(who) as pay, and plans your Allowance around it.")
+    }
+
+    private static let cadences: [(key: String, title: String, line: String)] = [
+        ("weekly", "Every week", "52 a year"), ("biweekly", "Every 2 weeks", "26 a year"),
+        ("semimonthly", "Twice a month", "Like the 1st and 15th"), ("monthly", "Monthly", "Once a month"),
+        ("changes", "It changes", "Pearl works it out"), ("once", "Just this once", "Not regular pay"),
+    ]
+
+    /// "Northwind Ltd has paid you 5 times since September, about 2 weeks apart."
+    private var cadenceSentence: String {
+        guard let d = deposits, d.count > 1 else { return "This is the first deposit from \(who) Pearl has seen." }
+        let since = d.first.map { " since \(Self.sinceMonth($0))" } ?? ""
+        let apart: String
+        switch d.cadence {
+        case "weekly": apart = ", about a week apart"
+        case "biweekly": apart = ", about 2 weeks apart"
+        case "semimonthly": apart = ", about twice a month"
+        case "monthly": apart = ", about a month apart"
+        default: apart = ""
+        }
+        return "\(who) has paid you \(d.count) times\(since)\(apart)."
+    }
+
+    /// "every 2 weeks", for Pearl's guess at a schedule.
+    static func every(_ cadence: String?) -> String? {
+        switch cadence {
+        case "weekly": return "every week"
+        case "biweekly": return "every 2 weeks"
+        case "semimonthly": return "twice a month"
+        case "monthly": return "every month"
+        default: return nil
+        }
+    }
+
     // MARK: A list of answers
 
     private struct Option: Identifiable {
@@ -665,7 +879,7 @@ struct AnswerSheet: View {
 
     private var choiceSheet: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: title) { dismiss() }
+            SheetTitle(title: title) { dismiss() }.sheetPart()
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     QuestionHeader(name: who, amount: amountText, tone: tone, sub: sub)
@@ -703,46 +917,44 @@ struct AnswerSheet: View {
                                 .padding(.horizontal, 16)
                         }
                     }
-                    if step == .joint {
-                        // T-13 (THL-232, R-08): this deposit, or every one from them.
-                        Toggle("Every deposit from \(who)", isOn: $rememberAll)
-                            .font(Nacre.body).tint(Pearl.action)
-                            .padding(.horizontal, 16).frame(minHeight: 52)
-                            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Pearl.card))
-                        Text(rememberAll ? "Pearl will remember this for \(who)." : "Off answers just this one.")
-                            .font(Nacre.footnote).foregroundColor(Pearl.ink)
-                            .frame(maxWidth: .infinity).multilineTextAlignment(.center)
-                    } else if let footer = footer {
+                    if let footer = footer {
                         Text(footer).font(Nacre.footnote).foregroundColor(Pearl.ink)
                             .frame(maxWidth: .infinity).multilineTextAlignment(.center)
                     }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 12)
+                .sheetPart()
             }
             .scrollDismissesKeyboard(.interactively)
-            if step == .sender {
-                // T-14 (THL-232, R-09): keep what the bank called it.
-                Button("Use your bank’s name instead") { onAnswer(.party(t.id, name: "")) }
-                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
-                Button("Skip") { onAnswer(.skip(ask.item.key, true)) }
-                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+            VStack(spacing: 0) {
+                if step == .sender {
+                    // T-14 (THL-232, R-09): keep what the bank called it.
+                    Button("Use your bank’s name instead") { onAnswer(.party(t.id, name: "")) }
+                        .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                    Button("Skip") { onAnswer(.skip(ask.item.key, true)) }
+                        .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                }
+                // POLISH-01 audit 7: Where did it go? answers on the tap, as
+                // Is Sam paying you back? does. Continue and Save stay where
+                // she types (Who sent this?) or searches (What did this pay back?).
+                if step != .kinds && step != .otherKinds && step != .payback && step != .accounts {
+                    Button(primaryLabel) { primary() }
+                        .buttonStyle(NacreButtonStyle())
+                        .disabled(!ready)
+                        .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 8)
+                }
             }
-            if step != .kinds && step != .otherKinds && step != .payback {
-                Button(primaryLabel) { primary() }
-                    .buttonStyle(NacreButtonStyle())
-                    .disabled(!ready)
-                    .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 8)
-            }
+            .sheetPart()
         }
         .background(SheetBackground())
-        .presentationDetents([.large])
+        // POLISH-01 audit 1: sized to its content, not .large.
+        .fitsContent()
         .task(id: step) {
             if step == .charges { await searchCharges() }
             if step == .accounts, accounts.isEmpty, fetchedAccounts.isEmpty,
                let o: AccountsOverview = try? await api.get("api/accounts/overview") {
                 fetchedAccounts = o.linked
             }
-            if step == .cadence, pays.isEmpty, let d: IncomeBills = try? await api.get("api/income-bills") { pays = d.pays }
         }
         .task(id: text) {
             guard step == .charges else { return }
@@ -754,8 +966,9 @@ struct AnswerSheet: View {
     private func optionRow(_ o: Option) -> some View {
         Button {
             choice = o.id
-            // "Is Ben Tran paying you back?" answers at once: no Save, then Continue.
-            if step == .payback { primary() }
+            // "Is Ben Tran paying you back?" and "Where did it go?" (POLISH-01
+            // audit 7) answer at once: no Save, then Continue.
+            if step == .payback || step == .accounts { primary() }
         } label: {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -879,11 +1092,6 @@ struct AnswerSheet: View {
         ("gifts", "A gift", "gift"), ("other", "Other income", "ellipsis"),
     ]
 
-    /// T-31: "Like Northwind Ltd" under the schedule her pay already has.
-    private func like(_ cadence: String) -> String? {
-        pays.first { $0.cadence == cadence && $0.name.lowercased() != who.lowercased() }.map { "Like \($0.name)" }
-    }
-
     // MARK: What each step asks
 
     private var title: String {
@@ -904,16 +1112,8 @@ struct AnswerSheet: View {
         }
     }
 
-    /// "$1,980.00 · Joint", "−$500.00 · every month, around the 10th · 3 so far".
-    private var sub: String? {
-        switch step {
-        case .joint: return "Joint"
-        case .recurring:
-            let s = ask.item.series
-            return [s?.when, s?.count.map { "\($0) so far" }].compactMap { $0 }.joined(separator: " · ")
-        default: return nil
-        }
-    }
+    /// RQ-01 moved the schedule into its card; PQ-01's "Joint" is its tilesSheet's.
+    private var sub: String? { nil }
 
     private var payer: String { ask.item.from ?? who }
 
@@ -964,35 +1164,18 @@ struct AnswerSheet: View {
                 return Option(id: c.id, label: "\(c.name) · \(Format.amount(c.amount))",
                        detail: [Format.weekdayDay(c.date), c.accountName].compactMap { $0 }.joined(separator: " · "))
             }
-        case .cadence:
-            return [Option(id: "weekly", label: "Every week", detail: like("weekly")),
-                    Option(id: "biweekly", label: "Every 2 weeks", detail: like("biweekly")),
-                    Option(id: "semimonthly", label: "Twice a month", detail: "Like the 1st and the 15th"),
-                    Option(id: "monthly", label: "Monthly"), Option(id: "changes", label: "It changes"),
-                    Option(id: "once", label: "Just this once")]
-        case .joint:
-            // T-33: hers, theirs, or both of theirs (her share counts).
-            let people = ask.item.people ?? []
-            let share = Int((ask.item.share ?? 50).rounded())
-            return [Option(id: "me", label: "Me")]
-                + (people.isEmpty ? [Option(id: "them", label: ask.item.label ?? "Someone else")]
-                   : people.map { Option(id: "them:" + $0, label: $0) })
-                + [Option(id: "both", label: "Both of us", detail: "Your share · \(share)%")]
         case .sender:
             let typed = text.trimmingCharacters(in: .whitespaces)
             return names.filter { typed.isEmpty || $0.localizedCaseInsensitiveContains(typed) }
                 .map { Option(id: "name:" + $0, label: $0) }
-        case .recurring:
-            return [Option(id: "rent", label: "Yes, rent"), Option(id: "saved", label: "Yes, into savings"),
-                    Option(id: "moved", label: "Yes, to another of my accounts"),
-                    Option(id: "pay", label: "Yes, something I pay for"), Option(id: "no", label: "No")]
         case .payback:
             let c = ask.item.guess?.charge
             return [Option(id: "this", label: "Yes, for \(c?.name ?? "that purchase") · \(c.map { Format.short($0.date) } ?? "")",
                            detail: c.map { "\(Format.amount($0.amount)) on \($0.accountName ?? "your card")" }),
                     Option(id: "other", label: "Yes, for something else", detail: "Pick the purchase"),
                     Option(id: "no", label: "No, it isn’t a payback", detail: "Then we’ll ask if it’s income")]
-        case .kinds, .otherKinds, .guess, .category:
+        // RQ-01, PQ-01 and PQ-02 are tiles (tilesSheet).
+        case .kinds, .otherKinds, .guess, .category, .cadence, .joint, .recurring:
             return []
         }
     }
@@ -1007,8 +1190,7 @@ struct AnswerSheet: View {
         case .charges where payerName != nil:
             let first = firstName(payerName ?? who)
             return "Pick a purchase and it counts as paid back by \(first). To split it with \(first) first, open the purchase."
-        case .accounts, .joint, .charges: return "Pearl will remember this for \(who)."
-        case .cadence where choice != nil && choice != "once": return "Pearl will count every deposit from \(who) as pay."
+        case .accounts, .charges: return "Pearl will remember this for \(who)."
         default: return nil
         }
     }
@@ -1017,7 +1199,7 @@ struct AnswerSheet: View {
     private var primaryLabel: String {
         switch (step, choice) {
         case (.out, "paid"), (.out, "moved"), (.into, "earned"), (.into, "back"), (.into, "else"), (.kinds, "regular"),
-             (.recurring, "pay"), (.payback, "other"), (.payback, "no"), (.sender, _):
+             (.payback, "other"), (.payback, "no"), (.sender, _):
             return "Continue"
         default: return "Save"
         }
@@ -1068,14 +1250,6 @@ struct AnswerSheet: View {
             saveIncome(choice)
         case .otherKinds:
             saveIncome(choice)
-        case .cadence:
-            // Her answer is the schedule in Income and bills, not Pearl's guess.
-            if choice == "once" {
-                // Pay that won't repeat isn't a salary.
-                onAnswer(.mark(t.id, ["case": "pay", "income_kind": "other"]))
-            } else {
-                onAnswer(.regularPay(t, cadence: choice == "changes" ? "irregular" : choice))
-            }
         case .charges:
             if choice.hasPrefix("share:") {
                 saveShare(String(choice.dropFirst(6)))
@@ -1097,25 +1271,12 @@ struct AnswerSheet: View {
             case "other": parting = true
             default: go(.into)
             }
-        case .joint:
-            if choice == "me" || choice == "both" {
-                onAnswer(.joint(t.id, who: choice, person: nil, remember: rememberAll))
-            } else {
-                let person = choice.hasPrefix("them:") ? String(choice.dropFirst(5)) : nil
-                onAnswer(.joint(t.id, who: "them", person: person, remember: rememberAll))
-            }
         case .sender:
             let name = choice.hasPrefix("name:") ? String(choice.dropFirst(5))
                 : text.trimmingCharacters(in: .whitespaces)
             guard !name.isEmpty else { return }
             onAnswer(.party(t.id, name: name))
-        case .recurring:
-            switch choice {
-            case "pay": then = .recurring; go(.category)
-            case "no": onAnswer(.dismiss(ask.item.key))
-            default: onAnswer(.recurring(key: ask.item.key, kind: choice, category: nil))
-            }
-        case .guess, .category:
+        case .guess, .category, .cadence, .joint, .recurring:
             break
         }
     }
@@ -1179,12 +1340,14 @@ struct QuestionHeader: View {
                         lineWidth: 1.2))
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(name).font(Nacre.title2).foregroundColor(Pearl.ink).lineLimit(big ? 2 : 1)
-                    .fixedSize(horizontal: false, vertical: big)
+                // POLISH-01 (RQ-01, audit 2): the name and the line under it
+                // wrap to two lines rather than cut ("9 so f…", the bank's name).
+                Text(name).font(Nacre.title2).foregroundColor(Pearl.ink).lineLimit(big ? 3 : 2)
+                    .fixedSize(horizontal: false, vertical: true)
                 (Text(amount).foregroundColor(tone)
                  + Text(sub.map { $0.isEmpty ? "" : " · " + $0 } ?? "").foregroundColor(Pearl.ink))
-                    .font(Nacre.subheadline).lineLimit(big ? 3 : 1)
-                    .fixedSize(horizontal: false, vertical: big)
+                    .font(Nacre.subheadline).lineLimit(big ? 3 : 2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
