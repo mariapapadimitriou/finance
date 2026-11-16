@@ -391,7 +391,7 @@ class TestLessWords:
             'showSplit("Copied"', '"None of it is yours to split."', 'let title = "\\(p.name) removed"',
             '("Settled up", {', '"Split reopened"'],
         "ios/Pearl/Views/Home/HomeView.swift": [
-            '"\\(count) to sort"', '" Pearl sorted \\(pearlSorted) by itself."', 'had 3 paycheques.',
+            '"\\(count) to sort"', '" Pearl sorted \\(pearlSorted) by itself."', '"3 paycheques in \\(Format.monthName(month.month))"',
             '"\\(who) you \\(Format.amount(owed.total))"', '· \\(unsettled.count) not settled', 'Allowance.restCaption'],
         # Account setup (#359) moved O-09b's people picker to AS-02, and its
         # "Only you see this. Nothing is sent." line went with O-09b.

@@ -3,9 +3,13 @@ import SwiftUI
 // Payback question (Figma Proposals › "Payback question" 1418:88290, note
 // 1419:89986; approved by the product owner 2026-11-16; THL-289, THL-291,
 // THL-181, THL-231, THL-232, THL-301). Replaces T-70 and AnswerSheet's old
-// list of three answers. Every sentence on it is the server's
-// (finance/payback_question.py): why Pearl is asking, the runner-up or what
-// Yes does, each tile's title and how the money compares, and the toast.
+// list of three answers. Every word on it is the server's
+// (finance/payback_question.py): each tile's title, the reason in a few
+// words, and the toast.
+//
+// LT-03 · PQ-03, less text (1425:7351, dark 1425:7552; TEXT-01, approved
+// 2026-11-16): the Why card is gone, the reason sits in the tile ("Oct 31 ·
+// about a third · 2 days before"), "Then: income?", and no footer.
 //
 // PQ-03 (1418:88292, dark 1418:88584): one likely purchase.
 // PQ-03b (1418:88874, dark 1418:89179): on a split and part-paid, with a
@@ -17,9 +21,9 @@ import SwiftUI
 
 // The model, PaybackQuestion, is in Models.swift (check_stack compiles it on its own).
 
-/// PQ-03 / PQ-03b: everything under the sheet's title. A tile answers at
-/// once (AnswerTile: 0.97 press, success haptic, a cross-fade with Reduce
-/// Motion); there's no Continue.
+/// PQ-03 / PQ-03b (LT-03): everything under the sheet's title, LOOKS LIKE
+/// and the tiles. A tile answers at once (AnswerTile: 0.97 press, success
+/// haptic, a cross-fade with Reduce Motion); there's no Continue.
 struct PaybackQuestionBody: View {
     let question: PaybackQuestion
     let amount: String
@@ -36,21 +40,16 @@ struct PaybackQuestionBody: View {
         VStack(alignment: .leading, spacing: 10) {
             PaybackHeader(name: question.who, line: "\(amount) · \(Format.weekdayDay(date))",
                           onName: question.named ? nil : onName)
-            QuestionCaption(text: "Why Pearl is asking")
-            WhyCard(sentence: question.why, dates: [], footer: question.line)
-            QuestionCaption(text: "Is it for…")
+            QuestionCaption(text: "Looks like")
             ForEach(question.tiles) { tile in
                 AnswerTile(title: tile.title, line: tile.line, symbol: CategorySheet.symbol(for: tile.category),
                            guess: tile.guess == true) { onTile(tile) }
             }
             AnswerGrid {
                 AnswerTile(title: "Something else", line: "Find the purchase", symbol: "bag", action: onElse)
-                AnswerTile(title: "Not a payback", line: "Then: is it income?",
+                AnswerTile(title: "Not a payback", line: "Then: income?",
                            symbol: "person.crop.circle.badge.xmark", action: onNot)
             }
-            QuestionFooter(text: question.part
-                           ? "A tap answers, with Undo. A part payment stays on the split until \(question.who) pays the rest."
-                           : "A tap answers, with Undo. Pearl remembers \(question.who) for next time.")
         }
     }
 }

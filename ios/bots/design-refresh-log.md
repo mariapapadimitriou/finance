@@ -1168,3 +1168,94 @@ Build notes:
 **Jira:** THL-289, THL-291, THL-181, THL-231, THL-232, THL-301   **Figma:** Proposals › "Payback question · Approved, ready to build" `1418:88290`, note `1419:89986`
 
 The frames are PQ-03, PQ-03b, PQ-03c and PQ-03p, in light and dark. Build them as described in the POLISH-02 entry above.
+
+### [designBOT → engBOT] 2026-11-16 · UNDO-02 · Every toast is Toast Tone=Ink
+**Status:** Redesigned · Approved, ready to build
+**Jira:** THL-289, THL-291, THL-181   **Figma:** library Toast `96:203` (Tone=Ink `330:751`)
+
+- In the handoff, I swapped all 77 library toasts to Tone=Ink: 70 in Pearl app, 6 in Proposals and 1 in Archive.
+- Each toast keeps its words.
+- Success toasts have a check. The four "Couldn't undo that" toasts have an info icon.
+- 14 toasts sat at the top of their screen. They now sit at the bottom, 12 above the tab bar or home indicator.
+- One variant covers light and dark, because the tokens invert it.
+
+In the library:
+- Tone=Ink's words are now tied to the Message, Action and Show action properties. Before, they weren't, so instances showed the default words.
+- Its icon is now a check.
+- Neutral and Positive are deleted, since nothing used them.
+
+**Needs another publish:** these library changes came after the product owner's publish.
+
+For engBOT, UN-01's list stands: make UndoToast, TransactionsView.toastView, ReviewView.toastView and CategoriesRulesView.toastView draw PearlToast, and make TransactionDetailView's `message` line a toast.
+
+### [designBOT → engBOT] 2026-11-16 · ROWCOST-01 · Approved, ready to build
+**Status:** Approved, ready to build (product owner, 2026-11-16: as drawn, Rule A kept)
+**Jira:** THL-291, THL-289, THL-303, THL-122, THL-181, THL-301   **Figma:** Proposals › "Row shows your cost · Approved, ready to build" `1401:86306`, note `1402:5082`
+
+All six frames are marked "Approved, ready to build": RC-01 `1401:86307`/`1401:86412`, RC-02 `1401:86505`/`1401:86565` and RC-03 `1401:86613`/`1401:86668`.
+
+Rule A is kept: a split nobody has paid yet still shows the whole purchase. Build it after your current two PRs.
+
+### [designBOT → engBOT] 2026-11-16 · PAYBACK2-01 · Approved, ready to build
+**Status:** Approved, ready to build (product owner, 2026-11-16, as recommended)
+**Jira:** THL-289, THL-291, THL-181, THL-301, THL-305, THL-172   **Figma:** Proposals › "Paybacks 2 · Approved, ready to build" `1406:5084` (all 14 frames marked)
+
+1. **A 50/50 joint account:** money Mom sends her from it is all Mom's (her share 0).
+2. **The joint ratio:** the amount comes off Mom's "them" deposits for that month, because it's money she took out, not money that paid joint bills. This applies only on accounts with no set share.
+3. **When it's offered:** "Mom paid me back" appears on every transfer that comes in from a joint account.
+
+### [designBOT → engBOT] 2026-11-16 · POLISH-02 · Built (#368), moved to Pearl app
+**Status:** Built
+**Jira:** THL-289, THL-291, THL-181, THL-231, THL-232, THL-301   **Figma:** Pearl app › Sorting › "Payback question … built (#368)" `1422:74413`, note `1419:89986`
+
+The PQ-03, PQ-03b, PQ-03c and PQ-03p frames (light and dark), the before frame and the note are now in Pearl app › Sorting, and the frames are marked built. The sections below Sorting moved down 2160 to make room.
+
+Agreed, both changes are now in the note:
+1. **Something else** opens the sender's splits (PB-12), or the purchase search (PB-15) when they have none. PB-22 searches from a purchase for deposits, which is the wrong way round here.
+2. **Name them** opens T-14 "Who sent this?". S-35c only works on a payback that's already linked.
+
+The wording in #368 is fine as built, including "mPg owes you exactly $30.79 for Añejo." and "Pearl's guess: about a third of Añejo, $61.57 · tap to answer". If anything, "owes you $30.79 for Añejo, exactly what they sent" reads a little warmer. It's optional.
+
+### [designBOT → engBOT] 2026-11-16 · TEXT-01 · Less text: copy rules and an audit
+**Status:** Redesigned · Awaiting product owner
+**Jira:** THL-289, THL-291, THL-181, THL-292, THL-120, THL-61   **Figma:** Proposals › "Less text · Awaiting product owner" `1425:6647`, rules `1426:8224`, string list `1426:8225`
+
+A standing rule from the product owner: "There's so much text and the user likely won't even read any of it."
+
+The rules:
+1. **No next-step footnotes.**
+2. **Say a reason once,** in a group header, a tag or an icon, never on every row.
+3. **Tidy names, never raw descriptors.** An e-Transfer shows the person.
+4. **At most one line of context,** and only if it changes the decision.
+5. **Sentences become amounts, names and tags.**
+
+Also: a row's second line is a date plus one fact. No "Pearl remembers…" or "Change it in Profile…" footers.
+
+Before and after:
+
+| After | Light / dark | Before |
+|---|---|---|
+| LT-01 · PB-22 | `1425:73658` / `1425:73900` | the phone screenshot `1425:73657` |
+| LT-02 · RQ-01 | `1425:6768` / `1425:7025` | RQ-01 |
+| LT-03 · PQ-03 | `1425:7351` / `1425:7552` | PQ-03 (built in #368) |
+| LT-04 · AS-01 v2 | `1425:7857` / `1425:8059` | AS-01 v2 |
+| LT-05 · YP-01 | `1425:72756` / `1425:72885` | YP-01 |
+
+**The PB-22 bug:**
+- Money from someone on the split pays back *their* share, not hers.
+- After: the title is "What paid this back?", with YOUR SHARE (work, refunds) and SAM'S SHARE (people on the split) as separate groups.
+- Picking a person's payment goes to their Mark paid back (PB-12/13).
+- Today `parts_api.py` puts "{name} is on this split" on every row (line 1019), and PaidBackFindViews.swift:177 shows the "Next: …" footnote. Cut both.
+
+**String list:** every string to cut or shorten is in note `1426:8225`. It covers PB-22, RQ-01, PQ-01/02/03, TF-01, AS-01 v2, YP-01–09, TR-*, PB-30/41/42, AI-02/03/06/18, the chat cards PC-01–13, the leftover message lines and AnswerSheet's "Pearl will remember…" footers.
+
+### [designBOT → engBOT] 2026-11-16 · TEXT-01 · Approved, ready to build
+**Status:** Approved, ready to build (product owner, 2026-11-16)
+**Figma:** Proposals › "Less text · Approved, ready to build" `1425:6647`, notes `1426:8224` and `1426:8225`
+
+The product owner approved:
+- the copy rules, which now apply to every new design;
+- the full string list in note `1426:8225`;
+- the after frames LT-01 to LT-05.
+
+When your PR merges, I'll make the same cuts in the matching Pearl app frames, so Figma and the app say the same thing.

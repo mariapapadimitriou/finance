@@ -21,10 +21,8 @@ struct PatternYes: Decodable, Hashable {
     let day: String
     var count: Int? = nil
 
-    /// "You said yes on Nov 10, after sorting 5 yourself".
-    var line: String {
-        "You said yes on \(Format.short(day))" + (count.map { ", after sorting \($0) yourself" } ?? "")
-    }
+    /// "On since Nov 10" (TEXT-01).
+    var line: String { "On since \(Format.short(day))" }
 }
 
 /// One row Pearl sorted, as AI-03 shows it.
@@ -202,7 +200,7 @@ struct PatternWhySheet: View {
             }
             PearlDivider()
             PearlOptionRow(symbol: "person", title: "Stop sorting like this",
-                           sub: "Asks first · undoes the \(sortedCount) and won’t learn it again") { stopping = true }
+                           sub: "Undoes the \(sortedCount)") { stopping = true }
         }
         .disabled(busy)
         if let error = error { CautionBanner(text: error) }
@@ -328,9 +326,9 @@ struct LearnedRuleView: View {
         ProfilePage {
             VStack(alignment: .leading, spacing: 12) {
                 if let rule = rule {
-                    // AI-06 / AI-06b (AI-03c): when she said yes, then "Nothing new is shared."
-                    PageTitle(title: rule.title,
-                              line: (rule.confirmed.map { $0.line + ". " } ?? "") + "Nothing new is shared.")
+                    // AI-06 / AI-06b (AI-03c): "On since Nov 14" (TEXT-01 cut
+                    // "Nothing new is shared.").
+                    PageTitle(title: rule.title, line: rule.confirmed?.line)
                     CardCaption("What Pearl does")
                     GlassCard(radius: cardRadius) {
                         PrivacyRow(symbol: "building.columns", title: "Sorts them as \(rule.label)",
@@ -343,7 +341,7 @@ struct LearnedRuleView: View {
                     CardCaption("Your choice")
                     GlassCard(radius: cardRadius) {
                         SwitchRow(symbol: "sparkle", title: "Pearl sorts these",
-                                  sub: "Off: new ones go to Quick sort. What it sorted stays.",
+                                  sub: "Off: new ones go to Quick sort.",
                                   isOn: rule.on, disabled: busy) { on in Task { await set(on) } }
                     }
                     CardCaption("What it sorted")

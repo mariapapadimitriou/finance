@@ -618,7 +618,8 @@ struct ChatExecutor {
 
 enum ChatWords {
     static let placeholder = "Message Pearl"
-    static let onDevice = "Worked out on this iPhone. Nothing leaves it."
+    /// PC-03 (TEXT-01).
+    static let onDevice = "On this iPhone only"
     static let nothingChanged = "Okay, nothing changed."
 
     /// PC-04's quote, and PC-12's "You: “…”".
@@ -628,10 +629,11 @@ enum ChatWords {
     /// PC-05's first line under the card, when the model didn't say it back.
     static func echo(_ said: String) -> String { "You said \u{201C}\(said)\u{201D}." }
 
-    /// PC-05: "Yes sorts it as Dining. Tap the card for more."; PC-06 with a split suggestion.
-    static func yesSorts(_ category: String, split: Bool) -> String {
-        split ? "Yes sorts it as \(category), all yours. To split it, tap Maybe split."
-            : "Yes sorts it as \(category). Tap the card for more."
+    /// PC-05 / PC-06 under the card: "Dining out · from “Out with friends
+    /// Saturday”" (TEXT-01): the category and her words, no sentence.
+    static func told(_ category: String, said: String?) -> String {
+        guard let said = said?.trimmingCharacters(in: .whitespacesAndNewlines), !said.isEmpty else { return category }
+        return "\(category) \u{00B7} from \(quote(said))"
     }
 
     /// PC-06's pill: "Maybe split with Jo and Sam?".
@@ -643,13 +645,9 @@ enum ChatWords {
             .compactMap { $0 }.joined(separator: " ")
     }
 
-    static func sortedBody(left: Int) -> String {
-        let rest = "What you told Pearl is forgotten now."
-        switch left {
-        case 0: return rest
-        case 1: return "The 1 is in Needs a look. " + rest
-        default: return "The \(left) are in Needs a look. " + rest
-        }
+    /// PC-07: "2 back in Needs a look." (TEXT-01); nothing when none are left.
+    static func sortedBody(left: Int) -> String? {
+        left > 0 ? "\(left) back in Needs a look." : nil
     }
 
     static func seeThe(_ left: Int) -> String { "See the \(left)" }
@@ -670,8 +668,9 @@ enum ChatWords {
         "Make a \(category) plan of \(Format.whole(amount)) a month?"
     }
 
+    /// PC-12: "Usual $214" (TEXT-01).
     static func planSub(usual: Double) -> String {
-        "Your usual is \(Format.whole(usual)). Setting it adds it to Your plan in Income and bills."
+        "Usual \(Format.whole(usual))"
     }
 
     /// PC-13 and every other confirmation: "Done. {What} {set|made|renamed} …".
@@ -714,6 +713,8 @@ struct Deck {
     let lead: String?
     /// Her words said back, under a told guess's card.
     let echo: String?
+    /// What she told Pearl, for PC-05's "Dining out · from “…”".
+    var said: String? = nil
     var sorted = 0
     var left = 0
     var done: [DoneNote] = []
@@ -977,7 +978,7 @@ final class ChatEngine: ObservableObject {
                 screen = .nothing(line: tell.line)
             } else {
                 screen = .cards(Deck(cards: tell.proposals.map(ProposedAction.sort), lead: tell.line,
-                                     echo: reply.echo ?? ChatWords.echo(tell.said)))
+                                     echo: reply.echo ?? ChatWords.echo(tell.said), said: tell.said))
             }
             return
         }
@@ -1030,7 +1031,8 @@ final class ChatEngine: ObservableObject {
             if case .plan(let category, let amount) = did {
                 screen = .done(said: said, [DoneNote(
                     line: ChatWords.planDone(category, amount), title: "\(category) plan \u{00B7} \(Format.whole(amount)) a month",
-                    place: "It\u{2019}s in Profile \u{203A} Income and bills \u{203A} Your plan. Change or remove it there, or ask Pearl.",
+                    // PC-13 (TEXT-01): no "It's in Profile › …" line; the link says where.
+                    place: nil,
                     link: .plan, linkLabel: "See it in Your plan")])
             } else {
                 screen = .noChange(said: said)

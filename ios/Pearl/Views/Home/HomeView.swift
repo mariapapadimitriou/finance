@@ -289,8 +289,8 @@ struct PaychequeNoteCard: View {
 
     var body: some View {
         PearlCard(spacing: 8) {
-            // REFRESH-03 (H-00n): "October had 3 paycheques."
-            Text("\(Format.monthName(month.month)) had 3 paycheques.")
+            // REFRESH-03 (H-00n), PC-01 (TEXT-01): "3 paycheques in October".
+            Text("3 paycheques in \(Format.monthName(month.month))")
                 .font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.ink)
                 .fixedSize(horizontal: false, vertical: true)
             Button("Got it", action: onDismiss)

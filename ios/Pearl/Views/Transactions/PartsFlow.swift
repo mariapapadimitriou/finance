@@ -744,18 +744,19 @@ struct PartsSheet: View {
         .padding(.horizontal, 16)
     }
 
-    /// "Ticked $86.65 of $86.65 · it all adds up" (money in), "… · $13.35
-    /// left over" (muted), "… · $10.95 more than Sam sent" (error).
+    /// "$86.65 of $86.65 ✓" (money in; TEXT-01), "… · $13.35 left over"
+    /// (muted), "… · $10.95 more than Sam sent" (error).
     private var totalLine: some View {
         let ticked = Double(tickedCents) / 100
         let first = firstName(sender ?? who)
-        let head = "Ticked \(Format.amount(ticked)) of \(Format.amount(left))"
-        let (words, tone): (String, Color) = tickedCents == leftCents ? ("\(head) · it all adds up", Pearl.moneyIn)
+        let head = "\(Format.amount(ticked)) of \(Format.amount(left))"
+        let (words, tone): (String, Color) = tickedCents == leftCents ? ("\(head) \u{2713}", Pearl.moneyIn)
             : tickedCents < leftCents ? ("\(head) · \(Format.amount(Double(leftCents - tickedCents) / 100)) left over", Pearl.muted)
             : ("\(head) · \(Format.amount(Double(tickedCents - leftCents) / 100)) more than \(first) sent", Pearl.danger)
         return Text(words).font(Nacre.footnote).foregroundColor(tone)
             .frame(maxWidth: .infinity).multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
+            .accessibilityLabel(tickedCents == leftCents ? "Ticked \(head), it all adds up" : "Ticked \(words)")
     }
 
     /// "Sam’s share of Pai Northern Thai · $60.00" over "Wed, Nov 12 · split 2

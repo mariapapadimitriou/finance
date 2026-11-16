@@ -173,8 +173,8 @@ class TestTell:
         r = client.post("/api/chat/tell", json={"text": "went to the cottage on the weekend",
                                                 "category": "Lodging"}).get_json()
         assert r["nothing"] is True and r["proposals"] == []
-        assert r["line"] == ("None of the 1 not sorted yet from Sat\u2013Sun fit what you said. "
-                             "Your cards stay as they were.")
+        # TEXT-01: "Nothing from Sat–Sun fits."
+        assert r["line"] == "Nothing from Sat\u2013Sun fits."
 
     def test_the_model_ranks_but_cant_add(self, client):
         rows = weekend(client)

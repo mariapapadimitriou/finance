@@ -198,7 +198,8 @@ struct IncomeBillsView: View {
         }
 
         ProfileSection("Something changed?")
-        ProfileNote("A new job, a new place, a bill that stopped. Check again with your latest transactions.")
+        // YP-09 (TEXT-01): one line.
+        ProfileNote("Check again with your latest transactions.")
     }
 
     private func billRow(_ bill: IncomeBills.Bill) -> some View {

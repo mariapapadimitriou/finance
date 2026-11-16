@@ -2003,13 +2003,13 @@ struct PatternAsk: Decodable, Identifiable, Hashable {
     }
     /// "Always Ana's share?", AI-18b "Always Groceries?".
     var question: String { "Always \(label)?" }
-    /// "You sorted the last 8 as Ana's share."; AI-18b "You sorted the last 5
-    /// at Farm Boy as Groceries."
+    /// "Last 8: Ana's share." (TEXT-01); AI-18b "Last 5 at Farm Boy:
+    /// Groceries."
     var because: String {
-        isJoint ? "You sorted the last \(count) as \(label)." : "You sorted the last \(count) at \(name) as \(label)."
+        isJoint ? "Last \(count): \(label)." : "Last \(count) at \(name): \(label)."
     }
-    /// "Yes sorts new ones for you. Skip asks again after 8 more."
-    var yesSkip: String { "Yes sorts new ones for you. Skip asks again after \(need) more." }
+    /// "Sort new ones the same way?" (TEXT-01).
+    var yesSkip: String { "Sort new ones the same way?" }
     /// AI-18y's toast names it as AI-06 does (LearnedRule.title): "Ana's
     /// deposits", "Farm Boy".
     var title: String {
@@ -2058,12 +2058,12 @@ struct TripAsk: Decodable, Identifiable, Hashable {
     /// "Mar 4–9 · 23 transactions".
     var line: String { "\(Format.span(start, end)) · \(count) transaction\(count == 1 ? "" : "s")" }
 
-    /// TR-01's caption: "A flight, a hotel, then 5 days in Montréal." With
-    /// no place it ends "then 5 days away." (note 1329:69536, Wording).
+    /// TR-01's caption: "A flight, a hotel, 5 days in Montréal." With no
+    /// place it ends "5 days away." (note 1329:69536, Wording; TEXT-01).
     var story: String {
         let lead = [flight == true ? "a flight" : nil, hotel == true ? "a hotel" : nil].compactMap { $0 }
         let stay = "\(days) day\(days == 1 ? "" : "s")" + (place.map { " in \($0)" } ?? " away")
-        let text = lead.isEmpty ? stay : lead.joined(separator: ", ") + ", then " + stay
+        let text = lead.isEmpty ? stay : lead.joined(separator: ", ") + ", " + stay
         return text.prefix(1).uppercased() + text.dropFirst() + "."
     }
 
@@ -2111,10 +2111,10 @@ struct Trip: Decodable, Identifiable, Hashable {
     /// "March", "March and April".
     var months: String { Format.andList(monthNames ?? [Format.monthName(String(start.prefix(7)))]) }
 
-    /// TR-09, TR-13: "The 23 transactions stay as they are"; one row reads
+    /// TR-09, TR-13: "The 23 stay as they are" (TEXT-01); one row reads
     /// "The transaction stays as it is" (note 1329:69536, Wording).
     static func stayLine(_ n: Int) -> String {
-        n == 1 ? "The transaction stays as it is" : "The \(n) transactions stay as they are"
+        n == 1 ? "The transaction stays as it is" : "The \(n) stay as they are"
     }
 }
 
@@ -2142,8 +2142,6 @@ struct PaybackQuestion: Decodable, Hashable {
     let who: String
     /// She named them, or it isn't an e-Transfer: no "Name them".
     let named: Bool
-    let why: String
-    let line: String?
     let tiles: [Tile]
     /// PQ-03b: a part payment stays on the split.
     let part: Bool
@@ -2158,9 +2156,10 @@ struct PaybackQuestion: Decodable, Hashable {
         let card: String
         /// "split" (they're on it), "memo" (their message names it) or "share".
         let kind: String
-        /// "Yes, Añejo · $61.57", "Yes, Añejo · mPg’s share".
+        /// "Añejo · $61.57", "Añejo · mPg’s share" (LT-03).
         let title: String
-        /// "$20.00 is about a third", "about half", "$20.00 of mPg’s $30.79 · $10.79 still to come".
+        /// The reason, in the tile (LT-03): "about a third · 2 days before",
+        /// "$20.00 of mPg’s $30.79 · $10.79 still to come", "“tacos”".
         let compare: String
         /// PQ-03c: "mPg paid back $20.00 for Añejo".
         let toast: String
@@ -2168,10 +2167,10 @@ struct PaybackQuestion: Decodable, Hashable {
         var guess: Bool? = nil
         var id: String { charge }
 
-        /// "Sat, Oct 31 · Amex Cobalt · $20.00 is about a third"; a split's
-        /// tile says only how it compares (PQ-03b).
+        /// "Oct 31 · about a third · 2 days before" (LT-03); a split's tile
+        /// says only how it compares (PQ-03b).
         var line: String {
-            let parts = kind == "split" ? [compare] : [Format.weekdayDay(date), card, compare]
+            let parts = kind == "split" ? [compare] : [Format.short(date), compare]
             return parts.filter { !$0.isEmpty }.joined(separator: " · ")
         }
     }
@@ -2179,7 +2178,7 @@ struct PaybackQuestion: Decodable, Hashable {
     struct Card: Decodable, Hashable {
         /// "Paying you back for Añejo?".
         let title: String
-        /// "Pearl’s guess: about a third of Añejo, $61.57 · tap to answer".
+        /// "Pearl’s guess · about a third" (TEXT-01).
         let line: String
     }
 }

@@ -3,11 +3,12 @@ import SwiftUI
 // Paid back from the purchase (Figma Proposals › "Paid back" 1351:8769,
 // note 1352:10319; approved by the product owner 2026-11-15; THL-289,
 // THL-291, THL-181). Her own row's ••• on a split starts with "Find what
-// paid it back" (PB-20, in SplitMenus.swift), which opens "What paid back
-// your share?" (PB-22), or "No money in matches" (PB-23). Once she picks the
-// money, the usual steps run: PB-11 with the kind picked, then Work and The
-// shop as T-09w / T-09rs (extras S-11w / S-11m), and A person as PB-13 /
-// PB-13b (PartsFlow.swift). Money already paying back another purchase is
+// paid it back" (PB-20, in SplitMenus.swift), which opens "What paid this
+// back?" (PB-22, as redrawn by LT-01), or "No money in matches" (PB-23). Once
+// she picks the money, the usual steps run: PB-11 with the kind picked, then
+// Work and The shop as T-09w / T-09rs (extras S-11w / S-11m). Money from
+// someone on the split pays their share, so it goes straight to their Mark
+// paid back, PB-13 / PB-13b (PartsFlow.swift). Money already paying back another purchase is
 // PB-24: its free part links at once; taking more always asks. Pearl
 // sheets, never a stock dialog.
 
@@ -26,14 +27,16 @@ struct PaidBackFind: Decodable {
     struct Candidate: Decodable, Identifiable, Hashable {
         let id: String
         let date: String
-        /// "Northwind Ltd", "e-Transfer from Sam Lee".
+        /// LT-01's tidy name: "Northwind Ltd", "Sam" (not "Cash Received -
+        /// Samlee").
         let payer: String
         let amount: Double
         /// "work", "shop" or "person": the answer PB-11 picks.
         let kind: String?
         /// Who on the split, for A person.
         let person: String?
-        /// "work · same as your share", "Sam is on this split".
+        /// The one fact after the date: "work", "refund". Empty for someone
+        /// on the split; their group header says it.
         let why: String
         /// PB-24: it already pays back another purchase.
         let taken: Taken?
@@ -68,21 +71,15 @@ struct PaidBackFind: Decodable {
     }
 }
 
-/// PB-11's answers as PB-22's footnote names them: "(Work is picked)".
-private func pickedWord(_ who: PaidBackWho) -> String {
-    switch who {
-    case .person: return "A person"
-    case .shop: return "The shop"
-    case .work: return "Work"
-    }
-}
-
-/// PB-22 "What paid back your share?" (1359:9489, dark 1359:9694): the
-/// centred title and Close, the purchase ("Your share $60.00 of $120.00 ·
-/// Nov 12"), "Search deposits, or an amount", LIKELY · MONEY IN AFTER NOV
-/// 12 with one picked (a checkmark), "Next: who paid you back (Work is
-/// picked), then part or all of it." and Next. PB-23 (1359:9897, dark
-/// 1359:9978) when nothing matches: "No money in matches" and Clear search.
+/// PB-22 as LT-01 redraws it ("Less text", 1425:73658, dark 1425:73900;
+/// TEXT-01; THL-289, THL-291, THL-181): "What paid this back?" and Close,
+/// the purchase ("$120.00 · your share $60.00 · Nov 12"), "Search deposits,
+/// or an amount", then YOUR SHARE (work and refunds) and one {NAME}'S SHARE
+/// group per person on the split, each row a tidy name and "+$60.00" over
+/// the date and one fact ("Nov 14 · work"), one picked (a checkmark), and
+/// Next. No footnote: the next sheet says what's next. The sheet fits its
+/// content. PB-23 (1359:9897, dark 1359:9978) when nothing matches: "No
+/// money in matches" and Clear search.
 struct PaidBackFindSheet: View {
     let purchaseId: String
     let api: APIClient
@@ -98,16 +95,19 @@ struct PaidBackFindSheet: View {
     @State private var error: String?
 
     private var rows: [PaidBackFind.Candidate] { found?.candidates.compactMap(\.value) ?? [] }
-    private var picked: PaidBackFind.Candidate? { rows.first { $0.id == pick } ?? rows.first }
+    /// The first row shown is picked until she picks another.
+    private var picked: PaidBackFind.Candidate? {
+        rows.first { $0.id == pick } ?? groups.first?.rows.first
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: "What paid back your share?", close: onClose)
+            SheetTitle(title: "What paid this back?", close: onClose).sheetPart()
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     if let f = found {
                         QuestionHeader(name: f.merchant,
-                                       amount: "Your share \(Format.amount(f.share)) of \(Format.amount(f.amount)) · \(Format.short(f.date))",
+                                       amount: "\(Format.amount(f.amount)) · your share \(Format.amount(f.share)) · \(Format.short(f.date))",
                                        tone: Pearl.muted, sub: nil)
                             .padding(.bottom, 4)
                     }
@@ -119,6 +119,7 @@ struct PaidBackFindSheet: View {
                     }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 12)
+                .sheetPart()
             }
             .scrollDismissesKeyboard(.interactively)
             if !rows.isEmpty {
@@ -130,10 +131,11 @@ struct PaidBackFindSheet: View {
                         busy = false
                     }
                 })
+                .sheetPart()
             }
         }
         .background(SheetBackground())
-        .presentationDetents([.large])
+        .fitsContent()
         .presentationDragIndicator(.visible)
         .task(id: query) {
             if !query.isEmpty { try? await Task.sleep(nanoseconds: 250_000_000) }
@@ -160,32 +162,52 @@ struct PaidBackFindSheet: View {
             EmptyStateBlock(title: "No money in matches",
                             line: "Nothing came in for about \(Format.amount(f.about)) after \(Format.short(f.date)). If it hasn’t arrived yet, Pearl asks when it does.",
                             action: query.isEmpty ? nil : "Clear search") { query = "" }
-        } else if let f = found {
-            if query.trimmingCharacters(in: .whitespaces).isEmpty {
-                Text("Likely · money in after \(Format.short(f.date))".uppercased())
-                    .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
-                    .padding(.horizontal, 16).padding(.top, 4)
-                    .accessibilityAddTraits(.isHeader)
-            }
-            GlassCard {
-                ForEach(Array(rows.enumerated()), id: \.element.id) { i, c in
-                    if i > 0 { RowSeparator() }
-                    row(c, on: picked?.id == c.id)
+        } else if found != nil {
+            ForEach(groups, id: \.key) { g in
+                if let header = g.header {
+                    Text(header.uppercased())
+                        .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+                        .padding(.horizontal, 16).padding(.top, 4)
+                        .accessibilityAddTraits(.isHeader)
                 }
-            }
-            if let c = picked, c.taken == nil {
-                Text(c.who.map { "Next: who paid you back (\(pickedWord($0)) is picked), then part or all of it." }
-                     ?? "Next: who paid you back, then part or all of it.")
-                    .font(Nacre.footnote).foregroundColor(Pearl.ink)
-                    .frame(maxWidth: .infinity).multilineTextAlignment(.center)
-                    .padding(.top, 4)
+                GlassCard {
+                    ForEach(Array(g.rows.enumerated()), id: \.element.id) { i, c in
+                        if i > 0 { RowSeparator() }
+                        row(c, on: picked?.id == c.id)
+                    }
+                }
             }
         }
     }
 
-    /// "Northwind Ltd · +$60.00" over "Fri, Nov 14 · work · same as your share".
+    /// LT-01's groups, the reason said once in the header: YOUR SHARE (work
+    /// and refunds), then "SAM'S SHARE" for each person on the split, in the
+    /// order their money came. Money a search found from no one Pearl knows
+    /// sits last, under no header; PB-11 asks who it was.
+    private var groups: [(key: String, header: String?, rows: [PaidBackFind.Candidate])] {
+        var out: [(key: String, header: String?, rows: [PaidBackFind.Candidate])] = []
+        let yours = rows.filter { $0.kind == "work" || $0.kind == "shop" }
+        if !yours.isEmpty { out.append(("yours", "Your share", yours)) }
+        var people: [String] = []
+        for c in rows where c.kind == "person" {
+            let name = c.person ?? c.payer
+            if !people.contains(name) { people.append(name) }
+        }
+        for name in people {
+            let first = name.split(separator: " ").first.map(String.init) ?? name
+            let whose = first.lowercased().hasSuffix("s") ? "\(first)’" : "\(first)’s"
+            out.append(("p:" + name, "\(whose) share",
+                        rows.filter { $0.kind == "person" && ($0.person ?? $0.payer) == name }))
+        }
+        let other = rows.filter { $0.who == nil }
+        if !other.isEmpty { out.append(("other", nil, other)) }
+        return out
+    }
+
+    /// "Northwind Ltd · +$60.00" over "Nov 14 · work"; someone on the split
+    /// over the date alone.
     private func row(_ c: PaidBackFind.Candidate, on: Bool) -> some View {
-        let sub = [Format.weekdayDay(c.date), c.why.isEmpty ? nil : c.why].compactMap { $0 }.joined(separator: " · ")
+        let sub = [Format.short(c.date), c.why.isEmpty ? nil : c.why].compactMap { $0 }.joined(separator: " · ")
         return Button { pick = c.id } label: {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -365,11 +387,17 @@ struct PaidBackFromPurchase: ViewModifier {
     }
 
     /// PB-22's Next: PB-24 for money already paying back something else
-    /// (its free part links at once when that's enough), else PB-11.
+    /// (its free part links at once when that's enough); someone on the
+    /// split straight to their Mark paid back (LT-01: it pays their share,
+    /// PB-13 / PB-13b); else PB-11.
     private func next(_ c: PaidBackFind.Candidate) async -> String? {
         if c.taken != nil {
             if c.asks { go(.take(c)); return nil }
             return await link(c, more: false)
+        }
+        if c.who == .person, c.person != nil {
+            go(.person(c))
+            return nil
         }
         go(.who(c))
         return nil

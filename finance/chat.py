@@ -339,10 +339,10 @@ def tell(st, txns: list[Transaction], today: date, text: str, category: str | No
     n, m = len(proposals), len(items)
     return {"said": text, "category": cat, "people": who, "window": win, "open": m,
             "matched": n, "nothing": n == 0, "proposals": proposals,
-            # PC-05's line over the first card; PC-10's when nothing fits.
+            # PC-05's line over the first card; PC-10's when nothing fits
+            # ("Nothing from Sat–Sun fits.", TEXT-01).
             "line": (f"A guess for {n} of {m} from {win['label']}" if n else
-                     f"None of the {m} not sorted yet from {win['span']} fit what you said. "
-                     "Your cards stay as they were." if m else
+                     f"Nothing from {win['span']} fits." if m else
                      f"Nothing from {win['span']} is waiting to be sorted. Your cards stay as they were.")}
 
 

@@ -333,8 +333,8 @@ struct ReviewView: View {
                     .listRowBackground(Color.clear).listRowSeparator(.hidden)
             }
             if filter == "pearl" && rows.contains(where: { $0.record != nil }) {
-                // AI-02: what these are, and that each can be taken back.
-                Text("Sorted the ways you said yes to, up to 20 a day. Tap one to see why or undo it.")
+                // AI-02: what these are, and that each can be taken back (TEXT-01).
+                Text("Sorted for you · tap to undo")
                     .font(Nacre.footnote).foregroundColor(Pearl.ink)
                     .listRowBackground(Color.clear).listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 4, trailing: 16))
@@ -351,7 +351,7 @@ struct ReviewView: View {
                     sortedSection(ruled)
                 }
                 if !rest.isEmpty {
-                    sectionHeading("Not checked by you · Tap one to check it")
+                    sectionHeading("Not checked yet")
                     sortedSection(rest)
                 }
             } else {

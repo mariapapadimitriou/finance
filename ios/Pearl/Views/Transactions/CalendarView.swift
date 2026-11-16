@@ -691,12 +691,8 @@ struct CalendarCard: View {
         .font(Nacre.footnote).foregroundColor(Pearl.ink)
         .labelStyle(TightLabel())
         .frame(maxWidth: .infinity)
-        // TR-10: the band's line, under the rest; the dashed outline still means days sorted together.
-        // TR-17e: with no trips there's no band, so no line for it.
-        if (data?.tripCard.total ?? 0) > 0 {
-            Text("The band under days: a trip").font(Nacre.footnote).foregroundColor(Pearl.ink)
-                .frame(maxWidth: .infinity)
-        }
+        // TR-10's line for the band ("The band under days: a trip") is cut
+        // (TEXT-01): the band has its own label.
         }
         .accessibilityElement(children: .combine)
     }

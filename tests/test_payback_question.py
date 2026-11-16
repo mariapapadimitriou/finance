@@ -1,7 +1,7 @@
 """The payback question (Figma Proposals › "Payback question" 1418:88290,
 note 1419:89986; THL-289, THL-291, THL-181, THL-231): "Is mPg paying you
-back?" says why in the server's words, and lists the likely purchases as
-tiles, best first, each with its card and how the money compares. A tile
+back?" lists the likely purchases as tiles, best first, each with the
+reason in its own few words (LT-03, TEXT-01: no Why card). A tile
 answers through the payback path that exists; the deposit's own page
 (PQ-03p) shows Pearl's guess as a question card."""
 
@@ -62,19 +62,20 @@ class TestNotOnASplit:
         client.st.add_transactions([buy("Añejo", 61.57, "Dining", 3), etransfer("mPg", 20.00, 1)])
         return client
 
-    def test_why_pearl_is_asking_is_the_amount_and_the_timing(self, c):
+    def test_the_reason_sits_in_the_tile_not_a_why_card(self, c):
+        # LT-03 (TEXT-01): "Oct 31 · about a third · 2 days before"; no Why
+        # card and no "You haven’t split Añejo…" line.
         q = question(c)["payback"]
-        assert q["why"] == ("mPg sent $20.00 two days after Añejo. That’s about a third of the $61.57, "
-                            "like a share of a meal for three.")
-        assert q["line"] == "You haven’t split Añejo, so Yes takes $20.00 off it: $41.57 stays yours."
+        assert "why" not in q and "line" not in q
+        assert q["tiles"][0]["compare"] == "about a third · 2 days before"
 
     def test_the_purchase_is_a_dashed_tile_with_its_card_and_how_it_compares(self, c):
         q = question(c)["payback"]
         [tile] = q["tiles"]
-        assert tile["title"] == "Yes, Añejo · $61.57"
+        assert tile["title"] == "Añejo · $61.57"
         assert tile["guess"] is True and tile["category"] == "Dining"
         assert tile["card"] == "Amex Cobalt"
-        assert tile["compare"] == "$20.00 is about a third"
+        assert tile["compare"] == "about a third · 2 days before"
         assert tile["toast"] == "mPg paid back $20.00 for Añejo"
         assert tile["date"] == ago(3) and tile["charge"] == ids(c)["Añejo"]
 
@@ -90,13 +91,13 @@ class TestNotOnASplit:
         assert r.status_code == 200
         assert not [i for i in c.get("/api/review").get_json()["money_in"] if i["txn"]["id"] == deposit]
         assert c.post("/api/transactions/undo", json=r.get_json()["undo"]).status_code == 200
-        assert question(c)["payback"]["tiles"][0]["title"] == "Yes, Añejo · $61.57"
+        assert question(c)["payback"]["tiles"][0]["title"] == "Añejo · $61.57"
 
     def test_the_deposit_page_asks_it_as_a_question_card(self, c):
         out = c.get(f"/api/transactions/{ids(c)['deposit']}/payback-question").get_json()
         assert out["question"]["card"] == {
             "title": "Paying you back for Añejo?",
-            "line": "Pearl’s guess: about a third of Añejo, $61.57 · tap to answer"}
+            "line": "Pearl’s guess · about a third"}
 
 
 class TestOnTheSplit:
@@ -114,21 +115,21 @@ class TestOnTheSplit:
 
     def test_the_split_comes_first_with_what_is_still_to_come(self, c):
         q = question(c)["payback"]
-        assert q["why"] == "mPg is on your Añejo split and still owes you $30.79. $20.00 is part of it."
         split, other = q["tiles"]
-        assert split["title"] == "Yes, Añejo · mPg’s share" and split["guess"] is True
+        assert split["title"] == "Añejo · mPg’s share" and split["guess"] is True
         assert split["compare"] == "$20.00 of mPg’s $30.79 · $10.79 still to come"
-        assert other["title"] == "Yes, Uber Eats · $40.10" and "guess" not in other
-        assert other["compare"] == "about half" and other["card"] == "Amex Cobalt"
+        assert other["title"] == "Uber Eats · $40.10" and "guess" not in other
+        assert other["compare"] == "about half · 3 days before" and other["card"] == "Amex Cobalt"
         assert q["part"] is True
 
-    def test_the_second_line_names_the_runner_up(self, c):
-        assert question(c)["payback"]["line"] == "Uber Eats also fits: $20.00 is about half of $40.10, three days before."
+    def test_the_runner_up_is_its_own_tile_not_a_line(self, c):
+        # TEXT-01: "Uber Eats also fits: …" is cut; the second tile says it.
+        assert "line" not in question(c)["payback"]
 
     def test_the_card_on_the_page_says_the_split_guess(self, c):
         out = c.get(f"/api/transactions/{ids(c)['deposit']}/payback-question").get_json()
         assert out["question"]["card"]["line"] == \
-            "Pearl’s guess: $20.00 of mPg’s $30.79 · $10.79 still to come · tap to answer"
+            "Pearl’s guess · $20.00 of mPg’s $30.79 · $10.79 still to come"
 
     def test_yes_on_the_split_credits_mpg(self, c):
         q = question(c)["payback"]
@@ -161,16 +162,10 @@ class TestWords:
     def test_the_same_day_and_the_day_after(self):
         t = etransfer("Sam", 30.00, 3)
         q = build(t, [buy("Pizza Nova", 60.00, "Shopping", 3), t])
-        assert q["why"] == "Sam sent $30.00 the same day as Pizza Nova. That’s about half of the $60.00."
+        assert q["tiles"][0]["compare"] == "about half · the same day"
         t = etransfer("Sam", 30.00, 2)
-        assert build(t, [buy("Pizza Nova", 60.00, "Shopping", 3), t])["why"].startswith(
-            "Sam sent $30.00 the day after Pizza Nova.")
-
-    def test_a_split_purchase_isnt_called_unsplit(self):
-        c = buy("Pizza Nova", 60.00, "Shopping", 3)
-        c.my_share = 30.00
-        t = etransfer("Sam", 30.00, 1)
-        assert build(t, [c, t])["line"] == "Yes takes $30.00 off Pizza Nova."
+        assert build(t, [buy("Pizza Nova", 60.00, "Shopping", 3), t])["tiles"][0]["compare"] == \
+            "about half · the day before"
 
     def test_a_share_is_one_of_two_to_six(self):
         assert share_of(20.00, 61.57) == 3 and share_of(20.05, 40.10) == 2 and share_of(5.0, 61.57) is None
