@@ -1194,7 +1194,8 @@ class Store:
         the Allowance drops by the whole purchase when she splits it and
         rises by each payback as it comes. Their share as split, less what
         people_status credits them with (linked paybacks, cash, another
-        app), never below nothing; a share let go is already hers. Not sure
+        app) and less any payback linked here that's credited to no one
+        yet, never below nothing; a share let go is already hers. Not sure
         yet has its own rule (`_unsure_shares`). `rows` is the whole ledger,
         which paybacks are found in."""
         splits = self.splits()
@@ -1210,8 +1211,15 @@ class Store:
                 payer = self.payback_people()
             # A closed split still counts what's unpaid: closing lets it go.
             mine: dict = {}
-            status = people_status(t, {**s, "closed_at": None}, rows, payer, mine=mine)
-            t.split_owed = round(sum(max(p["amount"] - p["paid"], 0.0) for p in status), 2)
+            asked: list[Transaction] = []
+            status = people_status(t, {**s, "closed_at": None}, rows, payer, mine=mine, left_out=asked)
+            owed = sum(max(p["amount"] - p["paid"], 0.0) for p in status)
+            # A payback linked here that Pearl can't credit to anyone yet
+            # (S-05u, S-35c "Who sent this?", THL-181) is still money back:
+            # it comes off now, and saying who sent it only moves it onto
+            # them (product owner, 2026-11-16).
+            back = sum(x.part_for(t.fingerprint) for x in asked)
+            t.split_owed = round(max(owed - back, 0.0), 2)
             # TEST-31: what work reimbursed of her own share comes off at once
             # (decision 5), never more than her share.
             t.split_reimbursed = round(min(mine.get("paid", 0.0), mine.get("amount", 0.0)), 2)
