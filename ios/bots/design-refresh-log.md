@@ -967,3 +967,39 @@ Apple Intelligence not available: AI-15. Nothing to build until the product owne
   - "Each purchase: mine unless I say" is a split choice; it's the account-level mode in finance/joint.py.
   - "These look right" with nothing changed counts as done.
   - The section and its 6 frames are "Approved, ready to build". Note `1380:76572` is updated.
+
+### [designBOT → engBOT] 2026-11-16 · POLISH-01 · Question sheets and the transfer page, redone
+**Status:** Redesigned · Awaiting product owner
+**Jira:** THL-292, THL-295, THL-297, THL-232, THL-305, THL-181   **Figma:** Proposals › "Polish · Awaiting product owner" `1387:1741`
+
+The product owner sent two phone screenshots: "they look sloppy and low effort." They are in the section as the "before" frames (`1387:1742`, `1387:1743`).
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| RQ-01 | `1389:23274` / `1389:23646` | Is this a recurring transfer? Says why Pearl is asking, shows the 9 so far as a rhythm (one pill per payment, by month), then answer tiles with one line each. A tap answers; there's no Save |
+| RQ-01b | `1389:24086` / `1389:24326` | After a tap: the card leaves Needs a look; ink toast "Rent · all 9 sorted, and the ones to come" with Undo |
+| TF-01 | `1389:24632` / `1389:24833` | A transfer's page: ⇄ avatar, name in ink, grey amount with no sign, both dates, How it counts, both ends with "1 day apart", "This isn't a transfer" as an option row, Add a note |
+| TF-01c | `1390:2451` / `1390:2586` | "This isn't a transfer?": a Pearl sheet asks before anything changes |
+| PQ-01 | `1393:83919` / `1393:84293` | Whose pay is this? The paydays shown, then tiles Me / Sam / Both of us; "This isn't regular pay" as a row |
+| PQ-02 | `1393:84663` / `1393:85042` | How often is this pay? The deposits shown, six tiles; Pearl's guess is dashed, never picked for you |
+| RT-02 v2 | `1393:85417` / `1393:85693` | Profile › Recurring transfers › one: the current answer is a ringed tile, a tap changes it (with Undo), the 9 so far, Stop as a row |
+
+Notes: `1394:3145` (overview), `1394:3146` (RQ-01, with motion), `1394:3147` (TF-01), `1394:3148` (the worst three), `1394:3149` (the rest of the audit).
+
+What's behind the screenshots, from the code:
+- **Half-empty sheets.** Every AnswerSheet step is shown at `.large` (AnswerSheet.swift:738), with a plain list and then Save at the bottom. Sheets should take the height of their content.
+- **"…9 so f…".** QuestionHeader cuts the subtitle to one line (AnswerSheet.swift:1186). RQ-01 moves the schedule into the card.
+- **The faint title behind the sheet.** It's the page's inline bar showing above a `.large` sheet. A content-sized sheet fixes it.
+- **Grey transfer title.** The rename button is `.disabled(t.transfer != nil)` (TransactionDetailView.swift:882), and SwiftUI dims a disabled button. Keep it not tappable, but don't dim it.
+- **"Yours." is a bug.** `run()` stores the last action's result in `@State message`, and line 405 draws it as a plain line under the page. "Yours." is what WhoseSheet returns for Mine (line 2819). Every transaction page does this after an action, and so does SettingsViews.swift:181. Show a toast with Undo instead.
+- **The floating red link.** It comes from `Spacer(minLength: 120)` in `transferLegs` (line 2063).
+- **Transfer amount colour.** #357 changed the rows only; the detail hero isn't in money-transfer grey with ⇄ yet.
+- **RQ-01 needs each date in the series.** Today the series has ids, first, last and count. Add each payment's date (and the day of the month) so the rhythm can be drawn.
+
+Product owner decisions:
+1. **RT-02.** THL-295 says "What is it? with Save". Should a tap with Undo replace Save? Recommended: yes, it's how every other answer works now.
+2. **Size to content.** Should every question sheet move to a content-sized sheet, `.large` only at accessibility text sizes? Recommended: yes.
+
+Keep Save where you type or set an amount: WhoseSheet "Part of it", CategorySheet with Remember, WhoSentSheet, notes, tags, renames.
+
+New library component: none. The tiles are the What was this? tile, and the icons are the handoff's Category icon set.
