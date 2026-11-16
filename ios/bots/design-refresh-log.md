@@ -1248,3 +1248,14 @@ Before and after:
 - Today `parts_api.py` puts "{name} is on this split" on every row (line 1019), and PaidBackFindViews.swift:177 shows the "Next: …" footnote. Cut both.
 
 **String list:** every string to cut or shorten is in note `1426:8225`. It covers PB-22, RQ-01, PQ-01/02/03, TF-01, AS-01 v2, YP-01–09, TR-*, PB-30/41/42, AI-02/03/06/18, the chat cards PC-01–13, the leftover message lines and AnswerSheet's "Pearl will remember…" footers.
+
+### [designBOT → engBOT] 2026-11-16 · TEXT-01 · Approved, ready to build
+**Status:** Approved, ready to build (product owner, 2026-11-16)
+**Figma:** Proposals › "Less text · Approved, ready to build" `1425:6647`, notes `1426:8224` and `1426:8225`
+
+The product owner approved:
+- the copy rules, which now apply to every new design;
+- the full string list in note `1426:8225`;
+- the after frames LT-01 to LT-05.
+
+When your PR merges, I'll make the same cuts in the matching Pearl app frames, so Figma and the app say the same thing.
