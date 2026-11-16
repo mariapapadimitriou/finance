@@ -10,6 +10,8 @@ struct CalendarMonth: Decodable {
     let bands: [SortedRange]
     /// TR-10: the trips that touch the grid (finance/calendar_view.py `trip_spans`).
     let trips: [Trip]
+    /// TR-17: the Trips card under the grid (finance/calendar_view.py `trip_card`).
+    let tripCard: TripCard
     let prev: Step?
     let next: Step?
 
@@ -28,6 +30,30 @@ struct CalendarMonth: Decodable {
         func contains(_ day: String) -> Bool { day >= start && day <= end }
     }
 
+    /// TR-17: up to three trips, this month's first, then the most recent
+    /// others; `total` is how many trips there are at all (none: TR-17e).
+    struct TripCard: Decodable, Hashable {
+        var trips: [Row] = []
+        var total: Int = 0
+
+        struct Row: Decodable, Identifiable, Hashable {
+            let id: String
+            let name: String
+            let start: String
+            let end: String
+            let totals: [MoneyTotal]
+        }
+
+        init() {}
+
+        init(from decoder: Decoder) throws {
+            enum Keys: String, CodingKey { case trips, total }
+            let c = try decoder.container(keyedBy: Keys.self)
+            trips = (try? c.decode([Lenient<Row>].self, forKey: .trips))?.compactMap { $0.value } ?? []
+            total = (try? c.decode(Int.self, forKey: .total)) ?? trips.count
+        }
+    }
+
     struct Cell: Decodable, Identifiable, Hashable {
         let date: String
         let day: Int
@@ -44,13 +70,17 @@ struct CalendarMonth: Decodable {
     }
 
     init(from decoder: Decoder) throws {
-        enum Keys: String, CodingKey { case month, label, cells, bands, trips, prev, next }
+        enum Keys: String, CodingKey {
+            case month, label, cells, bands, trips, prev, next
+            case tripCard = "trip_card"
+        }
         let c = try decoder.container(keyedBy: Keys.self)
         month = try c.decode(String.self, forKey: .month)
         label = (try? c.decode(String.self, forKey: .label)) ?? month
         cells = (try? c.decode([Lenient<Cell>].self, forKey: .cells))?.compactMap { $0.value } ?? []
         bands = (try? c.decode([Lenient<SortedRange>].self, forKey: .bands))?.compactMap { $0.value } ?? []
         trips = (try? c.decode([Lenient<Trip>].self, forKey: .trips))?.compactMap { $0.value } ?? []
+        tripCard = (try? c.decodeIfPresent(TripCard.self, forKey: .tripCard)) ?? TripCard()
         prev = try? c.decodeIfPresent(Step.self, forKey: .prev)
         next = try? c.decodeIfPresent(Step.self, forKey: .next)
     }
@@ -225,7 +255,7 @@ struct CalendarCard: View {
                 Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
             }
             legend
-            tripsThisMonth
+            tripsCard
             comingUp
             shownDayList
             sortedTogether
@@ -435,32 +465,51 @@ struct CalendarCard: View {
         .accessibilityHidden(true)
     }
 
-    /// TR-10: "Trips this month", one row a trip, each opening its page (TR-02).
-    @ViewBuilder private var tripsThisMonth: some View {
-        let month = data?.month ?? self.month
-        let trips = (data?.trips ?? []).filter { String($0.start.prefix(7)) <= month && String($0.end.prefix(7)) >= month }
-        if !trips.isEmpty {
+    /// TR-17 (`1362:8403` / `1362:8698`): one "Trips" card under the grid
+    /// and legend, always there once the month has loaded. It replaced
+    /// TR-10's "Trips this month". Up to three rows, this month's trips
+    /// first, then the most recent others, each "Mar 4–9   Trip to Montréal
+    /// $1,284.60" opening its page (TR-02); then "See all trips" (TR-18).
+    /// TR-17e (`1362:8993` / `1362:9337`): with no trips, one line on how
+    /// trips start, and no "See all trips".
+    @ViewBuilder private var tripsCard: some View {
+        if let card = data?.tripCard {
             GlassCard {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Trips this month").font(Pearl.heading(22, relativeTo: .title2)).foregroundColor(Pearl.ink)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Trips").font(Nacre.title2).foregroundColor(Pearl.ink)
                         .accessibilityAddTraits(.isHeader)
                         .padding(.bottom, 8)
-                    ForEach(Array(trips.enumerated()), id: \.element.id) { i, trip in
-                        if i > 0 { Rectangle().fill(Pearl.border).frame(height: 1) }
-                        NavigationLink { TripPage(id: trip.id) } label: {
-                            tripLine(lead: Format.span(trip.start, trip.end), name: trip.name, totals: trip.totals)
+                    if card.trips.isEmpty {
+                        Text("No trips yet. Pearl asks when it spots one, or pick transactions in Cash flow and tap Make a trip.")
+                            .font(Nacre.textButton).foregroundColor(Pearl.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.bottom, 8)
+                    } else {
+                        ForEach(Array(card.trips.enumerated()), id: \.element.id) { i, trip in
+                            if i > 0 { Rectangle().fill(Pearl.border).frame(height: 1) }
+                            NavigationLink { TripPage(id: trip.id) } label: {
+                                TripCardRow(name: trip.name, start: trip.start, end: trip.end, totals: trip.totals)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Opens the trip")
+                        }
+                        NavigationLink { AllTripsPage() } label: {
+                            Text("See all trips").font(Nacre.textButton).foregroundColor(Pearl.link)
+                                .frame(minHeight: 44, alignment: .leading)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityHint("Opens the trip")
+                        .accessibilityAddTraits(.isButton)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 8)
             }
         }
     }
 
-    /// "Mar 4–9   Trip to Montréal   $1,284.60"; TR-10b's day row
-    /// "Trip   Trip to Lisbon · Oct 29 – Nov 2   $2,140.00".
+    /// TR-10b's day row "Trip   Trip to Lisbon · Oct 29 – Nov 2   $2,140.00".
+    /// The Trips card's rows are `TripCardRow` (TR-17).
     private func tripLine(lead: String, name: String, totals: [MoneyTotal]) -> some View {
         HStack(spacing: 12) {
             Text(lead).foregroundColor(Pearl.muted).fixedSize()
@@ -608,8 +657,11 @@ struct CalendarCard: View {
         .labelStyle(TightLabel())
         .frame(maxWidth: .infinity)
         // TR-10: the band's line, under the rest; the dashed outline still means days sorted together.
-        Text("The band under days: a trip").font(Nacre.footnote).foregroundColor(Pearl.ink)
-            .frame(maxWidth: .infinity)
+        // TR-17e: with no trips there's no band, so no line for it.
+        if (data?.tripCard.total ?? 0) > 0 {
+            Text("The band under days: a trip").font(Nacre.footnote).foregroundColor(Pearl.ink)
+                .frame(maxWidth: .infinity)
+        }
         }
         .accessibilityElement(children: .combine)
     }
