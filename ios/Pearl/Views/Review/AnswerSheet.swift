@@ -692,7 +692,7 @@ struct AnswerSheet: View {
         .fitsContent()
         .task(id: step) {
             guard step == .joint || step == .cadence, deposits == nil else { return }
-            deposits = try? await api.get("api/transactions/\(t.id)/deposits")
+            deposits = try? await api.get("api/transactions/\(t.id)/paydays")
         }
     }
 

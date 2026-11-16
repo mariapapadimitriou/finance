@@ -57,7 +57,7 @@ struct WhosePaySheet: View {
         }
         .background(SheetBackground())
         .fitsContent()
-        .task { deposits = try? await app.api.get("api/transactions/\(ask.txn)/deposits") }
+        .task { deposits = try? await app.api.get("api/transactions/\(ask.txn)/paydays") }
     }
 
     private var people: [String] { ask.people ?? [] }

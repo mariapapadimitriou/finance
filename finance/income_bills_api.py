@@ -498,7 +498,7 @@ def income_bills_etransfer():
 DEPOSITS_SHOWN = 9
 
 
-@bp.get("/transactions/<txn_id>/deposits")
+@bp.get("/transactions/<txn_id>/paydays")
 def payer_deposits(txn_id: str):
     """PQ-01 Whose pay is this? and PQ-02 How often is this pay? (POLISH-01):
     the deposits from this one's payer into the same account, so the sheet
