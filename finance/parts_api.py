@@ -500,9 +500,18 @@ def _joint_payback(st, t, body: dict):
         return jsonify({"error": f"Pick someone on {offer['account']}."}), 400
     parts = body.get("parts")
     if isinstance(parts, list):
-        # Their shares: a payback part with no name is theirs.
-        parts = [dict(p, person=person) if isinstance(p, dict) and p.get("kind") == "payback"
-                 and not str(p.get("person") or "").strip() else p for p in parts]
+        # Their shares: a payback part with no name is theirs, by the name on
+        # the purchase's split (2026-11-16: Anastasia on the account can be
+        # "Mom" on the split). On a split she set up without them it stays
+        # unnamed, so Pearl asks who sent it (S-35c) rather than crediting
+        # nobody.
+        def named(p):
+            if not (isinstance(p, dict) and p.get("kind") == "payback" and not str(p.get("person") or "").strip()):
+                return p
+            charge = st.get_transaction(str(p.get("charge") or ""))
+            name, _ = sp.payer_on_split(st, charge, t, person) if charge is not None else (person, None)
+            return dict(p, person=name) if name else p
+        parts = [named(p) for p in parts]
     reply = save_parts(st, t, {**{k: v for k, v in body.items() if k != "joint_payback"}, "parts": parts})
     if isinstance(reply, tuple):
         return reply

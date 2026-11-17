@@ -647,6 +647,46 @@ class Problem(Exception):
     """Something the person needs to fix before the answer can be saved."""
 
 
+class WhoPaid(Problem):
+    """A payback onto a split she set up, from someone who isn't on it
+    (2026-11-16): `ask` is what Who paid you back? lists (PP-01, only the
+    split's people; splits.payer_on_split). Nothing has been saved."""
+
+    def __init__(self, ask: dict):
+        super().__init__(f"Who paid you back? {ask['sender']} isn’t on the {ask['merchant']} split.")
+        self.ask = ask
+
+
+def _payer_on_splits(store, t: Transaction, body: dict) -> dict:
+    """Before a payback is linked: the person on each picked purchase's
+    split it's from, by the name on the split (splits.payer_on_split). The
+    body with that `person`, or WhoPaid when the sender isn't on a split she
+    set up, so `add_payer` never puts them on it beside the people she
+    named. Changes nothing."""
+    from .etransfers import known_people, party as etransfer_party
+    from .splits import payer_on_split
+    picked = body.get("charges") if isinstance(body.get("charges"), list) and body["charges"] else [body.get("charge")]
+    ids = [str((p.get("id") if isinstance(p, dict) else p) or "") for p in picked]
+    by_id = {x.fingerprint: x for x in store.all_transactions()}
+    person = " ".join(str(body.get("person") or "").split()) or None
+    if person is None:
+        people = known_people(list(by_id.values()), store.splits(), store.payback_people())
+        person = (etransfer_party(t, people) or {}).get("name") or None
+    names = []
+    for cid in ids:
+        charge = by_id.get(cid)
+        if charge is None or charge.amount <= 0:
+            continue
+        name, ask = payer_on_split(store, charge, t, person)
+        if ask is not None:
+            raise WhoPaid(ask)
+        names.append(name)
+    if person and names and len(set(names)) == 1 and names[0] != person:
+        # "Sam Lee" sent it; it's the Sam on her split.
+        return {**body, "person": names[0]}
+    return body
+
+
 def _category(body: dict) -> str:
     cat = body.get("category")
     if cat not in CATEGORIES or cat in NON_SPEND or cat == "Unsorted transfers":
@@ -757,6 +797,8 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
     keys = {c["key"] for c in (OUT_CASES if out_ else IN_CASES)}
     if case not in keys:
         raise Problem("Say what this was.")
+    if case == "payback" and not out_:
+        body = _payer_on_splits(store, t, body)
     old_cat = t.category or "Other"
     share_extra = None  # TEST-31 (S-11w): the extra over her share, asked next
     marks: dict = {}

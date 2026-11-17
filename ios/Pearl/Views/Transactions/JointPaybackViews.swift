@@ -266,6 +266,30 @@ struct WhoPaidPicker: View {
     }
 }
 
+/// PP-01 for a payback onto a split she set up, from a sender Pearl can't
+/// place on it (2026-11-16, `WhoPaidAsk`): only the split's people, no past
+/// splits and no Someone new, so a payback never adds a person to her split.
+/// A tap sends the same payback as that person.
+struct WhoPaidAskSheet: View {
+    let ask: WhoPaidAsk
+    let api: APIClient
+    let onPick: (ReviewAnswer) -> Void
+    let onClose: () -> Void
+
+    var body: some View {
+        WhoPaidPicker(api: api, sub: "\(Format.amount(ask.amount)) toward \(ask.merchant) · \(ask.sender)",
+                      top: ask.people.map { p in
+                          WhoPaidPicker.Row(name: p.name, sub: (p.owes ?? 0) >= 0.005
+                                            ? "Owes you \(Format.amount(p.owes ?? 0)) on this split" : "On this split")
+                      },
+                      topLabel: "On this split", pastSplits: false, someoneNew: false,
+                      onPick: { name in
+                          if let answer = ask.answer(name) { onPick(answer) } else { onClose() }
+                      },
+                      onClose: onClose)
+    }
+}
+
 /// TP-05: "Why there’s no Paid back here" under a transfer between two
 /// accounts only hers.
 struct NoPaidBackCallout: View {

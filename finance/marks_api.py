@@ -131,6 +131,14 @@ def _extra_part(case: str, body: dict, amount: float) -> tuple[dict | None, str 
     return None, f"Only ${amount:,.2f} of this is extra, so it can’t be that. Pick what the extra was."
 
 
+def _who_paid(t, exc):
+    """2026-11-16: a payback onto a split she set up, from someone not on
+    it. Nothing was saved; the app asks Who paid you back? (PP-01) with only
+    the split's people and sends the mark again with that `person`:
+    POST …/<deposit>/mark {"case": "payback", "charge", "person"}."""
+    return jsonify({"error": str(exc), "who_paid": {**exc.ask, "deposit": t.fingerprint if t else None}}), 409
+
+
 @bp.post("/transactions/<txn_id>/mark")
 def mark_transaction(txn_id: str):
     from .impact import snapshot, undo_payload
@@ -170,6 +178,8 @@ def mark_transaction(txn_id: str):
     before = snapshot(st, txns)
     try:
         res = marks.apply(st, t, body, _today())
+    except marks.WhoPaid as exc:
+        return _who_paid(t, exc)
     except marks.Problem as exc:
         return jsonify({"error": str(exc)}), 400
     core._reclassify(st)
@@ -229,6 +239,8 @@ def answer_pair(txn_id: str):
     st = store()
     try:
         out = pairs.apply(st, for_store(st, _today().isoformat()), txn_id, _today())
+    except marks.WhoPaid as exc:
+        return _who_paid(st.get_transaction(txn_id), exc)
     except marks.Problem as exc:
         return jsonify({"error": str(exc)}), 400
     if out is None:

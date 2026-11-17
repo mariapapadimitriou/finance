@@ -2163,6 +2163,9 @@ struct PaybackQuestion: Decodable, Hashable {
         let compare: String
         /// PQ-03c: "mPg paid back $20.00 for Añejo".
         let toast: String
+        /// PQ-03b: who on the split it's theirs ("Anastasia"), sent with the
+        /// answer so it credits them however the bank wrote the sender.
+        var person: String? = nil
         /// Pearl's guess: the first tile only, drawn dashed.
         var guess: Bool? = nil
         var id: String { charge }

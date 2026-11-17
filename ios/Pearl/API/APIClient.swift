@@ -176,6 +176,9 @@ struct ServerProblem: Decodable, Equatable {
     var needsConfirmation: Bool? = nil
     var duplicate: Bool? = nil
     var matches: [Match]? = nil
+    /// A payback onto a split she set up, from a sender Pearl can't place on
+    /// it (409, finance/marks_api.py `_who_paid`): ask who with PP-01.
+    var whoPaid: WhoPaidAsk? = nil
 
     struct Match: Decodable, Equatable, Identifiable {
         let id: String
@@ -187,13 +190,46 @@ struct ServerProblem: Decodable, Equatable {
     enum CodingKeys: String, CodingKey {
         case error, taken, weak, wrong, left, paused, expired, duplicate, matches
         case retryIn = "retry_in"
+        case whoPaid = "who_paid"
         case needsConfirmation = "needs_confirmation"
+    }
+}
+
+/// "Who paid you back?" for a payback onto a split she set up (2026-11-16,
+/// "it adds another person instead of crediting the friend on it"): the
+/// sender ("PAPAS A") couldn't be placed on the split and more than one
+/// person could have sent it. Nothing was saved. PP-01 (`WhoPaidPicker`)
+/// lists only `people`; her tap sends the payback again as that person.
+struct WhoPaidAsk: Decodable, Equatable, Identifiable {
+    let charge: String
+    let merchant: String
+    let sender: String
+    let amount: Double
+    /// The money in it's from (the pair card's row too).
+    let deposit: String?
+    let people: [Person]
+
+    struct Person: Decodable, Equatable {
+        let name: String
+        /// Nil on a Not sure yet split.
+        let owes: Double?
+    }
+
+    var id: String { charge + "|" + sender }
+
+    /// The same payback, from `name` on the split, with PQ-03c's toast.
+    func answer(_ name: String) -> ReviewAnswer? {
+        guard let deposit = deposit else { return nil }
+        return .payback(deposit, charge: charge,
+                        toast: "\(name) paid back \(Format.amount(amount)) for \(merchant)", person: name)
     }
 }
 
 extension Error {
     /// The server's problem behind an error, if there was one.
     var serverProblem: ServerProblem? { (self as? APIError)?.problem }
+    /// A payback the server wants to know who sent (`WhoPaidAsk`).
+    var whoPaid: WhoPaidAsk? { serverProblem?.whoPaid }
 }
 
 /// For calls whose answer we don't need beyond "it worked".

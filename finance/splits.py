@@ -829,6 +829,69 @@ def _made_by_paybacks(store, charge: Transaction, name: str, inflow: Transaction
                for t in store.all_transactions())
 
 
+def sender_is(name: str, sender: str, inflow: Transaction | None = None) -> bool:
+    """Whether money from `sender` (as the bank or she named them) is from
+    `name` on a split, more loosely than `same_person` (2026-11-16): the
+    banks write "PAPAS ANASTASIA", "MS ANASTASIA PAPAS" and "ANASTASIAPAPAS"
+    for her split's "Anastasia". Any word of the sender is their first name,
+    or the words run together start with it, or the money's own text names
+    them (`from_person`). Case and spaces don't matter."""
+    if not name or not sender:
+        return False
+    if name == sender or same_person(name, sender):
+        return True
+    first = first_name(name)
+    words = _WORD.findall(sender.lower())
+    if len(first) >= 3 and (first in words or "".join(words).startswith(first)):
+        return True
+    return inflow is not None and from_person(inflow, name)
+
+
+def payer_on_split(store, charge: Transaction, inflow: Transaction,
+                   person: str | None) -> tuple[str | None, dict | None]:
+    """Who on the charge's split a payback is from, before it's linked
+    (2026-11-16, "it adds another person instead of crediting the friend
+    already on it"). A friend on her split as "Anastasia" sends an
+    e-Transfer the bank names "PAPAS ANASTASIA"; `add_payer` didn't see the
+    same person and put "Papas Anastasia" on the split beside her, so
+    Anastasia still owed and her own share shrank. A split she set up never
+    gains someone from a payback.
+
+    Returns (the name to link it to, None):
+    * `person` unchanged where there's no split, the split was made only by
+      paybacks (THL-260, it grows with each payer), or nobody is named (the
+      ask rule, S-35c, says who later);
+    * the one person on the split the sender is (`sender_is`);
+    * else the one person who still owes on it.
+    Or (None, ask) when that leaves no one or several: `ask` is what the
+    app's Who paid you back? (PP-01, `WhoPaidPicker`) lists, only the
+    split's people, and her answer comes back as `person`."""
+    split = store.splits().get(charge.fingerprint)
+    person = " ".join((person or "").split())[:MAX_NAME] or None
+    if not split or not split.get("people") or not person:
+        return person, None
+    people = split["people"]
+    if all(_made_by_paybacks(store, charge, p["name"], inflow) for p in people):
+        return person, None
+    exact = [p["name"] for p in people if p["name"] == person]
+    if exact:
+        return exact[0], None
+    hits = [p["name"] for p in people if sender_is(p["name"], person, inflow)]
+    if len(hits) == 1:
+        return hits[0], None
+    owes = {}
+    if split.get("mode") != UNSURE:
+        owes = {s["name"]: round(s["owes"], 2)
+                for s in people_status(charge, split, store.all_transactions(), store.payback_people())}
+        owing = [p["name"] for p in people if (owes.get(p["name"]) or 0) >= 0.005]
+        if not hits and len(owing) == 1:
+            return owing[0], None
+    return None, {"charge": charge.fingerprint, "merchant": charge.merchant or charge.description,
+                  "sender": person, "amount": round(-inflow.amount, 2),
+                  "people": [{"name": p["name"], "owes": owes.get(p["name"])} for p in people
+                             if not hits or p["name"] in hits]}
+
+
 def drop_payer(store, inflow: Transaction, charge_id: str | None = None,
                checked: bool = False):
     """Undo `add_payer` when the payback is unlinked or moved: its person
