@@ -114,6 +114,10 @@ struct WhoPaidPicker: View {
     var topLabel: String? = nil
     var pastSplits = true
     var someoneNew = true
+    /// FROM PAST SPLITS limited to these people (2026-11-16, A person from
+    /// a sender Pearl can't match): whoever owes her, each with the line
+    /// /api/people/recent gives them, or this row's until it has loaded.
+    var onlyPast: [Row]? = nil
     let onPick: (String) -> Void
     let onClose: () -> Void
 
@@ -141,7 +145,15 @@ struct WhoPaidPicker: View {
                 if let label = topLabel { PearlSectionLabel(text: label) }
                 card(shown)
             }
-            if pastSplits, let recent = recent {
+            if let only = onlyPast {
+                let past = only.filter { matches($0.name) }.map { r in
+                    (recent ?? []).first { $0.name == r.name }.map { Row(name: r.name, sub: pastLine($0)) } ?? r
+                }
+                if !past.isEmpty {
+                    PearlSectionLabel(text: "From past splits")
+                    card(past)
+                }
+            } else if pastSplits, let recent = recent {
                 // Anyone already on this split shows once (the same name match).
                 let past = recent.filter { p in matches(p.name) && !top.contains { samePerson($0.name, p.name) } }
                     .map { Row(name: $0.name, sub: pastLine($0)) }
@@ -172,7 +184,7 @@ struct WhoPaidPicker: View {
                 }
             }
         }
-        .task { if pastSplits { await load() } }
+        .task { if pastSplits || onlyPast != nil { await load() } }
         .sheet(isPresented: $typing) {
             // Someone new: the people picker's name entry (AM-08p3), one name.
             PeoplePicker(api: api, overline: "Paid back · Who paid", title: "Who paid you back?", sub: sub,
@@ -269,23 +281,51 @@ struct WhoPaidPicker: View {
 /// PP-01 for a payback onto a split she set up, from a sender Pearl can't
 /// place on it (2026-11-16, `WhoPaidAsk`): only the split's people, no past
 /// splits and no Someone new, so a payback never adds a person to her split.
-/// A tap sends the same payback as that person.
+/// A tap opens PB-30 for that person (Paybacks & undo, 1395:3405) with this
+/// purchase ticked and their others as they add up, in this same sheet;
+/// saved, `onPick` gets `.done` with its toast and one Undo. Someone who
+/// owes nothing with an amount (a Not sure yet split) gets the same
+/// payback as before.
+@MainActor
 struct WhoPaidAskSheet: View {
     let ask: WhoPaidAsk
     let api: APIClient
     let onPick: (ReviewAnswer) -> Void
     let onClose: () -> Void
+    @State private var pb30: String?
 
     var body: some View {
+        if let name = pb30, let deposit = ask.deposit {
+            PartsSheet(deposit: PartsDeposit(id: deposit, name: ask.sender, amount: ask.amount, date: ask.date ?? ""),
+                       api: api, paidBack: true, payer: name, person: name, mustTick: ask.charge) { reply in
+                onPick(.done(reply))
+            }
+        } else {
+            picker
+        }
+    }
+
+    /// Their shares with an amount (…/owing?person=, as PB-30 reads them).
+    private func picked(_ name: String) async {
+        struct Reply: Decodable { let from: String?; let items: [Lenient<PartsSheet.Owing>] }
+        if let deposit = ask.deposit,
+           let r: Reply = try? await api.get("api/transactions/\(deposit)/owing", query: ["person": name]),
+           r.from != nil,
+           r.items.compactMap(\.value).contains(where: { $0.theirs == true && $0.unknown != true && $0.owes >= 0.005 }) {
+            pb30 = name
+            return
+        }
+        if let answer = ask.answer(name) { onPick(answer) } else { onClose() }
+    }
+
+    private var picker: some View {
         WhoPaidPicker(api: api, sub: "\(Format.amount(ask.amount)) toward \(ask.merchant) · \(ask.sender)",
                       top: ask.people.map { p in
                           WhoPaidPicker.Row(name: p.name, sub: (p.owes ?? 0) >= 0.005
                                             ? "Owes you \(Format.amount(p.owes ?? 0)) on this split" : "On this split")
                       },
                       topLabel: "On this split", pastSplits: false, someoneNew: false,
-                      onPick: { name in
-                          if let answer = ask.answer(name) { onPick(answer) } else { onClose() }
-                      },
+                      onPick: { name in Task { await picked(name) } },
                       onClose: onClose)
     }
 }
