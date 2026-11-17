@@ -309,3 +309,29 @@ class TestPath5NoPersonUnchanged:
         assert client.st.splits() == {}
         undo(client, r)
         assert refunded() == []
+
+
+class TestTheAppWiresIt:
+    """The Swift side: PB-30 is where a person's payback goes."""
+
+    def src(self, rel):
+        return (IOS / rel).read_text()
+
+    def test_a_person_asks_who_then_reloads_their_shares(self):
+        # Paths 1 and 6: PP-01 (only the people who owe her, no Someone
+        # new), then …/owing?person= for her pick.
+        s = self.src("Views/Transactions/PartsFlow.swift")
+        assert "onlyPast: owerRows" in s and "someoneNew: false" in s
+        assert "jointPerson ?? joint?.person ?? pickedPerson ?? person" in s
+        assert "(paidBack || saidPerson) && (editing.isEmpty || repick)" in s
+
+    def test_who_paid_ask_opens_pb30_for_the_pick(self):
+        # Path 3.
+        s = self.src("Views/Transactions/JointPaybackViews.swift")
+        assert "paidBack: true, payer: name, person: name, mustTick: ask.charge" in s
+
+    def test_pq03_tile_and_something_else(self):
+        # Path 2.
+        s = self.src("Views/Review/AnswerSheet.swift")
+        assert "await tapTile(tile)" in s
+        assert "person: partPerson, mustTick: mustTick" in s

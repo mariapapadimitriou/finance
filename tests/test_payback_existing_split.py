@@ -292,7 +292,8 @@ class TestTheAppAsks:
         return (IOS / path).read_text()
 
     def test_the_tile_sends_its_person(self):
-        assert "person: $0.person" in self.src("Views/Review/AnswerSheet.swift")
+        # The single tap (PQ-03), from tapTile since PB-30 took the bigger case.
+        assert "person: tile.person" in self.src("Views/Review/AnswerSheet.swift")
         review = self.src("Views/Review/ReviewView.swift")
         assert 'if let person = person { body["person"] = person }' in review
 
