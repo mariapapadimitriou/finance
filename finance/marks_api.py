@@ -134,9 +134,12 @@ def _extra_part(case: str, body: dict, amount: float) -> tuple[dict | None, str 
 def _who_paid(t, exc):
     """2026-11-16: a payback onto a split she set up, from someone not on
     it. Nothing was saved; the app asks Who paid you back? (PP-01) with only
-    the split's people and sends the mark again with that `person`:
-    POST …/<deposit>/mark {"case": "payback", "charge", "person"}."""
-    return jsonify({"error": str(exc), "who_paid": {**exc.ask, "deposit": t.fingerprint if t else None}}), 409
+    the split's people, then PB-30 for that person (GET …/owing?person=,
+    POST …/parts), or, when they owe nothing else, the mark again with
+    that `person`: POST …/<deposit>/mark {"case": "payback", "charge", "person"}."""
+    # PB-30 after her pick (2026-11-16): the money's day, for its header.
+    return jsonify({"error": str(exc), "who_paid": {**exc.ask, "deposit": t.fingerprint if t else None,
+                                                    "date": t.date[:10] if t else None}}), 409
 
 
 @bp.post("/transactions/<txn_id>/mark")
