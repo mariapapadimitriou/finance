@@ -861,9 +861,10 @@ def payer_on_split(store, charge: Transaction, inflow: Transaction,
     * `person` unchanged where there's no split, the split was made only by
       paybacks (THL-260, it grows with each payer), or nobody is named (the
       ask rule, S-35c, says who later);
-    * the one person on the split the sender is (`sender_is`);
-    * else the one person who still owes on it.
-    Or (None, ask) when that leaves no one or several: `ask` is what the
+    * the one person on the split the sender is (`sender_is`): an exact
+      name, or one clear loose match.
+    Or (None, ask) otherwise, even when only one person still owes (product
+    owner, 2026-11-16: always ask, never guess who): `ask` is what the
     app's Who paid you back? (PP-01, `WhoPaidPicker`) lists, only the
     split's people, and her answer comes back as `person`."""
     split = store.splits().get(charge.fingerprint)
@@ -883,9 +884,6 @@ def payer_on_split(store, charge: Transaction, inflow: Transaction,
     if split.get("mode") != UNSURE:
         owes = {s["name"]: round(s["owes"], 2)
                 for s in people_status(charge, split, store.all_transactions(), store.payback_people())}
-        owing = [p["name"] for p in people if (owes.get(p["name"]) or 0) >= 0.005]
-        if not hits and len(owing) == 1:
-            return owing[0], None
     return None, {"charge": charge.fingerprint, "merchant": charge.merchant or charge.description,
                   "sender": person, "amount": round(-inflow.amount, 2),
                   "people": [{"name": p["name"], "owes": owes.get(p["name"])} for p in people

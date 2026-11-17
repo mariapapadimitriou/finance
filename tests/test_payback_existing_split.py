@@ -12,8 +12,8 @@ Now (splits.payer_on_split, marks._payer_on_splits):
 * the sender is matched to the person on the split, loosely (any word is
   their first name, the words run together start with it, or the money's
   text names them), and credited;
-* no match and one person still owes: that person;
-* otherwise nothing is saved and the reply is 409 `who_paid`, the split's
+* otherwise, even when only one person still owes (product owner,
+  2026-11-16: always ask), nothing is saved and the reply is 409 `who_paid`, the split's
   people for PP-01 (`WhoPaidPicker`); her tap sends the mark with `person`;
 * a split she set up never gains a person from a payback. A split made only
   by paybacks still grows with each payer (THL-260).
@@ -130,20 +130,36 @@ class TestTheSenderIsTheFriendOnTheSplit:
         assert people(client, charge) == {"Anastasia": (30.0, 0.0)}
 
 
-class TestOnePersonStillOwes:
-    """A sender Pearl can't place on the split, and only one person owes."""
+class TestOnePersonStillOwesStillAsks:
+    """A sender Pearl can't place on the split, and only one person owes:
+    Pearl asks anyway (product owner, 2026-11-16: always ask, never guess)."""
 
     @pytest.mark.parametrize("sender", ["INTERAC E-TRANSFER FROM A PAPAS",
                                         "INTERAC E-TRANSFER FROM STACY P"])
-    def test_that_person_is_credited(self, client, sender):
+    def test_she_is_asked_and_nothing_is_saved(self, client, sender):
         charge, deposit = setup(client, sender)
-        ok(yes(client, deposit, charge))
+        before = (client.st.splits()[charge], client.st.get_transaction(charge).my_share)
+        r = yes(client, deposit, charge)
+        assert r.status_code == 409
+        assert [p["name"] for p in r.get_json()["who_paid"]["people"]] == ["Anastasia"]
+        assert (client.st.splits()[charge], client.st.get_transaction(charge).my_share) == before
+        assert not client.st.get_transaction(deposit).repays
+
+    @pytest.mark.parametrize("sender", ["INTERAC E-TRANSFER FROM A PAPAS",
+                                        "INTERAC E-TRANSFER FROM STACY P"])
+    def test_her_pick_credits_that_person(self, client, sender):
+        charge, deposit = setup(client, sender)
+        ask = yes(client, deposit, charge).get_json()["who_paid"]
+        ok(yes(client, ask["deposit"], ask["charge"], person="Anastasia"))
         assert people(client, charge) == {"Anastasia": (30.0, 0.0)}
         assert client.st.get_transaction(charge).my_share == 60.0
 
     def test_mom_on_the_split_and_anastasia_on_the_e_transfer(self, client):
         charge, deposit = setup(client, "INTERAC E-TRANSFER FROM ANASTASIA PAPAS", people=(("Mom", 30.0),))
-        ok(yes(client, deposit, charge))
+        r = yes(client, deposit, charge)
+        assert r.status_code == 409
+        assert [p["name"] for p in r.get_json()["who_paid"]["people"]] == ["Mom"]
+        ok(yes(client, deposit, charge, person="Mom"))
         assert people(client, charge) == {"Mom": (30.0, 0.0)}
 
 
