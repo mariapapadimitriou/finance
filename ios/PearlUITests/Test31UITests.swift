@@ -141,7 +141,19 @@ final class Test31UITests: XCTestCase {
         sleep(2)
     }
 
-    /// T-09w → S-04w → S-40w → T-41w: work's $60.00 for her share of Pai
+    /// MP-01 / MP-02: the row ticked, after a search when it isn't LIKELY.
+    private func tickMine(_ name: String, search: String) {
+        var row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
+        if !row.waitForExistence(timeout: 6) {
+            let field = app.textFields.matching(NSPredicate(format: "placeholderValue == 'Search purchases'")).firstMatch
+            if field.waitForExistence(timeout: 4) { field.tap(); field.typeText(search); sleep(2) }
+            row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
+        }
+        XCTAssertTrue(row.waitForExistence(timeout: 6), "No “\(name)” row")
+        if !row.isSelected { row.tap(); sleep(1) }
+    }
+
+    /// MP-01 → S-04w → S-40w → T-41w: work's $60.00 for her share of Pai
     /// Northern Thai, from the deposit's What was this?, in light and dark.
     func testReimburseYourShare() {
         for scheme in ["light", "dark"] {
@@ -163,18 +175,16 @@ final class Test31UITests: XCTestCase {
             sleep(2)
             tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Work'")).firstMatch, "Work")
             sleep(2)
-            step("T-09w what did this pay back")
-            let share = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Your share of Pai Northern Thai'")).firstMatch
-            XCTAssertTrue(share.waitForExistence(timeout: 6), "T-09w: no “Your share of Pai Northern Thai” match")
-            XCTAssertTrue(element(containing: "all of it").exists, "T-09w: “all of it” should stay beside it")
-            share.tap()
-            sleep(1)
-            step("T-09w your share picked")
-            if let save = app.buttons.matching(NSPredicate(format: "label == 'Save'")).allElementsBoundByIndex
-                .last(where: { $0.isHittable }) { save.tap() }
+            // MP-01 (Many purchases, replacing T-09w): her share as one row.
+            step("MP-01 what did Northwind pay back")
+            XCTAssertTrue(element(containing: "What did Northwind pay back?").exists, "MP-01's title")
+            tickMine("Pai Northern Thai · your $60.00", search: "Pai")
+            step("MP-01 your share ticked")
+            tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Mark ' AND label ENDSWITH ' reimbursed'")).firstMatch,
+                "Mark reimbursed")
             sleep(3)
             let m = mine(pai)
-            note("mine after T-09w: \(String(describing: m))")
+            note("mine after MP-01: \(String(describing: m))")
             XCTAssertEqual(m?["reimbursed"] as? Double, 60, "Her share should be reimbursed")
             // S-04w: the split card in two parts.
             app.terminate(); launch(scheme)
@@ -237,7 +247,7 @@ final class Test31UITests: XCTestCase {
         }
     }
 
-    /// TEST-31 Money back (approved 2026-11-14): T-09rs → S-04m → S-40m →
+    /// TEST-31 Money back (approved 2026-11-14): MP-02 → S-04m → S-40m →
     /// T-41m, light and dark. Joey King St $90.00 split with Priya, and its
     /// $45.00 back. NOT RUN YET: the product owner asked for no simulator on
     /// this PR (2026-11-14); it compiles with the UI-test target.
@@ -257,15 +267,13 @@ final class Test31UITests: XCTestCase {
             sleep(2)
             tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'The shop'")).firstMatch, "The shop")
             sleep(2)
-            step("T-09rs what was this a refund for")
-            XCTAssertTrue(element(containing: "What was this a refund for?").exists, "T-09rs: T-09r's title")
-            XCTAssertFalse(element(containing: "Pearl will remember").exists, "T-09rs: no remember line")
-            let share = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Your share of Joey King St'")).firstMatch
-            XCTAssertTrue(share.waitForExistence(timeout: 6), "T-09rs: no “Your share of Joey King St”")
-            XCTAssertTrue(element(containing: "all of it").exists, "T-09rs: all of it stays beside it")
-            share.tap()
-            if let save = app.buttons.matching(NSPredicate(format: "label == 'Save'")).allElementsBoundByIndex
-                .last(where: { $0.isHittable }) { save.tap() }
+            // MP-02 (Many purchases, replacing T-09rs): her share as one row.
+            step("MP-02 what did the shop refund")
+            XCTAssertTrue(element(containing: " refund?").exists, "MP-02's title")
+            XCTAssertFalse(element(containing: "Pearl will remember").exists, "MP-02: no remember line")
+            tickMine("Joey King St · your $45.00", search: "Joey")
+            tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Mark ' AND label ENDSWITH ' refunded'")).firstMatch,
+                "Mark refunded")
             sleep(3)
             XCTAssertEqual(mine(joey)?["reimbursed"] as? Double, 45, "Her share should be refunded")
             XCTAssertEqual(mine(joey)?["kind"] as? String, "refund")

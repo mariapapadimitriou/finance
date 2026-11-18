@@ -93,6 +93,11 @@ struct PartsSheet: View {
     /// PB-30 with this purchase ticked, and the rest as they add up: PQ-03's
     /// tile, or the split Who paid you back? asked about.
     var mustTick: String? = nil
+    /// Many purchases (Proposals 1431:6590, approved 2026-11-17; THL-289,
+    /// THL-291, THL-181, THL-301): Paid back › Work (MP-01) or The shop
+    /// (MP-02) ticks several of her own purchases, as PB-30 does a person's
+    /// shares. Replaces T-09w / T-09rs's one pick. `forCharge` stays ticked.
+    var many: PaidBackWho? = nil
     let onSaved: (MarkReply) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -167,6 +172,25 @@ struct PartsSheet: View {
     @State private var pendingWho: PaidBackWho?
     /// The purchase PB-30 keeps ticked (`mustTick`, or PB-22's purchase).
     @State private var tickCharge: String?
+    /// MP-01 / MP-02: Work or The shop, once she's said which (`many`, or
+    /// S-11 v2's Paid back tile), her purchases by id, and a search's rows.
+    @State private var manyKind: PaidBackWho?
+    @State private var mine: [String: MineRow] = [:]
+    @State private var mineFound: [String] = []
+    @State private var mineShop: String?
+
+    /// GET …/many-purchases (finance/many_api.py): what's still hers on a
+    /// purchase, `share` when that's her share of a split, and who else on
+    /// it still owes (S-11m's "Part of Sam's share").
+    struct MineRow: Decodable, Hashable {
+        let id: String
+        let date: String
+        let merchant: String
+        let amount: Double
+        let share: Bool?
+        let likely: Bool?
+        let people: [MarkReply.ShareExtra.Owing]?
+    }
 
     /// `work`: Work's reimbursement, the expense it pays (T-09, as on the shared page).
     /// `otherKind`: S-11k (SPLIT-18), which kind Other income is.
@@ -344,8 +368,10 @@ struct PartsSheet: View {
                     // PB-12 / PB-13: "$15.00 · Paid back · Sam Lee".
                     // PB-30: "e-Transfer from Sam Lee" over "+$86.65 · Fri, Nov 14" in money-in green.
                     if step == .whose {
+                        // MP-01 / MP-02: "+$186.40 · Nov 14".
                         QuestionHeader(name: deposit.name, amount: "+" + Format.amount(deposit.whole ?? deposit.amount),
-                                       tone: Pearl.moneyIn, sub: Format.weekdayDay(deposit.date))
+                                       tone: Pearl.moneyIn,
+                                       sub: manyKind == nil ? Format.weekdayDay(deposit.date) : Format.short(deposit.date))
                     } else {
                         QuestionHeader(name: deposit.name, amount: Format.amount(deposit.whole ?? deposit.amount),
                                        tone: Pearl.ink,
@@ -445,7 +471,7 @@ struct PartsSheet: View {
             }
         }
         .task(id: query) {
-            guard step == .owing || step == .refund || step == .work else { return }
+            guard step == .owing || step == .refund || step == .work || (step == .whose && manyKind != nil) else { return }
             try? await Task.sleep(nanoseconds: 250_000_000)
             if !Task.isCancelled { await search() }
         }
@@ -482,11 +508,16 @@ struct PartsSheet: View {
             if parts.isEmpty { return "What was the \(Format.amount(left))?" }
             return extra ? "What’s the extra \(Format.amount(left))?" : "What’s the other \(Format.amount(left))?"
         case .review: return "Check and save"
+        // MP-01 "What did Northwind pay back?", MP-02 "What did Costco refund?".
+        case .whose where manyKind == .shop: return "What did \(firstName(deposit.name)) refund?"
+        case .whose where manyKind == .work: return "What did \(firstName(deposit.name)) pay back?"
         // PB-30: "What did Sam pay back?"
         case .whose: return "What did \(firstName(sender ?? who)) pay back?"
         // PB-13: "How much of Sam’s $60.00?"
         case .howMuch:
             guard let o = shareQueue.first else { return "" }
+            // MP-04's Change: no one owes it; the purchase is on the line under.
+            if manyKind != nil { return "How much of the \(Format.amount(o.owes))?" }
             return "How much of \(possessive(firstName(o.person ?? who))) \(Format.amount(o.owes))?"
         }
     }
@@ -501,7 +532,8 @@ struct PartsSheet: View {
         case .kind: kindList
         case .otherKind: otherKindList
         case .review: reviewList
-        case .whose: whoseList
+        case .whose:
+            if manyKind != nil { mineList } else { whoseList }
         case .howMuch: howMuchView
         }
     }
@@ -691,9 +723,24 @@ struct PartsSheet: View {
         }
     }
 
+    /// What PB-30's ticks, allocation and one tap work on: the sender's
+    /// shares, or (MP-01 / MP-02) her own purchases.
+    private var tickPool: [Owing] { manyKind == nil ? theirShares : mineOwing }
+
+    /// MP-01 / MP-02's rows as PB-30's, with what's still hers as `owes`.
+    private var mineOwing: [Owing] {
+        mine.values.map { Owing(charge: $0.id, merchant: $0.merchant, date: $0.date, owes: $0.amount,
+                                person: nil, theirs: true) }
+    }
+
     /// LIKELY: theirs, dated before the deposit. When none is (the payback
-    /// came first), all of theirs. Newest first, as drawn.
+    /// came first), all of theirs. Newest first, as drawn. MP-01 / MP-02:
+    /// the ones the server calls likely, and any she ticked from a search.
     private var likely: [Owing] {
+        if manyKind != nil {
+            return mineOwing.filter { mine[$0.charge]?.likely == true || ticks.contains($0.id) }
+                .sorted { $0.date > $1.date }
+        }
         let day = String(deposit.date.prefix(10))
         let before = theirShares.filter { String($0.date.prefix(10)) <= day }
         return (before.isEmpty ? theirShares : before).sorted { $0.date > $1.date }
@@ -706,7 +753,7 @@ struct PartsSheet: View {
 
     /// The ticked shares, oldest first: the order the money pays them.
     private var tickedShares: [Owing] {
-        theirShares.filter { ticks.contains($0.id) }.sorted { $0.date < $1.date }
+        tickPool.filter { ticks.contains($0.id) }.sorted { $0.date < $1.date }
     }
 
     private var tickedCents: Int { tickedShares.map { cents($0.owes) }.reduce(0, +) }
@@ -734,7 +781,7 @@ struct PartsSheet: View {
     /// is the deposit, or nearest under it; on a tie, the older ones.
     private func preTick() {
         // PQ-03's tile, or the purchase she came from, stays ticked.
-        let must = tickCharge.flatMap { c in theirShares.first { $0.charge == c } }
+        let must = tickCharge.flatMap { c in tickPool.first { $0.charge == c } }
         let rows = likely.filter { $0.id != must?.id }.sorted { $0.date < $1.date }
         let room = leftCents - (must.map { min(cents($0.owes), leftCents) } ?? 0)
         var best: [Owing] = []
@@ -831,6 +878,8 @@ struct PartsSheet: View {
         let head = "\(Format.amount(ticked)) of \(Format.amount(left))"
         let (words, tone): (String, Color) = tickedCents == leftCents ? ("\(head) \u{2713}", Pearl.moneyIn)
             : tickedCents < leftCents ? ("\(head) · \(Format.amount(Double(leftCents - tickedCents) / 100)) left over", Pearl.muted)
+            // MP-04: "$119.47 of $100.00 · $19.47 over".
+            : manyKind != nil ? ("\(head) · \(Format.amount(Double(tickedCents - leftCents) / 100)) over", Pearl.danger)
             : ("\(head) · \(Format.amount(Double(tickedCents - leftCents) / 100)) more than \(first) sent", Pearl.danger)
         return Text(words).font(Nacre.footnote).foregroundColor(tone)
             .frame(maxWidth: .infinity).multilineTextAlignment(.center)
@@ -897,9 +946,7 @@ struct PartsSheet: View {
         for o in tickedShares where o.id != except?.id {
             let amount = Double(alloc[o.id] ?? 0) / 100
             guard amount >= 0.005 else { continue }
-            parts.removeAll { $0.charge == o.charge && $0.person == o.person && $0.kind == "payback" }
-            parts.append(Part(kind: "payback", amount: amount, charge: o.charge, merchant: o.merchant, person: o.person,
-                              date: o.date))
+            putShare(o, amount: amount)
         }
     }
 
@@ -927,14 +974,133 @@ struct PartsSheet: View {
 
     /// PB-30's button: "Mark 2 paid back", or "Next: the other $13.35".
     private var tickedButton: String {
+        // MP-01 "Mark 3 reimbursed", MP-02 "Mark 2 refunded".
         tickedCents >= leftCents && !tickedShares.isEmpty
-            ? "Mark \(tickedShares.count) paid back"
+            ? "Mark \(tickedShares.count) " + (manyKind == .shop ? "refunded" : manyKind == .work ? "reimbursed" : "paid back")
             : "Next: the other \(Format.amount(Double(leftCents - tickedCents) / 100))"
     }
 
     /// Off while a ticked share would get nothing (the money ran out first).
     private var tickedReady: Bool {
         tickedShares.allSatisfy { (allocation[$0.id] ?? 0) > 0 }
+    }
+
+    // MARK: MP-01 to MP-04 Many purchases (Proposals 1431:6590, note 1432:8062)
+
+    /// Work or The shop said: her purchases (GET …/many-purchases), the
+    /// likely ones ticked as they add up, oldest first (PB-30's `preTick`).
+    private func startMany(_ who: PaidBackWho) async {
+        manyKind = who
+        mine = [:]
+        ticks = []
+        query = ""
+        step = .loading
+        await fetchMine("")
+        step = .whose
+        preTick()
+    }
+
+    /// The list for `manyKind`; a search (`q`) adds its rows beside the
+    /// likely ones, and anything ticked stays.
+    private func fetchMine(_ q: String) async {
+        struct Reply: Decodable { let shop: String?; let items: [Lenient<MineRow>] }
+        guard let k = manyKind else { return }
+        var ask = ["kind": k == .shop ? "shop" : "work"]
+        if !q.isEmpty { ask["q"] = q }
+        if let c = tickCharge { ask["also"] = c }
+        do {
+            let r: Reply = try await api.get("api/transactions/\(deposit.id)/many-purchases", query: ask)
+            let rows = r.items.compactMap(\.value)
+            mineShop = r.shop ?? mineShop
+            for m in rows where q.isEmpty || mine[m.id] == nil { mine[m.id] = m }
+            mineFound = q.isEmpty ? [] : rows.map(\.id)
+            error = nil
+        } catch {
+            if error is CancellationError { return }
+            self.error = "Couldn’t load your purchases. Try again."
+        }
+    }
+
+    /// MP-01 / MP-02: search, YOUR WORK PURCHASES or COSTCO · BEFORE NOV 10,
+    /// the purchases as Choice (Checkbox) rows, then the total line. No
+    /// footnote, one line per row (LT-01's less text).
+    private var mineList: some View {
+        let typed = query.trimmingCharacters(in: .whitespaces)
+        let rows = typed.isEmpty ? likely
+            : mineFound.compactMap { id in mineOwing.first { $0.charge == id } }
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundColor(Pearl.muted).accessibilityHidden(true)
+                TextField("", text: $query, prompt: Text("Search purchases").foregroundColor(Pearl.muted))
+                    .font(Nacre.body).autocorrectionDisabled().textInputAutocapitalization(.never)
+                    .accessibilityLabel("Search purchases")
+            }
+            .padding(.horizontal, 14).frame(height: 44)
+            .background(Capsule().fill(Pearl.ink.opacity(0.08)))
+            if rows.isEmpty {
+                Text("No purchases match.").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    .padding(.horizontal, 16)
+            } else {
+                if !typed.isEmpty {
+                    label("Results for “\(typed)”")
+                } else if manyKind == .shop {
+                    label("\(mineShop ?? deposit.name) · before \(Format.short(deposit.date))")
+                } else {
+                    label("Your work purchases")
+                }
+                GlassCard {
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { i, o in
+                        if i > 0 { RowSeparator(inset: 50) }
+                        mineRow(o)
+                    }
+                }
+            }
+            totalLine
+        }
+    }
+
+    /// "Air Canada · $112.30" or "Pai Northern Thai · your $60.00" over
+    /// "Oct 29"; MP-04's part-paid newest "Nov 7 · $35.03 of it · Change".
+    private func mineRow(_ o: Owing) -> some View {
+        let on = ticks.contains(o.id)
+        let share = mine[o.charge]?.share == true
+        let part = partPaid?.id == o.id
+        let got = Format.amount(Double(allocation[o.id] ?? 0) / 100)
+        let day = Format.short(o.date)
+        let name = "\(o.merchant) · " + (share ? "your " : "") + Format.amount(o.owes)
+        return HStack(spacing: 12) {
+            Button { toggleTick(o) } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        if on {
+                            Circle().fill(Pearl.action)
+                            Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundColor(Pearl.onAction)
+                        } else {
+                            Circle().strokeBorder(Pearl.borderStrong, lineWidth: 1.5)
+                        }
+                    }
+                    .frame(width: 22, height: 22)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(name).font(Nacre.body).foregroundColor(Pearl.ink).fixedSize(horizontal: false, vertical: true)
+                        Text(part ? "\(day) · \(got) of it ·" : day).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(part ? "\(name), \(Format.monthDay(o.date)), \(got) of it" : "\(name), \(Format.monthDay(o.date))")
+            .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
+            if part {
+                // MP-04: Change opens PB-13 for this one.
+                Button("Change") { changePart(o) }
+                    .font(Nacre.subheadline.weight(.semibold)).foregroundColor(Pearl.action)
+                    .frame(minHeight: 44).buttonStyle(.plain)
+                    .accessibilityLabel("Change how much of \(o.merchant)")
+            }
+        }
+        .padding(.horizontal, 16).frame(minHeight: 52).padding(.vertical, 6)
     }
 
     // MARK: PB-13 How much of their share (Paid back, 1352:716)
@@ -966,11 +1132,15 @@ struct PartsSheet: View {
         if let o = shareQueue.first {
             let first = firstName(o.person ?? who)
             let other = abs(shareRoom - o.owes)
+            // MP-04's Change: her own purchase, so nobody "owes" it, and All
+            // of it isn't offered while the money is less (nothing to let go).
+            let mp = manyKind != nil
             VStack(alignment: .leading, spacing: 8) {
-                label("\(o.merchant) · \(first) owes \(Format.amount(o.owes))")
+                label(mp ? "\(o.merchant) · \(Format.short(o.date))" : "\(o.merchant) · \(first) owes \(Format.amount(o.owes))")
                 GlassCard {
                     if canPart(o) {
-                        let owesAfter = Text("\(first) still owes \(Format.amount(max(0, o.owes - partValue))) · tap to change the amount")
+                        let owesAfter = Text(mp ? "Tap to change the amount"
+                                             : "\(first) still owes \(Format.amount(max(0, o.owes - partValue))) · tap to change the amount")
                             .font(Nacre.subheadline).foregroundColor(Pearl.muted)
                         if editingPart && !allOfIt {
                             // Tapped again: the amount changes in place (no
@@ -1000,8 +1170,9 @@ struct PartsSheet: View {
                             .accessibilityElement(children: .combine)
                             .accessibilityAddTraits(!allOfIt ? .isSelected : [])
                         }
-                        RowSeparator()
+                        if !mp { RowSeparator() }
                     }
+                    if !mp || !canPart(o) {
                     Button {
                         allOfIt = true
                         editingPart = false
@@ -1009,7 +1180,7 @@ struct PartsSheet: View {
                     } label: {
                         choiceLine(on: allOfIt) {
                             Text("All of it · \(Format.amount(o.owes))").font(Nacre.body).foregroundColor(Pearl.ink)
-                            Text("\(first)’s paid in full" + (other >= 0.005 ? " · Pearl asks what the other \(Format.amount(other)) is" : ""))
+                            Text((mp ? "" : "\(first)’s paid in full") + (other >= 0.005 ? (mp ? "Pearl asks what the other \(Format.amount(other)) is" : " · Pearl asks what the other \(Format.amount(other)) is") : ""))
                                 .font(Nacre.subheadline).foregroundColor(Pearl.muted)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -1017,10 +1188,13 @@ struct PartsSheet: View {
                     .buttonStyle(.plain)
                     .accessibilityElement(children: .combine)
                     .accessibilityAddTraits(allOfIt ? .isSelected : [])
+                    }
                 }
-                Text("\(possessive(first)) share of \(o.merchant) · \(Format.weekdayDay(o.date))")
-                    .font(Nacre.footnote).foregroundColor(Pearl.ink)
-                    .frame(maxWidth: .infinity).multilineTextAlignment(.center)
+                if !mp {
+                    Text("\(possessive(first)) share of \(o.merchant) · \(Format.weekdayDay(o.date))")
+                        .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                        .frame(maxWidth: .infinity).multilineTextAlignment(.center)
+                }
             }
         } else {
             // Saving the last share (Save on PB-13).
@@ -1085,10 +1259,7 @@ struct PartsSheet: View {
     /// or the rest of the deposit: saved at once when nothing is left,
     /// otherwise on to what the rest is (S-11 v2) or the extra.
     private func addShare(_ o: Owing, amount: Double, letGo: Bool = false) {
-        let held = heldSplit?.charge == o.charge && o.person == who
-        parts.removeAll { $0.charge == o.charge && $0.person == o.person && $0.kind == "payback" }
-        parts.append(Part(kind: "payback", amount: amount, charge: o.charge, merchant: o.merchant, person: o.person,
-                          date: o.date, held: held, letGo: letGo))
+        putShare(o, amount: amount, letGo: letGo)
         if !shareQueue.isEmpty { shareQueue.removeFirst() }
         // Nothing left of the deposit for the others ticked.
         if leftCents == 0 { shareQueue = [] }
@@ -1102,7 +1273,20 @@ struct PartsSheet: View {
             }
             return
         }
-        step = parts.isEmpty || queueAsked ? .kind : .progress
+        // MP-04's Change, less than the money: the rest is S-11w / S-11m.
+        step = parts.isEmpty || queueAsked || manyKind != nil ? .kind : .progress
+    }
+
+    /// One ticked row as its part: their payback (PB-30, PB-13), or (Many
+    /// purchases) work's reimbursement or the shop's refund of her purchase,
+    /// a refund of her share of a split one saying so.
+    private func putShare(_ o: Owing, amount: Double, letGo: Bool = false) {
+        let kind = manyKind == .shop ? "refund" : manyKind == .work ? "reimbursement" : "payback"
+        let held = kind == "payback" && heldSplit?.charge == o.charge && o.person == who
+        parts.removeAll { $0.charge == o.charge && $0.person == o.person && $0.kind == kind }
+        parts.append(Part(kind: kind, amount: amount, charge: o.charge, merchant: o.merchant, person: o.person,
+                          date: o.date, held: held, share: kind == "refund" && mine[o.charge]?.share == true,
+                          letGo: letGo))
     }
 
     /// PB-11 from S-11 v2's Paid back tile.
@@ -1119,9 +1303,9 @@ struct PartsSheet: View {
             saidPerson = true
             toPerson()
         case .shop, .work:
+            // MP-01 / MP-02 for what's left, in this same save.
             picked = [:]
-            step = who == .shop ? .refund : .work
-            Task { await search() }
+            Task { await startMany(who) }
         }
     }
 
@@ -1556,7 +1740,8 @@ struct PartsSheet: View {
             }
             // S-11xm over: the tiles dim and don't answer until it's the extra or less.
             Group {
-                if shareOwing != nil && !allTiles {
+                // MP-03: the shop's leftover is S-11m too.
+                if (shareOwing != nil || manyKind == .shop) && !allTiles {
                     // TEST-31 S-11m: THE EXTRA on a refund of her share.
                     label("The extra").accessibilityAddTraits(.isHeader)
                     CaseGrid(cases: extraTiles, chosen: tile).disabled(busy)
@@ -1637,12 +1822,29 @@ struct PartsSheet: View {
     /// deposit already counts toward), and Something else.
     private var extraTiles: [CaseTile] {
         let taken = Set(parts.compactMap { $0.kind == "refund" ? $0.person : nil })
-        let people = (shareOwing ?? []).filter { $0.owes >= 0.005 && !taken.contains($0.name) }.map {
+        let people = extraOwing.map(\.owing).filter { $0.owes >= 0.005 && !taken.contains($0.name) }.map {
             CaseTile(key: "person:" + $0.name, label: "Part of \(possessive($0.name)) share", symbol: "person.2")
         }
         return [CaseTile(key: "refund", label: "Another purchase", symbol: "bag"),
                 CaseTile(key: "not_mine", label: "Not mine", symbol: "person.crop.circle.badge.xmark")]
             + people + [CaseTile(key: "else", label: "Something else", symbol: "ellipsis")]
+    }
+
+    /// Who on the split still owes, and on which purchase: S-11m's own
+    /// (`shareOwing`, the purchase credited), or for MP-03 everyone on the
+    /// ticked split purchases, each once, oldest purchase first.
+    private var extraOwing: [(owing: MarkReply.ShareExtra.Owing, charge: String, merchant: String)] {
+        if manyKind == nil {
+            guard let c = credited.first, let charge = c.charge else { return [] }
+            return (shareOwing ?? []).map { ($0, charge, c.merchant ?? "") }
+        }
+        var out: [(owing: MarkReply.ShareExtra.Owing, charge: String, merchant: String)] = []
+        for o in tickedShares {
+            for p in mine[o.charge]?.people ?? [] where !out.contains(where: { $0.owing.name == p.name }) {
+                out.append((p, o.charge, o.merchant))
+            }
+        }
+        return out
     }
 
     /// A tile answers at once.
@@ -1843,13 +2045,19 @@ struct PartsSheet: View {
         error = nil
         let amount = chosenAmount
         guard amount >= 0.005 else { return }
-        if key.hasPrefix("person:"), let credit = credited.first {
+        if key.hasPrefix("person:") {
             // S-11m: up to what they owe; more, and the rest is asked about
             // again, without them. Never split across people on its own.
             let name = String(key.dropFirst(7))
-            let owes = shareOwing?.first { $0.name == name }?.owes ?? 0
-            add(Part(kind: "refund", amount: min(amount, owes), charge: credit.charge,
-                     merchant: credit.merchant, person: name))
+            guard let c = extraOwing.first(where: { $0.owing.name == name }) else { return }
+            add(Part(kind: "refund", amount: min(amount, c.owing.owes), charge: c.charge,
+                     merchant: c.merchant, person: name))
+            return
+        }
+        if key == "refund", manyKind != nil {
+            // S-11m's Another purchase, from MP-03: back to the list, ticks kept.
+            parts.removeAll { ["refund", "reimbursement"].contains($0.kind) }
+            step = .whose
             return
         }
         switch key {
@@ -1902,6 +2110,12 @@ struct PartsSheet: View {
         }
         if let r: CashReply = try? await api.get("api/transactions/\(deposit.id)/cash-matches") {
             cash = r.cash.compactMap { $0.value }
+        }
+        if let m = many, editing.isEmpty {
+            // MP-01 / MP-02 straight away; PB-22's purchase stays ticked.
+            tickCharge = forCharge ?? mustTick
+            await startMany(m)
+            return
         }
         await fetchOwing()
         if whole != nil {
@@ -1992,6 +2206,10 @@ struct PartsSheet: View {
     }
 
     private func search() async {
+        if step == .whose, manyKind != nil {
+            await fetchMine(query.trimmingCharacters(in: .whitespaces))
+            return
+        }
         struct Reply: Decodable { let charges: [Lenient<Charge>] }
         struct Charge: Decodable {
             let id: String; let date: String; let merchant: String; let left: Double?; let split: Bool?
@@ -2015,6 +2233,8 @@ struct PartsSheet: View {
         // S-11xm (THL-301): these parts are the extra; the server keeps Jo's
         // credit on Pizza Nova as it is, and Undo links Loblaws back.
         if whole?.isPart == true { body["extra"] = true }
+        // MP-05: "Northwind paid back 3 · $186.40", one Undo for all of it.
+        if manyKind != nil { body["payer"] = firstName(deposit.name) }
         if let j = joint {
             // TP-03: the money out of the joint account is theirs, in this save.
             body["joint_payback"] = ["out": j.out, "person": jointPerson ?? j.person ?? sender ?? ""]

@@ -12,6 +12,8 @@
                                                   deposit into parts. A payback part with
                                                   `let_go` lets the rest of that person's
                                                   share go once it's linked (PB-13b).
+                                                  `payer` names the shop or work for
+                                                  MP-05's "Northwind paid back 3 · $186.40".
 * POST   /api/transactions/<id>/parts/preview     {parts}: what saving them changes (S-12 v2).
 * DELETE /api/transactions/<id>/parts             unlink every part, on the deposit or a part.
 * GET    /api/transactions/<id>/owing             what the sender still owes, for a deposit's
@@ -596,6 +598,11 @@ def save_parts(st, t, body: dict):
     person_title = None if (kept or held or out.get("rest")) else _paid_back_title(body.get("parts"), let_total)
     if person_title:
         out["title"] = person_title
+    elif not (kept or held or out.get("rest")):
+        # MP-05 (Many purchases): "Northwind paid back 3 · $186.40".
+        many_title = _many_title(body.get("payer"), body.get("parts"))
+        if many_title:
+            out["title"] = many_title
     if kept:
         # The toast counts her answer, not the credit it kept (S-11xm).
         n = len(out["parts"]) - kept - (1 if out["rest"] else 0)
@@ -614,6 +621,24 @@ def save_parts(st, t, body: dict):
         # SPLIT-C decision 4: Undo closes the split it opened again.
         undo["marks"] = {**(undo.get("marks") or {}), "split_closed": out.pop("reopened")}
     return jsonify({"ok": True, **out, "undo": undo})
+
+
+def _many_title(payer, parts) -> str | None:
+    """MP-05's toast (Many purchases, 1431:8427): "{payer} paid back N ·
+    $X", N the purchases the shop or work paid back and $X what went to
+    them. None without a payer or such a part (the parts' own title)."""
+    name = " ".join(str(payer or "").split())[:40]
+    if not name or not isinstance(parts, list):
+        return None
+    mine = [p for p in parts if isinstance(p, dict) and p.get("kind") in ("refund", "reimbursement")
+            and p.get("charge") and not p.get("person")]
+    if not mine:
+        return None
+    try:
+        paid = sum(_cents(p.get("amount")) for p in mine) / 100
+    except (TypeError, ValueError):
+        return None
+    return f"{name} paid back {len({str(p['charge']) for p in mine})} · ${paid:,.2f}"
 
 
 def _let_go_asks(st, parts) -> tuple[list[tuple[str, str]], str | None]:
