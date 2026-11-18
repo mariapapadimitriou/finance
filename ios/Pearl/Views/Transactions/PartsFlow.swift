@@ -1939,7 +1939,9 @@ struct PartsSheet: View {
             startHowMuch([o])
             return
         }
-        if tickCharge == nil { tickCharge = mustTick }
+        // PB-22 from a sender Pearl can't match: PP-01, then PB-30 with the
+        // purchase she came from ticked.
+        if tickCharge == nil { tickCharge = mustTick ?? (paidBack ? forCharge : nil) }
         if !cash.isEmpty { step = .cash } else { toPerson() }
         if step == .owing {
             // Pearl's likeliest: their shares, up to what came in.

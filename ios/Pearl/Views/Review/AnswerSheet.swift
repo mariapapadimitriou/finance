@@ -700,9 +700,15 @@ struct AnswerSheet: View {
             // PQ-03's tiles name who on her splits it is: PB-30 for them.
             if partPerson != nil { parting = true; return }
             Task {
-                struct Owing: Decodable { let from: String?; let named: String? }
+                struct Owing: Decodable {
+                    let from: String?; let named: String?; let items: [Lenient<PartsSheet.Owing>]?
+                }
                 let r: Owing? = try? await api.get("api/transactions/\(t.id)/owing")
-                if let r = r, r.from == nil, let named = r.named, !named.isEmpty {
+                // PB-15 only when no one owes her: otherwise the name may be
+                // someone on her splits as the bank writes them, so PP-01
+                // asks who first, then PB-30 (2026-11-16; never a new person).
+                let owed = (r?.items ?? []).contains { ($0.value?.person != nil) && ($0.value?.owes ?? 0) >= 0.005 }
+                if let r = r, r.from == nil, let named = r.named, !named.isEmpty, !owed {
                     chargeCase = "payback"
                     payerName = named
                     refunding = false
