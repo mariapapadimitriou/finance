@@ -47,6 +47,9 @@ final class AppModel: ObservableObject {
     @Published var contact: String?
     /// Cash flow's Select (T-19) puts its own bar where the tab bar is.
     @Published var hidesTabBar = false
+    /// A+ (REDESIGN-03): something in Profile needs her (a bank to sign in
+    /// to again, Accounts' "needs you"): the dot on the profile circle.
+    @Published var profileNeedsYou = false
     /// A toast that outlives the screen it was said on, at the top of every
     /// tab: Trips (TR-02c, TR-11–TR-13), where the trip's page may close or
     /// open under it ("Trip to Montréal made · 23 transactions · Undo").
@@ -195,6 +198,8 @@ final class AppModel: ObservableObject {
     /// The server has deleted the account (D-04), so there's nothing to sign
     /// out of: forget it here too, and show D-05.
     func accountDeleted(sentTo: String?) {
+        // Her photo was on this iPhone only; the account is gone, so it goes too.
+        if let id = user?.id { ProfilePhotoStore.shared.forget(account: String(id)) }
         api.clearCookies()
         justCreated = false
         locked = false

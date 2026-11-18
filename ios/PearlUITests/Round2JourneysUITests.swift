@@ -394,7 +394,7 @@ final class Round2JourneysUITests: XCTestCase {
         step("after leave out", settle: 3)
         note("Spotify excluded: \(transactionJSON("Spotify")?["excluded"] ?? "nil")")
         // Sign out: a Pearl sheet; Stay signed in keeps her in.
-        app.tabBars.buttons["Profile"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        app.buttons["profile-circle"].firstMatch.tap()
         sleep(1)
         if tapIf(app.buttons["Sign out"], "Sign out") {
             step("sign out sheet")

@@ -1,15 +1,16 @@
 import SwiftUI
 
-/// Pearl chat (note 1340:8893, THL-117, THL-139, THL-213, THL-254): a
-/// full-screen Pearl sheet, Close top left, that starts fresh each time.
-/// One exchange at a time, as the frames draw it:
+/// Pearl chat (note 1340:8893, THL-117, THL-139, THL-213, THL-254), the
+/// Pearl tab since A+ (REDESIGN-02, -03; AP-Chat): a full tab screen with the
+/// tab bar showing. The conversation stays across tab switches; "New chat"
+/// asks first on a Pearl sheet, then clears it. One exchange at a time:
 ///
 /// PC-03 (1338:7879 / 1338:8040)  start: Start with…, "Message Pearl", "On this iPhone only" (TEXT-01)
 /// PC-04 (1338:8200 / 1338:8355)  an answer: her words, a summary, the totals, the rows (each opens its page)
 /// PC-05/06/08/09                 the cards (ChatCards.swift)
 /// PC-07 (1338:8755 / 1338:8875)  "Sorted 7. 2 left for later." · See the 2
 /// PC-10 (1338:9238 / 1338:9356)  nothing matched · Tell it differently
-/// PC-11 (1338:9474 / 1338:9587)  unavailable · Search instead (if it stops while open)
+/// PC-11 (1338:9474 / 1338:9587)  unavailable · Search instead (the tab stays; the bar keeps 5)
 /// PC-12 (1344:8893 / 1344:9043)  a plan to set: Set it · Not now
 /// PC-13 (1344:9178 / 1344:9285)  "Done. Dining out plan set to $220 a month." · See it in Your plan
 @MainActor
@@ -20,7 +21,9 @@ struct PearlChatView: View {
     @FocusState private var composing: Bool
     @State private var path: [Route] = []
     @State private var available = PearlIntelligence.available
-    let onClose: () -> Void
+    /// Opened once: the conversation then stays until New chat.
+    @State private var opened = false
+    @State private var askingNewChat = false
     /// PC-11's Search instead: Cash flow's search.
     let onSearch: () -> Void
 
@@ -33,13 +36,11 @@ struct PearlChatView: View {
         case plan
     }
 
-    init(api: APIClient, describe: @escaping (Error) -> String, onClose: @escaping () -> Void,
-         onSearch: @escaping () -> Void) {
+    init(api: APIClient, describe: @escaping (Error) -> String, onSearch: @escaping () -> Void) {
         _engine = StateObject(wrappedValue: ChatEngine(
             brain: PearlIntelligence.brain(plans: Features.chatPlans), reader: ChatReader(APIChatReading(api: api)),
             executor: ChatExecutor(writer: APIChatWriting(api: api)), allowsPlans: Features.chatPlans,
             describe: describe))
-        self.onClose = onClose
         self.onSearch = onSearch
     }
 
@@ -64,7 +65,23 @@ struct PearlChatView: View {
         }
         .task {
             available = PearlIntelligence.available
-            if available { await engine.open() }
+            guard available, !opened else { return }
+            opened = true
+            await engine.open()
+        }
+        .sheet(isPresented: $askingNewChat) {
+            // G7 (REDESIGN-14): asks first, on a Pearl sheet.
+            APConfirmSheet(title: "Start a new chat?",
+                           message: "What you told Pearl here is forgotten. Nothing it sorted changes.",
+                           primary: "New chat", secondary: "Keep this one",
+                           onConfirm: {
+                               askingNewChat = false
+                               text = ""
+                               composing = false
+                               path = []
+                               Task { await engine.newChat() }
+                           },
+                           onClose: { askingNewChat = false })
         }
         .onChange(of: engine.mode) { mode in
             // Tell Pearl what you did · Ask about my spending: her words next.
@@ -82,37 +99,33 @@ struct PearlChatView: View {
         }
     }
 
-    /// Close (top left, the frames' Glass button) and "Pearl": inline over an
-    /// exchange, a large title on PC-03, PC-07, PC-10 and PC-11.
+    /// AP-Chat: "Pearl" as a large title on PC-03, PC-07, PC-10 and PC-11;
+    /// over an exchange, "Pearl" inline and centred with New chat on the
+    /// right. No Close: it's a tab.
     private var bar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ZStack {
-                if !largeTitle {
-                    Text("Pearl").font(Nacre.headline).foregroundColor(Pearl.ink)
-                        .accessibilityAddTraits(.isHeader)
-                }
-                HStack {
-                    Button(action: onClose) {
-                        Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(Pearl.ink)
-                            .frame(width: 44, height: 44)
-                            .background(Circle().fill(Nacre.glass))
-                            .overlay(Circle().strokeBorder(Nacre.glassEdge, lineWidth: 1))
-                            .shadow(color: Color(hex: 0x1C1A33).opacity(0.1), radius: 5, y: 6)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Close")
-                    .accessibilityHint("Closes Pearl chat. What you told Pearl is forgotten.")
-                    .accessibilityIdentifier("chat-close")
-                    Spacer()
-                }
-            }
-            .frame(height: 44)
-            .padding(.horizontal, 16)
             if largeTitle {
                 Text("Pearl").font(Nacre.largeTitle).foregroundColor(Pearl.ink)
                     .accessibilityAddTraits(.isHeader)
-                    .padding(.horizontal, 16).padding(.top, 3).padding(.bottom, 8)
+                    .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8)
+            } else {
+                ZStack {
+                    Text("Pearl").font(Nacre.headline).foregroundColor(Pearl.ink)
+                        .accessibilityAddTraits(.isHeader)
+                    HStack {
+                        Spacer()
+                        Button("New chat") { askingNewChat = true }
+                            .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+                            .foregroundColor(Pearl.link)
+                            .buttonStyle(.plain)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                            .accessibilityHint("Asks first. What you told Pearl here is forgotten.")
+                            .accessibilityIdentifier("chat-new")
+                    }
+                }
+                .frame(height: 44)
+                .padding(.horizontal, 16)
             }
         }
         .padding(.top, 6)
@@ -253,8 +266,8 @@ struct PearlChatView: View {
         }
     }
 
-    /// PC-11 (from AI-15): shown only if Apple Intelligence stops while the
-    /// chat is open; otherwise there's no Pearl button to open it.
+    /// PC-11 (from AI-15): the Pearl tab where Apple Intelligence can't run
+    /// (A+: the tab stays and the bar keeps five), or if it stops while open.
     private var unavailable: some View {
         EmptyStateBlock(title: "Pearl chat needs Apple Intelligence",
                         line: "Pearl chat needs a newer iPhone.",
@@ -363,33 +376,50 @@ struct PearlChatView: View {
 
     // MARK: The composer
 
-    /// "Message Pearl" (dictation is the keyboard's mic). PC-03 has the
-    /// on-device line over it.
+    /// "Message Pearl" (dictation is the keyboard's mic). A+ (REDESIGN-03,
+    /// -09): a well with the send up-arrow, off while empty and rose with
+    /// words, just above the keyboard. PC-03 has the on-device line over it.
     private var composer: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             if case .start = engine.screen {
-                Text(ChatWords.onDevice)
+                Text(ChatWords.onDevice.uppercased())
                     .font(Nacre.label).tracking(0.78).foregroundColor(Pearl.muted)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 4)
             }
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").font(.system(size: 16)).foregroundColor(Pearl.muted)
-                    .accessibilityHidden(true)
+            HStack(spacing: 4) {
                 TextField("", text: $text, prompt: Text(ChatWords.placeholder).foregroundColor(Pearl.muted))
                     .font(Nacre.body).foregroundColor(Pearl.ink)
+                    .tint(Pearl.action)
                     .focused($composing)
                     .submitLabel(.send)
                     .onSubmit(send)
                     .accessibilityLabel(ChatWords.placeholder)
                     .accessibilityIdentifier("chat-composer")
+                Button(action: send) {
+                    Image(systemName: "arrow.up").font(.system(size: 14, weight: .bold))
+                        .foregroundColor(canSend ? Pearl.onAction : Pearl.muted)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(canSend ? Pearl.action : APlus.trackSoft))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSend)
+                .accessibilityLabel("Send")
+                .accessibilityIdentifier("chat-send")
             }
-            .padding(.horizontal, 14).frame(height: 44)
-            .background(Capsule().fill(Pearl.control))
+            .padding(.leading, 14).padding(.trailing, 0)
+            .frame(minHeight: 44)
+            .wellStyle(focused: composing, capsule: true)
         }
-        .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 6)
+        .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8)
     }
 
+    /// Send is off until there are words.
+    private var canSend: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
     private func send() {
+        guard canSend else { return }
         let said = text
         text = ""
         composing = false

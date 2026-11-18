@@ -626,7 +626,7 @@ final class PersonJourneysUITests: XCTestCase {
     /// $100.00: Split my part three ways, and change a share.
     func testSplitMyPartOfAJointPurchase() {
         launch()
-        app.tabBars.buttons["Profile"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        app.buttons["profile-circle"].firstMatch.tap()
         step("profile")
         tap(button("Accounts"), "Accounts")
         step("accounts")
@@ -756,7 +756,7 @@ final class PersonJourneysUITests: XCTestCase {
         step("costco detail")
         app.swipeUp()
         step("costco detail scrolled")
-        app.tabBars.buttons["Profile"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        app.buttons["profile-circle"].firstMatch.tap()
         step("profile")
     }
 
