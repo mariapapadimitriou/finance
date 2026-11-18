@@ -164,8 +164,14 @@ struct PartsSheet: View {
     @State private var jointPerson: String?
     /// PP-01 (2026-11-16): A person, from a sender Pearl can't match, asks
     /// who first; the pick is the sender PB-30 opens for. Never a new person.
-    @State private var askWho = false
+    /// Its rows are taken when it opens and shown in this sheet, not a sheet
+    /// on top (2026-11-17): a stacked sheet kept the rows from before
+    /// …/owing loaded, so it listed no one over a spinner that never ended.
+    @State private var askWho: AskWho?
     @State private var pickedPerson: String?
+    /// Why …/owing didn't load, with Try again (LoadState), and which load.
+    @State private var loadError: String?
+    @State private var retryPick = false
     /// She answered PB-11 with A person (S-11 v2's Paid back tile).
     @State private var saidPerson = false
     /// PB-11's answer, acted on once its sheet has gone.
@@ -196,6 +202,12 @@ struct PartsSheet: View {
     /// `otherKind`: S-11k (SPLIT-18), which kind Other income is.
     /// `whose`: PB-30, which of the sender's shares it paid. `howMuch`: PB-13, part or all.
     enum Step { case loading, cash, owing, progress, kind, otherKind, refund, work, review, whose, howMuch }
+
+    /// PP-01's people, as they were when it opened.
+    struct AskWho: Identifiable {
+        let id = UUID()
+        let rows: [WhoPaidPicker.Row]
+    }
 
     struct Part: Identifiable, Hashable {
         let id = UUID()
@@ -355,6 +367,15 @@ struct PartsSheet: View {
     private var who: String { sender ?? deposit.name }
 
     var body: some View {
+        // A ZStack, not a Group: a Group's .task would run again on each
+        // swap between PP-01 and the parts, reloading mid-flow.
+        ZStack {
+            if let ask = askWho { askWhoView(ask) } else { sheet }
+        }
+        .task { await load() }
+    }
+
+    private var sheet: some View {
         VStack(spacing: 0) {
             SheetTitle(title: title, short: shortTitle) {
                 // S-11k: Close goes back to S-11 v2 with nothing added.
@@ -393,7 +414,6 @@ struct PartsSheet: View {
         .background(SheetBackground())
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .task { await load() }
         // S-11x: every tile answers at once. Once nothing is left, it saves
         // (or is held for the Quick sort card) instead of Check and save.
         .onChange(of: step) { _ in
@@ -434,10 +454,6 @@ struct PartsSheet: View {
                              onPick: { who in pendingWho = who; whoPaid = false },
                              onClose: { whoPaid = false })
         }
-        .sheet(isPresented: $askWho, onDismiss: {
-            // Closed from the start: nothing said, nothing saved.
-            if pickedPerson == nil && step == .loading { dismiss() }
-        }) { askWhoSheet }
         .sheet(isPresented: $jointWho) {
             if let j = joint {
                 // TP-03's Change: PP-01 with the joint account's people.
@@ -534,7 +550,14 @@ struct PartsSheet: View {
     @ViewBuilder private var content: some View {
         switch step {
         case .loading:
-            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
+            if let e = loadError {
+                LoadState(error: e) {
+                    loadError = nil
+                    Task { if retryPick { await pickPerson() } else { await load() } }
+                }
+            } else {
+                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
+            }
         case .cash: cashList
         case .owing, .refund, .work: owingList
         case .progress: progressView
@@ -681,49 +704,58 @@ struct PartsSheet: View {
 
     // MARK: PP-01 Who paid you back? before PB-30 (Paybacks 2, 1406:5216)
 
-    /// Everyone who owes her, once each, newest share first: PP-01's FROM
-    /// PAST SPLITS rows ("Last split Oct 2"). Only people on her splits, so
-    /// a payback never adds anyone.
-    private var owerRows: [WhoPaidPicker.Row] {
-        var rows: [WhoPaidPicker.Row] = []
-        for o in owing.sorted(by: { $0.date > $1.date }) {
-            guard let p = o.person, o.owes >= 0.005, !rows.contains(where: { $0.name == p }) else { continue }
-            rows.append(WhoPaidPicker.Row(name: p, sub: "Last split \(Format.short(o.date))"))
-        }
-        return rows
-    }
-
-    /// A person said, the sender not one Pearl can place: ask who first.
-    private var needsWho: Bool {
-        (paidBack || saidPerson) && editing.isEmpty && sender == nil && !owerRows.isEmpty
-    }
-
-    /// Where A person goes: PP-01 when Pearl can't tell who, else PB-30
-    /// (or S-09 when they owe nothing with an amount).
+    /// Where A person goes (PaidBackPerson.route): PB-30 when Pearl knows
+    /// who, or the money's name is clearly one person who owes her; PP-01
+    /// with only the people who owe her when it isn't; S-09's purchase list
+    /// when no one owes her. PP-01 is never empty.
     private func toPerson() {
-        if needsWho {
-            if step == .cash { step = .kind }
-            askWho = true
-            return
+        if (paidBack || saidPerson) && editing.isEmpty {
+            let shares = owing.map { PaidBackPerson.Share(person: $0.person, owes: $0.owes, date: $0.date) }
+            switch PaidBackPerson.route(sender: sender, named: payer ?? deposit.name, shares: shares) {
+            case .ask(let people):
+                if step == .cash { step = .kind }
+                // FROM PAST SPLITS ("Last split Oct 2"): only people on her
+                // splits, so a payback never adds anyone.
+                askWho = AskWho(rows: people.map {
+                    WhoPaidPicker.Row(name: $0.name, sub: "Last split \(Format.short($0.date))")
+                })
+                return
+            case .person(let name):
+                pickedPerson = name
+                Task { await pickPerson() }
+                return
+            case .theirs, .purchases:
+                break
+            }
         }
         step = personStep
         if step == .whose { preTick() }
     }
 
-    private var askWhoSheet: some View {
+    /// PP-01 as this sheet's content, so one sheet asks and then shows PB-30.
+    private func askWhoView(_ ask: AskWho) -> some View {
         WhoPaidPicker(api: api, sub: "+\(Format.amount(deposit.whole ?? deposit.amount)) · \(deposit.name) · \(Format.short(deposit.date))",
-                      top: [], pastSplits: false, someoneNew: false, onlyPast: owerRows,
+                      top: [], pastSplits: false, someoneNew: false, onlyPast: ask.rows,
                       onPick: { name in
                           pickedPerson = name
-                          askWho = false
+                          askWho = nil
                           Task { await pickPerson() }
                       },
-                      onClose: { askWho = false })
+                      onClose: {
+                          // Closed from the start: nothing said, nothing saved.
+                          // From S-11 v2's Paid back tile: back to its tiles.
+                          if step == .loading { dismiss() } else { askWho = nil }
+                      })
     }
 
     /// PP-01's tap: their shares (…/owing?person=), then PB-30.
     private func pickPerson() async {
-        await fetchOwing()
+        step = .loading
+        guard await fetchOwing() else {
+            retryPick = true
+            loadError = "Couldn’t load who owes you. Try again."
+            return
+        }
         step = personStep
         if step == .whose {
             preTick()
@@ -2128,7 +2160,12 @@ struct PartsSheet: View {
             await startMany(m)
             return
         }
-        await fetchOwing()
+        guard await fetchOwing() else {
+            step = .loading
+            retryPick = false
+            loadError = "Couldn’t load who owes you. Try again."
+            return
+        }
         if whole != nil {
             // S-11x: straight to the tiles; Paid back › A person opens S-09 with
             // these shares (the purchase it was on isn't one: nobody owes there).
@@ -2180,7 +2217,8 @@ struct PartsSheet: View {
 
     /// GET …/owing: who sent it (`from`) and the shares owed, for this
     /// deposit, as that person when it's said who paid.
-    private func fetchOwing() async {
+    @discardableResult
+    private func fetchOwing() async -> Bool {
         struct Linked: Decodable { let id: String; let merchant: String; let date: String; let amount: Double; let person: String? }
         struct OwingReply: Decodable {
             let from: String?; let named: String?; let items: [Lenient<Owing>]; let linked: [Lenient<Linked>]?
@@ -2188,32 +2226,38 @@ struct PartsSheet: View {
         // TP-03: from the joint account's other owner, whoever the bank says
         // sent it; PP-01's pick, or who the caller says paid (PB-30).
         let from = jointPerson ?? joint?.person ?? pickedPerson ?? person
-        if let r: OwingReply = try? await api.get("api/transactions/\(deposit.id)/owing",
-                                                  query: from.map { ["person": $0] } ?? [:]) {
-            sender = r.from
-            named = r.named
-            var items = r.items.compactMap { $0.value }
-            if !editing.isEmpty {
-                // S-10e: the purchases this deposit already pays back stay listed,
-                // with what it pays on top of anything still owed.
-                for l in (r.linked ?? []).compactMap({ $0.value }) {
-                    if let i = items.firstIndex(where: { $0.charge == l.id && $0.person == l.person }) {
-                        let o = items[i]
-                        items[i] = Owing(charge: o.charge, merchant: o.merchant, date: o.date, owes: o.owes + l.amount,
-                                         person: o.person, theirs: true, pending: o.pending)
-                    } else {
-                        items.insert(Owing(charge: l.id, merchant: l.merchant, date: l.date, owes: l.amount,
-                                           person: l.person, theirs: true), at: 0)
-                    }
+        let path = "api/transactions/\(deposit.id)/owing"
+        let query = from.map { ["person": $0] } ?? [:]
+        // Never a spinner without an end: 20 seconds, then Try again.
+        let r: OwingReply? = try? await withDeadline(20) { [api] in
+            let reply: OwingReply = try await api.get(path, query: query)
+            return reply
+        }
+        guard let r = r else { return false }
+        sender = r.from
+        named = r.named
+        var items = r.items.compactMap { $0.value }
+        if !editing.isEmpty {
+            // S-10e: the purchases this deposit already pays back stay listed,
+            // with what it pays on top of anything still owed.
+            for l in (r.linked ?? []).compactMap({ $0.value }) {
+                if let i = items.firstIndex(where: { $0.charge == l.id && $0.person == l.person }) {
+                    let o = items[i]
+                    items[i] = Owing(charge: o.charge, merchant: o.merchant, date: o.date, owes: o.owes + l.amount,
+                                     person: o.person, theirs: true, pending: o.pending)
+                } else {
+                    items.insert(Owing(charge: l.id, merchant: l.merchant, date: l.date, owes: l.amount,
+                                       person: l.person, theirs: true), at: 0)
                 }
             }
-            // Theirs, or, from someone Pearl can't name, whoever's share is closest.
-            // Every share anyone owes her (2026-11-09), to tick as many as it
-            // paid back: the sender's first, then everyone else's, closest
-            // to what came in first.
-            let close: (Owing, Owing) -> Bool = { abs($0.owes - self.deposit.amount) < abs($1.owes - self.deposit.amount) }
-            owing = items.filter { $0.theirs == true } + items.filter { $0.theirs != true }.sorted(by: close)
         }
+        // Theirs, or, from someone Pearl can't name, whoever's share is closest.
+        // Every share anyone owes her (2026-11-09), to tick as many as it
+        // paid back: the sender's first, then everyone else's, closest
+        // to what came in first.
+        let close: (Owing, Owing) -> Bool = { abs($0.owes - self.deposit.amount) < abs($1.owes - self.deposit.amount) }
+        owing = items.filter { $0.theirs == true } + items.filter { $0.theirs != true }.sorted(by: close)
+        return true
     }
 
     private func search() async {

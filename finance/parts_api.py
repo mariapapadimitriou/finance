@@ -1508,7 +1508,16 @@ def owing(txn_id: str):
         return jsonify({"from": None, "items": []})
     # TP-03 (Paybacks 2): `person`, who it's from when Pearl can't read it
     # off the money in: the joint account's other owner.
-    sender = " ".join(str(request.args.get("person") or "").split()) or t.party or t.merchant or ""
+    # Otherwise the person the e-Transfer names, as the list shows them
+    # (2026-11-17): the bank's merchant is often only "E-Transfer", with
+    # "anastasia papadimitriou" in the description or Plaid's payer, and
+    # matching the merchant asked PP-01 about the Anastasia of her splits.
+    from .etransfers import known_people, party as etransfer_party
+    asked = " ".join(str(request.args.get("person") or "").split())
+    sender = asked or t.party or ""
+    if not sender:
+        people = known_people(st.all_transactions(), st.splits(), st.payback_people())
+        sender = (etransfer_party(t, people) or {}).get("name") or t.merchant or ""
     rows = dp.owed(st, st.all_transactions(), _today())["owes_you"]
     mine = [r for r in rows if sp.same_person(r["name"], sender)]
     rest = [r for r in rows if r not in mine]
