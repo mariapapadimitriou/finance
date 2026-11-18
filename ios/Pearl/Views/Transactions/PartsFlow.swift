@@ -1148,8 +1148,10 @@ struct PartsSheet: View {
                 label(mp ? "\(o.merchant) · \(Format.short(o.date))" : "\(o.merchant) · \(first) owes \(Format.amount(o.owes))")
                 GlassCard {
                     if canPart(o) {
-                        let owesAfter = Text(mp ? "Tap to change the amount"
-                                             : "\(first) still owes \(Format.amount(max(0, o.owes - partValue))) · tap to change the amount")
+                        // MP-04's Change (MANY-01): no line under Part of it;
+                        // the amount already looks editable (copy rule 4).
+                        let owesAfter: Text? = mp ? nil
+                            : Text("\(first) still owes \(Format.amount(max(0, o.owes - partValue))) · tap to change the amount")
                             .font(Nacre.subheadline).foregroundColor(Pearl.muted)
                         if editingPart && !allOfIt {
                             // Tapped again: the amount changes in place (no
@@ -1163,7 +1165,7 @@ struct PartsSheet: View {
                                         .accessibilityLabel("Part of it")
                                         .accessibilityHint("Up to \(Format.amount(shareRoom)), less than \(Format.amount(o.owes))")
                                 }
-                                owesAfter.fixedSize(horizontal: false, vertical: true)
+                                if let owesAfter = owesAfter { owesAfter.fixedSize(horizontal: false, vertical: true) }
                             }
                         } else {
                             Button {
@@ -1172,7 +1174,7 @@ struct PartsSheet: View {
                             } label: {
                                 choiceLine(on: !allOfIt) {
                                     Text("Part of it · \(Format.amount(partValue))").font(Nacre.body).foregroundColor(Pearl.ink)
-                                    owesAfter.fixedSize(horizontal: false, vertical: true)
+                                    if let owesAfter = owesAfter { owesAfter.fixedSize(horizontal: false, vertical: true) }
                                 }
                             }
                             .buttonStyle(.plain)
