@@ -489,3 +489,37 @@ def test_refund_or_work_to_many_server(client, kind, n):
     assert round(after["allowance"] - was["allowance"], 2) == amount
     undo(client, reply)
     assert world(client) == before
+
+
+# ── C pays back A (split) and B (not split), product owner 2026-11-18 ────
+# "Both A and B should show up when I say C paid back. For A it shows the
+# splits, and for B I should be able to select it and mark how much of B
+# the repayment paid for."
+
+def test_c_pays_back_split_a_and_unsplit_b(client):
+    i = add(client, "amex", row("LOBLAWS", 90.0, "amex", when=day(6), category="Groceries", kind="credit"),
+            row("PIZZA NOVA", 60.0, "amex", when=day(4), category="Dining", kind="credit"))
+    a, b = i["LOBLAWS"], i["PIZZA NOVA"]
+    ok(client.put(f"/api/transactions/{a}/split", json={
+        "mode": "amount", "people": [{"name": "Anastasia", "amount": 45.0}]}))
+    dep = add(client, "chq", row("INTERAC E-TRANSFER FROM ANASTASIA PAPAS", -75.0, when=day(1),
+                                 merchant="Anastasia Papas"))["INTERAC E-TRANSFER FROM ANASTASIA PAPAS"]
+    before = world(client)
+    b_cost = round(spend_amount(client.st.get_transaction(b)), 2)
+    r = via_a_person(client, dep, 2)
+    assert [o["id"] for o in theirs(r)] == [a]                  # A: Anastasia's share
+    assert b in [u["id"] for u in r["unsplit"]]                  # B: OTHER PURCHASES
+    reply = ok(client.post(f"/api/transactions/{dep}/parts", json={"later": False, "parts": [
+        {"kind": "payback", "charge": a, "amount": 45.0, "person": "Anastasia"},
+        {"kind": "payback", "charge": b, "amount": 30.0, "person": "Anastasia", "new_split": True}]}))
+    assert reply["title"] == "Anastasia paid back 2 purchases · $75.00"
+    assert owes(client, a) == {"Anastasia": 0.0}
+    assert owes(client, b) == {"Anastasia": 0.0}
+    assert split_names(client)[b] == ["Anastasia"]
+    assert round(spend_amount(client.st.get_transaction(b)), 2) == round(b_cost - 30.0, 2)
+    after = numbers(client)
+    assert round(before["numbers"]["spent"] - after["spent"], 2) == 75.0
+    assert round(after["allowance"] - before["numbers"]["allowance"], 2) == 75.0
+    undo(client, reply)
+    assert world(client) == before
+    assert b not in client.st.splits()

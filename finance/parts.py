@@ -336,9 +336,10 @@ def undo(st, deposit_id: str) -> int:
             undo(st, p["part_id"])
         st.clear_cash_deposit(p["part_id"])
         st.link_refund(p["part_id"], None)
-        if p["kind"] in ("reimbursement", "refund"):
+        if p["kind"] in ("reimbursement", "refund", "payback"):
             # A refund of her share (or toward Sam's) is linked with a kind
-            # too (REFUND_SHARE); Undo takes it off with the part.
+            # too (REFUND_SHARE), and a payback that split its purchase
+            # (MADE_SPLIT, 2026-11-18); Undo takes it off with the part.
             st.set_payback_kind(p["part_id"], None)
         if p["kind"] == "reimbursement":
             was = (p.get("detail") or {}).get("was_excluded")
