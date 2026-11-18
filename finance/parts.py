@@ -71,8 +71,9 @@ def _clean(st, deposit: Transaction, parts: list, later: bool) -> list[dict]:
     cash = {c["id"]: c for c in st.split_cash()}
     out = []
     # SPLIT-04: Not mine is not a part, except for the extra on a refund of
-    # her share (S-11m, product owner 2026-11-14).
-    refund_share = any(isinstance(p, dict) and p.get("kind") == "refund" and p.get("share") for p in parts)
+    # her share (S-11m, product owner 2026-11-14), or on a refund of several
+    # purchases (MP-03: the shop's leftover is S-11m, 2026-11-17).
+    refund_share = any(isinstance(p, dict) and p.get("kind") == "refund" for p in parts)
     for p in parts:
         if not isinstance(p, dict) or p.get("kind") not in KINDS or p.get("kind") == "rest" \
                 or (p.get("kind") == "not_mine" and not refund_share):
@@ -335,8 +336,11 @@ def undo(st, deposit_id: str) -> int:
             undo(st, p["part_id"])
         st.clear_cash_deposit(p["part_id"])
         st.link_refund(p["part_id"], None)
-        if p["kind"] == "reimbursement":
+        if p["kind"] in ("reimbursement", "refund"):
+            # A refund of her share (or toward Sam's) is linked with a kind
+            # too (REFUND_SHARE); Undo takes it off with the part.
             st.set_payback_kind(p["part_id"], None)
+        if p["kind"] == "reimbursement":
             was = (p.get("detail") or {}).get("was_excluded")
             if was and (p["detail"].get("charge")):
                 st.exclude(p["detail"]["charge"], was)

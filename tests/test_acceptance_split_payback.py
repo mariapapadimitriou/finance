@@ -416,15 +416,51 @@ OWN = (("AMAZON", 40.0, 10), ("AMAZON MKTPL", 30.0, 8), ("AMAZON.CA", 25.0, 6))
 OWN_LINKS = {2: (55.0, [40.0, 15.0]), 3: (80.0, [40.0, 30.0, 10.0])}
 
 
-NO_UI = ("no UI: Paid back › The shop / Work (T-09rs, T-09w) picks one purchase and saves it; "
-         "what's left is S-11m / S-11w's question, a second save with its own Undo. The server takes "
-         "several in one save (test_refund_or_work_to_many_server); the app has no screen that sends it.")
+def mp_tap(c, dep, kind: str, amount: float, n: int, q: str = ""):
+    """MP-01 / MP-02 as the app does it: the list (GET …/many-purchases),
+    the n oldest ticked, and the one tap: oldest in full, the newest
+    part-paid (MP-04), in one POST …/parts with the payer for MP-05."""
+    got = ok(c.get(f"/api/transactions/{dep}/many-purchases", query_string={"kind": kind, "q": q}))
+    rows = sorted(got["items"], key=lambda o: (o["date"], o["id"]))[:n]
+    room, parts = cents(amount), []
+    for o in rows:
+        take = min(cents(o["amount"]), room)
+        room -= take
+        part = {"kind": "refund" if kind == "shop" else "reimbursement", "amount": take / 100, "charge": o["id"]}
+        if o["share"] and kind == "shop":
+            part["share"] = True
+        parts.append(part)
+    payer = got["shop"].split()[0]
+    return got, payer, c.post(f"/api/transactions/{dep}/parts", json={"parts": parts, "later": False, "payer": payer})
 
 
 @pytest.mark.parametrize("n", [2, 3])
 @pytest.mark.parametrize("kind", ["a refund", "a work reimbursement"])
-def test_refund_or_work_to_many_in_the_app(n, kind):
-    pytest.skip(NO_UI)
+def test_refund_or_work_to_many_in_the_app(client, kind, n):
+    """Paid back › The shop / Work (MP-02 / MP-01): the shop's purchases are
+    LIKELY before the refund; Work's are added by search (MP-01's "Search
+    purchases"). One tap links them all in one save, the newest part-paid,
+    and one Undo (MP-05) puts it all back."""
+    amount, paid = OWN_LINKS[n]
+    i = add(client, "amex", *(row(m, a, "amex", when=day(d), category="Shopping", kind="credit") for m, a, d in OWN))
+    was = numbers(client)
+    shop = kind == "a refund"
+    desc = "AMAZON REFUND" if shop else "NORTHWIND LTD EXPENSE REIMB"
+    i = add(client, "chq", row(desc, -amount, when=day(1), merchant="Amazon" if shop else "Northwind Ltd"))
+    dep = i[desc]
+    before = world(client)
+    got, payer, r = mp_tap(client, dep, "shop" if shop else "work", amount, n, q="" if shop else "amazon")
+    assert {o["id"] for o in got["items"]} == {i[m] for m, _, _ in OWN}
+    reply = ok(r)
+    assert reply["title"] == f"{payer} paid back {n} · ${amount:,.2f}"
+    assert client.st.splits() == {}
+    linked = {p["charge"]["id"]: p["amount"] for p in detail(client, dep).get("parts") or [] if p.get("charge")}
+    assert linked == {i[m]: got_ for (m, _, _), got_ in zip(OWN, paid)}
+    after = numbers(client)
+    assert round(was["spent"] - after["spent"], 2) == amount
+    assert round(after["allowance"] - was["allowance"], 2) == amount
+    undo(client, reply)
+    assert world(client) == before
 
 
 @pytest.mark.parametrize("n", [2, 3])
