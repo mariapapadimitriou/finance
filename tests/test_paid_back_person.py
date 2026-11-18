@@ -36,3 +36,21 @@ def test_pp01_is_not_a_sheet_on_a_spinner():
     assert "PaidBackPerson.route(" in src
     assert "LoadState(error: e)" in src
     assert "withDeadline(" in src
+
+
+def test_no_one_owes_her_opens_pb30_other_purchases():
+    """2026-11-18: someone Pearl knows who owes her nothing gets PB-30 with
+    OTHER PURCHASES only; no one owing and no name asks T-14 Who sent this?
+    first. Not PB-15 / S-09's purchase list any more."""
+    src = PARTS.read_text()
+    assert "case .others(let name):" in src and "toOthers(name)" in src
+    assert "case .whoSent:" in src and "askName = true" in src
+    assert "else if askName { whoSentView }" in src
+    assert "notOnSplits: named" in src
+    assert "case .theirs, .purchases:" not in src
+    answer = (ROOT / "ios/Pearl/Views/Review/AnswerSheet.swift").read_text()
+    body = answer.split("private func paidBack(_ who: PaidBackWho)")[1].split("\n    }\n")[0]
+    assert "go(.charges)" not in body and "parting = true" in body
+    page = (ROOT / "ios/Pearl/Views/Transactions/WhoSentNamePage.swift").read_text()
+    assert 'SheetTitle(title: "Who sent this?")' in page
+    assert "confirmationDialog" not in page and ".alert(" not in page

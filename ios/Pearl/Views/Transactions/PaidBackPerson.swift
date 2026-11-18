@@ -7,6 +7,10 @@ import Foundation
 /// 2026-11-17 (the product owner's $30.00 from "anastasia papadimitriou"):
 /// PP-01 opened with no one in it over a spinner that never ended. Now it
 /// is never empty, and a name that is clearly one of hers isn't asked about.
+///
+/// 2026-11-18 (after #380): someone who owes her nothing still gets PB-30,
+/// with OTHER PURCHASES only, instead of the old purchase list (PB-15 /
+/// S-09); with no one owing her and no name, T-14 Who sent this? first.
 enum PaidBackPerson {
     /// One share someone owes her (…/owing's items).
     struct Share: Hashable {
@@ -30,8 +34,12 @@ enum PaidBackPerson {
         case person(String)
         /// PP-01 with only these people. Never empty.
         case ask([Ower])
-        /// No one owes her: the purchase list (PB-15 / S-09), as before.
-        case purchases
+        /// Pearl knows who, and they owe her nothing: PB-30 for them with
+        /// OTHER PURCHASES only (no "{NAME}'S SHARE").
+        case others(String)
+        /// No one owes her and Pearl can't name who sent it: T-14 Who sent
+        /// this?, then `others` for the name she gives.
+        case whoSent
     }
 
     /// Everyone who owes her, once each, newest share first.
@@ -44,19 +52,31 @@ enum PaidBackPerson {
         return out
     }
 
-    /// `sender`: who …/owing says sent it. `named`: the name the money
-    /// shows ("anastasia papadimitriou"), matched to her people when the
-    /// server couldn't: the same first name, any case, a full name against a
-    /// first name, and only when it fits exactly one of them.
-    static func route(sender: String?, named: String?, shares: [Share]) -> Route {
+    /// `sender`: who …/owing says sent it (only ever someone who owes her).
+    /// `known`: who the caller already knows it was: a picked person, PQ-03's
+    /// tile, the joint account's other owner, or T-14's answer.
+    /// `named`: the name the money shows ("anastasia papadimitriou"), matched
+    /// to her people when the server couldn't: the same first name, any case,
+    /// a full name against a first name, and only when it fits exactly one.
+    /// `notOnSplits`: the name …/owing reads off the money when it's on none
+    /// of her splits (`named` in its reply).
+    static func route(sender: String?, known: String? = nil, named: String?, notOnSplits: String? = nil,
+                      shares: [Share]) -> Route {
         if sender != nil { return .theirs }
+        // …/owing found no share of theirs, so they owe her nothing.
+        if let k = clean(known) { return .others(k) }
         let people = owers(shares)
-        if people.isEmpty { return .purchases }
         if let named = named, let first = firstWord(named) {
             let hits = people.filter { firstWord($0.name) == first }
             if hits.count == 1 { return .person(hits[0].name) }
         }
-        return .ask(people)
+        if let n = clean(notOnSplits) { return .others(n) }
+        return people.isEmpty ? .whoSent : .ask(people)
+    }
+
+    private static func clean(_ name: String?) -> String? {
+        let n = (name ?? "").split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return n.isEmpty ? nil : n
     }
 
     struct TimedOut: Error {}

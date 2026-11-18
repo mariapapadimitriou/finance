@@ -76,6 +76,7 @@
 		8DAA91D1295F238D6858DE8F /* TransactionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4941CABD801BD86FF3E85FC7 /* TransactionsView.swift */; };
 		989AD22CC505E0EC02856A44 /* TransferEnds.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C19363BFB6849DFF4CC728C /* TransferEnds.swift */; };
 		0B21B527094F58824BC48B0F /* TripViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3143EA4F2320C86462000D37 /* TripViews.swift */; };
+		28FB2FEB98129515E3AD49BD /* WhoSentNamePage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1227A2E5158BCC8276456726 /* WhoSentNamePage.swift */; };
 		A28FEF7ABDE1D9915D1327D2 /* WhoSentSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DBC32D7A675A5534FC82999 /* WhoSentSheet.swift */; };
 		88E0E90CB8A80DB0A704C6FE /* WhoseAnswer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF77AEC87D7E5FA1818B6268 /* WhoseAnswer.swift */; };
 		BF7612C5DA3BCEB047444B7E /* YourShareViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E28404433C4F1EA49E3B9C2 /* YourShareViews.swift */; };
@@ -185,6 +186,7 @@
 		4941CABD801BD86FF3E85FC7 /* TransactionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionsView.swift; sourceTree = "<group>"; };
 		2C19363BFB6849DFF4CC728C /* TransferEnds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferEnds.swift; sourceTree = "<group>"; };
 		3143EA4F2320C86462000D37 /* TripViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripViews.swift; sourceTree = "<group>"; };
+		1227A2E5158BCC8276456726 /* WhoSentNamePage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhoSentNamePage.swift; sourceTree = "<group>"; };
 		1DBC32D7A675A5534FC82999 /* WhoSentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhoSentSheet.swift; sourceTree = "<group>"; };
 		AF77AEC87D7E5FA1818B6268 /* WhoseAnswer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhoseAnswer.swift; sourceTree = "<group>"; };
 		7E28404433C4F1EA49E3B9C2 /* YourShareViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YourShareViews.swift; sourceTree = "<group>"; };
@@ -426,6 +428,7 @@
 				2C19363BFB6849DFF4CC728C /* TransferEnds.swift */,
 				3143EA4F2320C86462000D37 /* TripViews.swift */,
 				AF77AEC87D7E5FA1818B6268 /* WhoseAnswer.swift */,
+				1227A2E5158BCC8276456726 /* WhoSentNamePage.swift */,
 				1DBC32D7A675A5534FC82999 /* WhoSentSheet.swift */,
 				7E28404433C4F1EA49E3B9C2 /* YourShareViews.swift */,
 			);
@@ -604,6 +607,7 @@
 				8DAA91D1295F238D6858DE8F /* TransactionsView.swift in Sources */,
 				989AD22CC505E0EC02856A44 /* TransferEnds.swift in Sources */,
 				0B21B527094F58824BC48B0F /* TripViews.swift in Sources */,
+				28FB2FEB98129515E3AD49BD /* WhoSentNamePage.swift in Sources */,
 				A28FEF7ABDE1D9915D1327D2 /* WhoSentSheet.swift in Sources */,
 				88E0E90CB8A80DB0A704C6FE /* WhoseAnswer.swift in Sources */,
 				BF7612C5DA3BCEB047444B7E /* YourShareViews.swift in Sources */,

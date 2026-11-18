@@ -24,7 +24,8 @@
 * GET    /api/transactions/<id>/owing             what the sender still owes, for a deposit's
                                                   parts, and what its parts already pay back;
                                                   `unsplit`: her recent purchases that aren't
-                                                  split (?q= finds older ones, 2026-11-18).
+                                                  split (?q= finds older ones, ?also= keeps
+                                                  PB-22's purchase first, 2026-11-18).
 * GET    /api/owed                                Owed to you, You owe, paid back this month.
 * GET    /api/transactions/<id>/credit            S-35c: a linked payback credited to no one, and
                                                   the open shares it could be (SPLIT-22b).
@@ -667,10 +668,12 @@ def _splittable(st, c, splits) -> bool:
     return True
 
 
-def unsplit_candidates(st, deposit, target: float, q: str = "") -> list[dict]:
+def unsplit_candidates(st, deposit, target: float, q: str = "", also: str = "") -> list[dict]:
     """OTHER PURCHASES: her purchases that aren't split, recent and close
     to `target` (what's left of the money after the person's shares) first.
-    `q`, a name or an amount, finds any in the last year (`query`)."""
+    `q`, a name or an amount, finds any in the last year (`query`).
+    `also` (PB-22, 2026-11-18): the purchase she came from, first whenever
+    it can be split, however old or far from the amount."""
     from .many_api import _cents as cents
     splits = st.splits()
     when = date.fromisoformat(deposit.date[:10])
@@ -691,15 +694,17 @@ def unsplit_candidates(st, deposit, target: float, q: str = "") -> list[dict]:
         if needle:
             hay = " ".join(x for x in (shown, c.merchant, c.description or "", c.category or "") if x).lower()
             found = needle in hay or (wanted is not None and abs(cents(c.amount) - wanted) <= 1)
+        came = bool(also) and c.fingerprint == also
         recent = -3 <= gap <= UNSPLIT_DAYS
-        if not (recent or (found and -3 <= gap <= UNSPLIT_SEARCH_DAYS)):
+        if not (came or recent or (found and -3 <= gap <= UNSPLIT_SEARCH_DAYS)):
             continue
-        if needle and not found:
+        if needle and not found and not came:
             continue
         amount = round(c.amount, 2)
         # Close in amount, then recent: a $31 dinner for $30 back first.
         near = abs(amount - target) / max(target, 1.0)
-        rows.append(((0 if found else 1, round(near + max(gap, 0) / 30.0, 4), -int(c.date[:10].replace("-", ""))),
+        rows.append(((-1 if came else 0 if found else 1, round(near + max(gap, 0) / 30.0, 4),
+                      -int(c.date[:10].replace("-", ""))),
                      {"id": c.fingerprint, "merchant": shown, "date": c.date[:10], "amount": amount,
                       "category": c.category or "Other", "pending": bool((c.raw or {}).get("pending")),
                       "max": amount, "query": found}))
@@ -1740,8 +1745,9 @@ def owing(txn_id: str):
     owed_them = sum(_cents(i["owes"]) for i in items if i["theirs"] and not i.get("unknown"))
     left = max(_cents(-t.amount) - owed_them, 0) / 100 or round(-t.amount, 2)
     q = " ".join(str(request.args.get("q") or "").split())[:80]
+    also = str(request.args.get("also") or "")[:200]
     return jsonify({"from": frm, "named": named if not theirs_u else None, "items": items,
-                    "linked": linked, "unsplit": unsplit_candidates(st, t, left, q)})
+                    "linked": linked, "unsplit": unsplit_candidates(st, t, left, q, also)})
 
 
 # ── Who sent this? (SPLIT-22b, THL-181; S-05u, S-35c, S-21u) ─────────────

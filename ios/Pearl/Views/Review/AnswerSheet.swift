@@ -684,8 +684,11 @@ struct AnswerSheet: View {
 
     /// PB-11's answer. The shop and Work: Many purchases, MP-02 / MP-01
     /// (replacing T-09rs / T-09w's one pick), the rest as S-11m / S-11w in
-    /// the same save. A person: PB-15 when the sender is named but on no
-    /// split; otherwise their splits (PB-12) or S-35's ticks, then PB-13.
+    /// the same save. A person: always the parts sheet, which routes it
+    /// (PaidBackPerson.route): PB-30 for someone who owes her, PP-01 when it
+    /// can't tell who, and PB-30 with OTHER PURCHASES only for someone named
+    /// who owes her nothing (T-14 Who sent this? first when no one owes her
+    /// and the money names no one). Not PB-15 any more (2026-11-18).
     private func paidBack(_ who: PaidBackWho) {
         manyWho = nil
         switch who {
@@ -694,24 +697,7 @@ struct AnswerSheet: View {
             parting = true
         case .person:
             // PQ-03's tiles name who on her splits it is: PB-30 for them.
-            if partPerson != nil { parting = true; return }
-            Task {
-                struct Owing: Decodable {
-                    let from: String?; let named: String?; let items: [Lenient<PartsSheet.Owing>]?
-                }
-                let r: Owing? = try? await api.get("api/transactions/\(t.id)/owing")
-                // PB-15 only when no one owes her: otherwise the name may be
-                // someone on her splits as the bank writes them, so PP-01
-                // asks who first, then PB-30 (2026-11-16; never a new person).
-                let owed = (r?.items ?? []).contains { ($0.value?.person != nil) && ($0.value?.owes ?? 0) >= 0.005 }
-                if let r = r, r.from == nil, let named = r.named, !named.isEmpty, !owed {
-                    chargeCase = "payback"
-                    payerName = named
-                    go(.charges)
-                } else {
-                    parting = true
-                }
-            }
+            parting = true
         }
     }
 
