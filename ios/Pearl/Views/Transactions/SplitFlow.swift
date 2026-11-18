@@ -1717,6 +1717,8 @@ struct MarkPaidSheet: View {
     @State private var choosingShares = false
     @State private var shares: [OpenShare] = []
     @State private var ticked: [String: Double] = [:]
+    /// S-11c's open shares are loading, so its Try again waits.
+    @State private var loadingShares = false
 
     struct ExtraPiece: Hashable {
         let kind: String
@@ -1843,7 +1845,15 @@ struct MarkPaidSheet: View {
             }
             .disabled(busy)
             if busy { ProgressView().frame(maxWidth: .infinity) }
-            if let error = error { CautionBanner(text: error) }
+            if let error = error {
+                CautionBanner(text: error)
+                // S-06ra (UI audit): Bank or e-Transfer's money in reloads from here.
+                if error == Self.moneyInLoadError {
+                    Button("Try again") { how = "bank"; Task { await primary() } }
+                        .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                        .disabled(busy)
+                }
+            }
         }
     }
 
@@ -2160,6 +2170,12 @@ struct MarkPaidSheet: View {
                     if choosingShares { shareList } else { extraTiles }
                     if let error = error {
                         Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
+                        // S-11c Paying me back (UI audit): the open shares reload from here.
+                        if error == Self.sharesLoadError {
+                            Button("Try again") { Task { await loadShares() } }
+                                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                                .disabled(loadingShares)
+                        }
                     }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 12)
@@ -2280,6 +2296,8 @@ struct MarkPaidSheet: View {
         struct Row: Decodable { let name: String; let items: [Lenient<Item>] }
         struct Reply: Decodable { let owesYou: [Lenient<Row>]
             enum CodingKeys: String, CodingKey { case owesYou = "owes_you" } }
+        loadingShares = true
+        defer { loadingShares = false }
         do {
             let r: Reply = try await api.get("api/owed")
             let taken = Set(pieces.compactMap { p in p.charge.map { $0 + "|" + (p.person ?? "") } })
@@ -2303,11 +2321,18 @@ struct MarkPaidSheet: View {
                 ticked[s.id] = Double(use) / 100
                 room -= use
             }
+            error = nil
             choosingShares = true
         } catch {
-            self.error = "Couldn’t load who owes you. Try again."
+            self.error = Self.sharesLoadError
         }
     }
+
+    /// S-11c's open shares didn't load. Try again is the button under it, so
+    /// the line doesn't say it too (UI audit).
+    private static let sharesLoadError = "Couldn’t load who owes you."
+    /// S-06ra's Bank or e-Transfer didn't load the money in; Try again under it.
+    private static let moneyInLoadError = "Couldn’t load your money in."
 
     private func saveExtra() async {
         guard let value = typed else { return }
@@ -2393,7 +2418,7 @@ struct MarkPaidSheet: View {
             error = nil
         } catch {
             // S-06r: the champagne banner; nothing was saved past what the server said.
-            self.error = how == "bank" && !finding ? "Couldn’t load your money in. Try again."
+            self.error = how == "bank" && !finding ? Self.moneyInLoadError
                 : finding ? "Couldn’t link that. Nothing changed. Try again."
                 : "Couldn’t save that. Nothing changed. Try again."
         }

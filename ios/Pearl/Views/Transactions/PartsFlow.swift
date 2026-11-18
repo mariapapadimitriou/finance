@@ -754,7 +754,8 @@ struct PartsSheet: View {
         step = .loading
         guard await fetchOwing() else {
             retryPick = true
-            loadError = "Couldn’t load who owes you. Try again."
+            // LoadState's Try again button says it, so the line doesn't.
+            loadError = "Couldn’t load who owes you."
             return
         }
         step = personStep
@@ -2188,7 +2189,8 @@ struct PartsSheet: View {
         guard await fetchOwing() else {
             step = .loading
             retryPick = false
-            loadError = "Couldn’t load who owes you. Try again."
+            // LoadState's Try again button says it, so the line doesn't.
+            loadError = "Couldn’t load who owes you."
             return
         }
         if whole != nil {
