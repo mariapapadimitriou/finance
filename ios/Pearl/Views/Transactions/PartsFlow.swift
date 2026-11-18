@@ -2371,7 +2371,9 @@ struct PartsSheet: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
-                    Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(1)
+                    // UI audit: the line under wraps to two lines rather than cut.
+                    Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
                 Text(Format.amount(amount)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
@@ -2547,7 +2549,9 @@ struct OwedView: View {
             Initials(name: name, size: 34)
             VStack(alignment: .leading, spacing: 2) {
                 Text(name).font(Nacre.body).foregroundColor(Pearl.ink)
-                Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(1)
+                // UI audit: the line under wraps to two lines rather than cut.
+                Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let note = note {
                     Text(note).font(Nacre.footnote).foregroundColor(Pearl.muted)
                 }
