@@ -982,14 +982,14 @@ final class Round1FixesUITests: XCTestCase {
     /// TEST-06: P-05, a Pearl sheet; Stay signed in keeps her signed in.
     func testSignOutAsksOnAPearlSheet() {
         launch()
-        app.tabBars.buttons["Profile"].tap()
+        app.buttons["profile-circle"].firstMatch.tap()
         let signOut = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Sign out'")).firstMatch
         tap(signOut, "Sign out on Profile")
         XCTAssertEqual(app.sheets.count + app.alerts.count, 0, "Sign out is still a stock dialog")
         XCTAssertTrue(text(containing: "Sign out on this iPhone?").waitForExistence(timeout: 5), "No P-05 sheet")
         tap(app.buttons["Stay signed in"], "Stay signed in")
         sleep(1)
-        XCTAssertTrue(app.tabBars.buttons["Profile"].exists, "Stay signed in should keep her signed in")
+        XCTAssertTrue(app.tabBars.buttons["Pearl"].exists, "Stay signed in should keep her signed in")
     }
 
     /// H-00r: Sort now opens Quick sort straight from Home.
