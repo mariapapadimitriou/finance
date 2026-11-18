@@ -741,21 +741,28 @@ struct PartsSheet: View {
 
     /// Where A person goes (PaidBackPerson.route): PB-30 when Pearl knows
     /// who, or the money's name is clearly one person who owes her; PP-01
-    /// with only the people who owe her when it isn't. Someone Pearl knows
-    /// who owes her nothing: PB-30 with OTHER PURCHASES only; no one owes
-    /// her and no name: T-14 Who sent this? first (2026-11-18). PP-01 is
-    /// never empty.
+    /// with the people who owe her when it isn't. Someone she picked who
+    /// owes her nothing: PB-30 with OTHER PURCHASES only. A name Pearl read
+    /// (the money's, or the joint owner's) who owes nothing: PP-01 with that
+    /// name last, "Not on a split", while others owe her; PB-30 straight
+    /// away when no one does. No one owes her and no name: T-14 Who sent
+    /// this? first (2026-11-18). PP-01 is never empty.
     private func toPerson() {
         if (paidBack || saidPerson) && editing.isEmpty {
             let shares = owing.map { PaidBackPerson.Share(person: $0.person, owes: $0.owes, date: $0.date) }
-            switch PaidBackPerson.route(sender: sender, known: forPerson ?? owingPerson, named: payer ?? deposit.name,
-                                        notOnSplits: named, shares: shares) {
+            // She picked these; the joint account's owner is only Pearl's read.
+            let picked = forPerson ?? jointPerson ?? pickedPerson ?? person
+            switch PaidBackPerson.route(sender: sender, known: picked, joint: picked == nil ? joint?.person : nil,
+                                        named: payer ?? deposit.name, notOnSplits: named, shares: shares) {
             case .ask(let people):
                 if step == .cash { step = .kind }
                 // FROM PAST SPLITS ("Last split Oct 2"): only people on her
-                // splits, so a payback never adds anyone.
+                // splits, so a payback never adds anyone to one; last, the
+                // sender Pearl can name, "Not on a split" (PB-30 for them,
+                // OTHER PURCHASES only).
                 askWho = AskWho(rows: people.map {
-                    WhoPaidPicker.Row(name: $0.name, sub: "Last split \(Format.short($0.date))")
+                    $0.notOnSplit ? WhoPaidPicker.Row(name: $0.name, sub: "Not on a split", fixed: true)
+                        : WhoPaidPicker.Row(name: $0.name, sub: "Last split \(Format.short($0.date))")
                 })
                 return
             case .person(let name):
@@ -808,8 +815,11 @@ struct PartsSheet: View {
         WhoPaidPicker(api: api, sub: "+\(Format.amount(deposit.whole ?? deposit.amount)) · \(deposit.name) · \(Format.short(deposit.date))",
                       top: [], pastSplits: false, someoneNew: false, onlyPast: ask.rows,
                       onPick: { name in
-                          pickedPerson = name
+                          let notOnSplit = ask.rows.contains { $0.name == name && $0.fixed }
                           askWho = nil
+                          // The sender on none of her splits: PB-30 for them, OTHER PURCHASES only.
+                          if notOnSplit { toOthers(name); return }
+                          pickedPerson = name
                           Task { await pickPerson() }
                       },
                       onClose: {

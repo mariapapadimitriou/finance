@@ -31,19 +31,27 @@ check(PaidBackPerson.route(sender: nil, named: "Jordan",
 
 // Nobody owes her, person known: PB-30 other purchases for them.
 check(PaidBackPerson.route(sender: nil, named: "E-Transfer", notOnSplits: "Jordan Park", shares: [])
-      == .others("Jordan Park"), "named sender on no split")
+      == .others("Jordan Park"), "named sender on no split, no one owes")
 check(PaidBackPerson.route(sender: nil, known: "Priya", named: "E-Transfer", shares: []) == .others("Priya"),
-      "picked person or PQ-03's person")
-check(PaidBackPerson.route(sender: nil, known: " Mom ", named: "TFR-FR JOINT", shares: []) == .others("Mom"),
-      "joint account's other owner")
+      "picked person")
+check(PaidBackPerson.route(sender: nil, joint: " Mom ", named: "TFR-FR JOINT", shares: []) == .others("Mom"),
+      "joint account's other owner, no one owes")
 check(PaidBackPerson.route(sender: nil, known: "  ", named: "x", shares: []) == .whoSent, "a blank name isn't one")
-// Known, while others owe her: still them, never PP-01 or someone else's share.
+// She picked them, while others owe her: still them.
 check(PaidBackPerson.route(sender: nil, known: "Priya", named: "Priya", shares: two) == .others("Priya"),
-      "known person who owes nothing, others do")
-// The money's name on none of her splits while others owe: PB-30 for that name,
-// unless its first name is clearly one of the people who owe her.
-check(PaidBackPerson.route(sender: nil, named: "Jordan", notOnSplits: "Jordan", shares: two) == .others("Jordan"),
-      "named, on no split, others owe")
+      "picked person who owes nothing, others do")
+// A name Pearl read while others owe her: always ask (product owner,
+// 2026-11-18). PP-01 with the people who owe her, and the sender last.
+for (r, what) in [(PaidBackPerson.route(sender: nil, named: "Jordan", notOnSplits: "Jordan", shares: two), "named"),
+                  (PaidBackPerson.route(sender: nil, joint: "Jordan", named: "TFR-FR JOINT", shares: two), "joint")] {
+    if case .ask(let people) = r {
+        check(people.map(\.name) == ["Anastasia", "Sam Lee", "Jordan"], "\(what): PP-01 rows \(people)")
+        check(people.map(\.notOnSplit) == [false, false, true], "\(what): only the sender is not on a split")
+    } else {
+        check(false, "\(what) sender who owes nothing, others do: asks")
+    }
+}
+// Clearly one of them: no question, as before.
 check(PaidBackPerson.route(sender: nil, named: "anastasia papadimitriou", notOnSplits: "anastasia papadimitriou",
                            shares: two) == .person("Anastasia"), "first-name match still wins")
 // Sender owes: unchanged, whatever else is known.
