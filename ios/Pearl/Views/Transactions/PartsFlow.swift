@@ -914,7 +914,9 @@ struct PartsSheet: View {
     }
 
     /// "$86.65 of $86.65 ✓" (money in; TEXT-01), "… · $13.35 left over"
-    /// (muted), "… · $10.95 more than Sam sent" (error).
+    /// (muted), "… · $10.95 more than Sam sent" (PB-30o) and "… · $19.47
+    /// over" (MP-04) muted too: an allowed over-amount, and red means only
+    /// that something is wrong (approved UI audit tweak).
     private var totalLine: some View {
         let ticked = Double(tickedCents) / 100
         let first = firstName(sender ?? who)
@@ -922,8 +924,8 @@ struct PartsSheet: View {
         let (words, tone): (String, Color) = tickedCents == leftCents ? ("\(head) \u{2713}", Pearl.moneyIn)
             : tickedCents < leftCents ? ("\(head) · \(Format.amount(Double(leftCents - tickedCents) / 100)) left over", Pearl.muted)
             // MP-04: "$119.47 of $100.00 · $19.47 over".
-            : manyKind != nil ? ("\(head) · \(Format.amount(Double(tickedCents - leftCents) / 100)) over", Pearl.danger)
-            : ("\(head) · \(Format.amount(Double(tickedCents - leftCents) / 100)) more than \(first) sent", Pearl.danger)
+            : manyKind != nil ? ("\(head) · \(Format.amount(Double(tickedCents - leftCents) / 100)) over", Pearl.muted)
+            : ("\(head) · \(Format.amount(Double(tickedCents - leftCents) / 100)) more than \(first) sent", Pearl.muted)
         return Text(words).font(Nacre.footnote).foregroundColor(tone)
             .frame(maxWidth: .infinity).multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
