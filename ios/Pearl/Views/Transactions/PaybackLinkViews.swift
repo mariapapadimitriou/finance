@@ -187,7 +187,9 @@ struct PaybackLinkSheet: View {
                              back: { if start == .options { step = .options } else { onClose() } },
                              close: onClose)
             GlassCard {
-                let owesAfter = Text("\(first) still owes \(Format.amount(max(0, total - partValue))) · tap to change the amount")
+                // PB-13 for a person, UI audit: "Sam still owes $45.00", no
+                // hint to tap it (the amount already looks editable).
+                let owesAfter = Text("\(first) still owes \(Format.amount(max(0, total - partValue)))")
                     .font(Nacre.subheadline).foregroundColor(Pearl.muted)
                 if editingPart && !allOfIt {
                     choiceLine(on: true) {

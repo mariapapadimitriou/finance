@@ -1168,7 +1168,8 @@ struct PartsSheet: View {
     }
 
     /// PB-13: the purchase and what they owe in small caps, "Part of it ·
-    /// $15.00" over "Sam still owes $45.00 · tap to change the amount", "All
+    /// $15.00" over "Sam still owes $45.00" (UI audit: no hint to tap it;
+    /// the amount already looks editable), "All
     /// of it · $60.00" over "Sam’s paid in full · Pearl asks what the other
     /// $45.00 is", and "Sam’s share of Pai Northern Thai · Wed, Nov 12".
     @ViewBuilder private var howMuchView: some View {
@@ -1185,7 +1186,7 @@ struct PartsSheet: View {
                         // MP-04's Change (MANY-01): no line under Part of it;
                         // the amount already looks editable (copy rule 4).
                         let owesAfter: Text? = mp ? nil
-                            : Text("\(first) still owes \(Format.amount(max(0, o.owes - partValue))) · tap to change the amount")
+                            : Text("\(first) still owes \(Format.amount(max(0, o.owes - partValue)))")
                             .font(Nacre.subheadline).foregroundColor(Pearl.muted)
                         if editingPart && !allOfIt {
                             // Tapped again: the amount changes in place (no
