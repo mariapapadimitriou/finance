@@ -15,10 +15,16 @@
                                                   `payer` names the shop or work for
                                                   MP-05's "Northwind paid back 3 · $186.40"
                                                   or "Costco refunded 2 · $64.97".
+                                                  A payback part with `new_split` on a
+                                                  purchase that isn't split splits it with
+                                                  that `person`: their share is the part's
+                                                  amount, paid in full (2026-11-18).
 * POST   /api/transactions/<id>/parts/preview     {parts}: what saving them changes (S-12 v2).
 * DELETE /api/transactions/<id>/parts             unlink every part, on the deposit or a part.
 * GET    /api/transactions/<id>/owing             what the sender still owes, for a deposit's
-                                                  parts, and what its parts already pay back.
+                                                  parts, and what its parts already pay back;
+                                                  `unsplit`: her recent purchases that aren't
+                                                  split (?q= finds older ones, 2026-11-18).
 * GET    /api/owed                                Owed to you, You owe, paid back this month.
 * GET    /api/transactions/<id>/credit            S-35c: a linked payback credited to no one, and
                                                   the open shares it could be (SPLIT-22b).
@@ -551,6 +557,11 @@ def save_parts(st, t, body: dict):
     letting, problem = _let_go_asks(st, body.get("parts"))
     if problem:
         return jsonify({"error": problem}), 400
+    # 2026-11-18: an unsplit purchase she ticks for this person is split
+    # with them in this same save (`new_split`).
+    making, problem = _new_split_asks(st, body)
+    if problem:
+        return jsonify({"error": problem}), 400
     was = None
     # SPLIT-22b (S-35c, extra to S-11 v2): a payback already linked becomes
     # parts, so its Undo links it back as it was, not just unlinked.
@@ -590,12 +601,19 @@ def save_parts(st, t, body: dict):
             from .marks import undo_marks
             undo_marks(st, {"splits": {held[0].fingerprint: was}})
         return jsonify({"error": str(exc)}), 400
+    made_marks, problem = _new_split_after(st, txn_id, making)
+    if problem:
+        return jsonify({"error": problem}), 400
     let_marks, let_total = _let_go_after(st, letting)
     core._reclassify(st)
     undo: dict = {"parts": txn_id}
     if let_marks:
         # One Undo: the parts go, and what they owed is theirs again.
         undo["marks"] = let_marks
+    if made_marks:
+        # One Undo: the splits it made go too, and B is as it was.
+        marks = undo.get("marks") or {}
+        undo["marks"] = {**marks, "splits": {**(marks.get("splits") or {}), **made_marks}}
     person_title = None if (kept or held or out.get("rest")) else _paid_back_title(body.get("parts"), let_total)
     if person_title:
         out["title"] = person_title
@@ -622,6 +640,142 @@ def save_parts(st, t, body: dict):
         # SPLIT-C decision 4: Undo closes the split it opened again.
         undo["marks"] = {**(undo.get("marks") or {}), "split_closed": out.pop("reopened")}
     return jsonify({"ok": True, **out, "undo": undo})
+
+
+# ── Paid back: split and unsplit purchases (product owner, 2026-11-18) ──
+# "C pays back A and B": A is split with Sam, B isn't. PB-30 lists Sam's
+# shares and, under OTHER PURCHASES, her recent spending that isn't split;
+# a B she ticks, with how much of it this money paid for, is split with
+# exactly that person in the same save: their share is X, paid in full by
+# this money, hers the rest. One Undo leaves B unsplit again.
+
+UNSPLIT_DAYS = 60       # recent enough to offer without a search
+UNSPLIT_SEARCH_DAYS = 365
+UNSPLIT_LIMIT = 20
+
+
+def _splittable(st, c, splits) -> bool:
+    """Her own spending, not split and with nothing paid back or refunded
+    on it yet, so a split with one person can say all of it."""
+    from .categorize import NON_SPEND
+    if c.amount <= 0 or (c.raw or {}).get("part_of") or c.excluded or c.joint or c.share_set:
+        return False
+    if (c.category or "Other") in NON_SPEND or c.category == "Unsorted transfers":
+        return False
+    if c.fingerprint in splits or c.repays or (c.paid_back or 0.0) >= 0.005 or (c.refunded or 0.0) >= 0.005:
+        return False
+    return True
+
+
+def unsplit_candidates(st, deposit, target: float, q: str = "") -> list[dict]:
+    """OTHER PURCHASES: her purchases that aren't split, recent and close
+    to `target` (what's left of the money after the person's shares) first.
+    `q`, a name or an amount, finds any in the last year (`query`)."""
+    from .many_api import _cents as cents
+    splits = st.splits()
+    when = date.fromisoformat(deposit.date[:10])
+    names = st.merchant_names()
+    from .categorize import merchant_key
+    needle = " ".join((q or "").lower().split())
+    try:
+        wanted = cents(needle.replace("$", "").replace(",", "")) if needle else None
+    except ValueError:
+        wanted = None
+    rows = []
+    for c in st.all_transactions():
+        if c.fingerprint == deposit.fingerprint or not _splittable(st, c, splits):
+            continue
+        gap = (when - date.fromisoformat(c.date[:10])).days
+        shown = names.get(merchant_key(c.merchant)) or c.merchant
+        found = False
+        if needle:
+            hay = " ".join(x for x in (shown, c.merchant, c.description or "", c.category or "") if x).lower()
+            found = needle in hay or (wanted is not None and abs(cents(c.amount) - wanted) <= 1)
+        recent = -3 <= gap <= UNSPLIT_DAYS
+        if not (recent or (found and -3 <= gap <= UNSPLIT_SEARCH_DAYS)):
+            continue
+        if needle and not found:
+            continue
+        amount = round(c.amount, 2)
+        # Close in amount, then recent: a $31 dinner for $30 back first.
+        near = abs(amount - target) / max(target, 1.0)
+        rows.append(((0 if found else 1, round(near + max(gap, 0) / 30.0, 4), -int(c.date[:10].replace("-", ""))),
+                     {"id": c.fingerprint, "merchant": shown, "date": c.date[:10], "amount": amount,
+                      "category": c.category or "Other", "pending": bool((c.raw or {}).get("pending")),
+                      "max": amount, "query": found}))
+    rows.sort(key=lambda r: r[0])
+    return [r for _, r in rows[:UNSPLIT_LIMIT]]
+
+
+def _new_split_asks(st, body: dict) -> tuple[list[tuple[str, str, float]], str | None]:
+    """The payback parts with `new_split`, as (purchase, person, amount),
+    checked before anything is saved: a purchase of hers that isn't split,
+    the person named (never guessed from the sender), and no more than the
+    purchase. The amount being more than nothing, and all the parts
+    fitting the money, are `dp._clean`'s."""
+    parts = body.get("parts")
+    out: list[tuple[str, str, float]] = []
+    if not isinstance(parts, list):
+        return out, None
+    splits = st.splits()
+    asked = [p for p in parts if isinstance(p, dict) and p.get("new_split")]
+    if asked and body.get("replace"):
+        return [], "Unlink it first, then mark it paid back again."
+    held = str((body.get("split") or {}).get("charge") or "") if isinstance(body.get("split"), dict) else ""
+    for p in asked:
+        if p.get("kind") != "payback":
+            return [], "Only a payback can split a purchase."
+        charge = st.get_transaction(str(p.get("charge") or ""))
+        if charge is None or charge.amount <= 0:
+            return [], "Pick the purchase it pays back."
+        name = charge.merchant or charge.description
+        if charge.fingerprint in splits:
+            return [], f"{name} is already split. Pick a share on it instead."
+        if not _splittable(st, charge, splits):
+            return [], f"{name} can’t be split with them here."
+        person = " ".join(str(p.get("person") or "").split())[:sp.MAX_NAME]
+        if not person or person.lower() in sp.SELF:
+            return [], "Say who paid you back."
+        try:
+            amount = round(float(p.get("amount")), 2)
+        except (TypeError, ValueError):
+            return [], "Give each part an amount."
+        if amount < 0.01:
+            continue    # dp._clean says so, in its words
+        whole = round(charge.amount, 2)
+        if _cents(amount) > _cents(whole):
+            return [], f"{name} was ${whole:,.2f}. Make it ${whole:,.2f} or less."
+        others = [q for q in parts if isinstance(q, dict) and q is not p
+                  and str(q.get("charge") or "") == charge.fingerprint]
+        if others or charge.fingerprint == held or any(c == charge.fingerprint for c, _, _ in out):
+            return [], f"Pick {name} once."
+        out.append((charge.fingerprint, person, amount))
+    return out, None
+
+
+def _new_split_after(st, deposit_id: str, asks) -> tuple[dict, str | None]:
+    """Once the parts are saved: each asked purchase split with its person
+    (`sp.add_payer`, as a payback to a purchase nobody split always has
+    been), their share the part's amount. Returns the Undo's
+    {purchase: as it was}. If one can't be made, the save is taken back."""
+    marks: dict = {}
+    if not asks:
+        return marks, None
+    stored = st.parts().get(deposit_id) or []
+    for cid, person, amount in asks:
+        entry = next((p for p in stored if p["kind"] == "payback"
+                      and (p.get("detail") or {}).get("charge") == cid), None)
+        part = st.get_transaction(entry["part_id"]) if entry else None
+        charge = st.get_transaction(cid)
+        was = sp.add_payer(st, charge, part, person, amount) if part and charge else None
+        if was is None:
+            from .marks import undo_marks
+            dp.undo(st, deposit_id)
+            undo_marks(st, {"splits": marks})
+            core._reclassify(st)
+            return {}, f"{charge.merchant if charge else 'That purchase'} can’t be split with them here."
+        marks[cid] = was
+    return marks, None
 
 
 def _many_title(payer, parts) -> str | None:
@@ -1482,6 +1636,13 @@ def unlink_parts(txn_id: str):
     deposit = (t.raw or {}).get("part_of") if not st.parts().get(txn_id) else txn_id
     if not deposit or not st.parts().get(deposit):
         return jsonify({"error": "This isn’t in parts."}), 404
+    # A purchase a part split with its person (`new_split`, add_payer) is
+    # as it was before: they come off it, and it's unsplit if no one's left.
+    for p in st.parts().get(deposit) or []:
+        if p["kind"] == "payback" and st.payback_kinds().get(p["part_id"]) == sp.MADE_SPLIT:
+            row = st.get_transaction(p["part_id"])
+            if row is not None:
+                sp.drop_payer(st, row, (p.get("detail") or {}).get("charge"))
     n = dp.undo(st, deposit)
     # TP-04 Unlink all: the joint money out is as it was, so it's a transfer again.
     from .joint import release_payback
@@ -1574,8 +1735,13 @@ def owing(txn_id: str):
         if name and not any(sp.same_person(n, name) for n in everyone):
             named = name
     frm = mine[0]["name"] if mine else (theirs_u[0]["name"] if theirs_u else None)
+    # 2026-11-18, OTHER PURCHASES: her purchases that aren't split, closest
+    # to what's left of the money after the sender's shares first.
+    owed_them = sum(_cents(i["owes"]) for i in items if i["theirs"] and not i.get("unknown"))
+    left = max(_cents(-t.amount) - owed_them, 0) / 100 or round(-t.amount, 2)
+    q = " ".join(str(request.args.get("q") or "").split())[:80]
     return jsonify({"from": frm, "named": named if not theirs_u else None, "items": items,
-                    "linked": linked})
+                    "linked": linked, "unsplit": unsplit_candidates(st, t, left, q)})
 
 
 # ── Who sent this? (SPLIT-22b, THL-181; S-05u, S-35c, S-21u) ─────────────
