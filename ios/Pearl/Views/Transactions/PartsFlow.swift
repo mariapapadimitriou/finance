@@ -394,16 +394,16 @@ struct PartsSheet: View {
                                        tone: Pearl.moneyIn,
                                        sub: manyKind == nil ? Format.weekdayDay(deposit.date) : Format.short(deposit.date))
                     } else {
-                        QuestionHeader(name: deposit.name, amount: Format.amount(deposit.whole ?? deposit.amount),
-                                       tone: Pearl.ink,
+                        // UI audit: "+" and money-in green, as on every other deposit header.
+                        QuestionHeader(name: deposit.name, amount: "+" + Format.amount(deposit.whole ?? deposit.amount),
+                                       tone: Pearl.moneyIn,
                                        sub: paidBack ? (["Paid back", payer ?? sender].compactMap { $0 }.joined(separator: " · "))
                                            : Format.short(deposit.date))
                     }
                     content
                     // S-11x shows its error under the grid instead (T-08k).
                     if let error = error, whole == nil || step != .kind {
-                        Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
-                            .padding(.horizontal, 16)
+                        errorLine(error)
                     }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 12)
@@ -682,7 +682,8 @@ struct PartsSheet: View {
                 // S-25's bar; S-35 (who paid?) and S-23's results go without it.
                 bar(sorted: sortedDone + picked.values.reduce(0, +),
                     first: "\(Format.amount(sortedDone + picked.values.reduce(0, +))) of \(Format.amount(deposit.amount))",
-                    second: "\(Format.amount(max(0, deposit.amount - sortedDone - picked.values.reduce(0, +)))) left")
+                    second: "\(Format.amount(max(0, deposit.amount - sortedDone - picked.values.reduce(0, +)))) left",
+                    amounts: false)
             }
         }
     }
@@ -912,7 +913,9 @@ struct PartsSheet: View {
     }
 
     /// "$86.65 of $86.65 ✓" (money in; TEXT-01), "… · $13.35 left over"
-    /// (muted), "… · $10.95 more than Sam sent" (error).
+    /// (muted), "… · $10.95 more than Sam sent" (PB-30o) and "… · $19.47
+    /// over" (MP-04) muted too: an allowed over-amount, and red means only
+    /// that something is wrong (approved UI audit tweak).
     private var totalLine: some View {
         let ticked = Double(tickedCents) / 100
         let first = firstName(sender ?? who)
@@ -920,8 +923,8 @@ struct PartsSheet: View {
         let (words, tone): (String, Color) = tickedCents == leftCents ? ("\(head) \u{2713}", Pearl.moneyIn)
             : tickedCents < leftCents ? ("\(head) · \(Format.amount(Double(leftCents - tickedCents) / 100)) left over", Pearl.muted)
             // MP-04: "$119.47 of $100.00 · $19.47 over".
-            : manyKind != nil ? ("\(head) · \(Format.amount(Double(tickedCents - leftCents) / 100)) over", Pearl.danger)
-            : ("\(head) · \(Format.amount(Double(tickedCents - leftCents) / 100)) more than \(first) sent", Pearl.danger)
+            : manyKind != nil ? ("\(head) · \(Format.amount(Double(tickedCents - leftCents) / 100)) over", Pearl.muted)
+            : ("\(head) · \(Format.amount(Double(tickedCents - leftCents) / 100)) more than \(first) sent", Pearl.muted)
         return Text(words).font(Nacre.footnote).foregroundColor(tone)
             .frame(maxWidth: .infinity).multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
@@ -1058,7 +1061,28 @@ struct PartsSheet: View {
             error = nil
         } catch {
             if error is CancellationError { return }
-            self.error = "Couldn’t load your purchases. Try again."
+            self.error = Self.mineLoadError
+        }
+    }
+
+    /// MP-01 / MP-02's list didn't load. Try again is the button under it, so
+    /// the line doesn't say it too (UI audit).
+    private static let mineLoadError = "Couldn’t load your purchases."
+
+    /// The sheet's error line; MP-01 / MP-02's load error gets Try again,
+    /// which reloads the list (and ticks the likely ones, if none came).
+    @ViewBuilder private func errorLine(_ error: String) -> some View {
+        Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
+            .padding(.horizontal, 16)
+        if error == Self.mineLoadError, step == .whose, manyKind != nil {
+            Button("Try again") {
+                Task {
+                    let first = mine.isEmpty
+                    await fetchMine(query.trimmingCharacters(in: .whitespaces))
+                    if first && !mine.isEmpty { preTick() }
+                }
+            }
+            .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
         }
     }
 
@@ -1166,7 +1190,8 @@ struct PartsSheet: View {
     }
 
     /// PB-13: the purchase and what they owe in small caps, "Part of it ·
-    /// $15.00" over "Sam still owes $45.00 · tap to change the amount", "All
+    /// $15.00" over "Sam still owes $45.00" (UI audit: no hint to tap it;
+    /// the amount already looks editable), "All
     /// of it · $60.00" over "Sam’s paid in full · Pearl asks what the other
     /// $45.00 is", and "Sam’s share of Pai Northern Thai · Wed, Nov 12".
     @ViewBuilder private var howMuchView: some View {
@@ -1183,7 +1208,7 @@ struct PartsSheet: View {
                         // MP-04's Change (MANY-01): no line under Part of it;
                         // the amount already looks editable (copy rule 4).
                         let owesAfter: Text? = mp ? nil
-                            : Text("\(first) still owes \(Format.amount(max(0, o.owes - partValue))) · tap to change the amount")
+                            : Text("\(first) still owes \(Format.amount(max(0, o.owes - partValue)))")
                             .font(Nacre.subheadline).foregroundColor(Pearl.muted)
                         if editingPart && !allOfIt {
                             // Tapped again: the amount changes in place (no
@@ -2332,7 +2357,9 @@ struct PartsSheet: View {
     }
 
     /// "● Linked $428.00   ● Not linked $172.00" under a filling bar.
-    private func bar(sorted: Double, first: String, second: String) -> some View {
+    /// `amounts` off when the words already carry them, as S-09 / S-25's
+    /// "● $428.00 of $600.00   ● $172.00 left" (UI audit: the amount showed twice).
+    private func bar(sorted: Double, first: String, second: String, amounts: Bool = true) -> some View {
         let whole = max(deposit.amount, 0.01)
         let done = min(sorted, deposit.amount)
         return VStack(alignment: .leading, spacing: 6) {
@@ -2344,8 +2371,8 @@ struct PartsSheet: View {
             }
             .frame(height: 6)
             HStack(spacing: 14) {
-                legend(Pearl.action, "\(first) \(Format.amount(done))")
-                legend(Pearl.ink.opacity(0.2), "\(second) \(Format.amount(deposit.amount - done))")
+                legend(Pearl.action, amounts ? "\(first) \(Format.amount(done))" : first)
+                legend(Pearl.ink.opacity(0.2), amounts ? "\(second) \(Format.amount(deposit.amount - done))" : second)
             }
             .font(Nacre.footnote).foregroundColor(Pearl.ink)
         }
@@ -2367,7 +2394,9 @@ struct PartsSheet: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
-                    Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(1)
+                    // UI audit: the line under wraps to two lines rather than cut.
+                    Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
                 Text(Format.amount(amount)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
@@ -2543,7 +2572,9 @@ struct OwedView: View {
             Initials(name: name, size: 34)
             VStack(alignment: .leading, spacing: 2) {
                 Text(name).font(Nacre.body).foregroundColor(Pearl.ink)
-                Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(1)
+                // UI audit: the line under wraps to two lines rather than cut.
+                Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let note = note {
                     Text(note).font(Nacre.footnote).foregroundColor(Pearl.muted)
                 }

@@ -241,7 +241,8 @@ struct OwedNudgeCard: View {
             NavigationLink {
                 OwedView()
             } label: {
-                LinkLabel(text: "See who owes you")
+                // UI audit: tapped across 44 pt, drawn as before.
+                LinkLabel(text: "See who owes you").tapTarget(vertical: 12)
             }
             .padding(.top, 4)
         }
@@ -293,9 +294,12 @@ struct PaychequeNoteCard: View {
             Text("3 paycheques in \(Format.monthName(month.month))")
                 .font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.ink)
                 .fixedSize(horizontal: false, vertical: true)
-            Button("Got it", action: onDismiss)
-                .font(Nacre.textButton).foregroundColor(Pearl.link)
-                .padding(.top, 4)
+            Button(action: onDismiss) {
+                // UI audit: tapped across 44 × 44 pt, drawn as before.
+                Text("Got it").font(Nacre.textButton).foregroundColor(Pearl.link)
+                    .tapTarget(vertical: 12, horizontal: 6)
+            }
+            .padding(.top, 4)
         }
     }
 }

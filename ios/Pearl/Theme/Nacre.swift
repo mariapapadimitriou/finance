@@ -428,6 +428,24 @@ struct NacreTextButtonStyle: ButtonStyle {
     }
 }
 
+extension View {
+    /// Grows what can be tapped to at least 44 × 44 pt without moving
+    /// anything (UI audit, tap targets): the padding widens the tap shape and
+    /// the matching negative padding gives the layout back its old size. Use
+    /// it on a button's label, so the button itself takes the wider shape.
+    func tapTarget(top: CGFloat = 0, leading: CGFloat = 0,
+                   bottom: CGFloat = 0, trailing: CGFloat = 0) -> some View {
+        padding(EdgeInsets(top: top, leading: leading, bottom: bottom, trailing: trailing))
+            .contentShape(Rectangle())
+            .padding(EdgeInsets(top: -top, leading: -leading, bottom: -bottom, trailing: -trailing))
+    }
+
+    /// The same, evenly on each side.
+    func tapTarget(vertical: CGFloat, horizontal: CGFloat = 0) -> some View {
+        tapTarget(top: vertical, leading: horizontal, bottom: vertical, trailing: horizontal)
+    }
+}
+
 /// The bottom of a screen: one primary action and, sometimes, one quieter one.
 struct BottomActions<Primary: View, Secondary: View>: View {
     @ViewBuilder var primary: () -> Primary
