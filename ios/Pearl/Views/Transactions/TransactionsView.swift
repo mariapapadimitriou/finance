@@ -638,8 +638,8 @@ struct TransactionsView: View {
             } else if let counts = counts {
                 Text("\(counts == "income" ? "Money in only" : "Spending only") · \(shown.count)")
                 Spacer()
-                Button("Show all") { self.counts = nil }
-                    .font(Nacre.body).foregroundColor(Pearl.action)
+                // UI audit: each header button is tapped across 44 × 44 pt.
+                Button { self.counts = nil } label: { headerLabel("Show all") }
             } else if let p = tripPick {
                 // TR-11 (1347:74377): "2 to add · Mar 1–12" · Cancel; TR-12
                 // (1347:74773): "2 selected · they stay in March" · Done.
@@ -647,31 +647,34 @@ struct TransactionsView: View {
                 case .add:
                     Text("\(picked.count) to add · \(Format.span(p.window.start, p.window.end))")
                     Spacer()
-                    Button("Cancel") { dismiss() }
-                        .font(Nacre.body).foregroundColor(Pearl.action)
+                    Button { dismiss() } label: { headerLabel("Cancel") }
                 case .remove:
                     Text("\(picked.count) selected · they stay in \(picked.isEmpty ? p.trip.months : pickedMonths)")
                     Spacer()
-                    Button("Done") { dismiss() }
-                        .font(Nacre.body).foregroundColor(Pearl.action)
+                    Button { dismiss() } label: { headerLabel("Done") }
                 }
             } else if selecting {
                 Text("\(picked.count) selected · \(pickedAmount.replacingOccurrences(of: "\u{2212}", with: ""))")
                 Spacer()
-                Button("Cancel") { endSelecting() }
-                    .font(Nacre.body).foregroundColor(Pearl.action)
+                Button { endSelecting() } label: { headerLabel("Cancel") }
             } else if loadedOnce {
                 Text(shown.count == 1 ? "1 transaction" : "\(shown.count) transactions")
                 if !shown.isEmpty {
                     Spacer()
-                    Button("Select") { selecting = true }
-                        .font(Nacre.body).foregroundColor(Pearl.action)
+                    Button { selecting = true } label: { headerLabel("Select") }
                 }
             }
         }
         .font(Nacre.footnote)
         .foregroundColor(Pearl.muted)
         .padding(.horizontal, 4)
+    }
+
+    /// A list-header action ("Select", "Cancel", "Done", "Show all"), drawn as
+    /// before but tapped across at least 44 × 44 pt (UI audit).
+    private func headerLabel(_ title: String) -> some View {
+        Text(title).font(Nacre.body).foregroundColor(Pearl.action)
+            .tapTarget(vertical: 12, horizontal: 6)
     }
 
     @ViewBuilder private var list: some View {

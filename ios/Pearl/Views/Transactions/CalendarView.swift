@@ -330,13 +330,17 @@ struct CalendarCard: View {
                 arrow("chevron.right", to: data?.next?.month, label: "Next month")
             }
             Spacer(minLength: 4)
-            Button(selecting ? "Cancel" : "Select days") {
+            Button {
                 selecting.toggle()
                 clear()
+            } label: {
+                // UI audit: the 32 pt pill is tapped across 44 pt.
+                Text(selecting ? "Cancel" : "Select days")
+                    .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    .padding(.horizontal, 14).frame(height: 32)
+                    .overlay(Capsule().strokeBorder(Pearl.ink, lineWidth: 1))
+                    .tapTarget(vertical: 6)
             }
-            .font(Nacre.footnote).foregroundColor(Pearl.ink)
-            .padding(.horizontal, 14).frame(height: 32)
-            .overlay(Capsule().strokeBorder(Pearl.ink, lineWidth: 1))
             .buttonStyle(.plain)
         }
     }
@@ -346,6 +350,11 @@ struct CalendarCard: View {
             Image(systemName: symbol).font(.system(size: 13, weight: .semibold))
                 .foregroundColor(Pearl.action)
                 .frame(width: 28, height: 32)
+                // UI audit: 44 × 44 pt to tap. Each arrow grows outward, the
+                // left one over the month name and the right one into the
+                // space, so the two never overlap.
+                .tapTarget(top: 6, leading: symbol == "chevron.left" ? 16 : 0,
+                           bottom: 6, trailing: symbol == "chevron.left" ? 0 : 16)
         }
         .buttonStyle(.plain)
         .disabled(target == nil)

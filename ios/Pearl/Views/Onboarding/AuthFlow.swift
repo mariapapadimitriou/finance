@@ -103,10 +103,16 @@ struct WelcomeView: View {
             } secondary: {
                 Button("I already have an account") { path.append(.signIn(email: "")) }
                     .buttonStyle(NacreTextButtonStyle())
+                // UI audit: each link is tapped across 44 × 44 pt. They grow
+                // outward and down, away from "I already have an account".
                 HStack(spacing: 4) {
-                    Button("Privacy") { doc = .privacy }
+                    Button { doc = .privacy } label: {
+                        Text("Privacy").tapTarget(top: 6, leading: 8, bottom: 24, trailing: 2)
+                    }
                     Text("·")
-                    Button("Terms") { doc = .terms }
+                    Button { doc = .terms } label: {
+                        Text("Terms").tapTarget(top: 6, leading: 2, bottom: 24, trailing: 14)
+                    }
                 }
                 .buttonStyle(.plain)
                 .font(Nacre.caption2)
