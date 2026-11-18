@@ -26,6 +26,7 @@ struct TransactionsView: View {
     private var categories: [CategoryList.Category] { app.categories }
     @State private var accounts: [AccountsOverview.Account] = []
     @State private var reviewCount = 0
+    @State private var reviewSorted = 0
     @State private var loadedOnce = false
     @State private var error: String?
 
@@ -106,23 +107,33 @@ struct TransactionsView: View {
             VStack(alignment: .leading, spacing: 0) {
                 // A+ (AP-CashFlow): the profile circle beside the title, its
                 // visual edge lined up with the filter button's.
+                // A+ (AP-CashFlow, kit `.hdr`): Cash flow in Fraunces 34 with
+                // the profile circle, its visual edge on the filter button's.
+                // G1-Select: while selecting, the title stays and the circle goes.
                 HStack(alignment: .center) {
                     Text("Cash flow").font(Nacre.largeTitle).foregroundColor(Pearl.ink)
+                        .padding(.leading, 4)
                         .accessibilityAddTraits(.isHeader)
                     Spacer(minLength: 8)
-                    ProfileCircle().padding(.trailing, -4).disabled(inTrip)
+                    if !selecting || inTrip { ProfileCircle().padding(.trailing, -4).disabled(inTrip) }
                 }
-                .padding(.top, 24)
+                .frame(minHeight: 44)
+                .padding(.top, 16)
                 if noTransactionsYet {
                     emptyLedger
+                } else if selecting && !inTrip {
+                    // G1-Select: "3 selected · $89.00   Cancel" under the
+                    // title, then the days with a tick on each row.
+                    listHeader.padding(.top, 14)
+                    list.padding(.top, 16)
                 } else {
                     // TR-11 / TR-12: Cash flow as it is, but only the trip's
                     // Select answers taps; search, the tabs and the month wait.
-                    searchRow.disabled(inTrip).padding(.top, 20)
+                    searchRow.disabled(inTrip).padding(.top, 14)
                     // T-02, T-45: the tabs and the summary stay while searching.
                     tabs.disabled(inTrip).padding(.top, 14)
                     if filtersOn && !showCalendar && !inSearch { activeChips.padding(.top, 12) }
-                    summaryCard.allowsHitTesting(!inTrip).padding(.top, 16)
+                    if !showCalendar { summaryCard.allowsHitTesting(!inTrip).padding(.top, 16) }
                     if !inSearch && !inTrip { bankState }
                     if showCalendar && !inSearch {
                         CalendarCard(month: month ?? Format.thisMonth(), categories: categories) { m in
@@ -131,16 +142,17 @@ struct TransactionsView: View {
                         }
                         .padding(.top, 16)
                     } else if byCategory && loadedOnce && !shown.isEmpty {
-                        categoryList.padding(.top, 8)
+                        categoryList
                     } else {
                         // T-01r: under Newest the first day's header carries
                         // Select, so the plain list has no header of its own.
                         if !selectOnFirstDay { listHeader.padding(.top, 24) }
-                        list.padding(.top, selectOnFirstDay ? 16 : 10)
+                        list.padding(.top, selectOnFirstDay ? 24 : 8)
                         if !inSearch && !selecting && loadedOnce {
                             Button("Add a transaction") { adding = true }
-                                .font(Nacre.textButton).foregroundColor(Pearl.link)
-                                .padding(.horizontal, 4).frame(minHeight: 44).padding(.top, 8)
+                                .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+                                .foregroundColor(Pearl.link)
+                                .frame(maxWidth: .infinity, minHeight: 44).padding(.top, 8)
                         }
                     }
                 }
@@ -339,8 +351,10 @@ struct TransactionsView: View {
             }
             .padding(.horizontal, 14)
             .frame(height: 44)
-            .background(Capsule().fill(Pearl.ink.opacity(0.08)))
-            .background(Capsule().fill(.ultraThinMaterial))
+            // REDESIGN-09: search is a visible well (kit `.search`), a capsule.
+            .wellStyle(focused: searching, capsule: true)
+            .contentShape(Capsule())
+            .onTapGesture { searching = true }
 
             if inSearch {
                 Button("Cancel") {
@@ -348,55 +362,31 @@ struct TransactionsView: View {
                     searching = false
                 }
                 .font(Nacre.body)
-                .foregroundColor(Pearl.action)
-                .padding(.horizontal, 8)
+                .foregroundColor(Pearl.link)
+                .frame(minHeight: 44)
+                .padding(.leading, 4)
             } else {
-                Button { showFilters = true } label: {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 18))
-                        .foregroundColor(Pearl.ink)
-                        .frame(width: 44, height: 44)
-                        .background(Circle().fill(.ultraThinMaterial))
-                        .background(Circle().fill(Nacre.glass))
-                        .overlay(Circle().strokeBorder(Nacre.edge, lineWidth: 1))
-                        .overlay(alignment: .topTrailing) {
-                            if filtersOn {
-                                Circle().fill(Pearl.danger).frame(width: 10, height: 10)
-                                    .offset(x: -2, y: 2)
-                            }
-                        }
+                // `.glassbtn`; A+ decision: the filters-on dot is ink, not red.
+                CFGlassButton(label: filtersOn ? "Filters, on" : "Filters", action: { showFilters = true }) {
+                    Image(systemName: "slider.horizontal.3").font(.system(size: 17))
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(filtersOn ? "Filters, on" : "Filters")
+                .overlay(alignment: .topTrailing) {
+                    if filtersOn {
+                        Circle().fill(Pearl.ink).frame(width: 8, height: 8)
+                            .overlay(Circle().strokeBorder(APlus.circleDisc, lineWidth: 2).padding(-2))
+                            .offset(x: -3, y: 3)
+                            .accessibilityHidden(true)
+                    }
+                }
             }
         }
         .animation(.easeOut(duration: 0.2), value: inSearch)
     }
 
-    /// Transactions · Calendar, as a pill switch.
+    /// Transactions · Calendar, kit `.seg` (TEST-32: the chosen half is
+    /// color/surface/card, so the ink word reads in both; TEST-14: 44 to tap).
     private var tabs: some View {
-        HStack(spacing: 0) {
-            ForEach([false, true], id: \.self) { cal in
-                let on = showCalendar == cal
-                Button { withAnimation(.easeOut(duration: 0.2)) { showCalendar = cal } } label: {
-                    Text(cal ? "Calendar" : "Transactions")
-                        .font(Nacre.subheadline).foregroundColor(Pearl.ink)
-                        .frame(maxWidth: .infinity).frame(height: 32)
-                        // TEST-32: the chosen segment is color/surface/card (T-01r,
-                        // 1074:510), white in light and #151B44 in dark, so
-                        // the ink word reads in both; white was white on white.
-                        .background(Capsule().fill(on ? Pearl.card : .clear))
-                        .shadow(color: .black.opacity(on ? 0.06 : 0), radius: 3, y: 1)
-                        // TEST-14: 44 pt to tap; the pill still draws at 32.
-                        .frame(height: 44).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(on ? .isSelected : [])
-            }
-        }
-        .padding(.horizontal, 3)
-        .background(Capsule().fill(Pearl.ink.opacity(0.08)).frame(height: 38))
-        .padding(.vertical, -3)
+        CFSegmented(options: [(false, "Transactions"), (true, "Calendar")], selection: $showCalendar)
     }
 
     /// "TD Visa ••9021 ×": each filter that's on, to take it off in one tap.
@@ -414,9 +404,10 @@ struct TransactionsView: View {
                             Image(systemName: "xmark").font(.system(size: 11, weight: .semibold))
                         }
                         .font(Nacre.footnote)
-                        .foregroundColor(Pearl.onBlush)
-                        .padding(.horizontal, 12).frame(height: 32)
-                        .background(Capsule().fill(Pearl.blush))
+                        .foregroundColor(Pearl.ink)
+                        .padding(.horizontal, 12).frame(height: 28)
+                        .background(Capsule().fill(APlus.chip))
+                        .frame(minHeight: 44).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Remove \(chip.label)")
@@ -427,9 +418,10 @@ struct TransactionsView: View {
 
     // MARK: The month
 
-    /// T-01r (TEST-05, REFRESH-00 decision 1): Leftover is the one headline,
-    /// a bar of Spent / Saved / Leftover, Came in on the right, and "8 need a
-    /// look · Sort". Spending is ink; red is only for over.
+    /// T-01r (TEST-05, REFRESH-00 decision 1), A+ (AP-CashFlow, G1-Over):
+    /// the month and Came in, Leftover as the one headline in Fraunces 44, a
+    /// bar of Spent (plum) / Saved (green) / Leftover (track), its legend,
+    /// and "8 need a look" with the mini streak and Sort. Red only for over.
     private var summaryCard: some View {
         // T-45, T-53: a search or a filter shows its own totals.
         let narrowed = inSearch || filters.isActive
@@ -438,100 +430,49 @@ struct TransactionsView: View {
         let income = narrowed ? shown.filter { $0.inflow && $0.counts == "income" }.reduce(0) { $0 + $1.amount }
             : (monthTotals?.income ?? 0)
         let saved = narrowed ? 0 : (monthTotals?.saved ?? 0)
-        let left = income - spent - saved
         // T-01r3 (TEST-05, section 20): before this month's pay is in, the
         // headline is "Spent so far" in ink and the pay still to come shows,
         // not a red Over measured against money that hasn't come yet.
         let pay = narrowed ? nil : monthTotals?.pay
-        let over = left < -0.5 && !narrowed && pay == nil
-        return GlassCard {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .firstTextBaseline) {
-                    Button { showMonths = true } label: {
-                        HStack(spacing: 6) {
-                            Text(month.map { Format.monthName($0) } ?? "This month").font(Nacre.headline)
-                            Image(systemName: "chevron.down").font(.system(size: 12, weight: .semibold))
-                        }
-                        .foregroundColor(Pearl.ink)
-                        .frame(minHeight: 44).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(months.isEmpty)
-                    .accessibilityLabel("Month, \(month.map { Format.month($0) } ?? "")")
+        return APCard {
+            OwnBody {
+                MonthSummary(month: month.map { Format.monthName($0) } ?? "This month",
+                             monthSpoken: month.map { Format.month($0) } ?? "",
+                             canPick: !months.isEmpty, narrowed: narrowed,
+                             spent: spent, income: income, saved: saved, pay: pay, counts: $counts,
+                             pickMonth: { showMonths = true })
+            }
+            OwnBody { needsALookRow }
+        }
+    }
+
+    /// "8 need a look ▪▪▪▪▪▪▪▪▪▪▫▫ Sort ›" (A+ decisions: the chip in the
+    /// tint, never red; the mini streak), or "All sorted".
+    @ViewBuilder private var needsALookRow: some View {
+        Rectangle().fill(APlus.separator).frame(height: 0.5).accessibilityHidden(true)
+        if reviewCount > 0 {
+            NavigationLink { ReviewView() } label: {
+                HStack(spacing: 12) {
+                    CFCount(n: reviewCount)
+                    Text("need\(reviewCount == 1 ? "s" : "") a look").font(Nacre.body).foregroundColor(Pearl.ink)
+                        .lineLimit(1)
                     Spacer(minLength: 8)
-                    if let day = pay?.expected {
-                        // T-01r3: "Pay expected Nov 15".
-                        Text("Pay expected \(Format.short(day))").font(Nacre.subheadline).foregroundColor(Pearl.muted)
-                            .frame(minHeight: 44)
-                            .accessibilityLabel("Pay expected \(Format.monthDay(day))")
-                    } else {
-                    // T-67: Came in narrows the list to money in.
-                    Button { counts = counts == "income" ? nil : "income" } label: {
-                        Text("Came in \(Format.whole(income))").font(Nacre.subheadline).foregroundColor(Pearl.moneyIn)
-                            .frame(minHeight: 44).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint(counts == "income" ? "Shows everything again" : "Shows only these")
-                    .accessibilityAddTraits(counts == "income" ? .isSelected : [])
-                    }
+                    SortStreak(sorted: reviewSorted, toSort: reviewCount, mini: true)
+                    Text("Sort").font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+                        .foregroundColor(Pearl.link).padding(.leading, -6)
+                    CFChevron()
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(pay != nil ? "Spent so far" : over ? "Over" : "Leftover").font(Nacre.footnote)
-                        .foregroundColor(pay != nil ? Pearl.muted : Pearl.ink)
-                    Text(narrowed ? "—" : Format.whole(pay != nil ? spent : abs(left)))
-                        .font(Pearl.display(.largeTitle)).foregroundColor(over ? Pearl.danger : Pearl.ink)
-                        .lineLimit(1).minimumScaleFactor(0.6)
-                }
-                .accessibilityElement(children: .combine)
-                // T-01r3: the bar runs to what will have come in by month's end.
-                MonthBar(spent: spent, saved: saved, income: income + (pay?.toCome ?? 0))
-                HStack(spacing: 14) {
-                    // T-67: Spent narrows the list to spending.
-                    Button { counts = counts == "spending" ? nil : "spending" } label: {
-                        Text("Spent \(Format.whole(spent))").foregroundColor(Pearl.ink)
-                            .frame(minHeight: 44).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint(counts == "spending" ? "Shows everything again" : "Shows only these")
-                    .accessibilityAddTraits(counts == "spending" ? .isSelected : [])
-                    Text("Saved \(Format.whole(saved))").foregroundColor(Pearl.moneyIn)
-                    if let pay = pay {
-                        Text("Pay to come \(Format.whole(pay.toCome))").foregroundColor(Pearl.muted)
-                    } else {
-                    Text(over ? "Over \(Format.whole(-left))" : "Leftover \(Format.whole(max(left, 0)))")
-                        .foregroundColor(over ? Pearl.danger : Pearl.muted)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .font(Nacre.footnote).lineLimit(1).minimumScaleFactor(0.8)
-                .padding(.vertical, -8)
+                .padding(.horizontal, 16).padding(.vertical, 8)
+                .frame(minHeight: 52)
+                .contentShape(Rectangle())
             }
-            .padding(16)
-            RowSeparator(inset: 0)
-            if reviewCount > 0 {
-                NavigationLink { ReviewView() } label: {
-                    HStack(spacing: 10) {
-                        Text("\(reviewCount)").font(Nacre.label).foregroundColor(Pearl.onAction)
-                            .padding(.horizontal, 7).frame(minWidth: 22, minHeight: 22)
-                            .background(Capsule().fill(Pearl.action))
-                        Text("need\(reviewCount == 1 ? "s" : "") a look").font(Nacre.body)
-                        Spacer()
-                        Text("Sort").font(Nacre.textButton).foregroundColor(Pearl.link)
-                        Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(Pearl.ink)
-                    }
-                    .foregroundColor(Pearl.ink)
-                    .padding(.horizontal, 16).frame(height: 48)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(reviewCount) need\(reviewCount == 1 ? "s" : "") a look, Sort")
-            } else {
-                Label("All sorted", systemImage: "checkmark")
-                    .font(Nacre.body).foregroundColor(Nacre.teal)
-                    .padding(.horizontal, 16).frame(height: 48)
-            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(reviewCount) need\(reviewCount == 1 ? "s" : "") a look, Sort")
+        } else {
+            Label("All sorted", systemImage: "checkmark")
+                .font(Nacre.body).foregroundColor(Nacre.teal)
+                .padding(.horizontal, 16).frame(minHeight: 52)
         }
     }
 
@@ -570,51 +511,44 @@ struct TransactionsView: View {
     /// again (T-36).
     @ViewBuilder private var bankState: some View {
         ForEach(disconnected, id: \.itemId) { bank in
-            GlassCard {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 18))
+            // G1-Over: the caution icon, the bank and when it last updated,
+            // then the rose Reconnect.
+            APCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .center, spacing: 12) {
+                        Image(systemName: "link").font(.system(size: 15, weight: .medium))
+                            .foregroundColor(Pearl.caution)
+                            .frame(width: 36, height: 36)
+                            .background(Circle().fill(Pearl.cautionBackground))
+                            .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("\(bank.name) is disconnected").font(Nacre.headline)
-                            Text(bank.updated).font(Nacre.footnote)
+                            Text("\(bank.name) is disconnected").font(Nacre.body).foregroundColor(Pearl.ink)
+                            Text(bank.updated).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                         }
                     }
-                    .foregroundColor(Pearl.ink)
                     Button("Reconnect") { Task { await reconnect(bank.itemId) } }
-                        .buttonStyle(NacreButtonStyle(busy: reconnecting == bank.itemId))
+                        .buttonStyle(APPrimaryButtonStyle(busy: reconnecting == bank.itemId))
                         .disabled(reconnecting != nil)
                 }
-                .padding(16)
+                .padding(.horizontal, 16).padding(.vertical, 14)
             }
             .padding(.top, 12)
         }
+        // G1-Over: kit `.banner` (champagne), with Try again as a quiet link.
         switch sync {
         case .syncing:
-            banner(symbol: "arrow.triangle.2.circlepath", text: "Getting your latest transactions…")
+            CFBanner(text: "Getting your latest transactions…").padding(.top, 12)
         case .failed:
-            banner(symbol: "exclamationmark.triangle", text: "Couldn’t update just now.") {
+            CFBanner(text: "Couldn’t update just now.") {
                 Button("Try again") { Task { await runSync(force: true) } }
-                    .font(Nacre.textButton).foregroundColor(Pearl.link)
+                    .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+                    .foregroundColor(Pearl.link)
+                    .frame(minHeight: 44)
             }
+            .padding(.top, 12)
         case .idle:
             EmptyView()
         }
-    }
-
-    private func banner<Trailing: View>(symbol: String, text: String,
-                                        @ViewBuilder trailing: () -> Trailing = { EmptyView() }) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: symbol).font(.system(size: 15))
-            Text(text).font(Nacre.footnote)
-            Spacer(minLength: 8)
-            trailing()
-        }
-        .foregroundColor(Pearl.ink)
-        .padding(.horizontal, 16).frame(minHeight: 40)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Nacre.glass))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Nacre.edge, lineWidth: 1))
-        .padding(.top, 12)
-        .accessibilityElement(children: .combine)
     }
 
     private struct Disconnected {
@@ -635,52 +569,49 @@ struct TransactionsView: View {
 
     // MARK: The list
 
-    private var listHeader: some View {
-        HStack {
-            if inSearch {
-                if results != nil {
-                    Text(shown.count == 1 ? "1 result" : "\(shown.count) results")
+    /// The list's header. A+: a section label (kit `.label`, "3 RESULTS")
+    /// with its quiet action; while selecting (G1-Select) "3 selected ·
+    /// $89.00" in 17 semibold ink with Cancel in `link`.
+    @ViewBuilder private var listHeader: some View {
+        if let p = tripPick {
+            // TR-11 (1347:74377): "2 to add · Mar 1–12" · Cancel; TR-12
+            // (1347:74773): "2 selected · they stay in March" · Done.
+            switch p.kind {
+            case .add:
+                selectHeader("\(picked.count) to add · \(Format.span(p.window.start, p.window.end))", "Cancel") {
+                    dismiss()
                 }
-            } else if let counts = counts {
-                Text("\(counts == "income" ? "Money in only" : "Spending only") · \(shown.count)")
-                Spacer()
-                // UI audit: each header button is tapped across 44 × 44 pt.
-                Button { self.counts = nil } label: { headerLabel("Show all") }
-            } else if let p = tripPick {
-                // TR-11 (1347:74377): "2 to add · Mar 1–12" · Cancel; TR-12
-                // (1347:74773): "2 selected · they stay in March" · Done.
-                switch p.kind {
-                case .add:
-                    Text("\(picked.count) to add · \(Format.span(p.window.start, p.window.end))")
-                    Spacer()
-                    Button { dismiss() } label: { headerLabel("Cancel") }
-                case .remove:
-                    Text("\(picked.count) selected · they stay in \(picked.isEmpty ? p.trip.months : pickedMonths)")
-                    Spacer()
-                    Button { dismiss() } label: { headerLabel("Done") }
-                }
-            } else if selecting {
-                Text("\(picked.count) selected · \(pickedAmount.replacingOccurrences(of: "\u{2212}", with: ""))")
-                Spacer()
-                Button { endSelecting() } label: { headerLabel("Cancel") }
-            } else if loadedOnce {
-                Text(shown.count == 1 ? "1 transaction" : "\(shown.count) transactions")
-                if !shown.isEmpty {
-                    Spacer()
-                    Button { selecting = true } label: { headerLabel("Select") }
-                }
+            case .remove:
+                selectHeader("\(picked.count) selected · they stay in \(picked.isEmpty ? p.trip.months : pickedMonths)",
+                             "Done") { dismiss() }
             }
+        } else if selecting {
+            selectHeader("\(picked.count) selected · \(pickedAmount.replacingOccurrences(of: "\u{2212}", with: ""))",
+                         "Cancel") { endSelecting() }
+        } else if inSearch {
+            if results != nil {
+                APSectionLabel(text: shown.count == 1 ? "1 result" : "\(shown.count) results")
+            }
+        } else if let counts = counts {
+            // UI audit: each header button is tapped across 44 × 44 pt.
+            APSectionLabel(text: "\(counts == "income" ? "Money in only" : "Spending only") · \(shown.count)",
+                           action: "Show all") { self.counts = nil }
+        } else if loadedOnce {
+            APSectionLabel(text: shown.count == 1 ? "1 transaction" : "\(shown.count) transactions",
+                           action: shown.isEmpty ? nil : "Select") { selecting = true }
         }
-        .font(Nacre.footnote)
-        .foregroundColor(Pearl.muted)
-        .padding(.horizontal, 4)
     }
 
-    /// A list-header action ("Select", "Cancel", "Done", "Show all"), drawn as
-    /// before but tapped across at least 44 × 44 pt (UI audit).
-    private func headerLabel(_ title: String) -> some View {
-        Text(title).font(Nacre.body).foregroundColor(Pearl.action)
-            .tapTarget(vertical: 12, horizontal: 6)
+    /// G1-Select's header: what's picked, and how to stop.
+    private func selectHeader(_ text: String, _ action: String, _ run: @escaping () -> Void) -> some View {
+        HStack {
+            Text(text).font(Nacre.headline).foregroundColor(Pearl.ink).lineLimit(1).minimumScaleFactor(0.8)
+            Spacer(minLength: 8)
+            Button(action, action: run)
+                .font(Nacre.body).foregroundColor(Pearl.link)
+                .frame(minHeight: 44).contentShape(Rectangle())
+        }
+        .padding(.horizontal, 4)
     }
 
     @ViewBuilder private var list: some View {
@@ -690,83 +621,75 @@ struct TransactionsView: View {
         } else if (!loadedOnce && !inSearch) || (inSearch && results == nil) {
             ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
         } else if let error = error, shown.isEmpty {
-            nothing(title: "Couldn’t load your transactions", line: error, action: "Try again") {
+            CFState(title: "Couldn’t load your transactions", line: error, action: "Try again") {
                 Task { await reload() }
             }
         } else if shown.isEmpty {
             if inSearch {
-                nothing(title: "No matches", line: "Try another word.", action: "Clear search") { query = "" }
+                // G1-Empty: "No matches · Try another word. · Clear search".
+                CFState(title: "No matches", line: "Try another word.", action: "Clear search") { query = "" }
             } else if filters.isActive || counts != nil {
-                nothing(title: "Nothing matches", line: noMatchLine, action: "Clear filters") {
+                CFState(title: "Nothing matches", line: noMatchLine, action: "Clear filters") {
                     let reload = filters.needsServer
                     filters = TxFilters(sort: filters.sort)
                     counts = nil
                     if reload { Task { await self.reload() } }
                 }
             } else {
-                nothing(title: "Nothing yet in \(month.map { Format.monthName($0) } ?? "this month")",
-                        line: "Transactions show up here as your bank sends them.", action: nil) {}
+                CFState(title: "Nothing yet in \(month.map { Format.monthName($0) } ?? "this month")",
+                        line: "Transactions show up here as your bank sends them.")
             }
         } else {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 0) {
                 ForEach(sections, id: \.title) { section in
+                    let first = section.title == sections.first?.title
                     if byDay {
-                        dayHeader(section, first: section.title == sections.first?.title)
+                        dayHeader(section, first: first)
                     } else if !section.title.isEmpty {
-                        HStack {
-                            Text(section.title.uppercased()).tracking(0.4)
-                            Spacer()
-                            Text(Format.whole(section.rows.reduce(0) { $0 + $1.amount }))
-                        }
-                        .font(Nacre.caption2).foregroundColor(Pearl.muted)
-                        .padding(.horizontal, 16).padding(.top, 10)
-                    }
-                    GlassCard {
-                        ForEach(Array(section.rows.enumerated()), id: \.element.id) { index, t in
-                            if index > 0 { RowSeparator(inset: 72) }
-                            if selecting {
-                                Button { toggle(t) } label: {
-                                    TransactionRow(t: t, paidBack: paidBack(for: t), picked: picked.contains(t.id),
-                                                   showsDay: !byDay, showsTrip: !inTrip)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityAddTraits(picked.contains(t.id) ? .isSelected : [])
-                            } else {
-                                NavigationLink(value: t) {
-                                    TransactionRow(t: t, paidBack: paidBack(for: t), showsDay: !byDay,
-                                                   onConfirm: { Task { await confirmGuess(t) } })
-                                }
-                                .buttonStyle(.plain)
+                        APSectionLabel(text: section.title,
+                                       action: nil)
+                            .overlay(alignment: .trailing) {
+                                Text(Format.whole(section.rows.reduce(0) { $0 + $1.amount }))
+                                    .font(Nacre.label).foregroundColor(Pearl.muted).padding(.trailing, 4)
                             }
-                        }
+                            .padding(.top, first ? 16 : 24).padding(.bottom, 8)
                     }
+                    APCard { OwnBody { dayRows(section.rows) } }
                 }
             }
         }
     }
 
-    /// T-01r (1074:356, dark 1074:497): "TODAY", "YESTERDAY", "WED, NOV 12"
-    /// over each day's card, with nothing on the right; the first one also
-    /// carries Select, where "n transactions · Select" used to be.
-    private func dayHeader(_ section: Section, first: Bool) -> some View {
-        HStack {
-            Text(section.title.uppercased())
-                .font(Font.custom("Figtree-Medium", size: 13, relativeTo: .footnote)).tracking(0.78)
-                .foregroundColor(Pearl.muted)
-                .accessibilityAddTraits(.isHeader)
-            Spacer()
-            if first && selectOnFirstDay {
-                Button("Select") { selecting = true }
-                    .font(Font.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
-                    .foregroundColor(Pearl.action)
-                    // TEST-14: 44 pt to tap; the header still draws at 18.
-                    .frame(minHeight: 44).padding(.vertical, -13)
+    /// One card's rows (its own body, stack check): a face, the name over
+    /// its line, the amount on the right edge; ticks while selecting.
+    @ViewBuilder private func dayRows(_ rows: [Transaction]) -> some View {
+        ForEach(Array(rows.enumerated()), id: \.element.id) { index, t in
+            // G1-Select: the line starts under the name, past the tick.
+            if index > 0 { APSeparator().padding(.leading, selecting ? 34 : 0) }
+            if selecting {
+                Button { toggle(t) } label: {
+                    TransactionRow(t: t, paidBack: paidBack(for: t), picked: picked.contains(t.id),
+                                   showsDay: !byDay, showsTrip: !inTrip)
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(picked.contains(t.id) ? .isSelected : [])
+            } else {
+                NavigationLink(value: t) {
+                    TransactionRow(t: t, paidBack: paidBack(for: t), showsDay: !byDay,
+                                   onConfirm: { Task { await confirmGuess(t) } })
+                }
+                .buttonStyle(.plain)
             }
         }
-        .frame(minHeight: 18)
-        .padding(.top, first ? 0 : 6)
-        .padding(.bottom, -4)
-        .accessibilityIdentifier("day-header")
+    }
+
+    /// T-01r, A+ (kit `.label`): "TODAY", "WED, NOV 12" over each day's
+    /// card, 24 above and 8 below; the first one also carries Select.
+    private func dayHeader(_ section: Section, first: Bool) -> some View {
+        // TEST-14: Select is 44 pt to tap; the label still draws at 18.
+        APSectionLabel(text: section.title, action: first && selectOnFirstDay ? "Select" : nil) { selecting = true }
+            .padding(.top, first ? 0 : 24).padding(.bottom, 8)
+            .accessibilityIdentifier("day-header")
     }
 
     // MARK: By category (T-18)
@@ -796,14 +719,16 @@ struct TransactionsView: View {
         .sorted { ($0.total, $1.name) > ($1.total, $0.name) }
     }
 
-    /// Owed to you, then Spent, Money in and Not counted by category.
+    /// Owed to you, then Spent, Money in and Not counted by category
+    /// (G1-Category: kit `.label`, then a card of icon rows with the total).
     @ViewBuilder private var categoryList: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             if let line = owedLine {
-                categoryHeading("Owed to you")
-                GlassCard {
+                categoryHeading("Owed to you", first: true)
+                APCard {
                     NavigationLink { OwedView() } label: {
-                        categoryRow(line.names.joined(separator: " and "), count: line.count, total: line.total)
+                        categoryRow(line.names.joined(separator: " and "), symbol: "person.2",
+                                    count: line.count, total: line.total)
                     }
                     .buttonStyle(.plain)
                 }
@@ -811,14 +736,15 @@ struct TransactionsView: View {
             ForEach([("spending", "Spent"), ("income", "Money in"), ("none", "Not counted")], id: \.0) { key, title in
                 let lines = categoryLines(key)
                 if !lines.isEmpty {
-                    categoryHeading(title)
-                    GlassCard {
+                    categoryHeading(title, first: owedLine == nil && key == "spending")
+                    APCard {
                         ForEach(Array(lines.enumerated()), id: \.element.id) { i, c in
-                            if i > 0 { RowSeparator() }
+                            if i > 0 { APSeparator() }
                             NavigationLink {
                                 CategoryPage(name: c.name, month: month, counts: key, rows: c.rows, total: c.total)
                             } label: {
-                                categoryRow(c.name, count: key == "spending" ? c.rows.count : nil, total: c.total)
+                                categoryRow(c.name, symbol: CategorySheet.symbol(for: c.name),
+                                            count: c.rows.count, total: c.total)
                             }
                             .buttonStyle(.plain)
                         }
@@ -828,24 +754,25 @@ struct TransactionsView: View {
         }
     }
 
-    private func categoryHeading(_ text: String) -> some View {
-        Text(text.uppercased()).font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
-            .padding(.horizontal, 16).padding(.top, 12)
-            .accessibilityAddTraits(.isHeader)
+    /// "SPENT   Select": the first heading carries Select, as the day's does.
+    private func categoryHeading(_ text: String, first: Bool) -> some View {
+        APSectionLabel(text: text, action: first && !inTrip ? "Select" : nil) { selecting = true }
+            .padding(.top, 24).padding(.bottom, 8)
     }
 
-    /// "Groceries  6        $412 ›".
-    private func categoryRow(_ name: String, count: Int?, total: Double) -> some View {
-        HStack(spacing: 8) {
-            Text(name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
-            if let count = count {
-                Text("\(count)").font(Nacre.footnote).foregroundColor(Pearl.muted)
+    /// G1-Category: "🛒 Groceries / 6 transactions        $412".
+    private func categoryRow(_ name: String, symbol: String, count: Int, total: Double) -> some View {
+        HStack(spacing: 12) {
+            CFIcon(symbol: symbol)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                Text(count == 1 ? "1 transaction" : "\(count) transactions")
+                    .font(Nacre.subheadline).foregroundColor(Pearl.muted)
             }
-            Spacer(minLength: 8)
-            Text(Format.whole(total)).font(Nacre.body).foregroundColor(Pearl.ink)
-            Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Text(Format.whole(total)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
         }
-        .padding(.horizontal, 16).frame(minHeight: 50)
+        .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 64)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
@@ -855,46 +782,56 @@ struct TransactionsView: View {
     /// T-77: Category, Mark as…, Confirm (Pearl's guesses, when some are)
     /// and Leave out, where the tab bar was. Tag waits while tags are off
     /// (THL-286), as on the web. TR-07 (1331:5763): Make a trip comes third.
-    /// Five don't fit at 393 pt (the labels come to 362 of 377 pt, with no
-    /// room between them), so with Confirm on the bar Leave out moves under
-    /// Mark as… (engBOT, Trips build).
+    /// With Confirm on the bar Leave out moves under Mark as… (engBOT, Trips
+    /// build); TR-15: Leave out is the last tile of Mark as…'s Not spending
+    /// grid. TR-11 / TR-12: one action.
     ///
-    /// TR-15 (1347:75596): with guesses, Make a trip stays third and Confirm
-    /// comes last, as TR-07 has it (note 1329:69536); Leave out is the last
-    /// tile of Mark as…'s Not spending grid. TR-11 / TR-12: one action.
+    /// A+ (G1-Select, kit `.selbar`): a floating card 12 in from the sides,
+    /// radius 28, the actions as 40 pt chips; Confirm takes its own row in
+    /// rose under them.
     private var selectionBar: some View {
-        HStack(spacing: 0) {
+        VStack(spacing: 8) {
             if let p = tripPick {
-                barButton(p.kind == .add ? "Add \(picked.count) to the trip" : "Remove \(picked.count) from the trip") {
+                barButton(p.kind == .add ? "Add \(picked.count) to the trip" : "Remove \(picked.count) from the trip",
+                          on: true) {
                     tripChange(p)
                 }
             } else {
-                barButton("Category") { bulk = .category }
-                barButton("Mark as…") { bulk = .mark }
-                barButton("Make a trip") { tripName = ""; makingTrip = true }
+                HStack(spacing: 8) {
+                    barButton("Category") { bulk = .category }
+                    barButton("Mark as…") { bulk = .mark }
+                    barButton("Make a trip") { tripName = ""; makingTrip = true }
+                    if guesses == 0 {
+                        barButton("Leave out") { leavingOut = true }
+                    }
+                }
                 if guesses > 0 {
-                    barButton("Confirm \(guesses)") {
+                    barButton("Confirm \(guesses)", on: true) {
                         let ids = pickedRows.filter(\.suggested).map(\.id)
                         Task { await change(["ids": ids], path: "api/transactions/batch/confirm") }
                     }
-                } else {
-                    barButton("Leave out") { leavingOut = true }
                 }
             }
         }
-        .padding(.horizontal, 8).padding(.top, 14).padding(.bottom, 10)
-        .background(Pearl.bar.ignoresSafeArea(edges: .bottom))
-        .overlay(alignment: .top) { Rectangle().fill(Pearl.border).frame(height: 1) }
+        .padding(10)
+        .background(SelectionBarSurface())
+        .padding(.horizontal, 12).padding(.bottom, 8)
     }
 
     /// Pearl's guesses among the picked rows, for Confirm.
     private var guesses: Int { pickedRows.filter(\.suggested).count }
 
-    private func barButton(_ title: String, _ run: @escaping () -> Void) -> some View {
+    /// kit `.selbar .chip`: 40 high, `chip` (or `action` when it's the one
+    /// to press), 15 pt medium.
+    private func barButton(_ title: String, on: Bool = false, _ run: @escaping () -> Void) -> some View {
         Button(action: run) {
-            Text(title).font(Nacre.textButton).foregroundColor(Pearl.link)
-                .lineLimit(1).minimumScaleFactor(0.8)
-                .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
+            Text(title).font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+                .foregroundColor(on ? Pearl.onAction : Pearl.ink)
+                .lineLimit(1).minimumScaleFactor(0.75)
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity, minHeight: 40)
+                .background(Capsule().fill(on ? Pearl.action : APlus.chip))
+                .frame(minHeight: 44).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(picked.isEmpty || busy)
@@ -1073,34 +1010,28 @@ struct TransactionsView: View {
 
     /// T-35: no bank yet, so nothing to show.
     private var emptyLedger: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 20, weight: .medium)).foregroundColor(Pearl.action)
-                .frame(width: 56, height: 56)
-                .background(Circle().fill(Pearl.blush))
-                .padding(.bottom, 8)
-                .accessibilityHidden(true)
-            Text("No transactions yet").font(Nacre.title2)
+        // G1-Empty: the title in Fraunces 22 and its line, the rose Link your
+        // bank, and Add one by hand as a quiet link. No icon, no card.
+        VStack(spacing: 6) {
+            Text("No transactions yet").font(Nacre.title2).foregroundColor(Pearl.ink)
             Text("Link a bank to see them.").font(Nacre.subheadline).foregroundColor(Pearl.muted)
-            Button { Task { await link() } } label: {
-                Text("Link your bank").font(Nacre.headline).foregroundColor(Pearl.ink)
-                    .frame(width: 240, height: 56)
-                    .overlay(Capsule().strokeBorder(Pearl.ink, lineWidth: 1.2))
-                    .contentShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .disabled(reconnecting != nil)
-            .padding(.top, 12)
+            Button("Link your bank") { Task { await link() } }
+                .buttonStyle(APPrimaryButtonStyle(busy: reconnecting == "new"))
+                .disabled(reconnecting != nil)
+                .padding(.top, 28)
             // T-35.
             Button("Add one by hand") { adding = true }
-                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
-                .frame(width: 240)
+                .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+                .foregroundColor(Pearl.link)
+                .frame(minHeight: 44)
+                .padding(.top, 8)
             if let error = error {
-                Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).multilineTextAlignment(.center)
+                Text(error).font(Nacre.footnote).foregroundColor(Pearl.danger).multilineTextAlignment(.center)
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 72)
+        .padding(.horizontal, 4)
+        .padding(.top, 150)
     }
 
     // MARK: What's shown
@@ -1223,7 +1154,7 @@ struct TransactionsView: View {
         } else if !loadedOnce {
             await reload()
         }
-        if let review = await reviewReply { reviewCount = review.open ?? review.count }
+        if let review = await reviewReply { took(review) }
         if let overview = await accountsReply { accounts = overview.linked }
         if !syncedOnce {
             syncedOnce = true
@@ -1310,7 +1241,14 @@ struct TransactionsView: View {
         } catch {
             self.error = app.handle(error)
         }
-        if let review = await reviewReply { reviewCount = review.open ?? review.count }
+        if let review = await reviewReply { took(review) }
+    }
+
+    /// "8 need a look" and its mini streak (A+): what's still to sort, and
+    /// what she and Pearl sorted today.
+    private func took(_ review: Review) {
+        reviewCount = review.open ?? review.count
+        reviewSorted = review.sortedToday + review.pearlSorted
     }
 
     private func search() async {
@@ -1401,16 +1339,17 @@ struct TransactionRow: View {
     /// TR-02m: a row in a trip's other currency says so ("−$142.00 USD").
     var currency: String? = nil
 
+    /// A+ (kit `.row`, APPaymentRow): the 40 pt face, the name (17) over its
+    /// line (15 muted), the guess as a dashed chip, every amount on one
+    /// right edge in 17 semibold; with a guess the amount lines up with the
+    /// name. G1-Select: kit `.seltick` before the face.
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
+        HStack(alignment: t.suggested ? .top : .center, spacing: 12) {
             if let picked = picked {
-                Image(systemName: picked ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 22))
-                    .foregroundColor(picked ? Pearl.action : Pearl.muted)
-                    .padding(.trailing, -4)
+                SelectTick(on: picked).padding(.top, t.suggested ? 9 : 0)
             }
             Initials(name: t.merchant)
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(t.merchant).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
                 if !meta.isEmpty {
                     Text(meta).font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(splitNote == nil ? 1 : 2)
@@ -1435,11 +1374,13 @@ struct TransactionRow: View {
                 .foregroundColor(t.rowTone)
                 .lineLimit(1).fixedSize()
                 .costCountDown(t.amount)
+                .padding(.top, t.suggested ? 9 : 0)
                 .accessibilityLabel(t.movedBetweenAccounts
                                     ? Format.movedSpoken(t.amount, to: t.movedTo) : Format.spoken(shownMoney))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+        .frame(minHeight: 64)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .costSpoken(costSpoken)
@@ -1513,12 +1454,14 @@ struct Initials: View {
     /// Québec City (note 1329:69536, Wording). Other avatars are unchanged.
     var trip = false
 
+    /// A+ `face` (#F3E8EE / #262E63), initials 14/500 at 40.
     var body: some View {
         Text(letters)
-            .font(.custom("Figtree-Medium", size: size * 0.36))
+            .font(.custom("Figtree-Medium", size: size * 0.35))
+            .tracking(0.2)
             .foregroundColor(Pearl.ink)
             .frame(width: size, height: size)
-            .background(Circle().fill(Pearl.dynamic(light: 0xEFE4EB, dark: 0x252C5E)))
+            .background(Circle().fill(APlus.face))
             .accessibilityHidden(true)
     }
 
@@ -1544,8 +1487,39 @@ struct GuessChip: View {
         .font(Nacre.footnote)
         .foregroundColor(Pearl.ink)
         .padding(.horizontal, 10).frame(height: 24)
-        .overlay(Capsule().strokeBorder(Pearl.ink.opacity(0.7), style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
+        // kit `.guess`: a 1 pt dashed line in ink at 60%.
+        .overlay(Capsule().strokeBorder(Pearl.ink.opacity(0.6), style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
         .accessibilityLabel("Pearl’s guess: \(label)")
+    }
+}
+
+/// kit `.seltick`: 22 pt, a 1.5 pt muted ring, or `action` with a tick.
+struct SelectTick: View {
+    let on: Bool
+
+    var body: some View {
+        ZStack {
+            if on {
+                Circle().fill(Pearl.action)
+                Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundColor(Pearl.onAction)
+            } else {
+                Circle().strokeBorder(Pearl.muted, lineWidth: 1.5)
+            }
+        }
+        .frame(width: 22, height: 22)
+        .accessibilityHidden(true)
+    }
+}
+
+/// G1-Select: the floating bar's glass (kit `.selbar`): `card` over a blur,
+/// the card line, radius 28, a 0 10 28 shadow.
+struct SelectionBarSurface: View {
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
+        shape.fill(APlus.card)
+            .background(.ultraThinMaterial, in: shape)
+            .overlay(shape.strokeBorder(APlus.cardLine, lineWidth: 1))
+            .shadow(color: Color(red: 28 / 255, green: 22 / 255, blue: 56 / 255).opacity(0.16), radius: 14, y: 10)
     }
 }
 
@@ -1713,28 +1687,37 @@ struct FilterSheet: View {
         self.onApply = onApply
     }
 
+    /// A+ (G1-Search, Filters): Reset · Filters · ✕, the types as chips
+    /// (kit `.chip`, rose when on), a card of rows, the left-out switch on
+    /// its own card, and "Show 24" as the one Primary.
     var body: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: "Filters") { dismiss() }
+            CFSheetTitle(title: "Filters", left: "Reset", onLeft: {
+                filters = TxFilters()
+                month = initialMonth
+            }) { dismiss() }
             ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 0) {
                     heading("Transaction type")
                     Chips {
                         ForEach(TxFilters.typeNames, id: \.key) { y in
-                            FilterChip(label: y.name, on: filters.types.contains(y.key)) {
+                            CFChip(label: y.name, on: filters.types.contains(y.key)) {
                                 filters.types.formSymmetricDifference([y.key])
                             }
                         }
                     }
-                    heading("Spending type")
+                    .padding(.vertical, -5)
+                    heading("Spending type").padding(.top, 20)
                     Chips {
                         ForEach(TxFilters.groupNames, id: \.key) { g in
-                            FilterChip(label: g.name, on: filters.groups.contains(g.key)) {
+                            CFChip(label: g.name, on: filters.groups.contains(g.key)) {
                                 filters.groups.formSymmetricDifference([g.key])
                             }
                         }
                     }
-                    GlassCard { rows }.padding(.top, 6)
+                    .padding(.vertical, -5)
+                    APCard { OwnBody { rows } }.padding(.top, 16)
+                    APCard { leftOutToggle }.padding(.top, 12)
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 24)
@@ -1742,20 +1725,21 @@ struct FilterSheet: View {
             }
             .scrollDismissesKeyboard(.interactively)
 
-            HStack(spacing: 16) {
-                Button("Reset") {
-                    filters = TxFilters()
-                    month = initialMonth
-                }
-                .font(Nacre.headline).foregroundColor(Pearl.action)
-                .frame(width: 84)
-                Button(showLabel) { onApply(filters, month) }
-                    .buttonStyle(NacreButtonStyle())
-            }
-            .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
+            Button(showLabel) { onApply(filters, month) }
+                .buttonStyle(APPrimaryButtonStyle())
+                .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
         }
-        .background(SheetBackground())
+        .cfSheet()
         .presentationDragIndicator(.visible)
+    }
+
+    private var leftOutToggle: some View {
+        Toggle(isOn: Binding(get: { filters.only.contains(.leftOut) },
+                             set: { on in if on { filters.only.insert(.leftOut) } else { filters.only.remove(.leftOut) } })) {
+            Text("Show left-out transactions").font(Nacre.body).foregroundColor(Pearl.ink)
+        }
+        .tint(Pearl.action)
+        .padding(.horizontal, 16).frame(minHeight: 64)
     }
 
     @ViewBuilder private var rows: some View {
@@ -1770,7 +1754,7 @@ struct FilterSheet: View {
                     option("Earlier months", on: false) { allMonths = true }
                 }
             }
-            RowSeparator()
+            APSeparator(afterFace: false)
         }
         if !accounts.isEmpty {
             row(.accounts, "Accounts", accountsValue)
@@ -1780,7 +1764,7 @@ struct FilterSheet: View {
                            on: filters.accounts.isEmpty || filters.accounts.contains(a.id)) { toggleAccount(a.id) }
                 }
             }
-            RowSeparator()
+            APSeparator(afterFace: false)
         }
         if !categories.isEmpty {
             row(.category, "Category", list(filters.categories.sorted()))
@@ -1789,7 +1773,7 @@ struct FilterSheet: View {
                     option(c, on: filters.categories.contains(c)) { filters.categories.formSymmetricDifference([c]) }
                 }
             }
-            RowSeparator()
+            APSeparator(afterFace: false)
         }
         if Features.tags && !tags.isEmpty {
             row(.tags, "Tags", list(filters.tags.sorted().map { "#" + $0 }))
@@ -1798,24 +1782,24 @@ struct FilterSheet: View {
                     option("#" + tag, on: filters.tags.contains(tag)) { filters.tags.formSymmetricDifference([tag]) }
                 }
             }
-            RowSeparator()
+            APSeparator(afterFace: false)
         }
         row(.amount, "Amount", filters.amountLabel ?? "Any")
         if open == .amount {
             HStack(spacing: 12) {
-                amountField("Min", text: $filters.min, prompt: "$0")
+                amountField("Min", text: $filters.min, prompt: "0")
                 amountField("Max", text: $filters.max, prompt: "Any")
             }
             .padding(.horizontal, 16).padding(.bottom, 12)
         }
-        RowSeparator()
+        APSeparator(afterFace: false)
         row(.sort, "Sort", filters.sort.rawValue)
         if open == .sort {
             ForEach(TxFilters.Sort.allCases, id: \.self) { sort in
                 option(sort.rawValue, on: filters.sort == sort) { filters.sort = sort }
             }
         }
-        RowSeparator()
+        APSeparator(afterFace: false)
         row(.only, "Only show", list(TxFilters.Only.allCases.filter { $0 != .leftOut && filters.only.contains($0) }
             .map(\.rawValue)))
         if open == .only {
@@ -1823,25 +1807,14 @@ struct FilterSheet: View {
                 option(flag.rawValue, on: filters.only.contains(flag)) { filters.only.formSymmetricDifference([flag]) }
             }
         }
-        RowSeparator()
+        APSeparator(afterFace: false)
         row(.merchant, "Merchant", filters.merchant.trimmingCharacters(in: .whitespaces).isEmpty ? "Any" : filters.merchant)
         if open == .merchant {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundColor(Pearl.muted)
-                TextField("", text: $filters.merchant, prompt: Text("Any merchant").foregroundColor(Pearl.muted))
-                    .font(Nacre.body).autocorrectionDisabled()
-            }
-            .padding(.horizontal, 14).frame(height: 44)
-            .background(Capsule().fill(Pearl.ink.opacity(0.08)))
-            .padding(.horizontal, 16).padding(.bottom, 12)
+            // REDESIGN-09: a search well.
+            PearlField(placeholder: "Any merchant", text: $filters.merchant, kind: .search)
+                .autocorrectionDisabled()
+                .padding(.horizontal, 16).padding(.bottom, 12)
         }
-        RowSeparator()
-        Toggle(isOn: Binding(get: { filters.only.contains(.leftOut) },
-                             set: { on in if on { filters.only.insert(.leftOut) } else { filters.only.remove(.leftOut) } })) {
-            Text("Show left-out transactions").font(Nacre.body).foregroundColor(Pearl.ink)
-        }
-        .tint(Pearl.action)
-        .padding(.horizontal, 16).frame(minHeight: 50)
     }
 
     /// "Show 36", or just "Show" when another month is chosen (its rows aren't here yet).
@@ -1873,14 +1846,15 @@ struct FilterSheet: View {
     /// whichever was open.
     private func row(_ which: Row, _ title: String, _ value: String) -> some View {
         Button { open = open == which ? nil : which } label: {
+            // kit `.kv`: 52 high, the value muted with the chevron (turned
+            // down while its choices show).
             HStack(spacing: 8) {
                 Text(title).font(Nacre.body).foregroundColor(Pearl.ink).layoutPriority(1)
                 Spacer(minLength: 12)
                 Text(value).font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
-                Image(systemName: open == which ? "chevron.up" : "chevron.down")
-                    .font(.system(size: 12, weight: .semibold)).foregroundColor(Pearl.muted)
+                CFChevron().rotationEffect(.degrees(open == which ? 90 : 0))
             }
-            .padding(.horizontal, 16).frame(minHeight: 50)
+            .padding(.horizontal, 16).frame(minHeight: 52)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1892,12 +1866,10 @@ struct FilterSheet: View {
     /// One choice under an open row: a ticked circle when it's on.
     private func option(_ label: String, on: Bool, _ tap: @escaping () -> Void) -> some View {
         VStack(spacing: 0) {
-            RowSeparator(inset: 52)
+            Rectangle().fill(APlus.separator).frame(height: 0.5).padding(.leading, 50)
             Button(action: tap) {
                 HStack(spacing: 12) {
-                    Image(systemName: on ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 22))
-                        .foregroundColor(on ? Pearl.action : Pearl.muted)
+                    SelectTick(on: on)
                     Text(label).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
                     Spacer()
                 }
@@ -1910,22 +1882,13 @@ struct FilterSheet: View {
     }
 
     private func heading(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
-            .padding(.horizontal, 16).padding(.top, 6)
-            .accessibilityAddTraits(.isHeader)
+        APSectionLabel(text: text).padding(.bottom, 10)
     }
 
+    /// REDESIGN-09: Min and Max are amount wells.
     private func amountField(_ label: String, text: Binding<String>, prompt: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(Nacre.footnote).foregroundColor(Pearl.muted)
-            TextField("", text: text, prompt: Text(prompt).foregroundColor(Pearl.muted))
-                .font(Nacre.body).keyboardType(.decimalPad)
-                .accessibilityLabel("\(label) amount")
-        }
-        .padding(.horizontal, 16).padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Pearl.ink.opacity(0.05)))
+        PearlField(label: label, placeholder: prompt, text: text, kind: .amount, identifier: "\(label) amount")
+            .frame(maxWidth: .infinity)
     }
 }
 
@@ -2021,16 +1984,15 @@ struct MonthSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: "Choose a month") { dismiss() }
+            CFSheetTitle(title: "Choose a month") { dismiss() }
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(years, id: \.self) { year in
-                        Text(year).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                            .padding(.horizontal, 16).padding(.top, 8)
-                        GlassCard {
+                        APSectionLabel(text: year).padding(.top, 16).padding(.bottom, 0)
+                        APCard {
                             let inYear = months.reversed().filter { $0.hasPrefix(year) }
                             ForEach(Array(inYear.enumerated()), id: \.element) { index, m in
-                                if index > 0 { RowSeparator() }
+                                if index > 0 { APSeparator(afterFace: false) }
                                 Button { chosen = m } label: {
                                     HStack {
                                         VStack(alignment: .leading, spacing: 2) {
@@ -2057,10 +2019,10 @@ struct MonthSheet: View {
                 .padding(.horizontal, 16).padding(.bottom, 16)
             }
             Button("Done") { onDone(chosen ?? current) }
-                .buttonStyle(NacreButtonStyle())
+                .buttonStyle(APPrimaryButtonStyle())
                 .padding(.horizontal, 16).padding(.bottom, 8)
         }
-        .background(SheetBackground())
+        .cfSheet()
         .task { await loadTotals() }
     }
 
@@ -2221,12 +2183,14 @@ extension Format {
 }
 
 
-/// T-01r's month bar: Spent in ink, Saved in money-in green, what's left on
-/// the track, as parts of what came in (or of what went out, if more).
+/// T-01r's month bar, A+ (AP-CashFlow, G1-Over): Spent in plum
+/// (`money-out`), Saved in green, what's left on `track-soft`, as parts of
+/// what came in; over, the rest is the over part in red. 8 high, 3 apart.
 struct MonthBar: View {
     let spent: Double
     let saved: Double
     let income: Double
+    var over = false
 
     var body: some View {
         GeometryReader { g in
@@ -2234,13 +2198,112 @@ struct MonthBar: View {
             let a = min(max(spent, 0) / whole, 1)
             let b = min(max(saved, 0) / whole, 1 - a)
             HStack(spacing: 3) {
-                if a > 0 { Capsule().fill(Pearl.ink).frame(width: max(g.size.width * a - 3, 4)) }
+                if a > 0 { Capsule().fill(Pearl.moneyOut).frame(width: max(g.size.width * a - 3, 4)) }
                 if b > 0 { Capsule().fill(Pearl.moneyIn).frame(width: max(g.size.width * b - 3, 4)) }
-                Capsule().fill(Pearl.track)
+                Capsule().fill(over ? Pearl.danger : APlus.trackSoft)
             }
         }
         .frame(height: 8)
         .accessibilityHidden(true)
+    }
+}
+
+/// The top of Cash flow's month card (AP-CashFlow, G1-Over, G1-Search):
+/// "November ⌄ … Came in $2,150", the headline, the bar and its legend.
+/// Spent and Came in narrow the list (T-67). Its own body (stack check).
+struct MonthSummary: View {
+    let month: String
+    let monthSpoken: String
+    let canPick: Bool
+    let narrowed: Bool
+    let spent: Double
+    let income: Double
+    let saved: Double
+    let pay: TransactionList.Totals.Pay?
+    @Binding var counts: String?
+    let pickMonth: () -> Void
+
+    private var left: Double { income - spent - saved }
+    private var over: Bool { left < -0.5 && !narrowed && pay == nil }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .center) {
+                Button(action: pickMonth) {
+                    HStack(spacing: 6) {
+                        Text(month).font(Nacre.headline)
+                        Image(systemName: "chevron.down").font(.system(size: 12, weight: .bold))
+                    }
+                    .foregroundColor(Pearl.ink)
+                    .frame(minHeight: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!canPick)
+                .accessibilityLabel("Month, \(monthSpoken)")
+                Spacer(minLength: 8)
+                if let day = pay?.expected {
+                    // T-01r3: "Pay expected Nov 15".
+                    Text("Pay expected \(Format.short(day))").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                        .accessibilityLabel("Pay expected \(Format.monthDay(day))")
+                } else {
+                    // T-67: Came in narrows the list to money in.
+                    Button { counts = counts == "income" ? nil : "income" } label: {
+                        Text("Came in \(Format.whole(income))").font(Nacre.subheadline).foregroundColor(Pearl.moneyIn)
+                            .frame(minHeight: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(counts == "income" ? "Shows everything again" : "Shows only these")
+                    .accessibilityAddTraits(counts == "income" ? .isSelected : [])
+                }
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                Text(pay != nil ? "Spent so far" : over ? "Over" : "Leftover")
+                    .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                Text(narrowed ? "\u{2014}" : Format.whole(pay != nil ? spent : abs(left)))
+                    .font(.cfBig).tracking(-0.88)
+                    .foregroundColor(over ? Pearl.danger : Pearl.ink)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+            }
+            .padding(.top, 2)
+            .accessibilityElement(children: .combine)
+            // T-01r3: the bar runs to what will have come in by month's end.
+            MonthBar(spent: spent, saved: saved, income: income + (pay?.toCome ?? 0), over: over)
+                .padding(.top, 12).padding(.bottom, 10)
+            legend
+        }
+        .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 14)
+    }
+
+    /// kit `.legend`: 8 pt dots, 13 pt, 16 apart.
+    private var legend: some View {
+        HStack(spacing: 16) {
+            // T-67: Spent narrows the list to spending.
+            Button { counts = counts == "spending" ? nil : "spending" } label: {
+                dot("Spent \(Format.whole(spent))", Pearl.moneyOut, Pearl.moneyOut)
+                    .frame(minHeight: 44).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(counts == "spending" ? "Shows everything again" : "Shows only these")
+            .accessibilityAddTraits(counts == "spending" ? .isSelected : [])
+            dot("Saved \(Format.whole(saved))", Pearl.moneyIn, Pearl.moneyIn)
+            if let pay = pay {
+                dot("Pay to come \(Format.whole(pay.toCome))", APlus.trackSoft, Pearl.muted)
+            } else if over {
+                dot("Over \(Format.whole(-left))", Pearl.danger, Pearl.danger)
+            } else {
+                dot("Leftover \(Format.whole(max(left, 0)))", APlus.trackSoft, Pearl.muted)
+            }
+            Spacer(minLength: 0)
+        }
+        .font(Nacre.footnote).lineLimit(1).minimumScaleFactor(0.8)
+        .padding(.vertical, -13)
+    }
+
+    private func dot(_ text: String, _ fill: Color, _ tone: Color) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(fill).frame(width: 8, height: 8).accessibilityHidden(true)
+            Text(text).foregroundColor(tone)
+        }
     }
 }
 
