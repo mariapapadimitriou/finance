@@ -94,6 +94,11 @@ struct AnswerSheet: View {
     /// PB-15: a person who isn't on a split; T-09's purchase list counts
     /// the whole amount as paid back by them.
     @State private var payerName: String?
+    /// PB-30 for this person, with this purchase ticked (2026-11-16): PQ-03's
+    /// tile when the money is more than its share, or the person its split
+    /// tiles name for Something else.
+    @State private var partPerson: String?
+    @State private var mustTick: String?
     @State private var splitting = false
     /// T-06jr (JOINT-B): Whose was it? on a joint purchase, beside Split my part.
     @State private var whosing = false
@@ -277,7 +282,7 @@ struct AnswerSheet: View {
             // PB-11 › A person: their shares ticked as they add up (PB-30),
             // or S-35's ticks, then part or all of each share (PB-13).
             PartsSheet(deposit: PartsDeposit(id: t.id, name: who, amount: t.amount, date: t.date), api: api,
-                       paidBack: true, payer: ask.item.from) { reply in
+                       paidBack: true, payer: partPerson ?? ask.item.from, person: partPerson, mustTick: mustTick) { reply in
                 parting = false
                 onAnswer(.done(reply))
             }
@@ -322,6 +327,8 @@ struct AnswerSheet: View {
     /// offline) it opens as before, A person first and nothing picked.
     private func askWhoPaid() async {
         struct Likely: Decodable { let kind: String?; let person: String? }
+        partPerson = nil
+        mustTick = nil
         let likely: Likely? = try? await api.get("api/transactions/\(t.id)/paid-back-who")
         switch likely?.kind {
         case "person": likelyWho = .person
@@ -690,10 +697,18 @@ struct AnswerSheet: View {
             refunding = false
             go(.charges)
         case .person:
+            // PQ-03's tiles name who on her splits it is: PB-30 for them.
+            if partPerson != nil { parting = true; return }
             Task {
-                struct Owing: Decodable { let from: String?; let named: String? }
+                struct Owing: Decodable {
+                    let from: String?; let named: String?; let items: [Lenient<PartsSheet.Owing>]?
+                }
                 let r: Owing? = try? await api.get("api/transactions/\(t.id)/owing")
-                if let r = r, r.from == nil, let named = r.named, !named.isEmpty {
+                // PB-15 only when no one owes her: otherwise the name may be
+                // someone on her splits as the bank writes them, so PP-01
+                // asks who first, then PB-30 (2026-11-16; never a new person).
+                let owed = (r?.items ?? []).contains { ($0.value?.person != nil) && ($0.value?.owes ?? 0) >= 0.005 }
+                if let r = r, r.from == nil, let named = r.named, !named.isEmpty, !owed {
                     chargeCase = "payback"
                     payerName = named
                     refunding = false
@@ -936,10 +951,16 @@ struct AnswerSheet: View {
             ScrollView {
                 PaybackQuestionBody(
                     question: q, amount: amountText, date: t.date,
-                    onTile: { onAnswer(.payback(t.id, charge: $0.charge, toast: $0.toast, person: $0.person)) },
-                    // "Find the purchase": PB-11's A person, with the sender
-                    // known: their splits (PB-12), or PB-15's purchase search.
-                    onElse: { paidBack(.person) },
+                    onTile: { tile in Task { await tapTile(tile) } },
+                    // "Find the purchase": PB-11's A person. The person the
+                    // split tiles name: PB-30 for them; else their splits
+                    // (PB-30 or PP-01 first), or PB-15's purchase search.
+                    onElse: {
+                        let named = Set(q.tiles.compactMap(\.person))
+                        partPerson = named.count == 1 ? named.first : nil
+                        mustTick = nil
+                        paidBack(.person)
+                    },
                     onNot: { go(.into) },
                     // T-14 Who sent this?: the name is used from then on.
                     onName: { go(.sender) })
@@ -949,6 +970,27 @@ struct AnswerSheet: View {
         }
         .background(SheetBackground())
         .fitsContent()
+    }
+
+    /// PQ-03's tile (2026-11-16): the single tap, as before, unless the money
+    /// is more than the tile's share and that person owes on other purchases:
+    /// then PB-30 with this one ticked and the others as they add up. Offline,
+    /// the single tap.
+    private func tapTile(_ tile: PaybackQuestion.Tile) async {
+        struct Reply: Decodable { let from: String?; let items: [Lenient<PartsSheet.Owing>] }
+        let r: Reply? = try? await api.get("api/transactions/\(t.id)/owing",
+                                           query: tile.person.map { ["person": $0] } ?? [:])
+        let theirs = (r?.items ?? []).compactMap(\.value)
+            .filter { $0.theirs == true && $0.unknown != true && $0.owes >= 0.005 }
+        let cents: (Double) -> Int = { Int((abs($0) * 100).rounded()) }
+        if let from = r?.from, let share = theirs.first(where: { $0.charge == tile.charge }),
+           cents(t.amount) > cents(share.owes), theirs.count > 1 {
+            partPerson = from
+            mustTick = tile.charge
+            parting = true
+            return
+        }
+        onAnswer(.payback(t.id, charge: tile.charge, toast: tile.toast, person: tile.person))
     }
 
     // MARK: A list of answers

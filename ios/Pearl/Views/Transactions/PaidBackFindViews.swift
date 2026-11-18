@@ -363,7 +363,8 @@ struct PaidBackFromPurchase: ViewModifier {
         case .person(let c):
             // PB-13 / PB-13b, saved as the deposit side saves them (PB-14's toast and Undo).
             PartsSheet(deposit: PartsDeposit(id: c.id, name: c.payer, amount: c.amount, date: c.date), api: api,
-                       paidBack: true, payer: c.kind == "person" ? c.person : nil, forCharge: purchase.id) { reply in
+                       paidBack: true, payer: c.kind == "person" ? c.person : nil, forCharge: purchase.id,
+                       person: c.kind == "person" ? c.person : nil) { reply in
                 go(nil)
                 done(reply.title ?? "Sorted.", reply.undo)
             }

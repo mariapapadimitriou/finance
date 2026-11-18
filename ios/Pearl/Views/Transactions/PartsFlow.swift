@@ -86,6 +86,13 @@ struct PartsSheet: View {
     /// owner sent to pay her back. `payer` is them; saving makes the money
     /// out of the joint account theirs too, in the same save and Undo.
     var joint: JointPaybackStart? = nil
+    /// PB-30 for this person (2026-11-16): who paid, from Who paid you
+    /// back? (the 409 `who_paid` ask) or PQ-03's tile; …/owing?person= reads
+    /// their shares even when the bank's name for the sender isn't theirs.
+    var person: String? = nil
+    /// PB-30 with this purchase ticked, and the rest as they add up: PQ-03's
+    /// tile, or the split Who paid you back? asked about.
+    var mustTick: String? = nil
     let onSaved: (MarkReply) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -150,6 +157,16 @@ struct PartsSheet: View {
     /// TP-03's Change: another of the joint account's owners (PP-01).
     @State private var jointWho = false
     @State private var jointPerson: String?
+    /// PP-01 (2026-11-16): A person, from a sender Pearl can't match, asks
+    /// who first; the pick is the sender PB-30 opens for. Never a new person.
+    @State private var askWho = false
+    @State private var pickedPerson: String?
+    /// She answered PB-11 with A person (S-11 v2's Paid back tile).
+    @State private var saidPerson = false
+    /// PB-11's answer, acted on once its sheet has gone.
+    @State private var pendingWho: PaidBackWho?
+    /// The purchase PB-30 keeps ticked (`mustTick`, or PB-22's purchase).
+    @State private var tickCharge: String?
 
     /// `work`: Work's reimbursement, the expense it pays (T-09, as on the shared page).
     /// `otherKind`: S-11k (SPLIT-18), which kind Other income is.
@@ -381,13 +398,20 @@ struct PartsSheet: View {
                                onStillOwes: { letGoAsk = nil; addShare(o, amount: left) },
                                onClose: { letGoAsk = nil })
         }
-        .sheet(isPresented: $whoPaid) {
+        .sheet(isPresented: $whoPaid, onDismiss: {
+            // PB-11's answer once it has gone, so PP-01 can open next.
+            if let who = pendingWho { pendingWho = nil; takePaidBack(who) }
+        }) {
             // PB-11 from S-11 v2's Paid back tile: who paid back this part.
             PaidBackWhoSheet(face: deposit.name,
                              sub: "+\(Format.amount(deposit.whole ?? deposit.amount)) · \(deposit.name) · \(Format.short(deposit.date))",
-                             onPick: { who in whoPaid = false; takePaidBack(who) },
+                             onPick: { who in pendingWho = who; whoPaid = false },
                              onClose: { whoPaid = false })
         }
+        .sheet(isPresented: $askWho, onDismiss: {
+            // Closed from the start: nothing said, nothing saved.
+            if pickedPerson == nil && step == .loading { dismiss() }
+        }) { askWhoSheet }
         .sheet(isPresented: $jointWho) {
             if let j = joint {
                 // TP-03's Change: PP-01 with the joint account's people.
@@ -611,7 +635,60 @@ struct PartsSheet: View {
     /// Where A person starts: PB-30 when the sender owes on a split, else
     /// S-09 / S-35's list (who it was, then PB-13 for each).
     private var personStep: Step {
-        paidBack && (editing.isEmpty || repick) && !theirShares.isEmpty ? .whose : .owing
+        (paidBack || saidPerson) && (editing.isEmpty || repick) && !theirShares.isEmpty ? .whose : .owing
+    }
+
+    // MARK: PP-01 Who paid you back? before PB-30 (Paybacks 2, 1406:5216)
+
+    /// Everyone who owes her, once each, newest share first: PP-01's FROM
+    /// PAST SPLITS rows ("Last split Oct 2"). Only people on her splits, so
+    /// a payback never adds anyone.
+    private var owerRows: [WhoPaidPicker.Row] {
+        var rows: [WhoPaidPicker.Row] = []
+        for o in owing.sorted(by: { $0.date > $1.date }) {
+            guard let p = o.person, o.owes >= 0.005, !rows.contains(where: { $0.name == p }) else { continue }
+            rows.append(WhoPaidPicker.Row(name: p, sub: "Last split \(Format.short(o.date))"))
+        }
+        return rows
+    }
+
+    /// A person said, the sender not one Pearl can place: ask who first.
+    private var needsWho: Bool {
+        (paidBack || saidPerson) && editing.isEmpty && sender == nil && !owerRows.isEmpty
+    }
+
+    /// Where A person goes: PP-01 when Pearl can't tell who, else PB-30
+    /// (or S-09 when they owe nothing with an amount).
+    private func toPerson() {
+        if needsWho {
+            if step == .cash { step = .kind }
+            askWho = true
+            return
+        }
+        step = personStep
+        if step == .whose { preTick() }
+    }
+
+    private var askWhoSheet: some View {
+        WhoPaidPicker(api: api, sub: "+\(Format.amount(deposit.whole ?? deposit.amount)) · \(deposit.name) · \(Format.short(deposit.date))",
+                      top: [], pastSplits: false, someoneNew: false, onlyPast: owerRows,
+                      onPick: { name in
+                          pickedPerson = name
+                          askWho = false
+                          Task { await pickPerson() }
+                      },
+                      onClose: { askWho = false })
+    }
+
+    /// PP-01's tap: their shares (…/owing?person=), then PB-30.
+    private func pickPerson() async {
+        await fetchOwing()
+        step = personStep
+        if step == .whose {
+            preTick()
+        } else {
+            for o in owing where sender != nil && o.theirs == true { toggle(o) }
+        }
     }
 
     /// LIKELY: theirs, dated before the deposit. When none is (the payback
@@ -656,8 +733,10 @@ struct PartsSheet: View {
     /// Pearl ticks the likely set (AI only suggests): the shares whose total
     /// is the deposit, or nearest under it; on a tie, the older ones.
     private func preTick() {
-        let rows = likely.sorted { $0.date < $1.date }
-        let room = leftCents
+        // PQ-03's tile, or the purchase she came from, stays ticked.
+        let must = tickCharge.flatMap { c in theirShares.first { $0.charge == c } }
+        let rows = likely.filter { $0.id != must?.id }.sorted { $0.date < $1.date }
+        let room = leftCents - (must.map { min(cents($0.owes), leftCents) } ?? 0)
         var best: [Owing] = []
         if rows.count <= 16 {
             var bestSum = 0
@@ -683,7 +762,7 @@ struct PartsSheet: View {
                 left -= cents(o.owes)
             }
         }
-        ticks = Set(best.map(\.id))
+        ticks = Set(best.map(\.id) + (must.map { [$0.id] } ?? []))
     }
 
     /// PB-30: search, LIKELY · SAM, BEFORE NOV 14, the shares as Choice
@@ -1037,8 +1116,8 @@ struct PartsSheet: View {
                 }
                 parts.removeAll { $0.kind == "payback" && !$0.held }
             }
-            step = personStep
-            if step == .whose { preTick() }
+            saidPerson = true
+            toPerson()
         case .shop, .work:
             picked = [:]
             step = who == .shop ? .refund : .work
@@ -1723,8 +1802,7 @@ struct PartsSheet: View {
     }
 
     private func afterCash() {
-        step = leftCents == 0 ? .review : personStep
-        if step == .whose { preTick() }
+        if leftCents == 0 { step = .review } else { toPerson() }
     }
 
     private func takeOwing() {
@@ -1811,10 +1889,6 @@ struct PartsSheet: View {
 
     private func load() async {
         struct CashReply: Decodable { let cash: [Lenient<Cash>] }
-        struct Linked: Decodable { let id: String; let merchant: String; let date: String; let amount: Double; let person: String? }
-        struct OwingReply: Decodable {
-            let from: String?; let named: String?; let items: [Lenient<Owing>]; let linked: [Lenient<Linked>]?
-        }
         if !credited.isEmpty {
             // S-35c's extra: straight to S-11 v2 for what's left.
             if parts.isEmpty { parts = credited }
@@ -1829,8 +1903,66 @@ struct PartsSheet: View {
         if let r: CashReply = try? await api.get("api/transactions/\(deposit.id)/cash-matches") {
             cash = r.cash.compactMap { $0.value }
         }
-        // TP-03: from the joint account's other owner, whoever the bank says sent it.
-        let from = jointPerson ?? joint?.person
+        await fetchOwing()
+        if whole != nil {
+            // S-11x: straight to the tiles; Paid back › A person opens S-09 with
+            // these shares (the purchase it was on isn't one: nobody owes there).
+            step = .kind
+            return
+        }
+        if repick && !editing.isEmpty && personStep == .whose {
+            // PB-41 Change what it paid back: PB-30 with today's ticks.
+            let linked = Set(parts.filter { $0.kind == "payback" }.map { ($0.charge ?? "") + "|" + ($0.person ?? "") })
+            parts.removeAll { $0.kind == "payback" }
+            ticks = Set(theirShares.map(\.id).filter { linked.contains($0) })
+            step = .whose
+            return
+        }
+        if !editing.isEmpty {
+            step = .progress
+            return
+        }
+        if paidBack, let charge = forCharge, editing.isEmpty,
+           let o = owing.first(where: { o in
+               o.charge == charge && o.unknown != true && o.owes >= 0.005
+                   && (payer.map { o.person == $0 } ?? (o.theirs == true && o.person != nil))
+           }) {
+            if leftCents > cents(o.owes), o.theirs == true, theirShares.count > 1 {
+                // PB-30 (note 1397:4697): more came in than this share and
+                // they owe on others; this one ticked, the rest as they add up.
+                tickCharge = charge
+                step = .whose
+                preTick()
+                return
+            }
+            // PB-22 → PB-11 › A person: PB-13 for their share of this purchase.
+            startHowMuch([o])
+            return
+        }
+        // PB-22 from a sender Pearl can't match: PP-01, then PB-30 with the
+        // purchase she came from ticked.
+        if tickCharge == nil { tickCharge = mustTick ?? (paidBack ? forCharge : nil) }
+        if !cash.isEmpty { step = .cash } else { toPerson() }
+        if step == .owing {
+            // Pearl's likeliest: their shares, up to what came in.
+            for o in owing where sender != nil && o.theirs == true { toggle(o) }
+            // THL-181 (SPLIT-21): from someone Pearl can't name, only the one
+            // share that is exactly its amount is ticked (S-35, "same amount");
+            // two or none, and she's asked (S-35a, S-35b).
+            if sender == nil, fits.count == 1 { toggle(fits[0]) }
+        }
+    }
+
+    /// GET …/owing: who sent it (`from`) and the shares owed, for this
+    /// deposit, as that person when it's said who paid.
+    private func fetchOwing() async {
+        struct Linked: Decodable { let id: String; let merchant: String; let date: String; let amount: Double; let person: String? }
+        struct OwingReply: Decodable {
+            let from: String?; let named: String?; let items: [Lenient<Owing>]; let linked: [Lenient<Linked>]?
+        }
+        // TP-03: from the joint account's other owner, whoever the bank says
+        // sent it; PP-01's pick, or who the caller says paid (PB-30).
+        let from = jointPerson ?? joint?.person ?? pickedPerson ?? person
         if let r: OwingReply = try? await api.get("api/transactions/\(deposit.id)/owing",
                                                   query: from.map { ["person": $0] } ?? [:]) {
             sender = r.from
@@ -1856,43 +1988,6 @@ struct PartsSheet: View {
             // to what came in first.
             let close: (Owing, Owing) -> Bool = { abs($0.owes - self.deposit.amount) < abs($1.owes - self.deposit.amount) }
             owing = items.filter { $0.theirs == true } + items.filter { $0.theirs != true }.sorted(by: close)
-        }
-        if whole != nil {
-            // S-11x: straight to the tiles; Paid back › A person opens S-09 with
-            // these shares (the purchase it was on isn't one: nobody owes there).
-            step = .kind
-            return
-        }
-        if repick && !editing.isEmpty && personStep == .whose {
-            // PB-41 Change what it paid back: PB-30 with today's ticks.
-            let linked = Set(parts.filter { $0.kind == "payback" }.map { ($0.charge ?? "") + "|" + ($0.person ?? "") })
-            parts.removeAll { $0.kind == "payback" }
-            ticks = Set(theirShares.map(\.id).filter { linked.contains($0) })
-            step = .whose
-            return
-        }
-        if !editing.isEmpty {
-            step = .progress
-            return
-        }
-        if paidBack, let charge = forCharge, editing.isEmpty,
-           let o = owing.first(where: { o in
-               o.charge == charge && o.unknown != true && o.owes >= 0.005
-                   && (payer.map { o.person == $0 } ?? (o.theirs == true && o.person != nil))
-           }) {
-            // PB-22 → PB-11 › A person: PB-13 for their share of this purchase.
-            startHowMuch([o])
-            return
-        }
-        step = !cash.isEmpty ? .cash : personStep
-        if step == .whose { preTick() }
-        if step == .owing {
-            // Pearl's likeliest: their shares, up to what came in.
-            for o in owing where sender != nil && o.theirs == true { toggle(o) }
-            // THL-181 (SPLIT-21): from someone Pearl can't name, only the one
-            // share that is exactly its amount is ticked (S-35, "same amount");
-            // two or none, and she's asked (S-35a, S-35b).
-            if sender == nil, fits.count == 1 { toggle(fits[0]) }
         }
     }
 

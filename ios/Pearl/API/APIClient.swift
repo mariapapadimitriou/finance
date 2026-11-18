@@ -205,8 +205,10 @@ struct WhoPaidAsk: Decodable, Equatable, Identifiable {
     let merchant: String
     let sender: String
     let amount: Double
-    /// The money in it's from (the pair card's row too).
+    /// The money in it's from (the pair card's row too), and its day for
+    /// PB-30's header.
     let deposit: String?
+    var date: String? = nil
     let people: [Person]
 
     struct Person: Decodable, Equatable {
