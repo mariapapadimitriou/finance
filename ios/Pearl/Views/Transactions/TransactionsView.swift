@@ -2092,12 +2092,27 @@ struct MonthSheet: View {
 /// A sheet's centred title with a round close button (T-17, T-47).
 struct SheetTitle: View {
     let title: String
+    /// MP-01 / MP-02 (MANY-01): the title said shorter, for when `title`
+    /// won't fit on one line beside the close button.
+    var short: String? = nil
     let close: () -> Void
 
     var body: some View {
         ZStack {
-            Text(title).font(Nacre.headline).foregroundColor(Pearl.ink)
+            if let short = short {
+                ViewThatFits(in: .horizontal) {
+                    Text(title).lineLimit(1)
+                    Text(short)
+                }
+                .font(Nacre.headline).foregroundColor(Pearl.ink).multilineTextAlignment(.center)
+                .padding(.horizontal, 52)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(title)
                 .accessibilityAddTraits(.isHeader)
+            } else {
+                Text(title).font(Nacre.headline).foregroundColor(Pearl.ink)
+                    .accessibilityAddTraits(.isHeader)
+            }
             HStack {
                 Spacer()
                 Button(action: close) {

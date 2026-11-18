@@ -356,7 +356,7 @@ struct PartsSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: title) {
+            SheetTitle(title: title, short: shortTitle) {
                 // S-11k: Close goes back to S-11 v2 with nothing added.
                 if step == .otherKind { otherAmount = nil; step = .kind; return }
                 // S-24x: a held split would be dropped, so ask first.
@@ -508,9 +508,10 @@ struct PartsSheet: View {
             if parts.isEmpty { return "What was the \(Format.amount(left))?" }
             return extra ? "What’s the extra \(Format.amount(left))?" : "What’s the other \(Format.amount(left))?"
         case .review: return "Check and save"
-        // MP-01 "What did Northwind pay back?", MP-02 "What did Costco refund?".
-        case .whose where manyKind == .shop: return "What did \(firstName(deposit.name)) refund?"
-        case .whose where manyKind == .work: return "What did \(firstName(deposit.name)) pay back?"
+        // MP-01 "What did The Home Depot pay back?", MP-02 "What did Costco
+        // refund?": the payee's tidy name (MANY-01; `shortTitle` if it won't fit).
+        case .whose where manyKind == .shop: return "What did \(deposit.name) refund?"
+        case .whose where manyKind == .work: return "What did \(deposit.name) pay back?"
         // PB-30: "What did Sam pay back?"
         case .whose: return "What did \(firstName(sender ?? who)) pay back?"
         // PB-13: "How much of Sam’s $60.00?"
@@ -520,6 +521,14 @@ struct PartsSheet: View {
             if manyKind != nil { return "How much of the \(Format.amount(o.owes))?" }
             return "How much of \(possessive(firstName(o.person ?? who))) \(Format.amount(o.owes))?"
         }
+    }
+
+    /// MANY-01: MP-01 / MP-02's title with the payee's first word, shown
+    /// only when the tidy name won't fit on one line.
+    private var shortTitle: String? {
+        guard step == .whose, let k = manyKind else { return nil }
+        let first = firstName(deposit.name)
+        return k == .shop ? "What did \(first) refund?" : "What did \(first) pay back?"
     }
 
     @ViewBuilder private var content: some View {
@@ -1139,8 +1148,10 @@ struct PartsSheet: View {
                 label(mp ? "\(o.merchant) · \(Format.short(o.date))" : "\(o.merchant) · \(first) owes \(Format.amount(o.owes))")
                 GlassCard {
                     if canPart(o) {
-                        let owesAfter = Text(mp ? "Tap to change the amount"
-                                             : "\(first) still owes \(Format.amount(max(0, o.owes - partValue))) · tap to change the amount")
+                        // MP-04's Change (MANY-01): no line under Part of it;
+                        // the amount already looks editable (copy rule 4).
+                        let owesAfter: Text? = mp ? nil
+                            : Text("\(first) still owes \(Format.amount(max(0, o.owes - partValue))) · tap to change the amount")
                             .font(Nacre.subheadline).foregroundColor(Pearl.muted)
                         if editingPart && !allOfIt {
                             // Tapped again: the amount changes in place (no
@@ -1154,7 +1165,7 @@ struct PartsSheet: View {
                                         .accessibilityLabel("Part of it")
                                         .accessibilityHint("Up to \(Format.amount(shareRoom)), less than \(Format.amount(o.owes))")
                                 }
-                                owesAfter.fixedSize(horizontal: false, vertical: true)
+                                if let owesAfter = owesAfter { owesAfter.fixedSize(horizontal: false, vertical: true) }
                             }
                         } else {
                             Button {
@@ -1163,7 +1174,7 @@ struct PartsSheet: View {
                             } label: {
                                 choiceLine(on: !allOfIt) {
                                     Text("Part of it · \(Format.amount(partValue))").font(Nacre.body).foregroundColor(Pearl.ink)
-                                    owesAfter.fixedSize(horizontal: false, vertical: true)
+                                    if let owesAfter = owesAfter { owesAfter.fixedSize(horizontal: false, vertical: true) }
                                 }
                             }
                             .buttonStyle(.plain)
@@ -2233,8 +2244,9 @@ struct PartsSheet: View {
         // S-11xm (THL-301): these parts are the extra; the server keeps Jo's
         // credit on Pizza Nova as it is, and Undo links Loblaws back.
         if whole?.isPart == true { body["extra"] = true }
-        // MP-05: "Northwind paid back 3 · $186.40", one Undo for all of it.
-        if manyKind != nil { body["payer"] = firstName(deposit.name) }
+        // MP-05: "Northwind paid back 3 · $186.40" or "Costco refunded 2 ·
+        // $64.97", one Undo for all of it; the tidy name, as the title (MANY-01).
+        if manyKind != nil { body["payer"] = deposit.name }
         if let j = joint {
             // TP-03: the money out of the joint account is theirs, in this save.
             body["joint_payback"] = ["out": j.out, "person": jointPerson ?? j.person ?? sender ?? ""]

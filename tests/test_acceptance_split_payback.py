@@ -430,7 +430,7 @@ def mp_tap(c, dep, kind: str, amount: float, n: int, q: str = ""):
         if o["share"] and kind == "shop":
             part["share"] = True
         parts.append(part)
-    payer = got["shop"].split()[0]
+    payer = got["shop"]
     return got, payer, c.post(f"/api/transactions/{dep}/parts", json={"parts": parts, "later": False, "payer": payer})
 
 
@@ -452,7 +452,8 @@ def test_refund_or_work_to_many_in_the_app(client, kind, n):
     got, payer, r = mp_tap(client, dep, "shop" if shop else "work", amount, n, q="" if shop else "amazon")
     assert {o["id"] for o in got["items"]} == {i[m] for m, _, _ in OWN}
     reply = ok(r)
-    assert reply["title"] == f"{payer} paid back {n} · ${amount:,.2f}"
+    # MANY-01: the shop "refunded"; Work "paid back".
+    assert reply["title"] == f"{payer} {'refunded' if shop else 'paid back'} {n} · ${amount:,.2f}"
     assert client.st.splits() == {}
     linked = {p["charge"]["id"]: p["amount"] for p in detail(client, dep).get("parts") or [] if p.get("charge")}
     assert linked == {i[m]: got_ for (m, _, _), got_ in zip(OWN, paid)}
