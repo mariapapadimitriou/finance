@@ -178,9 +178,15 @@ def _splitting(t, split: dict, txns, payer) -> dict:
     everything."""
     from . import splits as sp
     mine: dict = {}
+    # Decision 6: a refund on it is shared the way the purchase is.
+    # people_status shrinks each person's row by this; "Your share" shrinks
+    # the same way, or $60.00 sat beside Priya's $45.00 on a $120.00 purchase
+    # with $30.00 back (2026-11-17 acceptance).
+    back = getattr(t, "refunded", 0.0) or 0.0
+    factor = max(1.0 - back / t.amount, 0.0) if t.amount > 0 and back else 1.0
     out = {
         "mode": split["mode"], "watch": split["watch"],
-        "you": round(t.my_share if t.my_share is not None else t.amount, 2),
+        "you": round((t.my_share if t.my_share is not None else t.amount) * factor, 2),
         "people": sp.people_status(t, split, txns, payer, mine=mine),
         # SPLIT-22b (S-05u): paybacks here credited to no one yet.
         "uncredited": sp.uncredited_rows(t, split, txns, payer),
