@@ -403,8 +403,7 @@ struct PartsSheet: View {
                     content
                     // S-11x shows its error under the grid instead (T-08k).
                     if let error = error, whole == nil || step != .kind {
-                        Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
-                            .padding(.horizontal, 16)
+                        errorLine(error)
                     }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 12)
@@ -1062,7 +1061,28 @@ struct PartsSheet: View {
             error = nil
         } catch {
             if error is CancellationError { return }
-            self.error = "Couldn’t load your purchases. Try again."
+            self.error = Self.mineLoadError
+        }
+    }
+
+    /// MP-01 / MP-02's list didn't load. Try again is the button under it, so
+    /// the line doesn't say it too (UI audit).
+    private static let mineLoadError = "Couldn’t load your purchases."
+
+    /// The sheet's error line; MP-01 / MP-02's load error gets Try again,
+    /// which reloads the list (and ticks the likely ones, if none came).
+    @ViewBuilder private func errorLine(_ error: String) -> some View {
+        Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
+            .padding(.horizontal, 16)
+        if error == Self.mineLoadError, step == .whose, manyKind != nil {
+            Button("Try again") {
+                Task {
+                    let first = mine.isEmpty
+                    await fetchMine(query.trimmingCharacters(in: .whitespaces))
+                    if first && !mine.isEmpty { preTick() }
+                }
+            }
+            .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
         }
     }
 

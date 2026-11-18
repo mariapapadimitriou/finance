@@ -95,6 +95,8 @@ struct PaidBackFindSheet: View {
     @State private var loading = true
     @State private var busy = false
     @State private var error: String?
+    /// The list didn't load, so the error line gets Try again (UI audit).
+    @State private var loadFailed = false
 
     private var rows: [PaidBackFind.Candidate] { found?.candidates.compactMap(\.value) ?? [] }
     /// The first row shown is picked until she picks another.
@@ -118,6 +120,12 @@ struct PaidBackFindSheet: View {
                     if let error = error {
                         Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
                             .padding(.horizontal, 16)
+                        // LT-01 / PB-22, UI audit: the list reloads from here.
+                        if loadFailed {
+                            Button("Try again") { Task { await load() } }
+                                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                                .disabled(loading)
+                        }
                     }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 12)
@@ -129,6 +137,7 @@ struct PaidBackFindSheet: View {
                     guard let c = picked else { return }
                     Task {
                         busy = true
+                        loadFailed = false
                         error = await onNext(c)
                         busy = false
                     }
@@ -243,10 +252,13 @@ struct PaidBackFindSheet: View {
                                                     query: q.isEmpty ? [:] : ["q": q])
             found = f
             error = nil
+            loadFailed = false
             if !rows.contains(where: { $0.id == pick }) { pick = nil }
         } catch {
             if error is CancellationError { return }
-            self.error = "Couldn’t load your money in. Try again."
+            // UI audit: Try again is the button under, so the line doesn't say it.
+            self.error = "Couldn’t load your money in."
+            loadFailed = true
         }
     }
 }
