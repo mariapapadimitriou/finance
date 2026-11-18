@@ -102,6 +102,9 @@ struct WhoPaidPicker: View {
         /// "Today’s answer · on this split", "Owes you $30.00 on this split".
         let sub: String
         var ticked = false
+        /// Its line stays as given (the sender, "Not on a split"), not
+        /// /api/people/recent's.
+        var fixed = false
         var id: String { name }
     }
 
@@ -147,7 +150,7 @@ struct WhoPaidPicker: View {
             }
             if let only = onlyPast {
                 let past = only.filter { matches($0.name) }.map { r in
-                    (recent ?? []).first { $0.name == r.name }.map { Row(name: r.name, sub: pastLine($0)) } ?? r
+                    r.fixed ? r : (recent ?? []).first { $0.name == r.name }.map { Row(name: r.name, sub: pastLine($0)) } ?? r
                 }
                 if !past.isEmpty {
                     PearlSectionLabel(text: "From past splits")

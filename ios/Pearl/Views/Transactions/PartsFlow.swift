@@ -191,6 +191,12 @@ struct PartsSheet: View {
     @State private var unsplitFound: [UnsplitRow] = []
     @State private var unsplitPaid: [String: Int] = [:]
     @State private var unsplitAsk: UnsplitRow?
+    /// PB-30 for someone who owes her nothing (2026-11-18, after #380): who
+    /// it's for, with OTHER PURCHASES only. Never anyone added to a split.
+    @State private var forPerson: String?
+    /// T-14 Who sent this? before that PB-30, when no one owes her and Pearl
+    /// can't name who sent it. Shown as this sheet's content, as PP-01 is.
+    @State private var askName = false
 
     /// GET …/owing `unsplit`: a purchase of hers nobody's on; `query` when a
     /// search found it.
@@ -386,13 +392,13 @@ struct PartsSheet: View {
     private var leftCents: Int { max(0, wholeCents - sortedCents) }
     private var left: Double { Double(leftCents) / 100 }
     private var sortedDone: Double { Double(sortedCents) / 100 }
-    private var who: String { sender ?? deposit.name }
+    private var who: String { sender ?? forPerson ?? deposit.name }
 
     var body: some View {
         // A ZStack, not a Group: a Group's .task would run again on each
         // swap between PP-01 and the parts, reloading mid-flow.
         ZStack {
-            if let ask = askWho { askWhoView(ask) } else { sheet }
+            if let ask = askWho { askWhoView(ask) } else if askName { whoSentView } else { sheet }
         }
         .task { await load() }
     }
@@ -490,6 +496,8 @@ struct PartsSheet: View {
                               onPick: { name in
                                   jointWho = false
                                   jointPerson = name
+                                  // Whoever it's for now: read again, owing or not.
+                                  forPerson = nil
                                   Task { await load() }
                               },
                               onClose: { jointWho = false })
@@ -519,7 +527,8 @@ struct PartsSheet: View {
 
     private var extra: Bool {
         if shareLine != nil { return leftCents > 0 }
-        return leftCents > 0 && !owing.isEmpty && owing.filter { $0.theirs == true }.allSatisfy { o in
+        // PB-30 for someone who owed nothing: the rest is "the other", not extra.
+        return leftCents > 0 && forPerson == nil && !owing.isEmpty && owing.filter { $0.theirs == true }.allSatisfy { o in
             parts.contains { $0.charge == o.charge && cents($0.amount) >= cents(o.owes) }
         } && parts.contains { $0.kind == "payback" }
     }
@@ -724,32 +733,50 @@ struct PartsSheet: View {
     /// Where A person starts: PB-30 when the sender owes on a split, else
     /// S-09 / S-35's list (who it was, then PB-13 for each).
     private var personStep: Step {
-        (paidBack || saidPerson) && (editing.isEmpty || repick) && !theirShares.isEmpty ? .whose : .owing
+        (paidBack || saidPerson) && (editing.isEmpty || repick) && (!theirShares.isEmpty || forPerson != nil)
+            ? .whose : .owing
     }
 
     // MARK: PP-01 Who paid you back? before PB-30 (Paybacks 2, 1406:5216)
 
     /// Where A person goes (PaidBackPerson.route): PB-30 when Pearl knows
     /// who, or the money's name is clearly one person who owes her; PP-01
-    /// with only the people who owe her when it isn't; S-09's purchase list
-    /// when no one owes her. PP-01 is never empty.
+    /// with the people who owe her when it isn't. Someone she picked who
+    /// owes her nothing: PB-30 with OTHER PURCHASES only. A name Pearl read
+    /// (the money's, or the joint owner's) who owes nothing: PP-01 with that
+    /// name last, "Not on a split", while others owe her; PB-30 straight
+    /// away when no one does. No one owes her and no name: T-14 Who sent
+    /// this? first (2026-11-18). PP-01 is never empty.
     private func toPerson() {
         if (paidBack || saidPerson) && editing.isEmpty {
             let shares = owing.map { PaidBackPerson.Share(person: $0.person, owes: $0.owes, date: $0.date) }
-            switch PaidBackPerson.route(sender: sender, named: payer ?? deposit.name, shares: shares) {
+            // She picked these; the joint account's owner is only Pearl's read.
+            let picked = forPerson ?? jointPerson ?? pickedPerson ?? person
+            switch PaidBackPerson.route(sender: sender, known: picked, joint: picked == nil ? joint?.person : nil,
+                                        named: payer ?? deposit.name, notOnSplits: named, shares: shares) {
             case .ask(let people):
                 if step == .cash { step = .kind }
                 // FROM PAST SPLITS ("Last split Oct 2"): only people on her
-                // splits, so a payback never adds anyone.
+                // splits, so a payback never adds anyone to one; last, the
+                // sender Pearl can name, "Not on a split" (PB-30 for them,
+                // OTHER PURCHASES only).
                 askWho = AskWho(rows: people.map {
-                    WhoPaidPicker.Row(name: $0.name, sub: "Last split \(Format.short($0.date))")
+                    $0.notOnSplit ? WhoPaidPicker.Row(name: $0.name, sub: "Not on a split", fixed: true)
+                        : WhoPaidPicker.Row(name: $0.name, sub: "Last split \(Format.short($0.date))")
                 })
                 return
             case .person(let name):
                 pickedPerson = name
                 Task { await pickPerson() }
                 return
-            case .theirs, .purchases:
+            case .others(let name):
+                toOthers(name)
+                return
+            case .whoSent:
+                if step == .cash { step = .kind }
+                askName = true
+                return
+            case .theirs:
                 break
             }
         }
@@ -757,13 +784,42 @@ struct PartsSheet: View {
         if step == .whose { preTick() }
     }
 
+    /// PB-30 for someone who owes her nothing: OTHER PURCHASES only, the
+    /// purchase she came from (PB-22) ticked when it's one of them.
+    private func toOthers(_ name: String) {
+        forPerson = name
+        query = ""
+        step = .whose
+        preTick()
+    }
+
+    /// T-14 Who sent this? as this sheet's content. Its name is who PB-30
+    /// is for; nothing is saved until PB-30 is.
+    private var whoSentView: some View {
+        WhoSentNamePage(api: api, name: deposit.name, amount: "+" + Format.amount(deposit.whole ?? deposit.amount),
+                        date: deposit.date,
+                        onPick: { name in
+                            askName = false
+                            toOthers(name)
+                        },
+                        onClose: {
+                            // Closed from the start: nothing said, nothing saved.
+                            // From S-11 v2's Paid back tile: back to its tiles.
+                            askName = false
+                            if step == .loading { dismiss() }
+                        })
+    }
+
     /// PP-01 as this sheet's content, so one sheet asks and then shows PB-30.
     private func askWhoView(_ ask: AskWho) -> some View {
         WhoPaidPicker(api: api, sub: "+\(Format.amount(deposit.whole ?? deposit.amount)) · \(deposit.name) · \(Format.short(deposit.date))",
                       top: [], pastSplits: false, someoneNew: false, onlyPast: ask.rows,
                       onPick: { name in
-                          pickedPerson = name
+                          let notOnSplit = ask.rows.contains { $0.name == name && $0.fixed }
                           askWho = nil
+                          // The sender on none of her splits: PB-30 for them, OTHER PURCHASES only.
+                          if notOnSplit { toOthers(name); return }
+                          pickedPerson = name
                           Task { await pickPerson() }
                       },
                       onClose: {
@@ -849,8 +905,14 @@ struct PartsSheet: View {
     private func preTick() {
         // PQ-03's tile, or the purchase she came from, stays ticked.
         let must = tickCharge.flatMap { c in tickPool.first { $0.charge == c } }
+        // PB-22 from a purchase that isn't split (2026-11-18): ticked under
+        // OTHER PURCHASES for as much of it as the money covers.
+        if must == nil, manyKind == nil, editing.isEmpty, let c = tickCharge, unsplitPaid[c] == nil,
+           !parts.contains(where: { $0.charge == c }), let u = unsplit.first(where: { $0.id == c }), leftCents > 0 {
+            unsplitPaid[u.id] = min(cents(u.amount), leftCents)
+        }
         let rows = likely.filter { $0.id != must?.id }.sorted { $0.date < $1.date }
-        let room = leftCents - (must.map { min(cents($0.owes), leftCents) } ?? 0)
+        let room = leftCents - unsplitCents - (must.map { min(cents($0.owes), leftCents) } ?? 0)
         var best: [Owing] = []
         if rows.count <= 16 {
             var bestSum = 0
@@ -894,6 +956,10 @@ struct PartsSheet: View {
             }
             .padding(.horizontal, 14).frame(height: 44)
             .background(Capsule().fill(Pearl.ink.opacity(0.08)))
+            if rows.isEmpty && typed.isEmpty, forPerson != nil, joint != nil {
+                // TP-03 for an owner who owes her nothing: who it is, and CHANGE.
+                jointLabel(first)
+            }
             if rows.isEmpty && otherRows.isEmpty {
                 Text("No purchases match.").font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     .padding(.horizontal, 16)
@@ -1181,8 +1247,12 @@ struct PartsSheet: View {
     /// Who …/owing reads shares for: TP-03's owner, PP-01's pick, or who
     /// the caller says paid (PB-30).
     private var owingAsk: [String: String] {
-        (jointPerson ?? joint?.person ?? pickedPerson ?? person).map { ["person": $0] } ?? [:]
+        (forPerson ?? owingPerson).map { ["person": $0] } ?? [:]
     }
+
+    /// Who the caller or PP-01 says sent it: TP-03's owner, PP-01's pick,
+    /// or who the caller says paid (PB-30).
+    private var owingPerson: String? { jointPerson ?? joint?.person ?? pickedPerson ?? person }
 
     // MARK: MP-01 to MP-04 Many purchases (Proposals 1431:6590, note 1432:8062)
 
@@ -2415,9 +2485,11 @@ struct PartsSheet: View {
         }
         // TP-03: from the joint account's other owner, whoever the bank says
         // sent it; PP-01's pick, or who the caller says paid (PB-30).
-        let from = jointPerson ?? joint?.person ?? pickedPerson ?? person
+        let from = owingPerson
         let path = "api/transactions/\(deposit.id)/owing"
-        let query = from.map { ["person": $0] } ?? [:]
+        var query = from.map { ["person": $0] } ?? [:]
+        // PB-22: the purchase she came from, in OTHER PURCHASES however old.
+        if paidBack, let c = forCharge { query["also"] = c }
         // Never a spinner without an end: 20 seconds, then Try again.
         let r: OwingReply? = try? await withDeadline(20) { [api] in
             let reply: OwingReply = try await api.get(path, query: query)

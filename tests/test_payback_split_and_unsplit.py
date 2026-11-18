@@ -95,7 +95,7 @@ def parts(c, dep, body):
     return c.post(f"/api/transactions/{dep}/parts", json=body)
 
 
-def setup(c, sent=75.0, split_a=True):
+def setup(c, sent=75.0, split_a=True, jo=True):
     """A: Loblaws $90 split evenly with Sam ($45 his). B: Pizza Nova $60,
     not split. Noise that must never be offered for B: a transfer, income,
     a split purchase with someone else. C: Sam's e-Transfer."""
@@ -106,8 +106,9 @@ def setup(c, sent=75.0, split_a=True):
     if split_a:
         ok(c.put(f"/api/transactions/{i['LOBLAWS']}/split", json={
             "mode": "amount", "people": [{"name": "Sam", "amount": 45.0}]}))
-    ok(c.put(f"/api/transactions/{i['COSTCO']}/split", json={
-        "mode": "amount", "people": [{"name": "Jo", "amount": 60.0}]}))
+    if jo:
+        ok(c.put(f"/api/transactions/{i['COSTCO']}/split", json={
+            "mode": "amount", "people": [{"name": "Jo", "amount": 60.0}]}))
     j = add(c, "chq",
             row("TFR-TO SAVINGS", 200.0, when=day(4), category="Transfers"),
             row("PAYROLL NORTHWIND", -2000.0, when=day(5), category="Income"),
@@ -282,3 +283,85 @@ def test_unlink_all_takes_the_new_split_off(client):
     assert b not in client.st.splits()
     assert client.st.get_transaction(b).my_share is None
     assert owes(client, a)["Sam"] == 45.0
+
+
+# ── No one owes her (2026-11-18, after #380): PB-30, OTHER PURCHASES only ──
+
+def test_sender_on_no_split_and_no_one_owes(client):
+    """Sam is on none of her splits and no one owes her anything: …/owing
+    has no shares at all, and still offers her unsplit purchases, as Sam
+    (picked, or T-14's answer) or as whoever the money names."""
+    a, b, costco, dep, _ = setup(client, sent=30.0, split_a=False, jo=False)
+    for r in (owing(client, dep), ok(client.get(f"/api/transactions/{dep}/owing"))):
+        assert r["items"] == [] and r["from"] is None
+        ids = [u["id"] for u in r["unsplit"]]
+        assert {a, b, costco} <= set(ids) and dep not in ids
+    # The app's PB-30 is for the name the money shows when no one is asked.
+    assert ok(client.get(f"/api/transactions/{dep}/owing"))["named"] == "Sam Lee"
+
+
+def test_only_new_split_parts_then_undo(client):
+    """PB-30 with OTHER PURCHASES only: two purchases ticked, all of one and
+    part of the other, "Mark 2 paid back"; one Undo leaves both unsplit."""
+    a, b, costco, dep, _ = setup(client, sent=75.0, split_a=False, jo=False)
+    before = world(client)
+    reply = ok(parts(client, dep, {"parts": [
+        {"kind": "payback", "charge": b, "amount": 60.0, "person": "Sam Lee", "new_split": True},
+        {"kind": "payback", "charge": a, "amount": 15.0, "person": "Sam Lee", "new_split": True}]}))
+    assert reply["title"] == "Sam Lee paid back 2 purchases · $75.00"
+    assert owes(client, b) == {"Sam Lee": 0.0} and owes(client, a) == {"Sam Lee": 0.0}
+    assert client.st.get_transaction(b).my_share == 0.0
+    assert client.st.get_transaction(a).my_share == 75.0
+    assert round(before["numbers"]["spent"] - numbers(client)["spent"], 2) == 75.0
+    ok(client.post("/api/transactions/undo", json=reply["undo"]))
+    assert world(client) == before
+    assert a not in client.st.splits() and b not in client.st.splits()
+
+
+def test_only_new_split_with_the_rest_left_or_sorted(client):
+    """S-11 after PB-30: what the ticks don't use is sorted in the same save
+    (a gift) or left to sort; Undo puts it all back either way."""
+    a, b, _, dep, _ = setup(client, sent=50.0, split_a=False, jo=False)
+    before = world(client)
+    reply = ok(parts(client, dep, {"parts": [
+        {"kind": "payback", "charge": b, "amount": 30.0, "person": "Sam", "new_split": True},
+        {"kind": "gift", "amount": 20.0}]}))
+    assert sorted(p["kind"] for p in reply["parts"]) == ["gift", "payback"]
+    ok(client.post("/api/transactions/undo", json=reply["undo"]))
+    assert world(client) == before
+    reply = ok(parts(client, dep, {"parts": [
+        {"kind": "payback", "charge": b, "amount": 30.0, "person": "Sam", "new_split": True}], "later": True}))
+    assert reply["rest"] == 20.0
+    ok(client.post("/api/transactions/undo", json=reply["undo"]))
+    assert world(client) == before
+
+
+def test_others_owe_but_not_the_sender(client):
+    """Jo owes her on Costco; Sam doesn't. As Sam: none of Jo's shares are
+    Sam's, and the unsplit purchases are offered; a save as Sam never
+    touches Jo's split."""
+    a, b, costco, dep, _ = setup(client, sent=30.0, split_a=False)
+    r = owing(client, dep)
+    assert r["from"] is None and [i for i in r["items"] if i["theirs"]] == []
+    assert b in [u["id"] for u in r["unsplit"]]
+    jo = client.st.splits()[costco]
+    reply = ok(parts(client, dep, {"parts": [
+        {"kind": "payback", "charge": b, "amount": 30.0, "person": "Sam", "new_split": True}]}))
+    assert client.st.splits()[costco] == jo
+    assert owes(client, costco) == {"Jo": 60.0}
+    ok(client.post("/api/transactions/undo", json=reply["undo"]))
+
+
+def test_also_keeps_pb22s_purchase_first(client):
+    """PB-22 from an old purchase that isn't split: …/owing?also= lists it
+    first in OTHER PURCHASES, however old or far from the amount."""
+    a, b, _, dep, _ = setup(client, sent=30.0, split_a=False, jo=False)
+    add(client, "amex", row("OLD BOOKSHOP", 300.0, "amex", when=(TODAY - timedelta(days=200)).isoformat(),
+                            category="Shopping", kind="credit"))
+    old = next(t.fingerprint for t in client.st.all_transactions() if t.description == "OLD BOOKSHOP")
+    assert old not in [u["id"] for u in owing(client, dep)["unsplit"]]
+    r = ok(client.get(f"/api/transactions/{dep}/owing", query_string={"person": "Sam", "also": old}))
+    assert r["unsplit"][0]["id"] == old and b in [u["id"] for u in r["unsplit"]]
+    # Something that can't be split (the money itself) is never offered.
+    r = ok(client.get(f"/api/transactions/{dep}/owing", query_string={"person": "Sam", "also": dep}))
+    assert dep not in [u["id"] for u in r["unsplit"]]
