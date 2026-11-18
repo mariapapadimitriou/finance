@@ -394,8 +394,9 @@ struct PartsSheet: View {
                                        tone: Pearl.moneyIn,
                                        sub: manyKind == nil ? Format.weekdayDay(deposit.date) : Format.short(deposit.date))
                     } else {
-                        QuestionHeader(name: deposit.name, amount: Format.amount(deposit.whole ?? deposit.amount),
-                                       tone: Pearl.ink,
+                        // UI audit: "+" and money-in green, as on every other deposit header.
+                        QuestionHeader(name: deposit.name, amount: "+" + Format.amount(deposit.whole ?? deposit.amount),
+                                       tone: Pearl.moneyIn,
                                        sub: paidBack ? (["Paid back", payer ?? sender].compactMap { $0 }.joined(separator: " · "))
                                            : Format.short(deposit.date))
                     }

@@ -73,7 +73,8 @@ struct WhoSentSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     if let q = question {
-                        QuestionHeader(name: q.merchant, amount: Format.amount(q.amount), tone: Pearl.ink,
+                        // S-35, UI audit: the deposit in money-in green with its "+".
+                        QuestionHeader(name: q.merchant, amount: "+" + Format.amount(q.amount), tone: Pearl.moneyIn,
                                        sub: "\(Format.short(q.date)) · paid back \(Format.andList(q.purchases.map(\.merchant)))")
                         content(q)
                     } else if loading {
