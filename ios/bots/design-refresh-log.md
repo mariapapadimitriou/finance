@@ -1356,3 +1356,105 @@ Your copy:
 - **Empty and search states:** OK as written.
 - **Error:** OK as long as there's a "Try again" button. If the button is there, the line is just "Couldn't load your purchases." so "Try again" isn't said twice.
 - **S-11w after MP-03:** no line under the tiles is right.
+
+### [designBOT → engBOT] 2026-11-17 · MIGRATE-01 · Designs move from Figma to Claude Design
+**Status:** Done (first pass); Figma is now a read-only archive
+**Jira:** —   **Design:** Pearl Design System https://claude.ai/artifact/3Zq5EtAAvrStZ1NAiYmy72 · Pearl app canvas https://claude.ai/artifact/NJhe1u5quJpJoyo4LFk2fR · Proposals canvas https://claude.ai/artifact/9WdzY4sYSxQHRjtE2ReC7v
+
+The product owner decided today that the iOS handoff lives in Claude Design from now on. Nothing in Figma (`ohcxhB9hV25H6nANVw3lq4`, library `3fdfPDKIjhiluGHtXWSF32`) is edited again; read it only for frames not yet rebuilt.
+
+- **Pearl Design System**: built from the app's code, not from the Figma library, so where they differed the app wins (REFRESH-05 glass, mist/600 muted, SP-B plum, TC-A grey ⇄, the link token). Tokens (colour light and dark, Fraunces and Figtree with the font files, spacing, radii, shadows, sizes, strokes), the brand book with the house rules and the TEXT-01 copy rules, the 21 marks from `Assets.xcassets`, and 24 hand-written components (Button, Toast, Status pill, Choice, Option row, Person row, Transaction row, Account row, Answer tile, Sheet, Glass button, Navigation bar, Tab bar, Search field, Filter chip, Callout, Avatar, Amount field, Toggle, Segmented control, Allowance orb, Shell mark, Glass card, Background). The previews are static markup; there is no bundle, the app is SwiftUI.
+- **Pearl app** canvas: nine pages matching the Figma sections. Rebuilt as real markup, light and dark side by side, with the system installed: H-00r; T-01r, T-03r; RQ-01 (LT-02), PB-30; S-04r v2 (RC-02 header), S-40a; P-01, AM-01; O-01, A-01; SO-06. Every page carries a note listing what is still to be rebuilt from the archive, by screen code and Figma node, so nothing is dropped. The Figma tab bar (floating glass pill) is not what ships; the canvas draws the system tab bar tinted `action`, as the app does.
+- **Proposals** canvas: AI phase 2 (AI-20, AI-21, the decisions note) as Awaiting product owner, and Deferred (SEC-08, SEC-09, A-12: recovery codes on iPhone). Every other Figma Proposals section (Trips TR-17/18, Transfer colour, Account setup, Polish, Paybacks & undo, Row shows your cost, Paybacks 2, Your accounts v2, Less text, Many purchases) is built on origin/main (#356 to #375), so it belongs on Pearl app, not Proposals; those screens are in the Pearl app "still to rebuild" notes.
+- Role files: `.claude/agents/designBOT.md`, `engBOT.md`, `testingBOT.md` now point at the three artifacts; the rules are unchanged (Pearl app holds what's built, Proposals holds what isn't, anything unused is deleted, never "superseded"; `**Design:** canvas › page › artboard` replaces the Figma node in log entries).
+
+### [designBOT → engBOT] 2026-11-18 · MIGRATE-01 · Splits and paybacks, batch 1: person options (•••) rebuilt
+**Status:** In progress (Splits and paybacks: 1 of 9 subsections done)
+**Jira:** THL-289, THL-291, THL-181, THL-301, THL-260   **Design:** Pearl app › Splits and paybacks
+
+- Tab bar (product owner, 2026-11-17, phone screenshot): the system TabView tinted `action` ships as iOS 26's floating glass capsule, the selected tab on a soft lozenge, a red badge on Cash flow. The design system's TabBar component and every artboard with a bar (H-00r, T-01r, P-01, AI-20) now draw it; the Home note says it is as built, not a proposal.
+- Drawn from SplitMenus.swift, SplitFlow.swift (S-06ra–rd, LetGoSheet) and PaybackOptions.swift, light and dark, one artboard per code: S-40a (corrected to the code's rows), S-40b, S-40c, S-40c2, S-40d, S-05or, S-06ra, S-06rb, S-06rc, S-06rd, S-07ra, S-07rb, S-08ra–rd (one artboard, four states), S-03fr, S-03fr2, S-34sr (+ loading, error), S-34kr1/kr3/kr8 (one artboard; kr2, kr4–kr7, kr9, kr10 share the frame, their words come from the server's `LinkInfo.sheet` and were not copied), S-44a–i (one artboard: the split card with the S-44b toast and the nine toasts' words).
+- Not rebuilt in this subsection: S-03re (How to split opened from S-40; belongs with the S-03 flow in the next batch).
+- Remaining in the group: Splits & paybacks main flow (536:14142, 106 frames), Not sure yet (1285:44513, 88), round-1 fixes (1285:59587, 14), you in a Not sure yet split (1285:59588, 34), option C (1285:59589, 14), your share gives way (1285:59590, 8), TEST-31 (1369:70116, 30), Mark paid back fields (1369:70117, 6). The Splits page note lists every code.
+
+### [designBOT → engBOT] 2026-11-18 · MIGRATE-01 · Splits and paybacks, batch 2: main flow, Not sure yet, you in it, option C, TEST-31 cards, Mark paid back fields
+**Status:** In progress (Splits and paybacks: 43 more artboards, light and dark; the group is drawn except T-98s, S-03j v2 and S-24xr, which belong with Sorting, Joint accounts and Confirmation sheets)
+**Jira:** THL-289, THL-291, THL-181, THL-301, THL-303, THL-260, THL-282, THL-172   **Design:** Pearl app › Splits and paybacks (rows from y 5400 down)
+
+- Drawn from SplitFlow.swift, PartsFlow.swift, SplitMenus.swift, YourShareViews.swift, WhoSentSheet.swift and JointSplitViews.swift (PeoplePicker), several states per artboard where a code has many: S-02 v2; S-03 (S-18 v2, S-03e, S-15 v2, S-16, S-03re, S-24); S-03r2/r2b/r2c, S-03ax; S-03rg/rh/ri; S-17 v2; S-09, S-25, S-23, S-32; T-09w, T-09rs; S-35, S-35a, S-35a1, S-35b; S-09u, S-09u2, S-35u, S-35u2, S-35ux; S-10, S-10e, S-36; S-11 v2, S-11c, S-11x, S-11xm (+ over); S-11k, T-08k (+ error); S-11w, S-11m; S-12 v2, S-12c, S-12d; S-13, S-13 v2; S-14, S-14p, S-14u, S-14u0, S-14u3, S-14u4, S-14u5, S-14ul, S-14ux; S-21, S-21u, S-21x, S-21xw, S-21xm; S-22 v2; S-33 v2, T-41w, T-41m; S-35c (+ error); S-05u, S-05v, S-26; H-00n, H-00u, H-00u0; S-03u, S-03u0 to u3, S-03us, S-03ue; S-04u, S-04u0, S-04u5 to u8, S-04ul, S-04ue, S-04r v3, S-04r v2s, S-46c, S-48d; S-04w/w2/w3, S-04m/m2/m3/m4; S-40u, S-40u2, S-40y, S-40w, S-40m, S-48e; S-45a, S-45a2, S-45b, S-45bs, S-45bx, S-45d, S-48c, S-47f2; S-48a, S-48b; S-46a v2, S-46as, S-46ax, S-46a3; S-47a to S-47g; S-07u, S-06uc; S-03fu, S-03fu1; S-06 v2, S-06 v3, S-06 v3a; S-44u1 to u4, S-45f, S-45g, S-46b, S-46d, S-46e (one artboard: the card with its toast, and every toast's words).
+- Not redrawn because a built frame already here covers them: S-29 (S-06rb), S-30 (S-40b), S-34 (S-34kr/S-34sr), S-28 (the S-21 row), Status tag (the design system's StatusPill).
+- Figma was reference only; copy and rows follow the Swift views (TEXT-01 less-text cuts, #369/#370). Where the code reads from the server (S-11xm's lines, S-46's rows, toast words) the sample words are representative, not copied from a frame.
+- Rebuilt with a generator (scratchpad/tools/pearl.py, splits_a.py, splits_b.py): one shared stylesheet from tokens.css, static light and dark markup, so later groups can reuse the same atoms (sheet header, option row, person row, tiles, meter, toast, tab bar).
+- Next: the Splits page note lists where T-98s, S-03j v2, S-24xr and the approved Proposals screens (PB-30u/30o, PB-41, PB-42, UN-01a/b, PP-01/02, MP-01 to 05, TP-01 to 05, RC-01/03) go. Then Cash flow and transactions (1285:72188) with Calendar and Trips, Sorting, Joint, Profile, Onboarding, Confirmation sheets, Pearl chat, Home, each from its page note.
+
+### [designBOT → engBOT] 2026-11-18 · MIGRATE-01 · Cash flow and transactions rebuilt (with Trips, Calendar, RC-01/03, TF-01)
+**Status:** Done (Cash flow and transactions)
+**Jira:** THL-122, THL-123, THL-125, THL-213, THL-226, THL-231, THL-232, THL-254, THL-255, THL-257, THL-263, THL-275, THL-288, THL-289, THL-291, THL-292, THL-293, THL-295, THL-297   **Design:** Pearl app › Cash flow and transactions (rows from y 1400)
+
+- 32 artboards, 109 states, light and dark, drawn from TransactionsView, TransactionDetailView, CategorySheet, AddTransactionSheet, CalendarView, TripViews, RecurringTransfersView and AnswerSheet: T-01r2 (RC-01 rows with SP-B/TC-A ⇄ grey, T-01r3, PC-02, T-34); T-45 (T-17, T-18, T-46 to T-48); T-49 (T-50, T-21, T-22); T-04 (T-51); T-23; T-43; T-08 (T-08n, T-37n, T-14, T-15, T-09r); T-16 (T-57); TF-01 (TF-01c); RC-03; T-35 (T-02, T-54, loading, error); T-58 (T-59, T-36); T-01b (T-67, T-53, T-56, T-73); T-17b to d; T-77 (T-78); T-04n (T-79, T-80); T-42 (T-81, T-37); T-40 (T-40b, T-38b); T-41 (T-41b); T-07 (T-31, T-33, T-60, T-71); T-11 (T-72); T-61 (T-62); T-68; RT-01 (RT-02 v2 as built, T-82); Trips TR-02 to TR-16, TR-10/10b, TR-17, TR-17e, TR-18.
+- Not redrawn, with the reason on the page note: T-01r2 (now RC-01), T-09 (PB-10/11), T-13 (PQ-01), T-05 (TF-01), T-39 (S-04r v2), T-69 (RQ-01), T-70 (PQ-03), T-20 and T-44 (tags are off, THL-286), the Outcome table (reference, not a screen).
+- Server words (toasts, category lists, preview lines) are representative samples, not copied.
+
+### [designBOT → engBOT] 2026-11-18 · MIGRATE-01 · Sorting rebuilt (one page, Needs a look, Quick sort, paybacks, many purchases)
+**Status:** Done (Sorting)
+**Jira:** THL-117, THL-122, THL-123, THL-139, THL-181, THL-213, THL-226, THL-231, THL-232, THL-254, THL-275, THL-289, THL-291, THL-301   **Design:** Pearl app › Sorting (rows from y 1400)
+
+- 17 artboards, 97 states, light and dark, from AnswerSheet, ReviewView, QuickSortView, PearlSortsViews, PaidBack*, PaybackQuestionViews and PartsFlow (858–1300): T-83 (the full Needs a look: kinds, Skipped, empty, all sorted, error, T-104); T-107 (AI-02, T-108 to T-110); T-103 (What was this? money out and money in on one page, T-105, T-106); T-93 (T-93o, T-95, T-97, T-98, T-98s a card holding a split); T-99 (T-100 to T-102, AI-07, done); T-96; AI-18 (AI-18b, AI-18y, TR-01); AI-03 (AI-03b, AI-04 + busy/error/after, AI-09); PB-10 (PB-11); PB-12 (PB-13, PB-13b, PB-14, PB-15); PB-20 (LT-01/PB-22, PB-23, PB-24); PB-30u (PB-30o); PB-41 (PB-42, PP-01, PP-02); UN-01a/b; MP-01 to MP-05; LT-03 (PQ-03, PQ-03b, PQ-03p, PQ-03c); PQ-01/PQ-02.
+- Not redrawn: T-74 (no sheet is built; it ships as Home's "3 paycheques" card), RT-02 v2 (drawn once, with RT-01 on Cash flow). The Sorting backlog notes are gone.
+- For engBOT, as found while drawing (no change asked yet, product owner to decide): PB-13 still says "tap to change the amount" (TEXT-01 rule 4); PB-30o and MP-04 colour an allowed over-amount in `danger`; LT-01 and MP load errors have no Try again button.
+
+### [designBOT → engBOT] 2026-11-18 · MIGRATE-01 · Joint accounts rebuilt (with S-03j v2 and TP-01 to TP-05)
+**Status:** Done (Joint accounts)
+**Jira:** THL-172, THL-181, THL-201, THL-203, THL-208, THL-217, THL-226, THL-234, THL-282, THL-289, THL-291, THL-304, THL-305   **Design:** Pearl app › Joint accounts (rows from y 1400)
+
+- 13 artboards, 50 states, light and dark, from JointMergeViews, JointSplitViews, JointPaybackViews, WhoseAnswer and AccountsViews: AM-08p to p7 (people picker: contacts asked, off, search, six, empty, loading, error); AM-08r, r1, AM-08, AM-08x, x1; O-09cr; S-01jr, S-01jr2; T-06jr, T-06jr1; T-76 (+ Part of it, error, toast); S-03j v2, S-03j1 to j4, S-17j; S-04j, S-04j1; AM-21j, AM-21j1, AM-08n, AM-08n1; S-41j to j2; AM-09 (+ nothing to combine), AM-10; TP-01 to TP-05. Every Figma code in the group is drawn; the backlog note is gone.
+- The iOS contacts permission prompt is the system's and is not drawn (AM-08p1 shows the loading rows).
+
+### [designBOT → engBOT] 2026-11-18 · MIGRATE-01 · Profile and settings rebuilt (with Your plan, account setup, Your accounts v2)
+**Status:** Done (Profile and settings)
+**Jira:** THL-45, THL-49, THL-104, THL-114, THL-115, THL-116, THL-117, THL-118, THL-120, THL-121, THL-123, THL-127, THL-128, THL-139, THL-172, THL-198, THL-205, THL-209, THL-214, THL-225, THL-226, THL-234, THL-262, THL-287, THL-294, THL-300   **Design:** Pearl app › Profile and settings (rows from y 1400)
+
+- 24 artboards, 99 states, light and dark, from ProfileView, ProfileParts, AccountsViews, CategoriesRulesView, YourDataView, StartOverView, PrivacyViews, SettingsViews, ChangeEmailView, IncomeBillsView, DebtsView, YourPlanView, PearlSortsViews and AccountSetupViews: P-02, P-03; C-01; AM-02 to AM-04; AM-05 (the sheet AM-10 also opens); AM-06; AM-07; C-06; CR-00 to CR-03; CR-04 to CR-10; D-01, D-02; D-03 to D-05; SO-02 to SO-04 (SO-02 as the code: Start over keeps only banks); N-01, N-02; IB-01 to IB-03b; DB-01, DB-02; SO-05b; LG-01, LG-02; SEC-11; SEC-10, A-11, A-11b; AM-11 to AM-13, AM-07b; AI-05, AI-06, AI-06b, AI-04f, AI-08; LT-05 (YP-01) to YP-09; AS-04 with AS-02.
+- The page note keeps two pointers: AS-01 is AS-01 v2 (LT-04) on Onboarding, and Your accounts v2 has no screen of its own (it is LT-04's grouping).
+- Tab bar: the app hides it only on Your data, Delete your account, Start over and the full-screen results, so the pushed Profile pages draw it. The earlier AM-01 and T-03r artboards leave it off and need the same treatment (product owner's call).
+
+### [designBOT → engBOT] 2026-11-18 · MIGRATE-01 · Onboarding and sign-in rebuilt (with AS-01 v2, LT-04)
+**Status:** Done (Onboarding and sign-in), with the gaps on the page note
+**Jira:** THL-114, THL-119, THL-120, THL-172, THL-294, THL-300, THL-304, THL-305   **Design:** Pearl app › Onboarding and sign-in (rows from y 1400)
+
+- 17 artboards, 58 states, light and dark, from AuthFlow, SetupFlow, SetupPayQuestions, PayAndBillsView, AllowanceView, SavingShareView, FaceIDViews, DeviceCheckViews, PlaidLinker, AccountSetupViews and Theme/Nacre.swift: O-00; A-08; O-02, O-02a, O-02b; O-03, O-03a; O-04, O-04a, O-04b, A-09; O-06; O-08, O-08a, O-08b; O-09, O-09a, O-09d, O-09f; LT-04 (AS-01 v2); O-10, O-10e; O-10a to O-10d; O-10f, O-10g; O-10s; O-11, O-11a to O-11d, O-12; A-02, A-03, A-04, A-10; A-05 to A-07; SEC-01, SEC-02. The two iOS system prompts (Face ID, notifications) are drawn and captioned as the system's.
+- Not rebuilt (page note): O-07 to O-07e are Plaid Link's own SDK screens; O-09b, O-09b2 were replaced by AS-01 v2 (LT-04); SEC-03 passkeys aren't built (they wait for the associated domain); the closed and opening setup shells use the LogoMark as a stand-in until ShellClosed/ShellOpening are uploaded.
+- Found while drawing: the first-pass O-01 and A-01 artboards don't match AuthFlow.swift ("Get started" / "I already have an account"; "Forgot password?", "New to Pearl? Create an account"). They are redrawn in the final pass.
+
+### [designBOT → engBOT] 2026-11-18 · MIGRATE-01 · Confirmation sheets rebuilt (with S-24xr)
+**Status:** Done (Confirmation sheets)
+**Jira:** THL-45, THL-114, THL-116, THL-117, THL-120, THL-122, THL-123, THL-127, THL-139, THL-214, THL-226, THL-231, THL-234, THL-255, THL-257, THL-263, THL-287, THL-289, THL-291 · TEST-06   **Design:** Pearl app › Confirmation sheets (rows from y 1400)
+
+- 14 artboards, 41 states, light and dark, from PearlConfirmSheet and each caller (Rule.removing for the rules): T-77c, T-77c2 (+ l, e); T-03x, x1, x2; S-24xr; T-49b; P-05 (+ l, e); SEC-12r (+ l, e); SEC-04r (one and two devices, + l, e); SO-06 Reset Pearl with SO-06a, SO-06b; CR-00x (leave-out and pay rule, + l, e); CR-10x (+ l, e); AM-09n, AM-14n, IB-04, CN-05r (each + l, e). All 39 light Figma frames are drawn; the backlog note is gone.
+- The first-pass SO-06 artboard drew the Start over sheet under SO-06's name; it is removed. Reset Pearl? (SO-06, as built) now sits on the SO-06a artboard, and Start over is SO-02/SO-03 on Profile.
+- Drawn as the code, not the frame name: P-05 "Sign out on this iPhone?"; IB-04 "Are these your rent?"; CR-10x with a plain tag (a trip's tag opens TR-09, drawn on Cash flow).
+
+### [designBOT → engBOT] 2026-11-18 · MIGRATE-01 · Pearl chat rebuilt
+**Status:** Done (Pearl chat)
+**Jira:** THL-117, THL-139, THL-213, THL-254   **Design:** Pearl app › Pearl chat (rows from y 1400)
+
+- 4 artboards, 17 states, light and dark, from ios/Pearl/Chat (PearlChatView, ChatCards, ChatCore, PearlButton; not in the earlier Swift export, read from origin/main): PB-01 and PC-03, PC-04 (+ working it out); PC-05, PC-06 (+ split held, failed save); PC-07 to PC-11; PC-12, PC-13 (+ Not now, trip or rule made). All 12 Figma codes are drawn with the #369 less-text copy; the backlog note is gone.
+- PC-01 (Home) and PC-02 (Cash flow) are on their own pages. The app shows the Pearl button on all five tabs wherever Apple Intelligence runs; the other tab-bar artboards don't draw it yet (product owner's call).
+
+### [designBOT → engBOT] 2026-11-18 · MIGRATE-01 · Home rebuilt
+**Status:** Done (Home)
+**Jira:** THL-117, THL-120, THL-123, THL-125, THL-139, THL-213, THL-232, THL-275, THL-291, THL-294, THL-300   **Design:** Pearl app › Home (rows from y 1400)
+
+- 5 artboards, 13 states, light and dark, from HomeView and what it calls: H-01, H-02 (three banks, worst first) and the Reconnect sheet; SU-01 (3 left, accounts done) and SO-04b; AI-01 with Home's cards in built order; PC-01 (resting, with a suggestion); SV-00 and W-00 (blank tabs, as built).
+- Card order in HomeView: Allowance, bank alerts, Set Pearl up again, Needs a look (when there is anything to sort), AI-01 (when Pearl sorted any this week), OwedNudgeCard, 3 paycheques (T-74 as built), the month card. OwedNudgeCard sits **below** Needs a look (and below AI-01 when it shows); it appears when someone owes at least a cent and the oldest share is 7+ days old, otherwise "X isn't settled yet" for a week-old Not sure yet split; it has no dismiss.
+- Not rebuilt (page note): SU-02, replaced by Account setup's Check your accounts (AS-04 → AS-01 v2).
+
+### [designBOT → engBOT] 2026-11-18 · MIGRATE-01 · Final pass: tab bar on pushed pages, the Pearl button on the five tabs, first-pass fixes
+**Status:** Done (migration complete; every Figma group is on Pearl app)
+**Jira:** THL-114, THL-117, THL-119, THL-122, THL-125, THL-139, THL-292, THL-295, THL-297   **Design:** Pearl app (version 23)
+
+- Tab bar (PearlApp.swift: hidden only where a view hides it: Your data, Delete your account, Start over, Select): drawn on every pushed page on Cash flow, Splits and AM-01 that left it off (T-03r, S-04r v2, S-44, AM-01 and 28 more artboards); toasts on those pages now sit above the bar. Needs a look's question pages and Quick sort are fullScreenCovers (ReviewView.swift:100, HomeView.swift:88), so Sorting stays without it. Onboarding and Pearl chat have none.
+- Pearl button (product owner, 2026-11-18; PearlApp.swift:267–269, "on the five tabs only, never on what's pushed over them"): added on every tab-root phone without a sheet over it: H-00r, H-00n, H-01, SU-01, AI-01, SV-00/W-00, T-01r, T-01r2, T-45, T-49, T-35, T-58, T-01b, T-68, TR-04's Cash flow toast, TR-05, TR-10, P-01 (15 artboards beside PC-01).
+- H-00r and H-00n: dropped "Left to spend or save on non-essentials." under the orb (REFRESH-03; HomeView.swift:133 keeps it as the VoiceOver hint only).
+- O-01: "Get started", "I already have an account", Privacy · Terms (AuthFlow.swift:101–109). A-01: "Forgot password?" under the card and "New to Pearl? Create an account" under Sign in; the Face ID line is gone (AuthFlow.swift:397–426).
+- RQ-01: redrawn from AnswerSheet.swift recurringTiles: caption "Every month since March", the card's money line and "Next: around Tue, Dec 2", tiles Rent, Into savings, My other account, Something I pay for, then No, it isn't regular.
