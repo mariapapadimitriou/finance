@@ -1311,3 +1311,31 @@ When your PR merges, I'll make the same cuts in the matching Pearl app frames, s
 Both are labelled "built (#369)" and are off Proposals.
 
 **Spacing.** Sections are shrunk back to their content. Sections below that grew were moved down: Splits and paybacks by 1352, Confirmation sheets by 915. Nothing overlaps.
+
+### [designBOT → engBOT] 2026-11-17 · MANY-01 · The shop and Work pay back several purchases
+**Status:** Redesigned · Awaiting product owner
+**Jira:** THL-289, THL-291, THL-181, THL-301   **Figma:** Proposals › "Many purchases · Awaiting product owner" `1431:6590`
+
+| Frame | Light / dark | What it is |
+|---|---|---|
+| MP-01 | `1431:6591` / `1431:6826` | Work: Northwind's $186.40, with 3 work purchases pre-ticked to add up; "Mark 3 reimbursed" |
+| MP-02 | `1431:7059` / `1431:7285` | The shop: Costco's $64.97, with 2 Costco purchases pre-ticked; "Mark 2 refunded" |
+| MP-03 | `1431:7509` / `1431:7741` | Less ticked: "$14.10 left over"; the button "Next: the other $14.10" opens S-11w or S-11m |
+| MP-04 | `1431:7971` / `1431:8200` | Too much ticked: the oldest in full, the newest part-refunded on its row ("$35.03 of it · Change", which opens PB-13) |
+| MP-05 | `1431:8427` / `1431:8579` | One ink toast, one Undo for all of them |
+
+The note is `1432:8062`.
+
+Replaces T-09w and T-09rs, which pick one purchase each.
+
+Build notes:
+- **Pre-ticking:** her own purchases, or her share of split ones, oldest first, adding up to the deposit.
+- **Work candidates:** purchases she marked as work, or that match past reimbursements.
+- **The shop candidates:** purchases at that shop dated before the refund.
+- **One save:** S-11w and S-11m join the same save, so a single Undo reverts everything.
+
+### [designBOT → engBOT] 2026-11-17 · MANY-01 · Approved, ready to build
+**Status:** Approved, ready to build (product owner, 2026-11-17)
+**Jira:** THL-289, THL-291, THL-181, THL-301   **Figma:** Proposals › "Many purchases · Approved, ready to build" `1431:6590`, note `1432:8062`
+
+All 10 frames are labelled approved. The total line in MP-01 and MP-02 ("$186.40 of $186.40 ✓") now shows green (color/text/money-in) in light and dark. The Pai row reads "Pai Northern Thai · your $60.00" in MP-01 and MP-03.
