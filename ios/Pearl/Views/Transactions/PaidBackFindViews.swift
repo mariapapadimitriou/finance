@@ -8,7 +8,9 @@ import SwiftUI
 // she picks the money, the usual steps run: PB-11 with the kind picked, then
 // Work and The shop as T-09w / T-09rs (extras S-11w / S-11m). Money from
 // someone on the split pays their share, so it goes straight to their Mark
-// paid back, PB-13 / PB-13b (PartsFlow.swift). Money already paying back another purchase is
+// paid back, PB-13 / PB-13b (PartsFlow.swift). Work and The shop are Many
+// purchases now (MP-01 / MP-02, 2026-11-17): this purchase ticked with any
+// others the money fits, the rest (S-11w / S-11m) in the same save. Money already paying back another purchase is
 // PB-24: its free part links at once; taking more always asks. Pearl
 // sheets, never a stock dialog.
 
@@ -296,8 +298,8 @@ enum PaidBackStep: Identifiable {
     case take(PaidBackFind.Candidate)
     /// PB-13 / PB-13b for a person's share of this purchase.
     case person(PaidBackFind.Candidate)
-    /// S-11w / S-11m: her share is saved and more came in.
-    case extra(PaidBackFind.Candidate, MarkReply.ShareExtra, refund: Bool)
+    /// MP-01 / MP-02: Work or The shop, this purchase ticked.
+    case many(PaidBackFind.Candidate, PaidBackWho)
 
     var id: String {
         switch self {
@@ -305,7 +307,7 @@ enum PaidBackStep: Identifiable {
         case .who(let c): return "who" + c.id
         case .take(let c): return "take" + c.id
         case .person(let c): return "person" + c.id
-        case .extra(let c, _, _): return "extra" + c.id
+        case .many(let c, _): return "many" + c.id
         }
     }
 }
@@ -321,8 +323,6 @@ struct PaidBackFromPurchase: ViewModifier {
     let failed: (String) -> Void
 
     @State private var then: PaidBackStep?
-    /// S-11w / S-11m closed without answering: her share stays saved.
-    @State private var heldShare: MarkReply?
     @State private var busy = false
     @State private var error: String?
 
@@ -333,9 +333,6 @@ struct PaidBackFromPurchase: ViewModifier {
             if let next = then {
                 then = nil
                 step = next
-            } else if let held = heldShare {
-                heldShare = nil
-                done(held.title ?? "Sorted.", held.undo)
             }
         }) { s in
             sheet(s)
@@ -368,14 +365,11 @@ struct PaidBackFromPurchase: ViewModifier {
                 go(nil)
                 done(reply.title ?? "Sorted.", reply.undo)
             }
-        case .extra(let c, let extra, let refund):
-            // S-11w (1294:2157) / S-11m (1302:3494), as the deposit side asks them.
+        case .many(let c, let who):
+            // MP-01 / MP-02, then S-11w / S-11m for what's left: one save,
+            // one Undo (MP-05).
             PartsSheet(deposit: PartsDeposit(id: c.id, name: c.payer, amount: c.amount, date: c.date), api: api,
-                       credited: [PartsSheet.Part(kind: refund ? "refund" : "reimbursement", amount: extra.share,
-                                                  charge: extra.charge, merchant: extra.merchant, share: refund)],
-                       shareLine: "\(Format.amount(extra.share)) \(refund ? "refunds" : "pays back") your share of \(extra.merchant).",
-                       shareOwing: refund ? (extra.people ?? []) : nil) { reply in
-                heldShare = nil
+                       forCharge: purchase.id, many: who) { reply in
                 go(nil)
                 done(reply.title ?? "Sorted.", reply.undo)
             }
@@ -405,32 +399,13 @@ struct PaidBackFromPurchase: ViewModifier {
         return nil
     }
 
-    /// PB-11's answer. Work and The shop pay back her share of this
-    /// purchase (T-09w / T-09rs), with S-11w / S-11m when more came in;
-    /// A person is PB-13 for their share of it.
+    /// PB-11's answer. Work and The shop: MP-01 / MP-02 with this purchase
+    /// ticked (Many purchases, replacing T-09w / T-09rs's one pick). A
+    /// person is PB-13 for their share of it.
     private func pickWho(_ c: PaidBackFind.Candidate, _ who: PaidBackWho) {
         switch who {
-        case .person:
-            go(.person(c))
-        case .work, .shop:
-            let refund = who == .shop
-            Task {
-                do {
-                    let reply: MarkReply = try await api.post("api/transactions/\(c.id)/mark",
-                                                              ["case": refund ? "refund" : "reimbursement",
-                                                               "charge": purchase.id, "share": true])
-                    if let extra = reply.extra {
-                        heldShare = reply
-                        go(.extra(c, extra, refund: refund))
-                    } else {
-                        go(nil)
-                        done(reply.title ?? "Sorted.", reply.undo)
-                    }
-                } catch {
-                    go(nil)
-                    failed((error as? APIError)?.problem?.error ?? "Couldn’t save that. Try again.")
-                }
-            }
+        case .person: go(.person(c))
+        case .work, .shop: go(.many(c, who))
         }
     }
 
