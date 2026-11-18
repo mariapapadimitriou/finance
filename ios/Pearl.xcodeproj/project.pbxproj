@@ -65,6 +65,7 @@
 		04EAEDCFF861F9AD58FBA5F7 /* JointPaybackViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB029BC2F915F0FDA2FBF0F6 /* JointPaybackViews.swift */; };
 		1F259E54F43C7759992A1C07 /* JointSplitViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 319C3C645D45ACBE1863750E /* JointSplitViews.swift */; };
 		9AA99A83956F00835F526B9D /* PaidBackFindViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2F9ADED1FAF9A04D0A9D5B9 /* PaidBackFindViews.swift */; };
+		8F984295248B136FC68629E7 /* PaidBackPerson.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13B70C1F7B4722DCDC8F9EAF /* PaidBackPerson.swift */; };
 		63AA5CAE5BF4CF1173C59B10 /* PaidBackViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A6C2D7708C47DF6B027473F /* PaidBackViews.swift */; };
 		8AF9A0C07760B9758CC9F76D /* PartsFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96396C8A0D0A1C86E81686D9 /* PartsFlow.swift */; };
 		3812F0CFE8572BDDD0FF614B /* PaybackLinkViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE06D62AFA3444FB6874B030 /* PaybackLinkViews.swift */; };
@@ -173,6 +174,7 @@
 		CB029BC2F915F0FDA2FBF0F6 /* JointPaybackViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JointPaybackViews.swift; sourceTree = "<group>"; };
 		319C3C645D45ACBE1863750E /* JointSplitViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JointSplitViews.swift; sourceTree = "<group>"; };
 		F2F9ADED1FAF9A04D0A9D5B9 /* PaidBackFindViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaidBackFindViews.swift; sourceTree = "<group>"; };
+		13B70C1F7B4722DCDC8F9EAF /* PaidBackPerson.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaidBackPerson.swift; sourceTree = "<group>"; };
 		1A6C2D7708C47DF6B027473F /* PaidBackViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaidBackViews.swift; sourceTree = "<group>"; };
 		96396C8A0D0A1C86E81686D9 /* PartsFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PartsFlow.swift; sourceTree = "<group>"; };
 		FE06D62AFA3444FB6874B030 /* PaybackLinkViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaybackLinkViews.swift; sourceTree = "<group>"; };
@@ -412,6 +414,7 @@
 				CB029BC2F915F0FDA2FBF0F6 /* JointPaybackViews.swift */,
 				319C3C645D45ACBE1863750E /* JointSplitViews.swift */,
 				F2F9ADED1FAF9A04D0A9D5B9 /* PaidBackFindViews.swift */,
+				13B70C1F7B4722DCDC8F9EAF /* PaidBackPerson.swift */,
 				1A6C2D7708C47DF6B027473F /* PaidBackViews.swift */,
 				96396C8A0D0A1C86E81686D9 /* PartsFlow.swift */,
 				FE06D62AFA3444FB6874B030 /* PaybackLinkViews.swift */,
@@ -590,6 +593,7 @@
 				04EAEDCFF861F9AD58FBA5F7 /* JointPaybackViews.swift in Sources */,
 				1F259E54F43C7759992A1C07 /* JointSplitViews.swift in Sources */,
 				9AA99A83956F00835F526B9D /* PaidBackFindViews.swift in Sources */,
+				8F984295248B136FC68629E7 /* PaidBackPerson.swift in Sources */,
 				63AA5CAE5BF4CF1173C59B10 /* PaidBackViews.swift in Sources */,
 				8AF9A0C07760B9758CC9F76D /* PartsFlow.swift in Sources */,
 				3812F0CFE8572BDDD0FF614B /* PaybackLinkViews.swift in Sources */,

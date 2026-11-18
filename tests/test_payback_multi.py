@@ -321,7 +321,8 @@ class TestTheAppWiresIt:
         # Paths 1 and 6: PP-01 (only the people who owe her, no Someone
         # new), then …/owing?person= for her pick.
         s = self.src("Views/Transactions/PartsFlow.swift")
-        assert "onlyPast: owerRows" in s and "someoneNew: false" in s
+        # Its rows are taken when it opens (2026-11-17, never empty).
+        assert "onlyPast: ask.rows" in s and "someoneNew: false" in s
         assert "jointPerson ?? joint?.person ?? pickedPerson ?? person" in s
         assert "(paidBack || saidPerson) && (editing.isEmpty || repick)" in s
 
