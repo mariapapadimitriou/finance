@@ -2242,8 +2242,9 @@ struct PartsSheet: View {
         // S-11xm (THL-301): these parts are the extra; the server keeps Jo's
         // credit on Pizza Nova as it is, and Undo links Loblaws back.
         if whole?.isPart == true { body["extra"] = true }
-        // MP-05: "Northwind paid back 3 · $186.40", one Undo for all of it.
-        if manyKind != nil { body["payer"] = firstName(deposit.name) }
+        // MP-05: "Northwind paid back 3 · $186.40" or "Costco refunded 2 ·
+        // $64.97", one Undo for all of it; the tidy name, as the title (MANY-01).
+        if manyKind != nil { body["payer"] = deposit.name }
         if let j = joint {
             // TP-03: the money out of the joint account is theirs, in this save.
             body["joint_payback"] = ["out": j.out, "person": jointPerson ?? j.person ?? sender ?? ""]

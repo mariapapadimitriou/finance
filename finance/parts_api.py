@@ -13,7 +13,8 @@
                                                   `let_go` lets the rest of that person's
                                                   share go once it's linked (PB-13b).
                                                   `payer` names the shop or work for
-                                                  MP-05's "Northwind paid back 3 · $186.40".
+                                                  MP-05's "Northwind paid back 3 · $186.40"
+                                                  or "Costco refunded 2 · $64.97".
 * POST   /api/transactions/<id>/parts/preview     {parts}: what saving them changes (S-12 v2).
 * DELETE /api/transactions/<id>/parts             unlink every part, on the deposit or a part.
 * GET    /api/transactions/<id>/owing             what the sender still owes, for a deposit's
@@ -625,8 +626,9 @@ def save_parts(st, t, body: dict):
 
 def _many_title(payer, parts) -> str | None:
     """MP-05's toast (Many purchases, 1431:8427): "{payer} paid back N ·
-    $X", N the purchases the shop or work paid back and $X what went to
-    them. None without a payer or such a part (the parts' own title)."""
+    $X" for Work, "Costco refunded 2 · $64.97" for a shop's refund
+    (MANY-01), N the purchases it paid back and $X what went to them.
+    None without a payer or such a part (the parts' own title)."""
     name = " ".join(str(payer or "").split())[:40]
     if not name or not isinstance(parts, list):
         return None
@@ -638,7 +640,8 @@ def _many_title(payer, parts) -> str | None:
         paid = sum(_cents(p.get("amount")) for p in mine) / 100
     except (TypeError, ValueError):
         return None
-    return f"{name} paid back {len({str(p['charge']) for p in mine})} · ${paid:,.2f}"
+    verb = "refunded" if all(p.get("kind") == "refund" for p in mine) else "paid back"
+    return f"{name} {verb} {len({str(p['charge']) for p in mine})} · ${paid:,.2f}"
 
 
 def _let_go_asks(st, parts) -> tuple[list[tuple[str, str]], str | None]:

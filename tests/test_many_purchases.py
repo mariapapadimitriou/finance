@@ -232,12 +232,24 @@ def test_mp04_too_much_part_pays_the_newest(client):
         parts.append({"kind": "refund", "amount": take / 100, "charge": o["id"]})
     assert parts[-1]["amount"] == 35.03
     reply = ok(save(client, dep, parts, "Costco"))
-    assert reply["title"] == "Costco paid back 3 · $100.00"
+    assert reply["title"] == "Costco refunded 3 · $100.00"
     assert client.st.get_transaction(i["COSTCO WHOLESALE"]).refunded == 35.03
     after = numbers(client)
     assert round(was["spent"] - after["spent"], 2) == 100.0
     undo(client, reply)
     assert world(client) == before
+
+
+def test_mp05_shop_toast_says_refunded_with_the_whole_name(client):
+    """MANY-01: the app sends the payee's tidy name, and the shop's toast
+    says "refunded" ("paid back" is Work's): "The Home Depot refunded 2"."""
+    i = add(client, "amex", row("HOME DEPOT 7012", 40.0, "amex", when=day(5), category="Shopping", kind="credit"),
+            row("HOME DEPOT 7013", 25.0, "amex", when=day(4), category="Shopping", kind="credit"))
+    j = add(client, "chq", row("HOME DEPOT REFUND", -65.0, when=day(1), merchant="The Home Depot"))
+    parts = [{"kind": "refund", "amount": 40.0, "charge": i["HOME DEPOT 7012"]},
+             {"kind": "refund", "amount": 25.0, "charge": i["HOME DEPOT 7013"]}]
+    reply = ok(save(client, j["HOME DEPOT REFUND"], parts, "The Home Depot"))
+    assert reply["title"] == "The Home Depot refunded 2 · $65.00"
 
 
 def test_mp03_the_shop_left_over_not_mine_in_the_same_save(client):
@@ -248,7 +260,7 @@ def test_mp03_the_shop_left_over_not_mine_in_the_same_save(client):
              {"kind": "refund", "amount": 21.98, "charge": i["COSTCO"]},
              {"kind": "not_mine", "amount": 23.52}]
     reply = ok(save(client, dep, parts, "Costco"))
-    assert reply["title"] == "Costco paid back 2 · $76.48"
+    assert reply["title"] == "Costco refunded 2 · $76.48"
     undo(client, reply)
     assert world(client) == before
 
@@ -269,7 +281,7 @@ def test_mp03_her_share_refunded_and_part_of_sams_share(client):
              {"kind": "refund", "amount": 20.0, "charge": i["COSTCO GAS"]},
              {"kind": "refund", "amount": 20.0, "charge": i["COSTCO"], "person": "Sam"}]
     reply = ok(save(client, dep, parts, "Costco"))
-    assert reply["title"] == "Costco paid back 2 · $80.00"
+    assert reply["title"] == "Costco refunded 2 · $80.00"
     assert owes(client, i["COSTCO"]) == {"Sam": 40.0}
     undo(client, reply)
     assert world(client) == before
