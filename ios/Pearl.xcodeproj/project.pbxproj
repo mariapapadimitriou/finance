@@ -16,14 +16,15 @@
 		A96C766E6CE8931AFDC871B6 /* ChatCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85A9D07F156259B0B94A3CAB /* ChatCards.swift */; };
 		FF32C180C18201A202569156 /* ChatCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20A0D0FD5A01727DA3F07F48 /* ChatCore.swift */; };
 		088D84ECF510C9FC9DB4B186 /* PearlBrainLive.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB90E2CB598406D79C7F278D /* PearlBrainLive.swift */; };
-		11CE36A0BC6A5ABB60A31933 /* PearlButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD3E58E4F26368D23F5F947F /* PearlButton.swift */; };
 		2A360C1D0A1AD308844AA631 /* PearlChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26786647CBF83A54D90263A5 /* PearlChatView.swift */; };
+		E0EF121505265AD17ACCEDF3 /* APlus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9748BC5C78670DA8DD76653C /* APlus.swift */; };
 		197D74CCEC857E06FD81CB2C /* Nacre.swift in Sources */ = {isa = PBXBuildFile; fileRef = A959B442690D5F84B1A63FFA /* Nacre.swift */; };
 		A77E60CDC6CED192D7867D14 /* PearlDust.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5463585836AEA99D74494F0C /* PearlDust.swift */; };
 		B4F50BD8435DEB237F51EFD7 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97809C6135186A3BD204F423 /* Theme.swift */; };
 		5C5C23B160087A9704B706BB /* AllowanceOrb.swift in Sources */ = {isa = PBXBuildFile; fileRef = E21AE2F637B8AF4630212950 /* AllowanceOrb.swift */; };
 		D02B27EB92A7DFD6D51C0DA8 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = C497270FF4823ED50730E0BC /* Components.swift */; };
 		E220B67B8BD59918DBDF7B25 /* PearlConfirmSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE07E1F41699A26A45FCC30C /* PearlConfirmSheet.swift */; };
+		250306FBB27C72F914D01FC6 /* ProfileCircle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90DA648E32FCE29C0E1C4DA2 /* ProfileCircle.swift */; };
 		F2D60DB16AD29DE5F442BC38 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F7C177E913CEBE0B53FA5 /* HomeView.swift */; };
 		761021D767035875CEE31FD0 /* AccountSetupViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84CD196F060DC9CE7C1DBE61 /* AccountSetupViews.swift */; };
 		7579BBE295A41A951C73B4E3 /* AllowanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49B60D0B387295A6F5633F43 /* AllowanceView.swift */; };
@@ -43,6 +44,7 @@
 		8FD19041B28DB92BD2932DBF /* JointMergeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97D9AE67E5566CC11FECF29E /* JointMergeViews.swift */; };
 		5DE68AB7BA55645741B1B0EB /* PrivacyViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21825288F624437936E734DA /* PrivacyViews.swift */; };
 		2559937CB8EFC5C8717E15C4 /* ProfileParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4F39129DB8BAC5939CA6611 /* ProfileParts.swift */; };
+		B494DA547DA499A96932BB88 /* ProfilePhotoViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94B56B58DC0CD9F6DD084B0B /* ProfilePhotoViews.swift */; };
 		658A845AEC5C3686A9644FDE /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 186A54E5EB12390A80B72B43 /* ProfileView.swift */; };
 		F6D402A4740A8C45147DA054 /* ProtectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCD70F7C6FB3D121DE879E76 /* ProtectView.swift */; };
 		31667772A79B9536F4270131 /* RecurringTransfersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8133FD97A6D80721B7665C5 /* RecurringTransfersView.swift */; };
@@ -126,14 +128,15 @@
 		85A9D07F156259B0B94A3CAB /* ChatCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatCards.swift; sourceTree = "<group>"; };
 		20A0D0FD5A01727DA3F07F48 /* ChatCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatCore.swift; sourceTree = "<group>"; };
 		EB90E2CB598406D79C7F278D /* PearlBrainLive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlBrainLive.swift; sourceTree = "<group>"; };
-		FD3E58E4F26368D23F5F947F /* PearlButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlButton.swift; sourceTree = "<group>"; };
 		26786647CBF83A54D90263A5 /* PearlChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlChatView.swift; sourceTree = "<group>"; };
+		9748BC5C78670DA8DD76653C /* APlus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APlus.swift; sourceTree = "<group>"; };
 		A959B442690D5F84B1A63FFA /* Nacre.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nacre.swift; sourceTree = "<group>"; };
 		5463585836AEA99D74494F0C /* PearlDust.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlDust.swift; sourceTree = "<group>"; };
 		97809C6135186A3BD204F423 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		E21AE2F637B8AF4630212950 /* AllowanceOrb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllowanceOrb.swift; sourceTree = "<group>"; };
 		C497270FF4823ED50730E0BC /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		EE07E1F41699A26A45FCC30C /* PearlConfirmSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlConfirmSheet.swift; sourceTree = "<group>"; };
+		90DA648E32FCE29C0E1C4DA2 /* ProfileCircle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileCircle.swift; sourceTree = "<group>"; };
 		663F7C177E913CEBE0B53FA5 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		84CD196F060DC9CE7C1DBE61 /* AccountSetupViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSetupViews.swift; sourceTree = "<group>"; };
 		49B60D0B387295A6F5633F43 /* AllowanceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllowanceView.swift; sourceTree = "<group>"; };
@@ -153,6 +156,7 @@
 		97D9AE67E5566CC11FECF29E /* JointMergeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JointMergeViews.swift; sourceTree = "<group>"; };
 		21825288F624437936E734DA /* PrivacyViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyViews.swift; sourceTree = "<group>"; };
 		A4F39129DB8BAC5939CA6611 /* ProfileParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileParts.swift; sourceTree = "<group>"; };
+		94B56B58DC0CD9F6DD084B0B /* ProfilePhotoViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilePhotoViews.swift; sourceTree = "<group>"; };
 		186A54E5EB12390A80B72B43 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		CCD70F7C6FB3D121DE879E76 /* ProtectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtectView.swift; sourceTree = "<group>"; };
 		C8133FD97A6D80721B7665C5 /* RecurringTransfersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringTransfersView.swift; sourceTree = "<group>"; };
@@ -292,7 +296,6 @@
 				85A9D07F156259B0B94A3CAB /* ChatCards.swift */,
 				20A0D0FD5A01727DA3F07F48 /* ChatCore.swift */,
 				EB90E2CB598406D79C7F278D /* PearlBrainLive.swift */,
-				FD3E58E4F26368D23F5F947F /* PearlButton.swift */,
 				26786647CBF83A54D90263A5 /* PearlChatView.swift */,
 			);
 			path = Chat;
@@ -314,6 +317,7 @@
 		A199E4A32186257ECD0BEBD8 /* Theme */ = {
 			isa = PBXGroup;
 			children = (
+				9748BC5C78670DA8DD76653C /* APlus.swift */,
 				A959B442690D5F84B1A63FFA /* Nacre.swift */,
 				5463585836AEA99D74494F0C /* PearlDust.swift */,
 				97809C6135186A3BD204F423 /* Theme.swift */,
@@ -340,6 +344,7 @@
 				E21AE2F637B8AF4630212950 /* AllowanceOrb.swift */,
 				C497270FF4823ED50730E0BC /* Components.swift */,
 				EE07E1F41699A26A45FCC30C /* PearlConfirmSheet.swift */,
+				90DA648E32FCE29C0E1C4DA2 /* ProfileCircle.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -380,6 +385,7 @@
 				97D9AE67E5566CC11FECF29E /* JointMergeViews.swift */,
 				21825288F624437936E734DA /* PrivacyViews.swift */,
 				A4F39129DB8BAC5939CA6611 /* ProfileParts.swift */,
+				94B56B58DC0CD9F6DD084B0B /* ProfilePhotoViews.swift */,
 				186A54E5EB12390A80B72B43 /* ProfileView.swift */,
 				CCD70F7C6FB3D121DE879E76 /* ProtectView.swift */,
 				C8133FD97A6D80721B7665C5 /* RecurringTransfersView.swift */,
@@ -547,14 +553,15 @@
 				A96C766E6CE8931AFDC871B6 /* ChatCards.swift in Sources */,
 				FF32C180C18201A202569156 /* ChatCore.swift in Sources */,
 				088D84ECF510C9FC9DB4B186 /* PearlBrainLive.swift in Sources */,
-				11CE36A0BC6A5ABB60A31933 /* PearlButton.swift in Sources */,
 				2A360C1D0A1AD308844AA631 /* PearlChatView.swift in Sources */,
+				E0EF121505265AD17ACCEDF3 /* APlus.swift in Sources */,
 				197D74CCEC857E06FD81CB2C /* Nacre.swift in Sources */,
 				A77E60CDC6CED192D7867D14 /* PearlDust.swift in Sources */,
 				B4F50BD8435DEB237F51EFD7 /* Theme.swift in Sources */,
 				5C5C23B160087A9704B706BB /* AllowanceOrb.swift in Sources */,
 				D02B27EB92A7DFD6D51C0DA8 /* Components.swift in Sources */,
 				E220B67B8BD59918DBDF7B25 /* PearlConfirmSheet.swift in Sources */,
+				250306FBB27C72F914D01FC6 /* ProfileCircle.swift in Sources */,
 				F2D60DB16AD29DE5F442BC38 /* HomeView.swift in Sources */,
 				761021D767035875CEE31FD0 /* AccountSetupViews.swift in Sources */,
 				7579BBE295A41A951C73B4E3 /* AllowanceView.swift in Sources */,
@@ -574,6 +581,7 @@
 				8FD19041B28DB92BD2932DBF /* JointMergeViews.swift in Sources */,
 				5DE68AB7BA55645741B1B0EB /* PrivacyViews.swift in Sources */,
 				2559937CB8EFC5C8717E15C4 /* ProfileParts.swift in Sources */,
+				B494DA547DA499A96932BB88 /* ProfilePhotoViews.swift in Sources */,
 				658A845AEC5C3686A9644FDE /* ProfileView.swift in Sources */,
 				F6D402A4740A8C45147DA054 /* ProtectView.swift in Sources */,
 				31667772A79B9536F4270131 /* RecurringTransfersView.swift in Sources */,

@@ -847,6 +847,19 @@ final class ChatEngine: ObservableObject {
         error = nil
     }
 
+    /// A+ Pearl tab (REDESIGN-03): New chat, after she said yes on the
+    /// "Start a new chat?" sheet. What she told Pearl is forgotten (a turn
+    /// still being worked out can't land); nothing it sorted changes. Then
+    /// it opens again as fresh: a waiting suggestion first, else the starters.
+    func newChat() async {
+        turn += 1
+        working = nil
+        mode = nil
+        asks = nil
+        restart()
+        await open()
+    }
+
     private func run(said: String?, text: String, mode: ChatMode?) async {
         self.said = said
         error = nil
@@ -901,6 +914,8 @@ final class ChatEngine: ObservableObject {
                 do {
                     reply = try await ScriptedBrain().respond(to: text, mode: mode, tools: tools)
                 } catch {
+                    // A New chat since: this turn's words are forgotten.
+                    guard turn == now else { return }
                     screen = .reply(said: said, text: describe(error), answer: nil, rows: [])
                     return
                 }

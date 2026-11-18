@@ -25,6 +25,8 @@
 	<string>Unlock Pearl quickly and privately.</string>
 	<!-- S-17 v2 / AM-08p (JOINT-A handoff 1110:6520): names from her contacts,
 	     asked for only when the picker opens. Contacts never leave the phone. -->
+	<key>NSCameraUsageDescription</key>
+	<string>For your profile photo. It stays on this iPhone.</string>
 	<key>NSContactsUsageDescription</key>
 	<string>To pick people faster. Pearl keeps only the name.</string>
 	<!-- pearl://reset?token=… opens A-07 "Choose a new password". -->

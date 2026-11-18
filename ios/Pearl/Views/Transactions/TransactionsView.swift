@@ -104,9 +104,15 @@ struct TransactionsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Text("Cash flow").font(Nacre.largeTitle).foregroundColor(Pearl.ink)
-                    .accessibilityAddTraits(.isHeader)
-                    .padding(.top, 24)
+                // A+ (AP-CashFlow): the profile circle beside the title, its
+                // visual edge lined up with the filter button's.
+                HStack(alignment: .center) {
+                    Text("Cash flow").font(Nacre.largeTitle).foregroundColor(Pearl.ink)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: 8)
+                    ProfileCircle().padding(.trailing, -4).disabled(inTrip)
+                }
+                .padding(.top, 24)
                 if noTransactionsYet {
                     emptyLedger
                 } else {

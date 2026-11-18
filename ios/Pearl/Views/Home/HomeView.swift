@@ -66,6 +66,11 @@ struct HomeView: View {
             }
             .padding(.horizontal, Pearl.gutter)
             .padding(.vertical, 24)
+            // A+ (AP-Home, AP-PhotoHome): the profile circle top right, level
+            // with the date line; it pushes Profile in this tab.
+            .overlay(alignment: .topTrailing) {
+                ProfileCircle().padding(.top, 9).padding(.trailing, Pearl.gutter - 4)
+            }
         }
         .nacreScreen()
         .navigationBarHidden(true)

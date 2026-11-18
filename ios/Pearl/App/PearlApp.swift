@@ -109,13 +109,16 @@ struct RootView: View {
     }
 }
 
-/// Home, Cash flow, Save, Wins and Profile in the system tab bar, Liquid
-/// Glass on iOS 26 (THL-209: "use the system TabView, don't rebuild it").
-/// Save and Wins have no design yet, so they're blank.
+/// A+ (REDESIGN-02, -03, -07; TabBar): Home · Cash flow · Save · Wins ·
+/// Pearl in the system tab bar, Liquid Glass on iOS 26 (THL-209: "use the
+/// system TabView, don't rebuild it"), tinted Pearl.action; unselected items
+/// as the system draws them. Profile left the bar for the profile circle at
+/// the top right of the first four tabs; the floating Pearl button is gone
+/// and Pearl chat is the fifth tab. Save and Wins are parked, so blank.
 @MainActor
 struct MainTabs: View {
     enum Tab: Hashable, CaseIterable {
-        case home, cashFlow, save, wins, profile
+        case home, cashFlow, save, wins, pearl
 
         var label: String {
             switch self {
@@ -123,18 +126,18 @@ struct MainTabs: View {
             case .cashFlow: return "Cash flow"
             case .save: return "Save"
             case .wins: return "Wins"
-            case .profile: return "Profile"
+            case .pearl: return "Pearl"
             }
         }
 
-        /// The handoff file's line icons, as template images.
+        /// The app's own line icons, as template images (Pearl draws its own).
         var icon: String {
             switch self {
             case .home: return "TabHome"
             case .cashFlow: return "TabCashFlow"
             case .save: return "TabSave"
             case .wins: return "TabWins"
-            case .profile: return "TabProfile"
+            case .pearl: return "LogoMark"
             }
         }
     }
@@ -154,12 +157,11 @@ struct MainTabs: View {
     /// SEC-10: another device asking to sign in as her, and the ones she's seen.
     @State private var approval: Approval?
     @State private var seenApprovals: Set<Int> = []
-    /// PB-01: Apple Intelligence can run Pearl chat here (PC-11: else no button).
-    @State private var chatReady = false
-    /// PB-01's "has a suggestion": a trip or pattern card is waiting.
+    /// A trip or pattern card is waiting (GET /api/chat `suggest`): the
+    /// Pearl tab's nacre dot, where the old button showed its ring. Never a number.
     @State private var chatSuggests = false
-    @State private var chatOpen = false
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         TabView(selection: $tab) {
@@ -168,25 +170,38 @@ struct MainTabs: View {
                 .badge(reviewCount)
             page(.save) { BlankTab() }
             page(.wins) { BlankTab() }
-            page(.profile) { ProfileView(tab: $tab) }
+            // The conversation stays across tab switches (the tab's view, and
+            // its ChatEngine, live as long as the bar). Where Apple
+            // Intelligence can't run it shows PC-11; the bar keeps five.
+            PearlChatView(api: app.api, describe: { app.handle($0) ?? "Something went wrong. Try again." },
+                          onSearch: { tab = .cashFlow })   // PC-11's Search instead: Cash flow, where Search is.
+                .toolbar(app.hidesTabBar ? .hidden : .visible, for: .tabBar)
+                .tabItem {
+                    Label {
+                        Text(Tab.pearl.label)
+                    } icon: {
+                        Image(uiImage: PearlTabIcon.image(suggest: chatSuggests, dark: scheme == .dark))
+                            .renderingMode(.original)
+                    }
+                    .accessibilityLabel(chatSuggests ? "Pearl, has a suggestion" : "Pearl")
+                }
+                .tag(Tab.pearl)
         }
         .tint(Pearl.action)
+        .environment(\.goHome, { tab = .home })
         .task(id: app.version) {
             await loadCount()
             await lookForSuggestions()
+            await lookAtProfile()
         }
-        .task(id: scenePhase) {
-            // Apple Intelligence can be turned on or finish downloading while Pearl is away.
-            if scenePhase == .active { chatReady = PearlIntelligence.available }
+        .task(id: app.user?.id) {
+            // Her photo is on this iPhone only, one per account.
+            ProfilePhotoStore.shared.use(account: app.user?.id.map(String.init))
         }
-        .fullScreenCover(isPresented: $chatOpen, onDismiss: { app.changed() }) {
-            PearlChatView(api: app.api, describe: { app.handle($0) ?? "Something went wrong. Try again." },
-                          onClose: { chatOpen = false },
-                          onSearch: {
-                              // PC-11's Search instead: Cash flow, where Search is.
-                              chatOpen = false
-                              tab = .cashFlow
-                          })
+        .onChange(of: tab) { [tab] _ in
+            // Leaving the Pearl tab: what chat changed shows everywhere
+            // (what closing the chat's sheet did before A+).
+            if tab == .pearl { app.changed() }
         }
         .task { await offerQuickSort() }
         .task(id: scenePhase) { await lookForApprovals() }
@@ -264,9 +279,6 @@ struct MainTabs: View {
     private func page<Content: View>(_ which: Tab, @ViewBuilder content: () -> Content) -> some View {
         NavigationStack {
             content().toolbar(app.hidesTabBar ? .hidden : .visible, for: .tabBar)
-                // PB-01 (note 1340:8893): on the five tabs only, never on what's pushed over them;
-                // not while Select's bar has the tab bar's place.
-                .pearlButton(shown: chatReady && !app.hidesTabBar, suggest: chatSuggests) { chatOpen = true }
                 .accessibilityHidden(!quickSort.isEmpty || !quickSortPatterns.isEmpty || !quickSortTrips.isEmpty)
         }
         .tabItem {
@@ -277,12 +289,23 @@ struct MainTabs: View {
         .tag(which)
     }
 
-    /// PB-01's shimmer: a trip or pattern card waiting, the same ones Quick sort has.
+    /// The Pearl tab's dot: a trip or pattern card waiting, the same ones
+    /// Quick sort has. Only where Apple Intelligence can run the chat.
     private func lookForSuggestions() async {
-        chatReady = PearlIntelligence.available
-        guard chatReady else { return }
+        guard PearlIntelligence.available else {
+            chatSuggests = false
+            return
+        }
         if let start: ChatStart = try? await app.api.get("api/chat") {
             chatSuggests = start.suggest
+        }
+    }
+
+    /// The profile circle's dot (REDESIGN-03): what Profile already flags,
+    /// Accounts' "needs you" (a bank to sign in to again or cut off, THL-120).
+    private func lookAtProfile() async {
+        if let summary: ProfileSummary = try? await app.api.get("api/profile") {
+            app.profileNeedsYou = (summary.needsYou ?? 0) > 0
         }
     }
 
@@ -293,10 +316,15 @@ struct MainTabs: View {
     }
 }
 
-/// A tab with no design yet: just the nacre.
+/// Save and Wins, parked (REDESIGN-11): just the nacre, and the profile
+/// circle at the top right as on every main tab.
 private struct BlankTab: View {
     var body: some View {
         Color.clear
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .topTrailing) {
+                ProfileCircle().padding(.trailing, Pearl.gutter - 4).padding(.top, 4)
+            }
             .nacreScreen()
             .navigationBarHidden(true)
     }
