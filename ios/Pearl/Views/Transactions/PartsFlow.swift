@@ -356,7 +356,7 @@ struct PartsSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: title) {
+            SheetTitle(title: title, short: shortTitle) {
                 // S-11k: Close goes back to S-11 v2 with nothing added.
                 if step == .otherKind { otherAmount = nil; step = .kind; return }
                 // S-24x: a held split would be dropped, so ask first.
@@ -508,9 +508,10 @@ struct PartsSheet: View {
             if parts.isEmpty { return "What was the \(Format.amount(left))?" }
             return extra ? "What’s the extra \(Format.amount(left))?" : "What’s the other \(Format.amount(left))?"
         case .review: return "Check and save"
-        // MP-01 "What did Northwind pay back?", MP-02 "What did Costco refund?".
-        case .whose where manyKind == .shop: return "What did \(firstName(deposit.name)) refund?"
-        case .whose where manyKind == .work: return "What did \(firstName(deposit.name)) pay back?"
+        // MP-01 "What did The Home Depot pay back?", MP-02 "What did Costco
+        // refund?": the payee's tidy name (MANY-01; `shortTitle` if it won't fit).
+        case .whose where manyKind == .shop: return "What did \(deposit.name) refund?"
+        case .whose where manyKind == .work: return "What did \(deposit.name) pay back?"
         // PB-30: "What did Sam pay back?"
         case .whose: return "What did \(firstName(sender ?? who)) pay back?"
         // PB-13: "How much of Sam’s $60.00?"
@@ -520,6 +521,14 @@ struct PartsSheet: View {
             if manyKind != nil { return "How much of the \(Format.amount(o.owes))?" }
             return "How much of \(possessive(firstName(o.person ?? who))) \(Format.amount(o.owes))?"
         }
+    }
+
+    /// MANY-01: MP-01 / MP-02's title with the payee's first word, shown
+    /// only when the tidy name won't fit on one line.
+    private var shortTitle: String? {
+        guard step == .whose, let k = manyKind else { return nil }
+        let first = firstName(deposit.name)
+        return k == .shop ? "What did \(first) refund?" : "What did \(first) pay back?"
     }
 
     @ViewBuilder private var content: some View {
