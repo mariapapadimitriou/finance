@@ -191,10 +191,10 @@ struct CreateAccountView: View {
             ShellProgress(part: 1, name: "Your account")
             Text("Create your account").font(Nacre.title).tracking(0.4)
                 .accessibilityAddTraits(.isHeader)
-            GlassCard {
+            APCard {
                 FieldRow(label: "Email", text: $email, prompt: "you@example.com", kind: .email,
                          content: .username)
-                RowSeparator()
+                APSeparator(afterFace: false)
                 FieldRow(label: "Password", text: $password, prompt: "Create a password", kind: .secure,
                          content: .newPassword) { Task { await next() } }
             }
@@ -404,9 +404,9 @@ struct SignInView: View {
                 Text("Sign in to see your Allowance.").font(Nacre.body)
             }
             .frame(maxWidth: .infinity)
-            GlassCard {
+            APCard {
                 FieldRow(label: "Email", text: $email, prompt: "you@example.com", kind: .email, content: .username)
-                RowSeparator()
+                APSeparator(afterFace: false)
                 FieldRow(label: "Password", text: $password, prompt: "Your password", kind: .secure,
                          content: .password) { Task { await signIn() } }
             }
@@ -704,7 +704,7 @@ struct ForgotPasswordView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.top, 8)
-            GlassCard {
+            APCard {
                 FieldRow(label: "Email", text: $email, prompt: "you@example.com", kind: .email, content: .username) {
                     Task { await send() }
                 }
@@ -776,10 +776,10 @@ struct NewPasswordView: View {
     var body: some View {
         NacreScreen {
             Text("Choose a new password").font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
-            GlassCard {
+            APCard {
                 FieldRow(label: "New password", text: $password, prompt: "At least 12 characters", kind: .secure,
                          content: .newPassword)
-                RowSeparator()
+                APSeparator(afterFace: false)
                 FieldRow(label: "Confirm", text: $confirm, prompt: "Type it again", kind: .secure,
                          content: .newPassword) { Task { await save() } }
             }

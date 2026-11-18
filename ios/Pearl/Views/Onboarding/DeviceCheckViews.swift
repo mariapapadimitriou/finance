@@ -34,7 +34,7 @@ struct ConfirmDeviceView: View {
             Text("Confirm it’s you").font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
             Text("This iPhone is new to your account. Approve it from a device you’re signed in on.")
                 .font(Nacre.body)
-            GlassCard {
+            APCard {
                 if let approve = choices.approve {
                     ChoiceLine(title: "Approve on my other device", sub: deviceLine(approve),
                                selected: how == "approve") { how = "approve" }

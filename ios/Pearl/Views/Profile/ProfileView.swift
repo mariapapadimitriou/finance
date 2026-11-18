@@ -44,29 +44,29 @@ struct ProfileView: View {
                 identity.padding(.bottom, 8)
 
                 ProfileSection("Money")
-                GlassCard {
+                APCard {
                     NavigationLink { AccountsView() } label: {
                         ProfileRow(symbol: "building.columns", title: "Accounts",
                                    pill: summary?.needsYou.flatMap { $0 > 0 ? StatusPill(text: "\($0) needs you", tone: .needsALook) : nil })
                     }
                     .buttonStyle(.plain)
-                    RowSeparator(inset: 62)
+                    APSeparator()
                     NavigationLink { IncomeBillsView() } label: {
                         ProfileRow(symbol: "dollarsign.square", title: "Income and bills")
                     }
                     .buttonStyle(.plain)
-                    RowSeparator(inset: 62)
+                    APSeparator()
                     NavigationLink { RecurringTransfersView() } label: {
                         ProfileRow(symbol: "arrow.triangle.2.circlepath", title: "Recurring transfers")
                     }
                     .buttonStyle(.plain)
-                    RowSeparator(inset: 62)
+                    APSeparator()
                     // THL-128: Debts has its own row, not only Set Pearl up again's step.
                     NavigationLink { DebtsView() } label: {
                         ProfileRow(symbol: "creditcard", title: "Debts")
                     }
                     .buttonStyle(.plain)
-                    RowSeparator(inset: 62)
+                    APSeparator()
                     NavigationLink { CategoriesRulesView() } label: {
                         ProfileRow(symbol: "square.on.circle", title: "Categories and rules")
                     }
@@ -74,44 +74,44 @@ struct ProfileView: View {
                 }
 
                 ProfileSection("You")
-                GlassCard {
+                APCard {
                     NavigationLink { SignInSecurityView() } label: {
                         ProfileRow(symbol: "lock", title: "Sign-in and security")
                     }
                     .buttonStyle(.plain)
-                    RowSeparator(inset: 62)
+                    APSeparator()
                     NavigationLink { NotificationsView() } label: {
                         ProfileRow(symbol: "bell", title: "Notifications")
                     }
                     .buttonStyle(.plain)
-                    RowSeparator(inset: 62)
+                    APSeparator()
                     appearanceRow
                 }
 
                 ProfileSection("Privacy")
-                GlassCard {
+                APCard {
                     Button { showConsent = true } label: {
                         ProfileRow(symbol: "eye", title: "Privacy and consent")
                     }
                     .buttonStyle(.plain)
-                    RowSeparator(inset: 62)
+                    APSeparator()
                     Button { showYourData = true } label: {
                         ProfileRow(symbol: "tray.and.arrow.down", title: "Your data")
                     }
                     .buttonStyle(.plain)
-                    RowSeparator(inset: 62)
+                    APSeparator()
                     NavigationLink { ProtectView() } label: {
                         ProfileRow(symbol: "checkmark.shield", title: "How we protect you")
                     }
                     .buttonStyle(.plain)
                 }
 
-                GlassCard {
+                APCard {
                     Button { doc = .help } label: {
                         ProfileRow(symbol: "questionmark.circle", title: "Help and support")
                     }
                     .buttonStyle(.plain)
-                    RowSeparator(inset: 62)
+                    APSeparator()
                     // THL-118: the Terms, after sign-up too.
                     Button { doc = .terms } label: {
                         ProfileRow(symbol: "doc.text", title: "Terms")

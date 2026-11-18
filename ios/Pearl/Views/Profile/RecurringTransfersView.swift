@@ -75,9 +75,9 @@ struct RecurringTransfersView: View {
                     }
                     .padding(.top, 4)
                     ProfileSection("\(data.count) recurring")
-                    GlassCard {
+                    APCard {
                         ForEach(Array(data.transfers.enumerated()), id: \.element.id) { i, t in
-                            if i > 0 { RowSeparator(inset: 62) }
+                            if i > 0 { APSeparator() }
                             Button { open = t } label: {
                                 ProfileRow(initials: t.title, title: t.title, sub: line(t)) {
                                     Text(Format.amount(t.amount)).font(Nacre.body).foregroundColor(Pearl.ink)
@@ -91,9 +91,9 @@ struct RecurringTransfersView: View {
                 if data.asking > 0 {
                     // RT-01: each one waiting, as its own row.
                     ProfileSection("New, in Needs a look")
-                    GlassCard {
+                    APCard {
                         ForEach(Array(waiting.enumerated()), id: \.element.key) { i, item in
-                            if i > 0 { RowSeparator(inset: 62) }
+                            if i > 0 { APSeparator() }
                             NavigationLink { ReviewView() } label: {
                                 ProfileRow(initials: item.txn.name, title: item.txn.name,
                                            sub: "\(Format.amount(abs(item.txn.amount)))" + (item.series?.when.map { " · \($0)" } ?? ""),
@@ -141,7 +141,7 @@ struct RecurringTransfersView: View {
     }
 
     private func tile(_ label: String, _ value: String) -> some View {
-        GlassCard {
+        APCard {
             VStack(alignment: .leading, spacing: 4) {
                 Text(label).font(Nacre.footnote).foregroundColor(Pearl.ink)
                 Text(value).font(.custom("Fraunces-SemiBold", size: 28, relativeTo: .title)).foregroundColor(Pearl.ink)

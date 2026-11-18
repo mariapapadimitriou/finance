@@ -46,10 +46,10 @@ struct SavingShareView: View {
                         if let n = Double(v.replacingOccurrences(of: "%", with: "")), (0...50).contains(n) { pct = n }
                     }
             }
-            GlassCard {
+            APCard {
                 if let pay = pay {
                     row("Each paycheque", sub: cadence(pay.cadence), value: pay.amount * pct / 100, exact: true)
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                 }
                 row("Each month", sub: nil, value: monthlyIncome * pct / 100, exact: false)
             }

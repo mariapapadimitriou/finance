@@ -130,11 +130,11 @@ struct WhatIsItSheet: View {
                 VStack(alignment: .leading, spacing: 12) {
                     QuestionHeader(name: ask.name, amount: Format.whole(ask.amount), tone: Pearl.ink,
                                    sub: cadence(ask.cadence).lowercased())
-                    GlassCard {
+                    APCard {
                         choiceRow("\(who)’s share of a bill", detail: nil, on: choice == "share") { choice = "share" }
-                        RowSeparator()
+                        APSeparator(afterFace: false)
                         choiceRow("Paid back", detail: nil, on: choice == "payback") { save("payback") }
-                        RowSeparator()
+                        APSeparator(afterFace: false)
                         choiceRow("Something else", detail: "Pearl will ask about each one in Needs a look.",
                                   on: choice == "else") { save("else") }
                     }
@@ -145,9 +145,9 @@ struct WhatIsItSheet: View {
                             Text("Add the bill first, then come back to this.")
                                 .font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 16)
                         } else {
-                            GlassCard {
+                            APCard {
                                 ForEach(Array(likelyBills.enumerated()), id: \.element.id) { i, b in
-                                    if i > 0 { RowSeparator() }
+                                    if i > 0 { APSeparator(afterFace: false) }
                                     choiceRow(b.name, detail: "\(cadence(b.cadence)) · \(Format.amount(b.amount)) · counts \(Format.amount(max(b.amount - ask.amount, 0))) for you",
                                               on: false) { save("share", bill: b.key) }
                                 }

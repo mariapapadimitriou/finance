@@ -116,24 +116,24 @@ struct SignInSecurityView: View {
     var body: some View {
         SettingsPage(title: "Sign-in & security") {
             settingsSection("Sign-in")
-            GlassCard {
+            APCard {
                 NavigationLink { ChangeEmailView() } label: {
                     settingsRow("Email", value: app.user?.email ?? "Change", chevron: true)
                 }
                 .buttonStyle(.plain)
-                RowSeparator()
+                APSeparator(afterFace: false)
                 NavigationLink { ChangePasswordView() } label: {
                     settingsRow("Password", value: "Change", chevron: true)
                 }
                 .buttonStyle(.plain)
-                RowSeparator()
+                APSeparator(afterFace: false)
                 settingsRow("Email code on new devices", value: "On")
             }
             settingsNote("Two-step sign-in is always on.")
 
             if AppLock.available || app.faceIDOn {
                 settingsSection("Face ID")
-                GlassCard {
+                APCard {
                     Toggle(isOn: Binding(get: { faceID }, set: { on in Task { await setFaceID(on) } })) {
                         Text("Unlock with Face ID").font(Nacre.body).foregroundColor(Pearl.ink)
                     }
@@ -146,9 +146,9 @@ struct SignInSecurityView: View {
             // Recovery codes (SEC-08, SEC-09) are left out for now (2026-11-04).
 
             settingsSection("Your devices")
-            GlassCard {
+            APCard {
                 ForEach(Array(devices.enumerated()), id: \.element.id) { i, d in
-                    if i > 0 { RowSeparator() }
+                    if i > 0 { APSeparator(afterFace: false) }
                     if d.this == true {
                         settingsRow("This iPhone", value: "Now")
                     } else {
@@ -166,7 +166,7 @@ struct SignInSecurityView: View {
                     }
                 }
                 if devices.contains(where: { $0.this != true }) {
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     Button { confirming = true } label: {
                         settingsRow("Sign out other devices", tone: Pearl.action)
                     }
@@ -313,11 +313,11 @@ struct ChangePasswordView: View {
     var body: some View {
         Group {
             SettingsPage(title: "Change password") {
-                GlassCard {
+                APCard {
                     FieldRow(label: "Current password", text: $current, kind: .secure, content: .password)
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     FieldRow(label: "New password", text: $new, kind: .secure, content: .newPassword)
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     FieldRow(label: "Confirm", text: $confirm, kind: .secure, content: .newPassword)
                 }
                 if !new.isEmpty {
@@ -386,9 +386,9 @@ struct RecoveryCodesSheet: View {
             Text("Keep them somewhere safe, like a password manager. Each works once. Making new ones turns these off.")
                 .font(Nacre.body).foregroundColor(Pearl.ink)
                 .fixedSize(horizontal: false, vertical: true)
-            GlassCard {
+            APCard {
                 ForEach(Array(stride(from: 0, to: codes.count, by: 2)), id: \.self) { i in
-                    if i > 0 { RowSeparator() }
+                    if i > 0 { APSeparator(afterFace: false) }
                     HStack {
                         Text(codes[i])
                         Spacer()
@@ -427,7 +427,7 @@ struct ResetPearlCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            GlassCard {
+            APCard {
                 Button(role: .destructive) { confirming = true } label: {
                     ProfileRow(symbol: "arrow.counterclockwise", title: resetting ? "Resetting…" : "Reset Pearl",
                                tone: Pearl.danger, chevron: false) {

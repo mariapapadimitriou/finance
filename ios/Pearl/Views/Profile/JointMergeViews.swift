@@ -184,24 +184,24 @@ struct JointAccountView: View {
             Text("Only you see these names.")
                 .font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 4)
             ProfileSection("Your share")
-            GlassCard {
+            APCard {
                 PickRow(title: "All mine unless I mark it",
                         sub: "Mark the purchases someone else paid for",
                         selected: !fixed) { fixed = false }
-                RowSeparator()
+                APSeparator(afterFace: false)
                 PickRow(title: "A fixed share", sub: "For example, 50%", selected: fixed) { fixed = true }
                 if fixed {
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     InlineField(label: "Your share", text: $shareText, prompt: "50", keyboard: .decimalPad, suffix: "%")
                 }
             }
             if changed {
                 ProfileSection("Which purchases")
-                GlassCard {
+                APCard {
                     PickRow(title: "All purchases from this account",
                             sub: "Ones you marked as someone else’s, or gave your own part, stay as you said.",
                             selected: apply == "all") { apply = "all" }
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     PickRow(title: "Starting today",
                             sub: "Earlier purchases keep counting the way they do now.",
                             selected: apply == "from_today") { apply = "from_today" }
@@ -436,9 +436,9 @@ struct SameAccountView: View {
                 ProfileNote("There’s no other account of the same kind to combine with.").padding(.top, 8)
             } else {
                 ProfileSection("Keep")
-                GlassCard {
+                APCard {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { i, a in
-                        if i > 0 { RowSeparator() }
+                        if i > 0 { APSeparator(afterFace: false) }
                         PickRow(title: a.label, sub: line(a), selected: keep == a.id) { keep = a.id }
                     }
                 }
@@ -543,7 +543,7 @@ struct AddHandBalanceSheet: View {
                         .accessibilityAddTraits(.isHeader)
                     CloseButton { dismiss() }
                 }
-                GlassCard {
+                APCard {
                     InlineField(label: "Name", text: $name, prompt: "TD TFSA")
                 }
                 HStack(spacing: 8) {
@@ -551,10 +551,10 @@ struct AddHandBalanceSheet: View {
                         FilterChip(label: title, on: kind == id) { kind = id }
                     }
                 }
-                GlassCard {
+                APCard {
                     if takesDigits {
                         InlineField(label: "Last four digits", text: $last4, prompt: "Optional", keyboard: .numberPad)
-                        RowSeparator()
+                        APSeparator(afterFace: false)
                     }
                     InlineField(label: "Balance today", text: $balance, prompt: "$0.00", keyboard: .decimalPad)
                 }

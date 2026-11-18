@@ -92,7 +92,7 @@ struct DataCard<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        GlassCard(radius: 22, content: content)
+        APCard(content: content)
     }
 }
 
@@ -160,13 +160,13 @@ struct YourDataView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(preparing)
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     Button { showStartOver = true } label: {
                         DataRow(icon: "DataStartOver", title: "Start over",
                                 sub: "Sort everything again from scratch", chevron: true)
                     }
                     .buttonStyle(.plain)
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     Button { showDelete = true } label: {
                         DataRow(icon: "DataTrash", title: "Delete your account", tone: Pearl.danger, chevron: true)
                     }
@@ -295,7 +295,7 @@ struct DeleteAccountView: View {
                 DataCaption("Right away")
                 DataCard {
                     DataRow(icon: "DataUnplug", title: "Your banks are disconnected")
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     DataRow(icon: "DataSignOut", title: "You’re signed out everywhere")
                 }
                 DataCaption("Within 30 days")

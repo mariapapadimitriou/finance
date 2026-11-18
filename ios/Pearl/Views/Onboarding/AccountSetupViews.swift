@@ -167,9 +167,9 @@ struct AccountSetupView: View {
     private func group(_ title: String, _ rows: [AccountsOverview.Account]) -> some View {
         if !rows.isEmpty {
             ProfileSection(title)
-            GlassCard(radius: 22) {
+            APCard {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { i, a in
-                    if i > 0 { RowSeparator() }
+                    if i > 0 { APSeparator(afterFace: false) }
                     link(a, tags: AccountSetupWords.tags(a))
                 }
             }
@@ -183,9 +183,9 @@ struct AccountSetupView: View {
         let rows = AccountSetupWords.leftOut(leftOut)
         if !rows.isEmpty {
             ProfileSection("Not in your budget")
-            GlassCard(radius: 22) {
+            APCard {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
-                    if i > 0 { RowSeparator() }
+                    if i > 0 { APSeparator(afterFace: false) }
                     switch row {
                     case .one(let a):
                         link(a, tags: AccountSetupWords.tags(a))
@@ -217,7 +217,7 @@ struct AccountSetupView: View {
         .accessibilityHint(isOpen ? "Hides the accounts" : "Shows the accounts")
         if isOpen {
             ForEach(group) { a in
-                RowSeparator()
+                APSeparator(afterFace: false)
                 link(a, tags: AccountSetupWords.tags(a))
             }
         }
@@ -375,21 +375,21 @@ struct AccountSetupPage: View {
     var body: some View {
         ProfilePage {
             hero
-            GlassCard {
+            APCard {
                 toggleRow(title: "Include in my budget",
                           hint: isInvestment ? "Spending doesn’t happen from an investment account."
                               : "Its spending, bills and balance count toward Allowance and your totals on Home.",
                           on: $counted, disabled: isInvestment)
                 if !isInvestment {
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     toggleRow(title: "Shared with someone", hint: "Only your share counts.",
                               on: Binding(get: { shared }, set: { v in withAnimation { shared = v } }))
                 }
                 if account.canAnchor == true {
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     toggleRow(title: "Part of my Anchor", hint: "Savings accounts only", on: $anchor)
                 }
-                RowSeparator()
+                APSeparator(afterFace: false)
                 Button { nameDraft = nickname; naming = true } label: {
                     ProfileRow(title: "Nickname", sub: nil) {
                         Text(nickname.isEmpty ? "Add" : nickname)
@@ -400,7 +400,7 @@ struct AccountSetupPage: View {
                 .disabled(busy)
             }
             if shared {
-                GlassCard {
+                APCard {
                     // O-09cr: who, picked, not typed.
                     Button { picking = true } label: {
                         ProfileRow(title: "Shared with") {
@@ -414,18 +414,18 @@ struct AccountSetupPage: View {
                 }
                 .padding(.top, 4)
                 ProfileSection("How purchases split")
-                GlassCard {
+                APCard {
                     PickRow(title: "Half each (50/50)", selected: split == .half) { split = .half }
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     PickRow(title: "A different share", selected: split == .share) {
                         if split != .share && shareText.isEmpty { shareText = "50" }
                         split = .share
                     }
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     PickRow(title: "Each purchase: mine unless I say", selected: split == .mine) { split = .mine }
                 }
                 if split == .share {
-                    GlassCard {
+                    APCard {
                         InlineField(label: "Your share", text: $shareText, prompt: "50",
                                     keyboard: .decimalPad, suffix: "%")
                     }

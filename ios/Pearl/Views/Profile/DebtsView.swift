@@ -97,9 +97,9 @@ struct DebtsView: View {
     private func section(_ title: String, _ debts: [DebtList.Debt]) -> some View {
         if !debts.isEmpty {
             ProfileSection(title)
-            GlassCard {
+            APCard {
                 ForEach(Array(debts.enumerated()), id: \.element.id) { i, d in
-                    if i > 0 { RowSeparator(inset: 62) }
+                    if i > 0 { APSeparator() }
                     Button { editing = d } label: {
                         ProfileRow(initials: d.name, title: d.name, sub: d.line,
                                    pill: d.action.map { StatusPill(text: $0, tone: .needsALook) }) {
@@ -155,9 +155,9 @@ struct DebtDetailsSheet: View {
                    heading: adding ? "Add the details" : "Change the details", close: { dismiss() }) {
             VStack(spacing: 0) {
                 FieldRow(label: "Interest rate", text: $rate, prompt: "5.7%").keyboardType(.decimalPad)
-                RowSeparator()
+                APSeparator(afterFace: false)
                 FieldRow(label: "Minimum payment a month", text: $minimum, prompt: "$120").keyboardType(.decimalPad)
-                RowSeparator()
+                APSeparator(afterFace: false)
                 FieldRow(label: "Day it’s due (optional)", text: $due, prompt: "14").keyboardType(.numberPad)
             }
             .sheetCard()

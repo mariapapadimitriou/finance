@@ -157,13 +157,13 @@ struct ConsentView: View {
     @ViewBuilder
     private func content(_ privacy: Privacy) -> some View {
         CardCaption("Needed for Pearl")
-        GlassCard(radius: cardRadius) {
+        APCard {
             NavigationLink { AccountsView() } label: {
                 PrivacyRow(symbol: "building.columns", title: "Reading your accounts",
                            sub: agreed("read_data")) { RowChevron() }
             }
             .buttonStyle(.plain)
-            RowSeparator()
+            APSeparator(afterFace: false)
             NavigationLink { YourDataView(goHome: goHome) } label: {
                 PrivacyRow(symbol: "chart.line.uptrend.xyaxis", title: "Working out your numbers",
                            sub: agreed("insights")) { RowChevron() }
@@ -173,7 +173,7 @@ struct ConsentView: View {
         }
 
         CardCaption("Your choice")
-        GlassCard(radius: cardRadius) {
+        APCard {
             // AI-08 (1313:4855, AI-03c): Pearl sorts for you, asking first. Ask Pearl's
             // switch becomes "Pearl chat" later (note 1340:8893): not shown yet, and
             // the chat needs no switch of its own until it is.
@@ -182,12 +182,12 @@ struct ConsentView: View {
                       isOn: isOn("ai_sort"), disabled: busy == "ai_sort") { on in
                 if on { Task { await change("ai_sort", to: true) } } else { askingAIOff = true }
             }
-            RowSeparator()
+            APSeparator(afterFace: false)
             SwitchRow(symbol: "bell", title: "Tips and news by email",
                       isOn: isOn("tips"), disabled: busy == "tips") { on in
                 Task { await change("tips", to: on) }
             }
-            RowSeparator()
+            APSeparator(afterFace: false)
             SwitchRow(symbol: "heart", title: "Help improve Pearl", sub: "Anonymous usage only",
                       isOn: isOn("analytics"), disabled: busy == "analytics") { on in
                 Task { await change("analytics", to: on) }
@@ -198,14 +198,14 @@ struct ConsentView: View {
         }
 
         CardCaption("Your rights")
-        GlassCard(radius: cardRadius) {
+        APCard {
             if let contact = privacy.contact, !contact.isEmpty, let mail = URL(string: "mailto:\(contact)") {
                 Link(destination: mail) {
                     PrivacyRow(title: "See or correct what we hold") { RowChevron() }
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint("Writes to our privacy officer, who replies within 30 days")
-                RowSeparator()
+                APSeparator(afterFace: false)
             }
             Button { doc = .privacy } label: {
                 PrivacyRow(title: "Privacy policy") {
@@ -304,9 +304,9 @@ struct NotificationsView: View {
     @ViewBuilder
     private func content(_ prefs: NotificationSettings.Prefs) -> some View {
         CardCaption("What you get")
-        GlassCard(radius: cardRadius) {
+        APCard {
             ForEach(Array(moments.enumerated()), id: \.element.id) { i, moment in
-                if i > 0 { RowSeparator() }
+                if i > 0 { APSeparator(afterFace: false) }
                 SwitchRow(symbol: moment.symbol, title: moment.title, sub: moment.sub,
                           isOn: prefs.types[moment.id]?.phone == true) { on in
                     Task { await setMoment(moment.id, on: on) }
@@ -319,18 +319,18 @@ struct NotificationsView: View {
         }
 
         CardCaption("Quiet hours")
-        GlassCard(radius: cardRadius) {
+        APCard {
             quietRow("From", prefs.quiet.from) { value in
                 Task { await save(["quiet": ["from": value]]) { $0.quiet.from = value } }
             }
-            RowSeparator()
+            APSeparator(afterFace: false)
             quietRow("To", prefs.quiet.to) { value in
                 Task { await save(["quiet": ["to": value]]) { $0.quiet.to = value } }
             }
         }
 
         CardCaption("Lock screen")
-        GlassCard(radius: cardRadius) {
+        APCard {
             SwitchRow(title: "Show amounts",
                       hint: "Off: “Your pay arrived.” On: “Your pay of $2,140 arrived.”",
                       isOn: prefs.lockAmounts) { on in
@@ -468,13 +468,13 @@ struct TurnOnNotificationsView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 4)
 
-                GlassCard(radius: cardRadius) {
+                APCard {
                     moment("calendar", "Payday", "A nudge to set something aside")
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     moment("chart.line.uptrend.xyaxis", "Weekly check-in", "Your week in one minute")
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     moment("star", "Progress", "When your Anchor grows")
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     moment("building.columns", "Bank needs you", "When a bank asks you to sign in")
                 }
 

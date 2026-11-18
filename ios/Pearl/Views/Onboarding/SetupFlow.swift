@@ -148,7 +148,7 @@ struct LinkBankView: View {
             Text("Pearl uses Plaid to link your bank").font(Nacre.title).tracking(0.4)
                 .multilineTextAlignment(.center).frame(maxWidth: .infinity)
                 .accessibilityAddTraits(.isHeader)
-            GlassCard {
+            APCard {
                 point("lock", "Bank-level encryption", "Encrypted and stored in Canada.")
                 point("eye", "Read-only access", "Pearl can’t move your money.")
                 point("checkmark", "Your data is never sold", "No ads. Delete your data anytime.")
@@ -277,9 +277,9 @@ struct ReadingAccountsView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.top, 24)
-            GlassCard {
+            APCard {
                 ForEach(Array(link.accounts.enumerated()), id: \.offset) { i, account in
-                    if i > 0 { RowSeparator(inset: 60) }
+                    if i > 0 { APSeparator() }
                     HStack(spacing: 12) {
                         BankBadge(text: initials(link.institution))
                         VStack(alignment: .leading, spacing: 2) {
@@ -378,9 +378,9 @@ struct BankLinkedView: View {
             }
             .padding(.top, 0)
             if !accounts.isEmpty {
-                GlassCard {
+                APCard {
                     ForEach(Array(accounts.enumerated()), id: \.element.id) { i, account in
-                        if i > 0 { RowSeparator(inset: 60) }
+                        if i > 0 { APSeparator() }
                         AccountLine(account: account, trailing: AnyView(DonePill(text: "Synced")))
                     }
                 }

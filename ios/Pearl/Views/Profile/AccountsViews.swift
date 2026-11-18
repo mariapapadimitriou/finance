@@ -198,9 +198,9 @@ struct AccountsView: View {
             }
             if !linked.isEmpty {
                 ProfileSection("Linked")
-                GlassCard {
+                APCard {
                     ForEach(Array(linked.enumerated()), id: \.element.id) { i, a in
-                        if i > 0 { RowSeparator(inset: 62) }
+                        if i > 0 { APSeparator() }
                         NavigationLink {
                             if a.status == "disconnected" {
                                 DisconnectedAccountView(account: a)
@@ -215,9 +215,9 @@ struct AccountsView: View {
             }
             if !added.isEmpty {
                 ProfileSection("Added by you")
-                GlassCard {
+                APCard {
                     ForEach(Array(added.enumerated()), id: \.element.id) { i, a in
-                        if i > 0 { RowSeparator(inset: 62) }
+                        if i > 0 { APSeparator() }
                         NavigationLink {
                             if a.isHand {
                                 ManualAccountView(account: a)
@@ -341,7 +341,7 @@ struct ConnectionBanner: View {
     let reconnect: () -> Void
 
     var body: some View {
-        GlassCard {
+        APCard {
             VStack(spacing: 14) {
                 HStack(spacing: 12) {
                     IconBubble(symbol: "arrow.triangle.2.circlepath")
@@ -401,7 +401,7 @@ struct ReconnectSheet: View {
             ProfileHeading(title: "Sign in to \(bank) again",
                            intro: "Banks ask you to sign in again every so often. It’s routine, and nothing is wrong with your account.")
                 .padding(.top, 28)
-            GlassCard {
+            APCard {
                 ProfileRow(initials: bank, title: label,
                            sub: updatedAt.map { "Last updated \(AccountWords.when($0))" }, chevron: false)
             }
@@ -470,9 +470,9 @@ struct AccountHero: View {
         .accessibilityElement(children: .combine)
 
         if facts && !account.isHand {
-            GlassCard {
+            APCard {
                 fact("History from", account.historyFrom.map { Format.month(String($0.prefix(7))) } ?? "—")
-                RowSeparator()
+                APSeparator(afterFace: false)
                 fact("Transactions", "\(account.transactions ?? 0)")
             }
         }
@@ -525,7 +525,7 @@ struct AccountDetailView: View {
             }
             if joint {
                 // AM-04: who it's shared with, under the balance.
-                GlassCard {
+                APCard {
                     NavigationLink { JointAccountView(account: account) } label: {
                         ProfileRow(title: "Shared with") {
                             Text(people).font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
@@ -536,23 +536,23 @@ struct AccountDetailView: View {
             }
 
             ProfileSection("Settings")
-            GlassCard {
+            APCard {
                 toggleRow(title: "Include in my budget",
                           sub: isInvestment ? "Spending doesn’t happen from an investment account."
                               : "Its spending, bills and balance count toward Allowance and your totals on Home.",
                           on: $counted, disabled: isInvestment) { on in Task { await setCounted(on) } }
                 if !isInvestment {
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     toggleRow(title: "Joint account",
                               sub: "Only your share counts. You choose the share.",
                               on: $joint) { on in Task { await setJoint(on) } }
                 }
                 if account.canAnchor == true {
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     toggleRow(title: "Part of my Anchor",
                               sub: "Savings accounts only", on: $anchor) { on in Task { await setAnchor(on) } }
                 }
-                RowSeparator()
+                APSeparator(afterFace: false)
                 Button { nickname = account.nickname ?? ""; renaming = true } label: {
                     ProfileRow(title: "Nickname", sub: nil) {
                         Text((account.nickname ?? "").isEmpty ? "Add" : account.nickname!)
@@ -561,7 +561,7 @@ struct AccountDetailView: View {
                 }
                 .buttonStyle(.plain)
                 if !account.copies(among: all).isEmpty {
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     NavigationLink {
                         SameAccountView(account: account, all: all) { text, goneId in
                             if goneId == account.id {
@@ -577,14 +577,14 @@ struct AccountDetailView: View {
                 }
             }
 
-            GlassCard {
+            APCard {
                 Button { removing = true } label: {
                     ProfileRow(title: "Remove this account", tone: Pearl.danger, chevron: false)
                 }
                 .buttonStyle(.plain)
                 if sameBank.count > 1 {
                     // AM-11 (THL-262): every account on this bank login at once.
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     Button { removingBank = true } label: {
                         ProfileRow(title: "Remove \(AccountWords.bank(account)) entirely · \(sameBank.count == 2 ? "both accounts" : "all \(sameBank.count) accounts")",
                                    tone: Pearl.danger, chevron: false)
@@ -835,10 +835,10 @@ struct RemoveAccountSheet: View {
             if account.isHand {
                 ProfileNote("Its balance comes off Home. This can’t be undone.")
             } else {
-                GlassCard {
+                APCard {
                     ChoiceLine(title: "Keep its transactions", sub: "Past months stay the same",
                                selected: !deleteHistory) { deleteHistory = false }
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     ChoiceLine(title: "Delete them too", sub: "This can’t be undone",
                                selected: deleteHistory) { deleteHistory = true }
                 }
@@ -897,12 +897,12 @@ struct DisconnectedAccountView: View {
     var body: some View {
         ProfilePage {
             AccountHero(account: account, note: note, facts: false)
-            GlassCard {
+            APCard {
                 fact("In Pearl", "\((account.transactions ?? 0).formatted()) transactions")
-                RowSeparator()
+                APSeparator(afterFace: false)
                 fact("History from", account.historyFrom.map { Format.month(String($0.prefix(7))) } ?? "—")
             }
-            GlassCard {
+            APCard {
                 Button { removing = true } label: {
                     ProfileRow(title: "Remove it and its history", tone: Pearl.danger, chevron: false)
                 }
@@ -1030,15 +1030,15 @@ struct ManualAccountView: View {
                 .padding(.top, 4)
 
             ProfileSection("Settings")
-            GlassCard {
+            APCard {
                 toggle(title: "Show on Home", sub: "Counts in your balances and totals",
                        on: $counted) { on in Task { await save(["counted": on], saying: on ? "\(account.name) shows on Home." : "\(account.name) is off Home.") } }
                 if account.canAnchor == true {
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     toggle(title: "Part of my Anchor", sub: "Savings accounts only",
                            on: $anchor) { on in Task { await save(["anchor": on], saying: on ? "\(account.name) counts toward your Anchor." : "\(account.name) no longer counts toward your Anchor.") } }
                 }
-                RowSeparator()
+                APSeparator(afterFace: false)
                 Button { name = account.name; renaming = true } label: {
                     ProfileRow(title: "Name") {
                         Text(account.name).font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
@@ -1046,7 +1046,7 @@ struct ManualAccountView: View {
                 }
                 .buttonStyle(.plain)
             }
-            GlassCard {
+            APCard {
                 Button { removing = true } label: {
                     ProfileRow(title: "Remove this account", tone: Pearl.danger, chevron: false)
                 }
@@ -1236,17 +1236,17 @@ struct RemoveBankSheet: View {
             .accessibilityElement(children: .combine)
             ScrollView {
                 VStack(spacing: 12) {
-                    GlassCard {
+                    APCard {
                         ForEach(Array(accounts.enumerated()), id: \.element.id) { i, a in
-                            if i > 0 { RowSeparator(inset: 62) }
+                            if i > 0 { APSeparator() }
                             ProfileRow(initials: bank, title: a.name,
                                        sub: (a.mask ?? "").isEmpty ? AccountWords.kind(a) : "••\(a.mask!)", chevron: false)
                         }
                     }
-                    GlassCard {
+                    APCard {
                         ChoiceLine(title: "Keep their transactions", sub: "Past months stay the same",
                                    selected: !deleteHistory) { deleteHistory = false }
-                        RowSeparator()
+                        APSeparator(afterFace: false)
                         ChoiceLine(title: "Delete them too", sub: "This can’t be undone",
                                    selected: deleteHistory) { deleteHistory = true }
                     }

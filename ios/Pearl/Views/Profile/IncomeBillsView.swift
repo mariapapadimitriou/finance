@@ -127,7 +127,7 @@ struct IncomeBillsView: View {
     @ViewBuilder
     private func content(_ data: IncomeBills) -> some View {
         // YP-09: replaces #350's plain "Your plan" row under the bills.
-        GlassCard {
+        APCard {
             NavigationLink { YourPlanView() } label: {
                 PlanCardLine(title: planCardTitle(data.yourPlan))
             }
@@ -139,21 +139,21 @@ struct IncomeBillsView: View {
                 IncomeLine(name: "Your own amount",
                            sub: data.expected?.varies == true ? "A month after tax · it changes" : "A month after tax",
                            amount: own) { sheet = .expected }
-                RowSeparator(inset: 64)
+                APSeparator()
             }
             ForEach(data.pays) { p in
                 IncomeLine(name: p.name, sub: cadence(p.cadence), amount: p.amount) { sheet = .pay(p) }
-                RowSeparator(inset: 64)
+                APSeparator()
             }
             ForEach(data.candidates) { c in
                 QuestionLine(name: c.name, sub: "Found · \(cadence(c.cadence).lowercased())",
                              question: "Your pay?") { sheet = .candidate(c) }
                     .accessibilityHint("Pearl found this in your transactions. Say whether it’s your pay.")
-                RowSeparator(inset: 64)
+                APSeparator()
             }
             ForEach(data.asks ?? []) { a in
                 AskLine(ask: a) { sheet = .ask(a) }
-                RowSeparator(inset: 64)
+                APSeparator()
             }
             if noIncome(data) {
                 if let estimate = data.expected?.estimate, estimate > 0 {
@@ -163,11 +163,11 @@ struct IncomeBillsView: View {
                     QuestionLine(name: "No income confirmed yet", sub: "Tell us what comes in each month",
                                  question: "Add") { sheet = .expected }
                 }
-                RowSeparator(inset: 64)
+                APSeparator()
             }
             AddLine(title: "Add other income") { sheet = .addPay }
             if !confirming, !noIncome(data), !((data.expected?.amount ?? 0) > 0) {
-                RowSeparator(inset: 64)
+                APSeparator()
                 AddLine(title: "Set my own amount") { sheet = .expected }
                     .accessibilityHint("Use what you expect each month instead of what Pearl works out")
             }
@@ -178,11 +178,11 @@ struct IncomeBillsView: View {
                 QuestionLine(name: "e-Transfers to \(q.recipient ?? "someone")",
                              sub: "\(Format.whole(q.amount)) · monthly" + (q.day.map { " · around the \(ordinal($0))" } ?? ""),
                              question: "Your rent?") { rent = q }
-                RowSeparator(inset: 52)
+                APSeparator()
             }
             ForEach(regular(data)) { bill in
                 billRow(bill)
-                RowSeparator(inset: 52)
+                APSeparator()
             }
             AddLine(title: "Add a bill") { sheet = .addBill }
         }
@@ -191,7 +191,7 @@ struct IncomeBillsView: View {
         if !subs.isEmpty {
             MoneySection(title: "Subscriptions", note: "Untick any you don’t want set aside.") {
                 ForEach(Array(subs.enumerated()), id: \.element.id) { i, bill in
-                    if i > 0 { RowSeparator(inset: 52) }
+                    if i > 0 { APSeparator() }
                     billRow(bill)
                 }
             }

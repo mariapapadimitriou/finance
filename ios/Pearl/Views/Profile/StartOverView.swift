@@ -24,11 +24,11 @@ struct StartOverView: View {
                 DataCaption("What goes")
                 DataCard {
                     DataRow(icon: "DataGoes", title: "Your transactions and how you sorted them")
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     DataRow(icon: "DataGoes", title: "Your rules and account setup")
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     DataRow(icon: "DataGoes", title: "Income, bills and budgets")
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     // The design has this under "What stays", but Start over
                     // clears goals and the Anchor (Store.start_over, 2026-10-28).
                     DataRow(icon: "DataGoes", title: "Your Anchor and goals")
@@ -36,7 +36,7 @@ struct StartOverView: View {
                 DataCaption("What stays")
                 DataCard {
                     DataRow(icon: "DataStays", title: "Your bank connections, and which accounts sync")
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     DataRow(icon: "DataStays", title: "Sign-in and privacy")
                 }
             }

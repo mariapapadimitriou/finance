@@ -1,43 +1,84 @@
 import SwiftUI
 
-// The Profile pages' look (Pearl iOS Handoff File, Pearl app page, P-01 to
-// P-03 and AM-01 to AM-10): glass cards of rows, each row led by a line icon
-// in a rose-washed circle or a bank's initials, the Fraunces title with one
-// line under it, and status pills.
+// The Profile pages' look, A+ (REDESIGN-11, -12, -13; Claude Design boards
+// G5-*, G5b-*, G6-*, kit.css): the A+ card of rows, each row led by a 36 pt
+// line icon on the action wash or a 40 pt face, the 34 pt Fraunces title
+// under a 44 pt glass Back, caps section labels outside the card, the A+
+// pill, toggle, radio, key-value and bullet rows, the champagne banner, the
+// danger line and the empty state. Built on APlus.swift's tokens.
 
-/// A line icon in a rose-washed circle at the start of a row: 34pt in a
-/// row, 72pt over a page's hero.
+/// Profile-only A+ tones (tokens.css): not shared, so other screens keep theirs.
+enum ProfileTone {
+    /// `action-wash`: the icon's circle, a pill button's fill.
+    static let actionWash = APlus.rgba(light: (178, 39, 87, 0.10), dark: (255, 143, 177, 0.10))
+    /// `.icon.dz`: danger at 12%.
+    static let dangerWash = APlus.rgba(light: (190, 38, 52, 0.12), dark: (255, 123, 114, 0.12))
+    /// `.icon.good`, `.pill.ok`: money-in at 14%.
+    static let goodWash = APlus.rgba(light: (22, 122, 64, 0.14), dark: (110, 219, 148, 0.14))
+    /// `.pill.anchor`: teal at 14%.
+    static let tealWash = APlus.rgba(light: (31, 122, 114, 0.14), dark: (143, 227, 214, 0.14))
+    /// The banner's fill: champagne 22% (dark 10%).
+    static let bannerFill = APlus.rgba(light: (243, 217, 164, 0.22), dark: (243, 217, 164, 0.10))
+}
+
+/// A+ `.icon`: a line icon on a 36 pt circle. Action wash by default; `dz`
+/// for a destructive row, `warn` for a banner, `good` for done.
 struct IconBubble: View {
+    enum Kind { case action, danger, warn, good }
+
     let symbol: String
-    var size: CGFloat = 34
+    var size: CGFloat = 36
     var tone: Color = Pearl.action
+    var kind: Kind = .action
 
     var body: some View {
         Image(systemName: symbol)
-            .font(.system(size: size / 2, weight: .regular))
-            .foregroundColor(tone)
+            .font(.system(size: size * 0.46, weight: .regular))
+            .foregroundColor(foreground)
             .frame(width: size, height: size)
-            .background(Circle().fill(Nacre.roseWash))
+            .background(Circle().fill(background))
             .accessibilityHidden(true)
     }
-}
 
-/// "MONEY": the small caps label over a card.
-struct ProfileSection: View {
-    let text: String
+    private var foreground: Color {
+        switch kind {
+        case .action: return tone
+        case .danger: return Pearl.danger
+        case .warn: return Pearl.caution
+        case .good: return Pearl.moneyIn
+        }
+    }
 
-    init(_ text: String) { self.text = text }
-
-    var body: some View {
-        Text(text.uppercased())
-            .font(Nacre.caption1)
-            .foregroundColor(Pearl.ink)
-            .padding(.horizontal, 16).padding(.top, 10)
-            .accessibilityAddTraits(.isHeader)
+    private var background: Color {
+        switch kind {
+        case .action: return ProfileTone.actionWash
+        case .danger: return ProfileTone.dangerWash
+        case .warn: return Pearl.cautionBackground
+        case .good: return ProfileTone.goodWash
+        }
     }
 }
 
-/// A short note under a card.
+/// "MONEY": A+ `.label`, caps outside the card (13/500, tracked 0.78,
+/// `muted`), 24 above and 8 below.
+struct ProfileSection: View {
+    let text: String
+    var action: String? = nil
+    var act: () -> Void = {}
+
+    init(_ text: String, action: String? = nil, act: @escaping () -> Void = {}) {
+        self.text = text
+        self.action = action
+        self.act = act
+    }
+
+    var body: some View {
+        APSectionLabel(text: text, action: action, act: act)
+            .padding(.top, 16)
+    }
+}
+
+/// A+ `.note`: 13 `muted`, 4 in.
 struct ProfileNote: View {
     let text: String
     var centred = false
@@ -51,12 +92,13 @@ struct ProfileNote: View {
         Text(text).font(Nacre.footnote).foregroundColor(Pearl.muted)
             .multilineTextAlignment(centred ? .center : .leading)
             .frame(maxWidth: .infinity, alignment: centred ? .center : .leading)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 4)
             .fixedSize(horizontal: false, vertical: true)
     }
 }
 
-/// "Accounts / Updated 5 minutes ago": the Fraunces title and its one line.
+/// A+ `.ptitle`: the 34 pt Fraunces title, 4 in, and its one `muted` lead
+/// line in 17 (G5 `nav(title, lead=)`).
 struct ProfileHeading: View {
     var eyebrow: String? = nil
     let title: String
@@ -64,103 +106,116 @@ struct ProfileHeading: View {
     var centred = false
 
     var body: some View {
-        VStack(alignment: centred ? .center : .leading, spacing: 6) {
+        VStack(alignment: centred ? .center : .leading, spacing: 4) {
             if let eyebrow = eyebrow {
-                Text(eyebrow.uppercased()).font(Nacre.caption2).tracking(1.4).foregroundColor(Pearl.muted)
+                Text(eyebrow.uppercased()).font(Nacre.label).tracking(0.78).foregroundColor(Pearl.muted)
             }
-            Text(title).font(Nacre.title).tracking(0.4).foregroundColor(Pearl.ink)
+            Text(title).font(Nacre.largeTitle).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(centred ? .center : .leading)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
             if let intro = intro {
-                Text(intro).font(Nacre.footnote).foregroundColor(Pearl.ink)
+                Text(intro).font(Nacre.body).foregroundColor(Pearl.muted)
                     .multilineTextAlignment(centred ? .center : .leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: centred ? .center : .leading)
-        .padding(.bottom, 6)
+        .padding(.horizontal, 4)
     }
 }
 
-/// A bank's or a person's initials in a frosted circle (AM-01, P-01).
+/// A+ `.face`: a bank's or a person's initials, 40 pt on `face`, 14/500.
 struct RowAvatar: View {
     let name: String
-    var size: CGFloat = 36
-    var font: Font = Nacre.footnote
+    var size: CGFloat = 40
+    var font: Font = .custom("Figtree-Medium", size: 14, relativeTo: .footnote)
 
     var body: some View {
         Text(letters)
             .font(font).foregroundColor(Pearl.ink)
+            .lineLimit(1).minimumScaleFactor(0.5)
             .frame(width: size, height: size)
-            .background(Circle().fill(Nacre.glass))
-            .overlay(Circle().strokeBorder(Nacre.edge, lineWidth: 1))
+            .background(Circle().fill(APlus.face))
             .accessibilityHidden(true)
     }
 
-    /// "TD" and "RBC" as they are, "AE" for American Express, "T" for
-    /// Tangerine (AM-01).
+    /// "TD" as it is, "AE" for American Express, "TA" for Tangerine (G5-Accounts).
     private var letters: String {
         let words = name.split { !$0.isLetter && !$0.isNumber }
-        if words.count == 1, let w = words.first, w.count <= 3 { return w.uppercased() }
+        if words.count == 1, let w = words.first {
+            return w.count <= 2 ? w.uppercased() : String(w.prefix(2)).uppercased()
+        }
         let out = words.prefix(2).compactMap { $0.first.map(String.init) }.joined().uppercased()
         return out.isEmpty ? "·" : out
     }
 }
 
-/// One row: an icon (or a bank's initials), a title, a line under it, and
-/// whatever sits at the end.
+/// The A+ chevron: 8 × 14, `muted`.
+struct APChevron: View {
+    var body: some View {
+        Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold))
+            .foregroundColor(Pearl.muted)
+            .accessibilityHidden(true)
+    }
+}
+
+/// A+ `.row`: an icon (or a face), a title over a line, whatever sits at the
+/// end, and the chevron. 64 high, 16 at the sides, 12 between. A destructive
+/// row is red, icon and words (`.dz`): the only red on the way to a
+/// confirmation; the confirmation's button is the rose Primary.
 struct ProfileRow<Trailing: View>: View {
     var symbol: String? = nil
     var initials: String? = nil
     let title: String
     var sub: String? = nil
-    /// "⚠ 1 needs you", "Joint · 50%": on the line under the title.
+    /// "Joint · 50%" on the line under the title, or (`pillTrailing`) at the end.
     var pill: StatusPill? = nil
     var tone: Color = Pearl.ink
     var chevron = true
     /// Still loading: the line under the title is a soft placeholder the
     /// same size, so nothing moves when it fills in (2026-11-08).
     var loading = false
+    var pillTrailing = false
     var trailing: Trailing
 
     var body: some View {
         HStack(spacing: 12) {
-            if let symbol = symbol { IconBubble(symbol: symbol) }
+            if let symbol = symbol { IconBubble(symbol: symbol, kind: isDanger ? .danger : .action) }
             if let initials = initials { RowAvatar(name: initials) }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(Nacre.body).foregroundColor(tone)
                     .fixedSize(horizontal: false, vertical: true)
-                if sub != nil || pill != nil {
-                    HStack(spacing: 8) {
+                if (sub != nil && sub?.isEmpty == false) || (pill != nil && !pillTrailing) {
+                    HStack(spacing: 6) {
                         if let sub = sub, !sub.isEmpty {
-                            Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                            Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .redacted(reason: loading ? .placeholder : [])
                         }
-                        if let pill = pill { pill }
+                        if let pill = pill, !pillTrailing { pill }
                     }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            if let pill = pill, pillTrailing { pill }
             trailing
-            if chevron {
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(Pearl.muted)
-            }
+            if chevron { APChevron() }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .frame(minHeight: 52)
+        .frame(minHeight: 64)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
+
+    private var isDanger: Bool { tone == Pearl.danger }
 }
 
 extension ProfileRow {
     init(symbol: String? = nil, initials: String? = nil, title: String, sub: String? = nil,
          pill: StatusPill? = nil, tone: Color = Pearl.ink, chevron: Bool = true, loading: Bool = false,
-         @ViewBuilder trailing: () -> Trailing) {
+         pillTrailing: Bool = false, @ViewBuilder trailing: () -> Trailing) {
         self.symbol = symbol
         self.initials = initials
         self.title = title
@@ -169,118 +224,145 @@ extension ProfileRow {
         self.tone = tone
         self.chevron = chevron
         self.loading = loading
+        self.pillTrailing = pillTrailing
         self.trailing = trailing()
     }
 }
 
 extension ProfileRow where Trailing == EmptyView {
     init(symbol: String? = nil, initials: String? = nil, title: String, sub: String? = nil,
-         pill: StatusPill? = nil, tone: Color = Pearl.ink, chevron: Bool = true, loading: Bool = false) {
+         pill: StatusPill? = nil, tone: Color = Pearl.ink, chevron: Bool = true, loading: Bool = false,
+         pillTrailing: Bool = false) {
         self.init(symbol: symbol, initials: initials, title: title, sub: sub, pill: pill, tone: tone,
-                  chevron: chevron, loading: loading, trailing: { EmptyView() })
+                  chevron: chevron, loading: loading, pillTrailing: pillTrailing, trailing: { EmptyView() })
     }
 }
 
-/// "✓ Up to date", "⚠ 1 needs you": always an icon and words, never colour alone.
+/// A+ `.pill`: 28 high, 12 at the sides, 13 pt. `warn` (needs you), `ok`
+/// (up to date), `joint`, `anchor`, or plain on `chip`.
 struct StatusPill: View {
-    enum Tone { case positive, attention, info, neutral, joint, needsALook }
+    enum Tone { case positive, attention, info, neutral, joint, needsALook, anchor }
 
     let text: String
     var tone: Tone = .positive
+    var small = false
 
     var body: some View {
-        HStack(spacing: 4) {
-            if let symbol = symbol {
-                Image(systemName: symbol).font(.system(size: 11, weight: .semibold))
-            }
-            Text(text).lineLimit(1)
-        }
-        .font(tone == .neutral ? Nacre.label : Nacre.footnote)
-        .foregroundColor(foreground)
-        .padding(.horizontal, tone == .neutral ? 12 : 10).frame(height: 26)
-        .background(Capsule().fill(background))
-        .overlay {
-            if tone == .neutral { Capsule().strokeBorder(Pearl.border, lineWidth: 1) }
-        }
+        Text(text).lineLimit(1)
+            .font(small ? .custom("Figtree-Regular", size: 12, relativeTo: .caption)
+                  : (strong ? Nacre.label : Nacre.footnote))
+            .foregroundColor(foreground)
+            .padding(.horizontal, small ? 8 : 12).frame(height: small ? 22 : 28)
+            .background(Capsule().fill(background))
+            .fixedSize()
     }
 
-    private var symbol: String? {
+    private var strong: Bool {
         switch tone {
-        case .positive: return "checkmark"
-        case .attention, .needsALook: return "exclamationmark.triangle"
-        case .info: return "info.circle"
-        case .joint: return "person.2"
-        case .neutral: return nil
+        case .info, .neutral: return false
+        default: return true
         }
     }
 
     private var foreground: Color {
         switch tone {
-        case .positive: return Nacre.teal
-        case .attention: return Pearl.caution
-        case .needsALook: return Pearl.action
-        case .info, .joint: return Pearl.ink
-        case .neutral: return Pearl.muted
+        case .positive: return Pearl.moneyIn
+        case .attention, .needsALook: return Pearl.caution
+        case .anchor: return Nacre.teal
+        case .info, .joint, .neutral: return Pearl.ink
         }
     }
 
     private var background: Color {
         switch tone {
-        case .positive: return Nacre.mint
-        case .attention: return Pearl.cautionBackground
-        case .needsALook: return Pearl.dynamic(light: 0xFFE4EC, dark: 0x4E2238)
-        case .info, .joint: return Nacre.lilac.opacity(0.35)
-        case .neutral: return Nacre.glass  // REFRESH-05: no flat page colour; glass on the gradient
+        case .positive: return ProfileTone.goodWash
+        case .attention, .needsALook: return Pearl.cautionBackground
+        case .anchor: return ProfileTone.tealWash
+        case .joint: return Pearl.bubble
+        case .info, .neutral: return APlus.chip
         }
     }
 }
 
-/// A Profile page: back, its content on the nacre, and any buttons along
-/// the bottom.
+/// The 44 pt glass Back circle on a pushed page (kit `BACK`).
+struct APBackButton: View {
+    var identifier = "profile-back"
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
+                .foregroundColor(Pearl.ink)
+                .frame(width: 44, height: 44)
+                .background(APCardSurface(radius: 22))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Back")
+        .accessibilityIdentifier(identifier)
+    }
+}
+
+/// A+ `.glassbtn` with a symbol (Accounts' +).
+struct APGlassButton: View {
+    let symbol: String
+    let label: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 17, weight: .semibold))
+                .foregroundColor(Pearl.ink)
+                .frame(width: 44, height: 44)
+                .background(APCardSurface(radius: 22))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+}
+
+/// A Profile page (G5 `nav`): the 52 pt row with the glass Back (and what
+/// sits at its right), the content on the ground, and any buttons pinned
+/// along the bottom, 12 apart.
 struct ProfilePage<Content: View, Bottom: View>: View {
     @Environment(\.dismiss) private var dismiss
+    var navTrailing: AnyView? = nil
     @ViewBuilder var content: () -> Content
     @ViewBuilder var bottom: () -> Bottom
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 8, content: content)
-                .padding(.horizontal, Pearl.gutter)
-                .padding(.top, 4)
-                .padding(.bottom, 32)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    APBackButton { dismiss() }
+                    Spacer()
+                    if let navTrailing = navTrailing { navTrailing }
+                }
+                .frame(height: 52)
+                content()
+            }
+            .padding(.horizontal, Pearl.gutter)
+            .padding(.bottom, 32)
         }
         .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if Bottom.self != EmptyView.self {
-                VStack(spacing: 6, content: bottom)
-                    .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
+                VStack(spacing: 12, content: bottom)
+                    .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 4)
             }
         }
         .nacreScreen()
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button { dismiss() } label: {
-                    Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(Pearl.ink)
-                }
-                .accessibilityLabel("Back")
-            }
-        }
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarHidden(true)
     }
 }
 
 extension ProfilePage where Bottom == EmptyView {
-    init(@ViewBuilder content: @escaping () -> Content) {
-        self.init(content: content, bottom: { EmptyView() })
+    init(navTrailing: AnyView? = nil, @ViewBuilder content: @escaping () -> Content) {
+        self.init(navTrailing: navTrailing, content: content, bottom: { EmptyView() })
     }
 }
 
-/// An email field as the design system's Input draws it: a footnote label
-/// over a 52pt field, with a rose ring while typing.
+/// An email field as a visible well (REDESIGN-09): the 13 pt label over a
+/// 44 pt well, 2 pt action ring while typing.
 struct EmailField: View {
     let label: String
     @Binding var text: String
@@ -292,7 +374,7 @@ struct EmailField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(label).font(Nacre.footnote).foregroundColor(Pearl.ink)
+            Text(label).font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 4)
             Group {
                 if readOnly {
                     Text(text).foregroundColor(Pearl.muted)
@@ -307,20 +389,390 @@ struct EmailField: View {
                         .focused($focused)
                         .onSubmit(submit)
                         .foregroundColor(Pearl.ink)
+                        .tint(Pearl.action)
                 }
             }
             .font(Nacre.body)
-            .padding(.horizontal, 16)
-            .frame(height: 52)
-            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Nacre.glass))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(focused ? Pearl.action : Nacre.edge, lineWidth: focused ? 1.5 : 1))
+            .padding(.horizontal, 14)
+            .frame(minHeight: 44)
+            .wellStyle(focused: focused)
             .accessibilityLabel(label)
             if let hint = hint {
                 Text(hint).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    .padding(.horizontal, 4)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+}
+
+// MARK: - A+ rows and parts (kit.css, g5.py)
+
+/// G5 `tog`: an optional icon, a title over a line, and the switch (action
+/// when on). Disabled: 45%.
+struct APToggleRow: View {
+    var symbol: String? = nil
+    let title: String
+    var sub: String? = nil
+    @Binding var isOn: Bool
+    var identifier: String? = nil
+
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        Toggle(isOn: $isOn) {
+            HStack(spacing: 12) {
+                if let symbol = symbol { IconBubble(symbol: symbol) }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let sub = sub {
+                        Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+        .tint(Pearl.action)
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(minHeight: 64)
+        .opacity(isEnabled ? 1 : 0.45)
+        .accessibilityIdentifier(identifier ?? title)
+    }
+}
+
+/// G5 `choice`: the 24 pt radio (on: a 7 pt action ring), a title over a line.
+struct APChoiceRow: View {
+    let title: String
+    var sub: String? = nil
+    let selected: Bool
+    var danger = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                APRadio(on: selected)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(Nacre.body).foregroundColor(danger ? Pearl.danger : Pearl.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let sub = sub {
+                        Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .frame(minHeight: 64)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+/// `.radio`: 24, a 1.5 pt `muted` ring; on, a 7 pt `action` ring.
+struct APRadio: View {
+    let on: Bool
+
+    var body: some View {
+        Circle()
+            .strokeBorder(on ? Pearl.action : Pearl.muted, lineWidth: on ? 7 : 1.5)
+            .frame(width: 24, height: 24)
+            .accessibilityHidden(true)
+    }
+}
+
+/// `.tickbox`: 24, radius 7; on, `action` with a white tick.
+struct APTickBox: View {
+    let on: Bool
+
+    var body: some View {
+        ZStack {
+            if on {
+                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Pearl.action)
+                Image(systemName: "checkmark").font(.system(size: 13, weight: .bold)).foregroundColor(Pearl.onAction)
+            } else {
+                RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Pearl.muted, lineWidth: 1.5)
+            }
+        }
+        .frame(width: 24, height: 24)
+        .accessibilityHidden(true)
+    }
+}
+
+/// G5 `kv`: a 52 pt row, the key on the left, its value `muted` (or `link`) on the right.
+struct APKeyValueRow<Value: View>: View {
+    let key: String
+    var strong = false
+    var chevron = false
+    @ViewBuilder var value: () -> Value
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(key).font(strong ? Nacre.headline : Nacre.body).foregroundColor(Pearl.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            value().font(Nacre.body).multilineTextAlignment(.trailing)
+            if chevron { APChevron() }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .frame(minHeight: 52)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+}
+
+extension APKeyValueRow where Value == Text {
+    init(key: String, value: String, link: Bool = false, strong: Bool = false, chevron: Bool = false) {
+        self.key = key
+        self.strong = strong
+        self.chevron = chevron
+        self.value = { Text(value).foregroundColor(link ? Pearl.link : Pearl.muted) }
+    }
+}
+
+/// G5 `bullet`: a 6 pt dot (action, or teal for what stays) and 15 pt words.
+struct APBullet: View {
+    let text: String
+    var sub: String? = nil
+    var dot: Color = Pearl.action
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Circle().fill(dot).frame(width: 6, height: 6).padding(.top, 7).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(text).foregroundColor(Pearl.ink)
+                if let sub = sub { Text(sub).foregroundColor(Pearl.muted) }
+            }
+            .font(Nacre.subheadline)
+            .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// `.banner`: champagne 22% with its 1 pt line, radius 16, an icon, the
+/// words and an optional quiet action at the end.
+struct APBanner: View {
+    var symbol = "exclamationmark.triangle"
+    let text: String
+    var action: String? = nil
+    var act: () -> Void = {}
+
+    var body: some View {
+        HStack(spacing: 12) {
+            IconBubble(symbol: symbol, kind: .warn)
+            Text(text).font(Nacre.subheadline).foregroundColor(Pearl.ink)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            if let action = action {
+                APQuietButton(title: action, action: act)
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(ProfileTone.bannerFill))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Pearl.champagne, lineWidth: 1))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// `.errline`: a real error, in `danger`, with its circle-i. Announced.
+struct APErrorLine: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.circle").font(.system(size: 17)).accessibilityHidden(true)
+            Text(text).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .font(Nacre.subheadline)
+        .foregroundColor(Pearl.danger)
+        .padding(.horizontal, 4)
+        .accessibilityElement(children: .combine)
+        .onAppear { UIAccessibility.post(notification: .announcement, argument: text) }
+    }
+}
+
+/// `.quiet`: a quiet action in `link` 15/500, 44 to tap.
+struct APQuietButton: View {
+    let title: String
+    var tone: Color = Pearl.link
+    var identifier: String? = nil
+    let action: () -> Void
+
+    var body: some View {
+        Button(title, action: action)
+            .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+            .foregroundColor(tone)
+            .buttonStyle(.plain)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+            .accessibilityIdentifier(identifier ?? title)
+    }
+}
+
+/// `.pill-btn`: 32 high, 15/600 on the action wash; `quiet` is ink on `chip`.
+struct APPillButton: View {
+    let title: String
+    var quiet = false
+    var identifier: String? = nil
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.custom(quiet ? "Figtree-Medium" : "Figtree-SemiBold", size: 15, relativeTo: .subheadline))
+                .foregroundColor(quiet ? Pearl.ink : Pearl.action)
+                .padding(.horizontal, 14).frame(height: 32)
+                .background(Capsule().fill(quiet ? APlus.chip : ProfileTone.actionWash))
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier ?? title)
+    }
+}
+
+/// The nacre ring round a face (`.ring`, 56; `.ring.sm`, 44).
+struct APRingFace: View {
+    let name: String
+    var size: CGFloat = 56
+
+    var body: some View {
+        RowAvatar(name: name, size: size - 2.4,
+                  font: .custom("Figtree-Medium", size: size >= 56 ? 17 : 15, relativeTo: .body))
+            .padding(1.2)
+            .background(Circle().fill(APlus.nacreRing))
+            .accessibilityHidden(true)
+    }
+}
+
+/// G5 `who`: the ringed face, the name in 22 Fraunces and its line (a sheet's top).
+struct APWho: View {
+    let face: String
+    let name: String
+    var line: String? = nil
+    var lineTone: Color = Pearl.muted
+
+    var body: some View {
+        HStack(spacing: 12) {
+            APRingFace(name: face, size: 44)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(name).font(Nacre.title2).foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let line = line {
+                    Text(line).font(Nacre.subheadline).foregroundColor(lineTone)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// G5 `hero`: a detail page's top, centred: the ringed face, the name in 22
+/// Fraunces, the big amount (44, Fraunces SemiBold), its lines and a pill.
+struct APHero: View {
+    let face: String
+    let name: String
+    var amount: String? = nil
+    var amountTone: Color = Pearl.ink
+    var lines: [String] = []
+    var pill: StatusPill? = nil
+    var symbol: String? = nil
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if let symbol = symbol {
+                IconBubble(symbol: symbol)
+            } else {
+                APRingFace(name: face)
+            }
+            Text(name).font(Nacre.title2).foregroundColor(Pearl.ink)
+                .multilineTextAlignment(.center)
+                .padding(.top, 8)
+                .accessibilityAddTraits(.isHeader)
+            if let amount = amount {
+                Text(amount).font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
+                    .tracking(-0.88).monospacedDigit()
+                    .foregroundColor(amountTone)
+                    .pearlAmountFit()
+            }
+            ForEach(lines, id: \.self) { l in
+                Text(l).font(Nacre.subheadline).foregroundColor(Pearl.muted).multilineTextAlignment(.center)
+            }
+            if let pill = pill { pill.padding(.top, 10) }
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// `.state`: nothing here yet, or it couldn't load. An icon or the mark, a
+/// 22 pt Fraunces title, a 15 pt `muted` line and an optional button.
+struct APEmptyState<Art: View, Actions: View>: View {
+    let title: String
+    var line: String? = nil
+    var top: CGFloat = 110
+    @ViewBuilder var art: () -> Art
+    @ViewBuilder var actions: () -> Actions
+
+    var body: some View {
+        VStack(spacing: 6) {
+            art().padding(.bottom, 8)
+            Text(title).font(Nacre.title2).foregroundColor(Pearl.ink)
+                .multilineTextAlignment(.center)
+                .accessibilityAddTraits(.isHeader)
+            if let line = line {
+                Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            actions().padding(.top, 12)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 20)
+        .padding(.top, top)
+    }
+}
+
+extension APEmptyState where Actions == EmptyView {
+    init(title: String, line: String? = nil, top: CGFloat = 110, @ViewBuilder art: @escaping () -> Art) {
+        self.init(title: title, line: line, top: top, art: art, actions: { EmptyView() })
+    }
+}
+
+/// G5-Load: a row holding its place while the page loads.
+struct APSkeletonRow: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            Circle().fill(APlus.trackSoft).frame(width: 40, height: 40)
+            VStack(alignment: .leading, spacing: 8) {
+                Capsule().fill(APlus.trackSoft).frame(width: 150, height: 12)
+                Capsule().fill(APlus.trackSoft).frame(width: 80, height: 12)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(minHeight: 64)
+        .accessibilityHidden(true)
+    }
+}
+
+/// The Pearl mark (LogoMark), sized by width.
+struct APMark: View {
+    var width: CGFloat = 150
+
+    var body: some View {
+        Image("LogoMark").resizable().frame(width: width, height: width * 0.833)
+            .accessibilityHidden(true)
     }
 }
 
@@ -417,8 +869,8 @@ enum PearlDoc: String, Identifiable {
         case .terms:
             return [
                 Part(text: "A plain-language draft, not yet formal terms of service."),
-                Part(heading: "What Pearl is", text: "Pearl helps you see your Allowance and plan what’s next. It reads your accounts; it doesn’t move money, and it isn’t financial advice."),
-                Part(heading: "Your part", text: "Keep your email and devices secure, since a code sent to your email or a passkey on your device is how you get in."),
+                Part(heading: "What Pearl is", text: "Pearl helps you see your Allowance and plan what’s next. It reads your accounts. It doesn’t move money, and it isn’t financial advice."),
+                Part(heading: "Your part", text: "Keep your email and devices secure. A code sent to your email, or Face ID on this iPhone, is how you get in."),
                 Part(heading: "Ending", text: "You can stop any time. Deleting your account in Profile › Your data disconnects your banks and deletes your data."),
             ]
         default:
@@ -444,7 +896,9 @@ struct DocSheet: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    ProfileHeading(eyebrow: doc.eyebrow, title: doc.title)
+                    Text(doc.title).font(Nacre.title2).foregroundColor(Pearl.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
                         .padding(.top, 28)
                     ForEach(doc.parts, id: \.self) { part in
                         VStack(alignment: .leading, spacing: 4) {
@@ -456,9 +910,9 @@ struct DocSheet: View {
                         }
                     }
                     if !doc.facts.isEmpty {
-                        GlassCard {
+                        APCard {
                             ForEach(Array(doc.facts.enumerated()), id: \.element) { i, fact in
-                                if i > 0 { RowSeparator() }
+                                if i > 0 { APSeparator(afterFace: false) }
                                 factRow(fact)
                             }
                         }
@@ -469,7 +923,7 @@ struct DocSheet: View {
                 .padding(.bottom, 24)
             }
             Button("Got it") { dismiss() }
-                .buttonStyle(NacreButtonStyle())
+                .buttonStyle(APPrimaryButtonStyle())
                 .padding(.horizontal, 16).padding(.bottom, 8)
         }
     }
@@ -477,8 +931,8 @@ struct DocSheet: View {
     private func factRow(_ fact: PearlDoc.Fact) -> some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(fact.label.uppercased()).font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
-                Text(fact.text).font(Nacre.subheadline).foregroundColor(Pearl.ink)
+                Text(fact.label).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                Text(fact.text).font(Nacre.body).foregroundColor(Pearl.ink)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -496,23 +950,21 @@ extension PearlDoc {
     var isPage: Bool { self == .terms || self == .privacy }
 }
 
-/// LG-01 Terms, LG-02 Privacy policy: pushed, with a back button.
+/// LG-01 Terms, LG-02 Privacy policy (G5-Protect): pushed, with Back and
+/// the Draft pill; each part is a caps label over a card of 17/24 words.
 struct DocPage: View {
     let doc: PearlDoc
 
     var body: some View {
-        ProfilePage {
-            ProfileHeading(title: doc.title, intro: doc.parts.first?.heading == nil ? doc.parts.first?.text : nil)
-            ForEach(doc.parts.dropFirst(doc.parts.first?.heading == nil ? 1 : 0), id: \.self) { part in
-                VStack(alignment: .leading, spacing: 4) {
-                    if let heading = part.heading {
-                        Text(heading.uppercased()).font(Nacre.caption1).foregroundColor(Pearl.ink)
-                            .padding(.leading, 16).accessibilityAddTraits(.isHeader)
-                    }
-                    Text(part.text).font(Nacre.subheadline).foregroundColor(Pearl.ink)
+        ProfilePage(navTrailing: AnyView(StatusPill(text: "Draft", tone: .neutral))) {
+            ProfileHeading(title: doc.title)
+            ForEach(doc.parts.filter { $0.heading != nil }, id: \.self) { part in
+                ProfileSection(part.heading ?? "")
+                APCard {
+                    Text(part.text).font(Nacre.body).lineSpacing(2).foregroundColor(Pearl.ink)
                         .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 16).padding(.vertical, 14)
                 }
-                .padding(.top, 6)
             }
         }
     }

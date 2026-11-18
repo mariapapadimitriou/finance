@@ -650,11 +650,11 @@ private struct CategoryKindSheet: View {
                     .buttonStyle(NacreButtonStyle())
                     .padding(.horizontal, 16).padding(.bottom, 8)
             } else {
-                GlassCard {
+                APCard {
                     choice("Pearl decides · \(pearl == "fixed" ? "Fixed" : "Variable")", nil)
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     choice("Always Fixed", "fixed")
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     choice("Always Variable", "variable")
                 }
                 .padding(.horizontal, 16)

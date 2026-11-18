@@ -20,26 +20,26 @@ struct ProtectView: View {
             .frame(maxWidth: .infinity)
             .padding(.top, 8).padding(.bottom, 4)
 
-            GlassCard {
+            APCard {
                 ProfileRow(symbol: "eye", title: "Read-only", sub: "Sees balances and transactions", chevron: false)
-                RowSeparator(inset: 62)
+                APSeparator()
                 ProfileRow(symbol: "nosign", title: "Can’t move money", sub: "No payments or transfers, ever",
                            chevron: false)
-                RowSeparator(inset: 62)
+                APSeparator()
                 ProfileRow(symbol: "key", title: "Never sees your bank password", sub: "You sign in through Plaid",
                            chevron: false)
-                RowSeparator()
+                APSeparator(afterFace: false)
                 docRow("How Plaid sign-in works", .plaid)
             }
 
             ProfileSection("Your data")
-            GlassCard {
+            APCard {
                 ProfileRow(symbol: "cpu", title: "Kept in Canada", sub: "Encrypted", chevron: false)
-                RowSeparator(inset: 62)
+                APSeparator()
                 ProfileRow(symbol: "heart", title: "Never sold", chevron: false)
-                RowSeparator()
+                APSeparator(afterFace: false)
                 docRow("See what we store", .store)
-                RowSeparator()
+                APSeparator(afterFace: false)
                 docRow("See who we share with", .share)
             }
 
@@ -48,9 +48,9 @@ struct ProtectView: View {
                 if privacy.connections.isEmpty {
                     ProfileNote("No banks are linked, so Pearl can’t see any.")
                 } else {
-                    GlassCard {
+                    APCard {
                         ForEach(Array(privacy.connections.enumerated()), id: \.element.id) { i, c in
-                            if i > 0 { RowSeparator(inset: 62) }
+                            if i > 0 { APSeparator() }
                             NavigationLink { AccountsView() } label: {
                                 ProfileRow(initials: c.institution, title: c.institution, sub: connectionLine(c),
                                            pill: StatusPill(text: pill(c).text, tone: pill(c).tone))
@@ -61,7 +61,7 @@ struct ProtectView: View {
                 }
                 if let contact = privacy.contact, !contact.isEmpty,
                    let mail = URL(string: "mailto:\(contact)") {
-                    GlassCard {
+                    APCard {
                         Link(destination: mail) {
                             ProfileRow(symbol: "questionmark.circle", title: "Contact a person", tone: Pearl.action)
                         }

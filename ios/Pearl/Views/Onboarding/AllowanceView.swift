@@ -28,7 +28,7 @@ struct AllowanceView: View {
                 .padding(.vertical, 8)
             Text(caption).font(Nacre.subheadline).multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
-            GlassCard(spacing: 0) {
+            APCard {
                 Text("Your first steps").font(Nacre.headline)
                     .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 6)
                 step(1, "Link your bank accounts", done: !skipped, current: skipped)

@@ -62,29 +62,29 @@ struct PayAndBillsView: View {
                     }
                     ForEach(data.pays) { pay in
                         incomeRow(pay.name, cadence(pay.cadence), pay.amount) { sheet = .pay(pay) }
-                        RowSeparator(inset: 64)
+                        APSeparator()
                     }
                     ForEach(candidates) { c in
                         incomeRow(c.name, cadence(c.cadence), c.amount) { sheet = .candidate(c) }
-                        RowSeparator(inset: 64)
+                        APSeparator()
                     }
                     ForEach(data.asks ?? []) { a in
                         askRow(a)
-                        RowSeparator(inset: 64)
+                        APSeparator()
                     }
                     addRow(noPay ? "Add your income" : "Add other income") { sheet = .addPay }
                 }
                 section("Bills") {
                     ForEach(bills) { bill in
                         billRow(bill)
-                        RowSeparator(inset: 52)
+                        APSeparator()
                     }
                     addRow("Add a bill") { sheet = .addBill }
                 }
                 if !subscriptions.isEmpty {
                     section("Subscriptions", note: "Untick any you don’t want set aside.") {
                         ForEach(Array(subscriptions.enumerated()), id: \.element.id) { i, bill in
-                            if i > 0 { RowSeparator(inset: 52) }
+                            if i > 0 { APSeparator() }
                             billRow(bill)
                         }
                     }
@@ -231,7 +231,7 @@ struct MoneySection<Content: View>: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title.uppercased()).font(Nacre.caption2).tracking(0.6).padding(.leading, 16)
                 .accessibilityAddTraits(.isHeader)
-            GlassCard {
+            APCard {
                 content()
                 if let note = note {
                     Text(note).font(Nacre.footnote).foregroundColor(Pearl.muted)
@@ -453,17 +453,17 @@ struct PaySheet: View {
             VStack(spacing: 0) {
                 if adding {
                     FieldRow(label: "Name", text: $name, prompt: "e.g. Weekend job")
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                 }
                 FieldRow(label: adding ? "Amount" : "Each pay", text: $amount, prompt: "$0.00")
                     .keyboardType(.decimalPad)
-                RowSeparator()
+                APSeparator(afterFace: false)
                 pickerRow("How often", selection: $how, options: ["weekly", "biweekly", "semimonthly", "monthly", "irregular"])
-                RowSeparator()
+                APSeparator(afterFace: false)
                 DatePicker(adding ? "Next payment" : "Next pay", selection: $next, displayedComponents: .date)
                     .font(Nacre.body).padding(.horizontal, 16).frame(minHeight: 52)
                 if !accounts.isEmpty {
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     namedPicker("Goes into", selection: $account, options: accounts)
                 }
             }
@@ -559,19 +559,19 @@ struct BillSheet: View {
             VStack(spacing: 0) {
                 if bill == nil {
                     FieldRow(label: "Name", text: $name, prompt: "e.g. Tuition")
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                 }
                 FieldRow(label: "Amount", text: $amount, prompt: "$0.00").keyboardType(.decimalPad)
-                RowSeparator()
+                APSeparator(afterFace: false)
                 pickerRow("Repeats", selection: $how,
                           options: ["weekly", "biweekly", "monthly", "bimonthly", "quarterly", "semiannual", "annual"])
-                RowSeparator()
+                APSeparator(afterFace: false)
                 DatePicker("Next payment", selection: $next, displayedComponents: .date)
                     .font(Nacre.body).padding(.horizontal, 16).frame(minHeight: 52)
-                RowSeparator()
+                APSeparator(afterFace: false)
                 FieldRow(label: "Your share", text: $share, prompt: "100%").keyboardType(.numberPad)
                 if !categories.isEmpty {
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     namedPicker("Category", selection: $category, options: categories, placeholder: "Choose")
                 }
             }
@@ -581,7 +581,7 @@ struct BillSheet: View {
                     .font(Nacre.body).tint(Pearl.action)
                     .padding(.horizontal, 16).frame(minHeight: 52)
                 if let counted = counted {
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     Toggle("Count this bill", isOn: counted)
                         .font(Nacre.body).tint(Pearl.action)
                         .padding(.horizontal, 16).frame(minHeight: 52)
