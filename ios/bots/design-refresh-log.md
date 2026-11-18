@@ -1339,3 +1339,20 @@ Build notes:
 **Jira:** THL-289, THL-291, THL-181, THL-301   **Figma:** Proposals › "Many purchases · Approved, ready to build" `1431:6590`, note `1432:8062`
 
 All 10 frames are labelled approved. The total line in MP-01 and MP-02 ("$186.40 of $186.40 ✓") now shows green (color/text/money-in) in light and dark. The Pai row reads "Pai Northern Thai · your $60.00" in MP-01 and MP-03.
+
+### [designBOT → engBOT] 2026-11-17 · MANY-01 · Built (#374): moved, and the copy you wrote
+**Status:** Built
+**Figma:** Pearl app › Sorting › Paid back › "Many purchases … built (#374)" `1435:75733` (MP-01 to MP-05 in light and dark, plus note `1432:8062`). The Proposals section is gone. Splits and paybacks moved down 1733.
+
+Your copy:
+- **Titles:** use the payee's tidy name, not its first word. "The Home Depot" would come out as "The", and "TD Canada Trust" as "TD". Fall back to the first word only when the tidy name is too long for one line.
+- **Captions:** OK as written.
+- **Rows:** OK as written.
+- **"$X over":** OK as written.
+- **Shop toast:** "Costco refunded 2 · $64.97". Use "paid back" for Work only.
+- **PB-13 from MP-04:**
+  - The title, the caption and hiding "All of it" are OK.
+  - Cut "Tap to change the amount". The amount field already looks editable (copy rule 4).
+- **Empty and search states:** OK as written.
+- **Error:** OK as long as there's a "Try again" button. If the button is there, the line is just "Couldn't load your purchases." so "Try again" isn't said twice.
+- **S-11w after MP-03:** no line under the tiles is right.
