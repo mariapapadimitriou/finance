@@ -682,7 +682,8 @@ struct PartsSheet: View {
                 // S-25's bar; S-35 (who paid?) and S-23's results go without it.
                 bar(sorted: sortedDone + picked.values.reduce(0, +),
                     first: "\(Format.amount(sortedDone + picked.values.reduce(0, +))) of \(Format.amount(deposit.amount))",
-                    second: "\(Format.amount(max(0, deposit.amount - sortedDone - picked.values.reduce(0, +)))) left")
+                    second: "\(Format.amount(max(0, deposit.amount - sortedDone - picked.values.reduce(0, +)))) left",
+                    amounts: false)
             }
         }
     }
@@ -2332,7 +2333,9 @@ struct PartsSheet: View {
     }
 
     /// "● Linked $428.00   ● Not linked $172.00" under a filling bar.
-    private func bar(sorted: Double, first: String, second: String) -> some View {
+    /// `amounts` off when the words already carry them, as S-09 / S-25's
+    /// "● $428.00 of $600.00   ● $172.00 left" (UI audit: the amount showed twice).
+    private func bar(sorted: Double, first: String, second: String, amounts: Bool = true) -> some View {
         let whole = max(deposit.amount, 0.01)
         let done = min(sorted, deposit.amount)
         return VStack(alignment: .leading, spacing: 6) {
@@ -2344,8 +2347,8 @@ struct PartsSheet: View {
             }
             .frame(height: 6)
             HStack(spacing: 14) {
-                legend(Pearl.action, "\(first) \(Format.amount(done))")
-                legend(Pearl.ink.opacity(0.2), "\(second) \(Format.amount(deposit.amount - done))")
+                legend(Pearl.action, amounts ? "\(first) \(Format.amount(done))" : first)
+                legend(Pearl.ink.opacity(0.2), amounts ? "\(second) \(Format.amount(deposit.amount - done))" : second)
             }
             .font(Nacre.footnote).foregroundColor(Pearl.ink)
         }
