@@ -67,11 +67,12 @@ struct WorthItem: Decodable, Identifiable, Hashable {
         }
     }
 
-    var iconTone: APIcon.Tone {
+    /// `.icon`, `.icon.warn` or `.icon.good`.
+    var iconView: APIcon {
         switch tone {
-        case "warn": return .warn
-        case "good": return .good
-        default: return .rose
+        case "warn": return APIcon.warn(symbol)
+        case "good": return APIcon.good(symbol)
+        default: return APIcon(symbol: symbol)
         }
     }
 
@@ -174,7 +175,7 @@ struct WorthRow: View {
 
     private var line: some View {
         HStack(spacing: 12) {
-            APIcon(symbol: item.symbol, tone: item.iconTone)
+            item.iconView
             Text(item.title)
                 .font(.custom("Figtree-Regular", size: 16, relativeTo: .body))
                 .foregroundColor(Pearl.ink)

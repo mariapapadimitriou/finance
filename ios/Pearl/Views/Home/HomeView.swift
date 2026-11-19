@@ -585,7 +585,7 @@ struct BankAlertCard: View {
     var body: some View {
         VStack(spacing: 14) {
             HStack(spacing: 12) {
-                APIcon(symbol: connection.state == "bank_down" ? "clock" : "arrow.triangle.2.circlepath", tone: .warn)
+                APIcon.warn(connection.state == "bank_down" ? "clock" : "arrow.triangle.2.circlepath")
                 Text(text).font(Nacre.body).foregroundColor(Pearl.ink)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)

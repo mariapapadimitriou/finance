@@ -168,21 +168,31 @@ struct APBackButton: View {
     }
 }
 
-/// A+ `.icon`: a 36 pt circle holding an 18 pt line icon. Rose on
-/// `action-wash`; `.warn` caution on its background; `.good` money-in @14%.
+/// A+ `.icon`: a 36 pt disc holding an 18 pt line icon, in `tone` on
+/// `tone` @10% (`action-wash` for rose). `wash` sets the disc for `.icon.warn`
+/// (caution on `caution-background`) and `.icon.good` (money-in @14%).
 struct APIcon: View {
-    enum Tone { case rose, warn, good }
     let symbol: String
-    var tone: Tone = .rose
+    var tone: Color = Pearl.action
+    var wash: Color? = nil
 
     var body: some View {
         Image(systemName: symbol)
-            .font(.system(size: 15, weight: .medium))
-            .foregroundColor(tone == .warn ? Pearl.caution : tone == .good ? Pearl.moneyIn : Pearl.action)
+            .font(.system(size: 16, weight: .regular))
+            .foregroundColor(tone)
             .frame(width: 36, height: 36)
-            .background(Circle().fill(tone == .warn ? Pearl.cautionBackground
-                                      : tone == .good ? APlus.goodWash : APlus.actionWash))
+            .background(Circle().fill(wash ?? tone.opacity(0.10)))
             .accessibilityHidden(true)
+    }
+
+    /// `.icon.warn`.
+    static func warn(_ symbol: String) -> APIcon {
+        APIcon(symbol: symbol, tone: Pearl.caution, wash: Pearl.cautionBackground)
+    }
+
+    /// `.icon.good`.
+    static func good(_ symbol: String) -> APIcon {
+        APIcon(symbol: symbol, tone: Pearl.moneyIn, wash: APlus.goodWash)
     }
 }
 

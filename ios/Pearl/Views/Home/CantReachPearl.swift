@@ -55,7 +55,7 @@ struct OfflineBanner: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            APIcon(symbol: "exclamationmark.triangle", tone: .warn)
+            APIcon.warn("exclamationmark.triangle")
             Text("Offline \u{00B7} showing Pearl from \(since.formatted(date: .omitted, time: .shortened))")
                 .font(Nacre.subheadline).foregroundColor(Pearl.ink)
                 .frame(maxWidth: .infinity, alignment: .leading)

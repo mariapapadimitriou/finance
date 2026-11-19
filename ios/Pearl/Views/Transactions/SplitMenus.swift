@@ -95,8 +95,8 @@ struct PearlPillButtonStyle: ButtonStyle {
     }
 }
 
-/// A round 40 pt bubble holding a line icon: blush, or rose for the usual
-/// action ("Mark paid back").
+/// A round bubble holding a line icon: A+ `.icon` (`action-wash`), or rose
+/// for the usual action ("Mark paid back").
 struct PearlBubble: View {
     let symbol: String
     var prominent = false
@@ -105,7 +105,7 @@ struct PearlBubble: View {
 
     var body: some View {
         Image(systemName: symbol)
-            .font(.system(size: size * 0.42, weight: .regular))
+            .font(.system(size: size * 0.44, weight: .regular))
             .foregroundColor(prominent ? Pearl.onAction : tone)
             .frame(width: size, height: size)
             .background(Circle().fill(prominent ? Pearl.action : APlus.actionWash))
@@ -113,7 +113,7 @@ struct PearlBubble: View {
     }
 }
 
-/// A person's or a merchant's initials on blush (the sheets' faces).
+/// A person's or a merchant's initials on A+ `face` (the sheets' faces).
 struct PearlFace: View {
     let name: String
     var size: CGFloat = 44
@@ -139,8 +139,9 @@ struct PearlFace: View {
     }
 }
 
-/// "Pearl/Option row": a bubble, a title over what happens, a chevron.
-/// At least 60 high; VoiceOver reads the title, then what happens.
+/// "Pearl/Option row", drawn as A+ `APOptionRow` (#385): the 36 pt `.icon`,
+/// the title 17 over what happens 15 muted, the chevron; 64 high. Its card
+/// (PearlOptionCard) gives the 16 pt sides, so callers' other rows line up.
 struct PearlOptionRow: View {
     let symbol: String
     let title: String
@@ -154,11 +155,11 @@ struct PearlOptionRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                PearlBubble(symbol: symbol, prominent: prominent)
+                APIcon(symbol: symbol)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
+                    Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
                     if let sub = sub {
-                        Text(sub).font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
+                        Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     }
                 }
                 .fixedSize(horizontal: false, vertical: true)
@@ -168,12 +169,10 @@ struct PearlOptionRow: View {
                         .foregroundColor(Pearl.action)
                         .accessibilityHidden(true)
                 }
-                Image(systemName: "chevron.right").font(.system(size: 14, weight: .medium))
-                    .foregroundColor(Pearl.muted)
-                    .accessibilityHidden(true)
+                APChevron()
             }
-            .padding(.vertical, 10)
-            .frame(minHeight: 60)
+            .padding(.vertical, 12)
+            .frame(minHeight: 64)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -183,22 +182,26 @@ struct PearlOptionRow: View {
     }
 }
 
-/// A card of option rows, with the divider between them (glass in light,
-/// REFRESH-05: S-40a–d, S-04u, S-05or, S-06r*).
+/// A card of option rows, drawn as A+ `APOptionCard` (#385): the one A+
+/// card, radius 24; 16 pt sides for whatever the caller puts in it.
 struct PearlOptionCard<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
         VStack(spacing: 0, content: content)
-            .padding(.horizontal, 16).padding(.vertical, 4)
+            .padding(.horizontal, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .pearlCard(radius: Pearl.radiusTile)
+            .pearlCard(radius: Pearl.radiusCard)
     }
 }
 
-/// The 1 pt line between option rows.
+/// The 0.5 pt A+ separator between option rows, after the icon (68 from
+/// the card's edge, as APSeparator).
 struct PearlDivider: View {
-    var body: some View { Rectangle().fill(APlus.separator).frame(height: 0.5) }
+    var body: some View {
+        Rectangle().fill(APlus.separator).frame(height: 0.5).padding(.leading, 52)
+            .accessibilityHidden(true)
+    }
 }
 
 /// "CHANGE THE SPLIT", "PAID SO FAR": a section's small caps.
@@ -257,8 +260,9 @@ struct InfoNote: View {
     }
 }
 
-/// A sheet's top: a face or icon, the small caps, a Fraunces title and its
-/// line, and Close (or Back on the left, S-06rb–rd).
+/// A sheet's top: since #385, A+ `APSheetHeader` (G2-Person): the glass ✕
+/// (‹ on the left when there's a way back) on its own line, then the ring
+/// face or icon, the 12/600 caps, the Fraunces 22 title and its line.
 struct PearlSheetHeader: View {
     var face: String? = nil
     var symbol: String? = nil
@@ -268,46 +272,10 @@ struct PearlSheetHeader: View {
     var subTone: Color = Pearl.muted
     var back: (() -> Void)? = nil
     let close: () -> Void
-    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        // S-03ax (TEST-17): at accessibility sizes a Sheet header drops its
-        // avatar instead of shrinking the initials.
-        let face = typeSize.isAccessibilitySize ? nil : self.face
-        HStack(alignment: .top, spacing: 12) {
-            if let back = back {
-                Button(action: back) {
-                    Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(Pearl.ink)
-                        .frame(width: 44, height: 44)
-                        .background(APGlassCircle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Back")
-            } else if let symbol = symbol {
-                PearlBubble(symbol: symbol, size: 44)
-            } else if let face = face {
-                // A+ `.ring.sm`: the face inside the 1.2 pt nacre ring.
-                PearlFace(name: face, size: 41.6).padding(1.2).background(Circle().fill(APlus.nacreRing))
-            }
-            VStack(alignment: .leading, spacing: 1) {
-                // TEST-14: the overline wraps, never clipped ("PIZZA NOVA · NOT SURE YET").
-                // A+ `.who .over`: 12/600, tracked 1.2.
-                Text(overline.uppercased())
-                    .font(Pearl.text(.caption, .semibold)).tracking(1.2).foregroundColor(Pearl.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(title)
-                    .font(Pearl.heading(22, relativeTo: .title2)).foregroundColor(Pearl.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityAddTraits(.isHeader)
-                if let sub = sub {
-                    Text(sub).font(Pearl.text(.callout)).foregroundColor(subTone)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            PearlCloseButton(action: close)
-        }
+        APSheetHeader(face: face, symbol: symbol, overline: overline, title: title, sub: sub,
+                      subTone: subTone, back: back, close: close)
     }
 }
 
@@ -331,8 +299,9 @@ struct PearlSheet<Content: View, Footer: View>: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16, content: content)
-                    .padding(.horizontal, 16).padding(.top, 24).padding(.bottom, 16)
+                // A+ (#385's APSheet): 14 pt rhythm, 14 from the grabber.
+                VStack(alignment: .leading, spacing: 14, content: content)
+                    .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 16)
                     .background(GeometryReader { g in Color.clear.preference(key: HeightKey.self, value: g.size.height) })
             }
             .scrollDismissesKeyboard(.interactively)
@@ -367,6 +336,7 @@ private struct PaperBackground: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 16.4, *) {
             content.presentationBackground { SheetBackground() }
+                .presentationCornerRadius(38)
         } else {
             content
         }
@@ -461,20 +431,7 @@ struct APRingFace: View {
     }
 }
 
-/// `.icon`: a 36 pt `action-wash` disc holding an 18 pt line icon.
-struct APIcon: View {
-    let symbol: String
-    var tone: Color = Pearl.action
-
-    var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: 16, weight: .regular))
-            .foregroundColor(tone)
-            .frame(width: 36, height: 36)
-            .background(Circle().fill(tone.opacity(0.10)))
-            .accessibilityHidden(true)
-    }
-}
+// APIcon moved to Theme/APlus.swift (one icon for the app).
 
 /// A sheet's top (`.shead` then `.who`): the centred title with ✕ (‹ on
 /// the left when there's a way back), then the ring face, the caps over the

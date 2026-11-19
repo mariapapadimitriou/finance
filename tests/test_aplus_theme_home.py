@@ -40,7 +40,9 @@ class TestSharedStyles:
 
     def test_close_back_and_more_are_glass_circles(self):
         menus = code(read("Views", "Transactions", "SplitMenus.swift"))
-        assert menus.count(".background(APGlassCircle())") >= 3
+        assert menus.count(".background(APGlassCircle())") >= 2
+        assert "APSheetHeader(face: face, symbol: symbol" in menus, "the old sheet header draws #385's"
+        assert "APOptionRow(" in menus and "APIcon(symbol: symbol)" in menus
         tx = code(read("Views", "Transactions", "TransactionsView.swift"))
         title = tx[tx.index("struct SheetTitle"):tx.index("struct SheetBackground")]
         assert "APGlassCircle()" in title
