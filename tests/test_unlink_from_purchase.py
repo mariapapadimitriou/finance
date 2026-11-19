@@ -87,7 +87,7 @@ class TestBankPayback:
         client.post(f"/api/transactions/{i['LOBLAWS']}/paybacks/{i['E-TRANSFER FROM SAM']}", json={"person": "Sam"})
         link = link_of(client, i["LOBLAWS"], "Sam")
         assert link["kind"] == "bank" and link["inflow"] == i["E-TRANSFER FROM SAM"]
-        assert link["sheet"]["line"] == "Sam will owe you $30.00 again. The e-Transfer goes back to Needs a look."
+        assert link["sheet"]["line"] == "Sam owes you $30.00 again on LOBLAWS. The $30.00 goes back to Needs a look."
         assert link["view"]["label"] == "View the e-Transfer" and link["sheet"]["button"] == "Unlink"
         reply = unlink(client, i["LOBLAWS"], i["E-TRANSFER FROM SAM"])
         assert reply["title"] == "Unlinked · Sam owes $30.00"
@@ -127,7 +127,8 @@ class TestSharedBankPayback:
         link = link_of(client, i["LOBLAWS"], "Jo")
         # REFRESH-03 (S-34s / S-34sr, S-05o): each consequence once.
         assert link["sheet"]["ask"] == "Unlink only LOBLAWS’ $30.00?"
-        assert link["sheet"]["line"] == "Jo will owe you $30.00 again. The $30.00 goes back to Needs a look."
+        assert link["sheet"]["line"] == ("Only LOBLAWS’ $30.00 comes off. PIZZA NOVA stays paid back, "
+                                          "and Jo owes you $30.00 again.")
         assert link["sheet"]["button"] == "Unlink $30.00" and link["goes"] == "left_to_sort"
         assert link["message"] == "Part of $60.00 · also paid back PIZZA NOVA"
         # The second purchase lists it too (it was missing before SPLIT-25).
@@ -166,7 +167,7 @@ class TestCash:
         client.post(f"/api/transactions/{i['LOBLAWS']}/split/cash", json={"name": "Sam", "amount": 30, "day": day(2)})
         link = link_of(client, i["LOBLAWS"], "Sam")
         assert link["kind"] == "cash" and link["view"] is None
-        assert link["sheet"]["line"] == "Sam will owe you $30.00 again. The cash is forgotten."
+        assert link["sheet"]["line"] == "Sam owes you $30.00 again on LOBLAWS."
         r = client.delete(f"/api/transactions/{i['LOBLAWS']}/split/cash/{link['cash_id']}")
         assert r.status_code == 200, r.get_json()
         reply = r.get_json()
@@ -186,7 +187,8 @@ class TestCash:
         assert r.status_code == 201, r.get_json()
         link = link_of(client, i["LOBLAWS"], "Sam")
         assert link["sheet"]["ask"] == "Unlink only LOBLAWS’ $30.00?"
-        assert link["sheet"]["line"] == "Sam will owe you $30.00 again. PIZZA NOVA stays paid back."
+        assert link["sheet"]["line"] == ("Only LOBLAWS’ $30.00 comes off. PIZZA NOVA stays paid back, "
+                                          "and Sam owes you $30.00 again.")
         r = client.delete(f"/api/transactions/{i['LOBLAWS']}/split/cash/{link['cash_id']}")
         reply = r.get_json()
         assert people(client, i["LOBLAWS"])["Sam"]["owes"] == 30.0
@@ -206,7 +208,7 @@ class TestCash:
         assert r.status_code == 200, r.get_json()
         link = link_of(client, i["LOBLAWS"], "Sam")
         assert link["deposit"]["id"] == i["DEPOSIT"] and link["view"]["label"] == "View the deposit"
-        assert link["sheet"]["line"] == "Sam will owe you $30.00 again. This $30.00 goes back to Needs a look."
+        assert link["sheet"]["line"] == "Sam owes you $30.00 again on LOBLAWS. This $30.00 goes back to Needs a look."
         r = client.delete(f"/api/transactions/{i['LOBLAWS']}/split/cash/{link['cash_id']}")
         assert r.status_code == 200, r.get_json()
         reply = r.get_json()
@@ -227,7 +229,7 @@ class TestCash:
                     json={"name": "Priya", "amount": 30, "day": day(2), "via": "app", "app": "PayPal"})
         link = link_of(client, i["LOBLAWS"], "Priya")
         assert link["kind"] == "app" and link["sheet"]["name"] == "PayPal from Priya"
-        assert link["sheet"]["line"] == "Priya will owe you $30.00 again. The PayPal payment is forgotten."
+        assert link["sheet"]["line"] == "Priya owes you $30.00 again on LOBLAWS."
         reply = client.delete(f"/api/transactions/{i['LOBLAWS']}/split/cash/{link['cash_id']}").get_json()
         assert reply["title"] == "Unlinked · Priya owes $30.00"
         adds_up(client, i["LOBLAWS"])
@@ -248,7 +250,7 @@ class TestPartOfADeposit:
         assert r.status_code == 200, r.get_json()
         link = link_of(client, i["AIR CANADA"], "Dad")
         assert link["kind"] == "part" and link["deposit"]["amount"] == 600.0
-        assert link["sheet"]["line"] == "Dad will owe you $228.00 again. This $228.00 goes back to Needs a look."
+        assert link["sheet"]["line"] == "Dad owes you $228.00 again on AIR CANADA. This $228.00 goes back to Needs a look."
         reply = unlink(client, i["AIR CANADA"], link["inflow"])
         assert reply["title"] == "Unlinked · Dad owes $228.00"
         parts = detail(client, i["E-TRANSFER FROM DAD"])["parts"]
@@ -293,7 +295,7 @@ class TestRefund:
         client.post(f"/api/transactions/{i['LOBLAWS REFUND']}/mark", json={"case": "refund", "charge": i["LOBLAWS"]})
         row = detail(client, i["LOBLAWS"])["refunded_by"][0]
         assert row["link"]["sheet"]["title"] == "Unlink refund?"
-        assert row["link"]["sheet"]["line"] == "The $8.50 stops coming off LOBLAWS and goes back to Needs a look."
+        assert row["link"]["sheet"]["line"] == "The $8.50 stops coming off LOBLAWS. The refund goes back to Needs a look."
         r = client.delete(f"/api/transactions/{i['LOBLAWS REFUND']}/refund")
         reply = r.get_json()
         assert reply["title"] == "Refund unlinked" and client.st.refunds() == {}
@@ -311,7 +313,7 @@ class TestMadeTheSplit:
                     json={"case": "payback", "charge": i["SUSHI"], "person": "Priya"})
         link = link_of(client, i["SUSHI"], "Priya")
         assert link["made_split"] is True
-        assert link["sheet"]["line"] == "Priya comes off the split too. The e-Transfer goes back to Needs a look."
+        assert link["sheet"]["line"] == "Priya comes off the split too. The $30.00 goes back to Needs a look."
         reply = unlink(client, i["SUSHI"], i["E-TRANSFER FROM PRIYA"])
         assert reply["title"] == "Unlinked · Priya taken off the split"
         assert client.st.splits() == {}

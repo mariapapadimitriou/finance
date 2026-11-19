@@ -66,6 +66,19 @@ def _look(out: dict, heading: str, card: str, card_amount: float, confirm: str |
     return out
 
 
+def _owes(name: str, amount: float, merchant: str | None = None) -> str:
+    """G2-AUnlink: "Sam owes you $30.00 again on Loblaws." ("They owe you"
+    when Pearl doesn't know who sent it)."""
+    on = f" on {merchant}" if merchant else ""
+    return f"{name} {'owe' if name == 'They' else 'owes'} you {_money(amount)} again{on}."
+
+
+def _only(charge: Transaction, amount: float, others: list[str], then: str) -> str:
+    """G2-AUnlink S-34sr: "Only Loblaws’ $30.00 comes off. Pizza Nova stays
+    paid back, and Jo owes you $30.00 again." """
+    return f"Only {_of(charge.merchant)} {_money(amount)} comes off. {_stay(others)}, and {then}"
+
+
 def _whose(name: str | None) -> str:
     """"Sam’s", or "this" when Pearl doesn't know who sent it."""
     return _of(name) if name and name != "They" else "this"
@@ -174,9 +187,9 @@ def _inflow_link(st, charge: Transaction, x: Transaction, who: str | None, by_id
                    else f"Part of a {_money(total)} deposit",
                    view={"id": parent.fingerprint, "label": "View the deposit"},
                    dialog=f"{name} paid back {_money(here)}")
-        # REFRESH-03 (S-34kr9): "Dad will owe you $228.00 again. This $228.00
-        # goes back to Needs a look."
-        owe = f"{name} comes off the split too." if made else f"{name} will owe you {_money(here)} again."
+        # G2-AUnlink (S-34kr9): "Dad owes you $228.00 again on Loblaws. This
+        # $228.00 goes back to Needs a look."
+        owe = f"{name} comes off the split too." if made else _owes(name, here, charge.merchant)
         out["sheet"] = {"title": "Unlink?", "name": f"Part of {of}", "sub": f"{_money(here)} · {_day(x.date)}",
                         "ask": None,
                         "line": f"{owe} This {_money(here)} goes back to Needs a look.",
@@ -190,33 +203,36 @@ def _inflow_link(st, charge: Transaction, x: Transaction, who: str | None, by_id
     title = word if word == "e-Transfer" else word.capitalize()
     out.update(kind="bank", noun=word, view={"id": x.fingerprint, "label": f"View the {word}"},
                dialog=f"{name} paid back {_money(here)}")
-    # REFRESH-03: each consequence once (who owes again; what goes back to
-    # Needs a look), and "Priya comes off the split too." for THL-260's case.
-    owe = f"{name} comes off the split too." if made else f"{name} will owe you {_money(here)} again."
+    # G2-AUnlink: each consequence once (who owes again, on what; what goes
+    # back to Needs a look), and "Priya comes off the split too." for THL-260.
+    owe = f"{name} comes off the split too." if made else _owes(name, here, charge.merchant)
     if others:
         # S-05o / S-05or: "Part of $60.00 · also paid back Pizza Nova".
         out.update(goes="left_to_sort",
                    message=f"Part of {_money(whole)} · also paid back {sp.and_list(others)}")
-        # S-34s / S-34sr: "Unlink only Loblaws’ $30.00?" over "Jo will owe you
-        # $30.00 again. The $30.00 goes back to Needs a look."
+        # G2-AUnlink S-34sr: "Unlink Jo’s $30.00?" over "Only Loblaws’ $30.00
+        # comes off. Pizza Nova stays paid back, and Jo owes you $30.00 again."
+        then = f"{name} comes off the split." if made else _owes(name, here)
         out["sheet"] = {"title": "Unlink?", "name": f"{word} from {sender}" if sender else x.merchant,
                         "sub": f"{_money(whole)} · {_day(x.date)}",
                         "ask": f"Unlink only {_of(charge.merchant)} {_money(here)}?",
-                        "line": f"{owe} The {_money(here)} goes back to Needs a look.",
+                        "line": _only(charge, here, others, then),
                         "button": f"Unlink {_money(here)}"}
     else:
         out.update(goes="needs_a_look", message=f"{title} · {_day(x.date)}")
         out["sheet"] = {"title": "Unlink?", "name": f"{word} from {sender}" if sender else x.merchant,
                         "sub": f"{_money(here)} · {_day(x.date)}", "ask": None,
-                        "line": f"{owe} The {word} goes back to Needs a look.", "button": "Unlink"}
+                        "line": f"{owe} The {_money(here)} goes back to Needs a look.", "button": "Unlink"}
     out["toast"] = f"Unlinked · {name} taken off the split" if made else None
     card = f"{word} from {sender} · {_day(x.date)}" if sender else f"{x.merchant} · {_day(x.date)}"
-    confirm = "Unlink and remove" if made else None
     if others:
         # The footnote about the whole payment is gone (S-34sr); the app reads
         # it as a VoiceOver hint on the payment row.
-        return _look(out, out["sheet"]["ask"], card, whole, confirm=confirm)
-    return _look(out, f"Unlink {_whose(name)} {word}?", card, whole, confirm=confirm)
+        return _look(out, f"Unlink {_whose(name)} {_money(here)}?", card, whole,
+                     confirm="Unlink and remove" if made else None)
+    # S-34kr1: one payment, so the button is just "Unlink".
+    return _look(out, f"Unlink {_whose(name)} {word}?", card, whole,
+                 confirm="Unlink and remove" if made else "Unlink")
 
 
 def cash_link(st, charge: Transaction, name: str, pay: dict, by_id: dict) -> dict:
@@ -254,35 +270,43 @@ def cash_link(st, charge: Transaction, name: str, pay: dict, by_id: dict) -> dic
                    message=f"Part of {_money(whole)} · also paid back {sp.and_list(others)}")
         out["sheet"] = {"title": "Unlink?", "name": head, "sub": sub,
                         "ask": f"Unlink only {_of(charge.merchant)} {_money(here)}?",
-                        "line": f"{name} will owe you {_money(here)} again. {_stay(others)}.",
+                        "line": _only(charge, here, others, _owes(name, here)),
                         "button": f"Unlink {_money(here)}"}
     elif deposit:
         out.update(goes="left_to_sort",
                    message=f"Cash · {_day(pay['day'])} · deposited {_day(deposit['date'])}")
         out["sheet"] = {"title": "Unlink?", "name": head, "sub": sub, "ask": None,
-                        "line": f"{name} will owe you {_money(here)} again. This {_money(held_amount)} "
+                        "line": f"{_owes(name, here, charge.merchant)} This {_money(held_amount)} "
                                 f"goes back to Needs a look.",
                         "button": "Unlink"}
     else:
         out.update(goes="forgotten", message=f"{app_name if app else 'Cash'} · {_day(pay['day'])}")
-        gone = (f"The {app_name if app_name != 'Another app' else 'app'} payment is forgotten"
-                if app else "The cash is forgotten")
+        # G2-AUnlink S-34kr3: "Forget the cash?" says what happens to it, so
+        # the line is only "Sam owes you $10.00 again on Loblaws."
         out["sheet"] = {"title": "Unlink?", "name": head, "sub": sub, "ask": None,
-                        "line": f"{name} will owe you {_money(here)} again. {gone}.",
-                        "button": "Unlink"}
+                        "line": _owes(name, here, charge.merchant), "button": "Forget it"}
     out["sheet"]["face"] = name
     label = app_name if app else "Cash"
     if others:
-        return _look(out, out["sheet"]["ask"], f"{label} · {_day(pay['day'])}", whole)
+        return _look(out, f"Unlink {_of(name)} {_money(here)}?", f"{label} · {_day(pay['day'])}", whole)
     if deposit:
-        return _look(out, f"Unlink {_of(name)} cash?", f"Cash, deposited {_day(deposit['date'])}", here)
+        return _look(out, f"Unlink {_of(name)} cash?", f"Cash, deposited {_day(deposit['date'])}", here,
+                     confirm="Unlink")
     what_here = ("app payment" if app_name == "Another app" else f"{app_name} payment") if app else "cash"
-    return _look(out, f"Unlink {_of(name)} {what_here}?", f"{label} · {_day(pay['day'])}", here)
+    return _look(out, f"Forget the {what_here}?", f"{label} · {_day(pay['day'])}", here,
+                 confirm="Forget it", keep="Keep it", overline="FORGET")
 
 
 def refund_link(charge: Transaction, x: Transaction) -> dict:
-    """A refund of this purchase (S-34k "Unlink refund?")."""
+    """A refund of this purchase (S-34kr8 "Unlink the refund?")."""
     amount = round(-x.amount, 2)
+    # G2-AUnlink S-34kr8: "Costco counts as $64.97 again. The refund goes
+    # back to Needs a look." That's only true of a refund of all of it; a
+    # partial one says what stops coming off instead.
+    if abs(round(charge.amount, 2)) == amount:
+        line = f"{charge.merchant} counts as {_money(amount)} again. The refund goes back to Needs a look."
+    else:
+        line = f"The {_money(amount)} stops coming off {charge.merchant}. The refund goes back to Needs a look."
     out = {"id": x.fingerprint, "inflow": x.fingerprint, "cash_id": None, "amount": amount, "whole": amount,
             "date": x.date[:10], "person": None, "others": [], "made_split": False, "was_waiting": False,
             "deposit": None, "kind": "refund", "goes": "needs_a_look", "noun": "refund",
@@ -290,13 +314,11 @@ def refund_link(charge: Transaction, x: Transaction) -> dict:
             "dialog": f"{x.merchant} refunded {_money(amount)}",
             "sheet": {"title": "Unlink refund?", "name": f"Refund from {x.merchant}", "face": x.merchant,
                       "sub": f"{_money(amount)} · {_day(x.date)}", "ask": None,
-                      # REFRESH-03 (S-34kr8).
-                      "line": f"The {_money(amount)} stops coming off {charge.merchant} and goes back to "
-                              f"Needs a look.",
+                      "line": line,
                       "button": "Unlink"},
             "toast": "Refund unlinked"}
-    return _look(out, "Unlink refund?", f"{x.merchant} refund · {_day(x.date)}", out["amount"],
-                 confirm="Unlink refund", keep="Keep it", overline="REFUND")
+    return _look(out, "Unlink the refund?", f"{x.merchant} refund · {_day(x.date)}", out["amount"],
+                 confirm="Unlink refund", keep="Keep linked", overline="REFUND")
 
 
 def add_links(st, charge: Transaction, splitting: dict, txns: list[Transaction], payer: dict) -> None:

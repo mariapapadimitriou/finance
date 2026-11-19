@@ -36,7 +36,7 @@ struct PaybackOptionsSheet: View {
         }
     }
 
-    /// "Jo will owe you $30.00 again on Pizza Nova" from the sheet's line.
+    /// "Sam owes you $30.00 again on Loblaws" from the sheet's line.
     static func firstSentence(_ line: String) -> String {
         guard let r = line.range(of: ". ") else { return line.hasSuffix(".") ? String(line.dropLast()) : line }
         return String(line[..<r.lowerBound])
@@ -117,7 +117,7 @@ struct UnlinkLinkSheet: View {
             }
         } footer: {
             PearlSheetButtons(primary: failed ? "Try again" : (s.confirm ?? s.button), busy: busy,
-                              busyLabel: "Unlinking…", secondary: s.keep ?? "Keep linked",
+                              busyLabel: s.overline == "FORGET" ? "Forgetting…" : "Unlinking…", secondary: s.keep ?? "Keep linked",
                               onPrimary: { Task { await unlink() } }, onSecondary: onCancel)
                 // G2-AUnlink: no footnote under the buttons; VoiceOver keeps it.
                 .accessibilityHint(s.note ?? "")
