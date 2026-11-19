@@ -46,10 +46,21 @@ private func settingsRow(_ title: String, value: String? = nil, chevron: Bool = 
 
 // MARK: - S-01 Sign-in & security, S-04 Sign out other devices
 
+/// SEC-11 (G5-Security): Sign-in, Face ID, Your devices (Sign out other
+/// devices as the card's last row), Sign out on its own card, then Reset
+/// Pearl and Delete your account together in danger red.
 @MainActor
 struct SignInSecurityView: View {
     @EnvironmentObject private var app: AppModel
+    /// After Start over (reached through Delete's "Download a copy first"):
+    /// back out of Profile, to Home.
+    var goHome: () -> Void = {}
     @State private var devices: [Device] = []
+    @State private var changingEmail = false
+    @State private var changingPassword = false
+    @State private var confirmSignOut = false
+    @State private var showDelete = false
+    @State private var showYourData = false
     @State private var faceID = false
     @State private var confirming = false
     /// SEC-12: the device she's removing.
@@ -77,15 +88,18 @@ struct SignInSecurityView: View {
         SettingsPage(title: "Sign-in and security") {
             settingsSection("Sign-in")
             APCard {
-                NavigationLink { ChangeEmailView() } label: {
+                // G5-Email: both open as Pearl sheets over this page.
+                Button { changingEmail = true } label: {
                     settingsRow("Email", value: app.user?.email ?? "Change", chevron: true)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("change-email")
                 APSeparator(afterFace: false)
-                NavigationLink { ChangePasswordView() } label: {
+                Button { changingPassword = true } label: {
                     settingsRow("Password", value: "Change", chevron: true)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("change-password")
                 APSeparator(afterFace: false)
                 settingsRow("Code on new devices", value: "Always on")
             }
@@ -99,17 +113,42 @@ struct SignInSecurityView: View {
 
             settingsSection("Your devices")
             devicesCard
-            if devices.contains(where: { $0.this != true }) {
-                APQuietButton(title: "Sign out other devices", identifier: "sign-out-others") { confirming = true }
-                    .frame(maxWidth: .infinity)
-                    .disabled(busy)
-                    .padding(.top, 4)
-            }
             if let error = error { APErrorLine(text: error).padding(.top, 4) }
 
-            // At the bottom of Sign-in and security, not on Profile (2026-11-08).
-            ResetPearlCard().padding(.top, 20)
+            // G5-Security: Sign out moved here from the bottom of Profile.
+            signOutCard.padding(.top, 16)
+            // Reset Pearl (2026-11-08) and Delete your account (moved from
+            // Your data), red on these entry rows only.
+            dangerCard.padding(.top, 8)
+            ProfileNote("Pearl for iPhone \u{00B7} \(version)", centred: true)
+                .padding(.top, 8)
             Color.clear.frame(height: 24)
+        }
+        .sheet(isPresented: $changingEmail) { ChangeEmailView() }
+        .sheet(isPresented: $changingPassword) { ChangePasswordView() }
+        .sheet(isPresented: $confirmSignOut) {
+            // P-05 (TEST-06): a Pearl sheet over this page, not an action sheet.
+            PearlConfirmSheet(overline: "Sign out", title: "Sign out on this iPhone?",
+                              message: "Pearl stays as it is. You’ll sign in again to come back.",
+                              primary: "Sign out", busyLabel: "Signing out…", secondary: "Stay signed in",
+                              failure: "Couldn’t sign out. Try again.",
+                              onClose: { confirmSignOut = false }) {
+                confirmSignOut = false
+                await app.signOut()
+            }
+        }
+        .navigationDestination(isPresented: $showDelete) {
+            // D-03 as it was; "Download a copy first" goes to Your data, getting it ready.
+            DeleteAccountView(downloadFirst: {
+                showDelete = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showYourData = true }
+            })
+        }
+        .navigationDestination(isPresented: $showYourData) {
+            YourDataView(goHome: {
+                showYourData = false
+                goHome()
+            }, prepareOnOpen: true)
         }
         .task {
             faceID = app.faceIDOn
@@ -182,7 +221,36 @@ struct SignInSecurityView: View {
         }
     }
 
-    /// Each device: its icon, its name over when it was last used, and Remove.
+    /// G5-Security (approved-r7): "Sign out", its own card; the rose icon, ink words.
+    private var signOutCard: some View {
+        APCard {
+            Button { confirmSignOut = true } label: {
+                ProfileRow(symbol: "rectangle.portrait.and.arrow.right", title: "Sign out", chevron: false)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("security-sign-out")
+        }
+    }
+
+    /// G5-Security: Reset Pearl over Delete your account, both in danger red.
+    private var dangerCard: some View {
+        APCard {
+            ResetPearlRow()
+            APSeparator()
+            Button { showDelete = true } label: {
+                SecurityDangerRow(symbol: "trash", title: "Delete your account")
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("delete-account")
+        }
+    }
+
+    private var version: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+    }
+
+    /// Each device: its icon, its name over when it was last used, and Remove;
+    /// then "Sign out other devices" as the card's last row (G5-Devices).
     private var devicesCard: some View {
         APCard {
             if devices.isEmpty {
@@ -197,6 +265,16 @@ struct SignInSecurityView: View {
                     deviceRow(name: d.label ?? "Device", when: d.lastUsedAt.map(Self.ago) ?? "",
                               symbol: Self.symbol(d.label), remove: { removingDevice = d })
                 }
+            }
+            if !others.isEmpty {
+                APSeparator(afterFace: false)
+                // Never red: nothing is lost (G5-Devices; approved-r7: rose icon, ink words).
+                Button { confirming = true } label: {
+                    ProfileRow(symbol: "macbook.and.iphone", title: "Sign out other devices", chevron: false)
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+                .accessibilityIdentifier("sign-out-others")
             }
         }
     }
@@ -308,22 +386,31 @@ struct ChangePasswordView: View {
     private var email: String { app.user?.email ?? "" }
     private var matches: Bool { !confirm.isEmpty && confirm == new }
 
-    /// G5-Email "Change password": three wells; a rule ticks green when it's
-    /// met and only a failing one is red; "don't match" under Confirm.
+    /// SEC-02 (G5-Email "Change password"), a Pearl sheet: the key in its
+    /// nacre ring beside "You'll be signed out on your other devices.", the
+    /// three wells with their eyes in the glass card, the live checks under
+    /// them, and Save password above the keyboard, greyed until it's good.
     var body: some View {
-        SettingsPage(title: "Change password") {
-            SecureWell(label: "Current password", text: $current, content: .password)
-                .padding(.top, 8)
-            SecureWell(label: "New password", text: $new, content: .newPassword)
-            if !new.isEmpty { PasswordRuleLines(rules: rules) }
-            SecureWell(label: "Confirm", text: $confirm, content: .newPassword,
-                       error: !confirm.isEmpty && !matches ? "The new passwords don\u{2019}t match." : nil)
-            settingsNote("You\u{2019}ll be signed out on your other devices.")
-            if let error = error { APErrorLine(text: error).padding(.top, 4) }
+        ProfileFormSheet(title: "Change password", close: { dismiss() }) {
+            HStack(spacing: 12) {
+                NacreRingIcon(symbol: "key", size: 36)
+                Text("You\u{2019}ll be signed out on your other devices.")
+                    .font(Nacre.subheadline).foregroundColor(Pearl.ink)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ProfileFormCard {
+                SecureWell(label: "Current password", text: $current, content: .password)
+                SecureWell(label: "New password", text: $new, content: .newPassword)
+                SecureWell(label: "Confirm new password", text: $confirm, content: .newPassword)
+                ChangePasswordChecks(rules: rules, new: new, confirm: confirm)
+            }
+            if let error = error { APErrorLine(text: error) }
         } bottom: {
             Button("Save password") { Task { await save() } }
                 .buttonStyle(APPrimaryButtonStyle(busy: busy))
                 .disabled(current.isEmpty || !rules.ok || !matches || busy)
+                .accessibilityIdentifier("save-password")
         }
         .onChange(of: new) { value in
             rules = PasswordRules.local(value, email: email)
@@ -408,31 +495,23 @@ struct RecoveryCodesSheet: View {
 
 /// Reset Pearl: unlinks her banks and clears her transactions and setup,
 /// then starts setup again (POST /api/account/reset). She stays signed in.
+/// A row on Sign-in and security's danger card, over Delete your account.
 @MainActor
-struct ResetPearlCard: View {
+struct ResetPearlRow: View {
     @EnvironmentObject private var app: AppModel
     @State private var confirming = false
     @State private var typed = ""
     @State private var resetting = false
-    @State private var error: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // G5-Security: red only on this entry row; the sheet's button is the rose Primary.
-            APCard {
-                Button { confirming = true } label: {
-                    ProfileRow(symbol: "arrow.counterclockwise", title: resetting ? "Resetting\u{2026}" : "Reset Pearl",
-                               sub: "Unlinks your banks and starts again",
-                               tone: Pearl.danger, chevron: false) {
-                        if resetting { ProgressView() }
-                    }
-                }
-                .buttonStyle(.plain)
-                .disabled(resetting)
-                .accessibilityIdentifier("reset-pearl")
-            }
-            if let error = error { APErrorLine(text: error) }
+        // G5-Security: red only on this entry row; the sheet's button is the rose Primary.
+        Button { confirming = true } label: {
+            SecurityDangerRow(symbol: "arrow.counterclockwise", title: resetting ? "Resetting\u{2026}" : "Reset Pearl",
+                              sub: "Unlinks your banks and starts again", busy: resetting)
         }
+        .buttonStyle(.plain)
+        .disabled(resetting)
+        .accessibilityIdentifier("reset-pearl")
         .sheet(isPresented: $confirming) {
             // SO-06 (TEST-06): WHAT GOES / WHAT STAYS, and Type "reset".
             PearlConfirmSheet(overline: "Reset Pearl", title: "Reset Pearl?",
@@ -449,13 +528,47 @@ struct ResetPearlCard: View {
                 struct Reply: Decodable { let user: PearlUser? }
                 let reply: Reply = try await app.api.post("api/account/reset", ["confirm": "reset"])
                 confirming = false
-                error = nil
                 app.justCreated = false
                 app.signedIn(reply.user)
             }
         }
     }
 
+}
+
+/// G5-Security (approved-r7): Reset Pearl and Delete your account, the icon
+/// on a solid `danger` disc and the words in `danger` at 600. Red only on
+/// these entry rows; each confirmation's button is the rose Primary.
+struct SecurityDangerRow: View {
+    let symbol: String
+    let title: String
+    var sub: String? = nil
+    var busy = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(Pearl.onAction)
+                .frame(width: 36, height: 36)
+                .background(Circle().fill(Pearl.danger))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.custom("Figtree-SemiBold", size: 17, relativeTo: .body)).foregroundColor(Pearl.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let sub = sub {
+                    Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if busy { ProgressView() }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(minHeight: 64)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
 }
 
 /// A password well (REDESIGN-09): the 13 pt label, the 44 pt well with the

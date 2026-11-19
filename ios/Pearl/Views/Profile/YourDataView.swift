@@ -111,15 +111,18 @@ struct YourDataView: View {
     @EnvironmentObject private var app: AppModel
     /// After Start over: back out of Profile's pages, to Home.
     let goHome: () -> Void
+    /// Opened from Delete your account's "Download a copy first" (Sign-in
+    /// and security): start getting the copy ready straight away.
+    var prepareOnOpen = false
 
     @State private var summary: ExportSummary?
+    @State private var prepared = false
     @State private var preparing = false
     @State private var downloading = false
     @State private var file: SharedFile?
     @State private var folder: URL?
     @State private var error: String?
     @State private var showStartOver = false
-    @State private var showDelete = false
 
     private struct ExportSummary: Decodable {
         let accounts: Int?
@@ -158,12 +161,7 @@ struct YourDataView: View {
                                 sub: "Your banks stay. Sorting starts fresh.", chevron: true)
                     }
                     .buttonStyle(.plain)
-                    APSeparator()
-                    // Red only on this entry row; the confirmation's button is the rose Primary.
-                    Button { showDelete = true } label: {
-                        DataRow(icon: "DataTrash", title: "Delete your account", tone: Pearl.danger, chevron: true)
-                    }
-                    .buttonStyle(.plain)
+                    // Delete your account moved to Sign-in and security (G5-Data, G5-Security).
                 }
                 .padding(.top, 6)
                 if let error = error, summary == nil { APErrorLine(text: error) }
@@ -173,8 +171,10 @@ struct YourDataView: View {
         .navigationDestination(isPresented: $showStartOver) {
             StartOverView(goHome: goHome, downloadFirst: { downloadFirst { showStartOver = false } })
         }
-        .navigationDestination(isPresented: $showDelete) {
-            DeleteAccountView(downloadFirst: { downloadFirst { showDelete = false } })
+        .task {
+            guard prepareOnOpen, !prepared else { return }
+            prepared = true
+            await prepare()
         }
         .sheet(item: $file, onDismiss: removeFile) { file in
             ShareSheet(url: file.url).ignoresSafeArea()

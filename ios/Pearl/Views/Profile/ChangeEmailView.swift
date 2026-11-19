@@ -28,60 +28,78 @@ struct ChangeEmailView: View {
         return parts.count == 2 && parts[1].contains(".") && !parts[0].isEmpty
     }
 
-    /// G5-Email: Current as a key-value card, then the New email well, Send
-    /// code riding above the keyboard; then the six code wells, Confirm
-    /// greyed until all six are in, and the two quiet ways out.
+    /// G5-Email (P-02), a Pearl sheet: the envelope in its nacre ring and one
+    /// line; Current and the New email well in the glass card; Send code
+    /// above the keyboard. Then the six code wells in the card, Confirm greyed
+    /// until all six are in, and the two quiet ways out under the card.
     var body: some View {
-        ProfilePage {
-            if let sentTo = sentTo {
-                ProfileHeading(title: "Check your email", intro: "We sent a 6-digit code to \(sentTo).")
-                ProfileCodeWells(code: $code, failed: failed) { Task { await verify() } }
-                    .padding(.top, 10)
-                if failed {
-                    Text("That code didn\u{2019}t work. Check it and try again.")
-                        .font(Nacre.footnote).foregroundColor(Pearl.danger)
-                        .frame(maxWidth: .infinity)
-                } else if let error = error {
-                    APErrorLine(text: error).padding(.top, 4)
-                }
-            } else {
-                ProfileHeading(title: "Change your email")
-                APCard {
-                    APKeyValueRow(key: "Current", value: current)
-                }
-                .padding(.top, 8)
-                EmailField(label: "New email", text: $email) {
-                    if looksLikeEmail { Task { await start() } }
-                }
-                .padding(.top, 8)
-                if let error = error { APErrorLine(text: error).padding(.top, 4) }
-            }
+        ProfileFormSheet(title: sentTo == nil ? "Change your email" : "Check your email",
+                         close: { dismiss() }) {
+            NacreRingIcon(symbol: "envelope")
+            Text(sentTo.map { "We sent a 6-digit code to \($0)." } ?? "We\u{2019}ll send a code to the new address.")
+                .font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .fixedSize(horizontal: false, vertical: true)
+            if sentTo != nil { codeStep } else { addressStep }
         } bottom: {
             if sentTo == nil {
                 Button("Send code") { Task { await start() } }
                     .buttonStyle(APPrimaryButtonStyle(busy: busy))
                     .disabled(!looksLikeEmail || busy)
+                    .accessibilityIdentifier("send-code")
             } else {
                 Button("Confirm") { Task { await verify() } }
                     .buttonStyle(APPrimaryButtonStyle(busy: busy))
                     .disabled(code.count < 6 || busy)
-                VStack(spacing: 0) {
-                    Button("Send a new code") { Task { await start() } }
-                        .buttonStyle(APQuietTextStyle())
-                        .disabled(busy)
-                    Button("Use a different email") {
-                        sentTo = nil
-                        code = ""
-                        error = nil
-                        failed = false
-                    }
-                    .buttonStyle(APQuietTextStyle())
-                }
+                    .accessibilityIdentifier("confirm-code")
             }
         }
         .onAppear { current = app.user?.email ?? "" }
         .onChange(of: email) { _ in error = nil }
         .onChange(of: code) { c in if !c.isEmpty { failed = false } }
+    }
+
+    /// Current (read-only) over the New email well.
+    @ViewBuilder private var addressStep: some View {
+        ProfileFormCard {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Current").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                Text(current).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+            }
+            .padding(.horizontal, 4)
+            .accessibilityElement(children: .combine)
+            EmailField(label: "New email", text: $email) {
+                if looksLikeEmail { Task { await start() } }
+            }
+        }
+        if let error = error { APErrorLine(text: error) }
+    }
+
+    /// The six wells; a wrong code rings them red with the reason under them.
+    @ViewBuilder private var codeStep: some View {
+        ProfileFormCard {
+            ProfileCodeWells(code: $code, failed: failed) { Task { await verify() } }
+            if failed {
+                Text("That code didn\u{2019}t work. Check it and try again.")
+                    .font(Nacre.footnote).foregroundColor(Pearl.danger)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        if !failed, let error = error { APErrorLine(text: error) }
+        VStack(spacing: 0) {
+            Button("Send a new code") { Task { await start() } }
+                .buttonStyle(APQuietTextStyle())
+                .disabled(busy)
+            Button("Use a different email") {
+                sentTo = nil
+                code = ""
+                error = nil
+                failed = false
+            }
+            .buttonStyle(APQuietTextStyle())
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func start() async {
