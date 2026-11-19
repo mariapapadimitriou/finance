@@ -618,8 +618,9 @@ struct PaySheet: View {
                 APCard {
                     pickerRow("How often", selection: $how, options: ["weekly", "biweekly", "semimonthly", "monthly", "irregular"])
                     APSeparator(afterFace: false)
-                    DatePicker(adding ? "Next payment" : "Next pay", selection: $next, displayedComponents: .date)
-                        .font(Nacre.body).tint(Pearl.action).padding(.horizontal, 16).frame(minHeight: 52)
+                    // G0-DateSheet DP-02: the Pearl date sheet, today onward.
+                    PearlDateRow(label: adding ? "Next payment" : "Next pay", title: "When is it due next?",
+                                 date: $next, range: .todayOnward)
                     if !accounts.isEmpty {
                         APSeparator(afterFace: false)
                         namedPicker("Goes into", selection: $account, options: accounts)
@@ -753,8 +754,9 @@ struct BillSheet: View {
                     pickerRow("Repeats", selection: $how,
                               options: ["weekly", "biweekly", "monthly", "bimonthly", "quarterly", "semiannual", "annual"])
                     APSeparator(afterFace: false)
-                    DatePicker("Next payment", selection: $next, displayedComponents: .date)
-                        .font(Nacre.body).tint(Pearl.action).padding(.horizontal, 16).frame(minHeight: 52)
+                    // G0-DateSheet DP-02: the Pearl date sheet, today onward.
+                    PearlDateRow(label: "Next payment", title: "When is it due next?", date: $next,
+                                 range: .todayOnward)
                 }
             } footer: {
                 Button("Done") { when = false }.buttonStyle(APPrimaryButtonStyle())

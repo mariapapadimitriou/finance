@@ -13,8 +13,8 @@ Rules (product owner):
 
 * At most `MAX_ITEMS`: every `yes` first, then `heads_up`, then the one best
   `good` item, last, if there's room.
-* Not now is for good, for that id. Clear hides what was passed; Undo
-  brings it back. Seen (she tapped it) hides it too.
+* Not now is for good, for that id. Clear hides what was passed and
+  everything else that qualifies today (TEST-40); Undo brings it back. Seen (she tapped it) hides it too.
 * An item drops off `DROP_DAYS` after it was first shown
   (`worth_a_look_state.first_shown`).
 * Questions Quick sort also asks (a possible duplicate, a trip) come from
@@ -560,6 +560,10 @@ def worth_a_look_post():
     if action in ("seen", "not_now", "clear"):
         found = candidates(st, today)
         known = {it["id"] for it in found} | set(rows)
+        if action == "clear":
+            # TEST-40: Clear leaves Home calm until something new happens, so
+            # it clears everything that qualifies today, not only what shows.
+            ids = list(dict.fromkeys(ids + [it["id"] for it in found]))
         done = []
         for i in ids:
             if i not in known:

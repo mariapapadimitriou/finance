@@ -438,7 +438,7 @@ private struct CRRulesSection: View {
     var body: some View {
         if rules.isEmpty && learned.isEmpty {
             CREmpty(symbol: "square.on.circle", title: "No rules yet",
-                    line: "Change a category and pick “Do the same for every…”. The rule shows up here.")
+                    line: "Turn on Always for a shop, and it shows up here.")  // TEST-44
         } else {
             if !rules.isEmpty {
                 Section {

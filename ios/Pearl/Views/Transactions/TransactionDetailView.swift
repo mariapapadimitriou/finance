@@ -721,7 +721,9 @@ struct TransactionDetailView: View {
         .sheet(isPresented: $splitting) {
             // T-98s (SPLIT-06): from a Quick sort card's page the split is
             // held for the card, like every other edit here; Yes saves it.
-            SplitSheet(t: t, api: app.api, recent: recent,
+            // TEST-42 (G2-Amounts S-03e): Edit split opens on Edit split, its
+            // people already there; Add someone new and a swipe change them.
+            SplitSheet(t: t, api: app.api, recent: recent, with: t.splitting?.people.map(\.name),
                        onHold: guessing?.onDraft == nil ? nil : { body, _, mine in holdSplit(body, mine: mine) },
                        onSaved: { done in
                 splitting = false

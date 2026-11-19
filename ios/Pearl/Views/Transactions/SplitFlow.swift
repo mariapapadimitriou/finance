@@ -153,6 +153,8 @@ struct SplitSheet: View {
         if settling { return "Settle up" }
         if let title = title { return title }
         if let focus = focus { return "Change \(possessive(focus)) share" }
+        // TEST-42 (G2-Amounts S-03e): a split that's already made is edited.
+        if t.splitting != nil { return "Edit split" }
         return t.splitsMyPart ? "Split my part" : "How to split"
     }
 
@@ -1461,19 +1463,15 @@ struct SplitPeople: View {
         return .none
     }
 
-    /// PaidBackBar: one segment per row, in the rows' order. Her share
-    /// plum (or, reimbursed, green / rose to the part); paid in full green;
-    /// part paid rose to the part; owes empty; let go muted.
+    /// PaidBackBar: what others have paid back, one segment per person in
+    /// the rows' order (TEST-46: her own share isn't a payback, so with
+    /// nobody paid back the bar is empty). Her part reimbursed (`mine`)
+    /// green / rose to the part; paid in full green; part paid rose to the
+    /// part; owes empty; let go muted.
     private var barSegments: [PaidBackBar.Segment] {
         var out: [PaidBackBar.Segment] = []
-        switch youKind {
-        case .mine:
-            if let mine = split.mine {
-                out.append(mine.full ? .paid : mine.reimbursed >= 0.005
-                           ? .part(mine.reimbursed / max(mine.amount, 0.01)) : .yours)
-            }
-        case .share: out.append(.yours)
-        case .unsure, .none: break
+        if youKind == .mine, let mine = split.mine, mine.reimbursed >= 0.005 || mine.full {
+            out.append(mine.full ? .paid : .part(mine.reimbursed / max(mine.amount, 0.01)))
         }
         for p in split.people {
             if p.letGo != nil { out.append(.letGo) }
@@ -1793,6 +1791,10 @@ struct MarkPaidSheet: View {
     }
     @State private var amount: String
     @State private var when = Date()
+    /// G0-DateSheet DP-03: When opens the Pearl date sheet.
+    @State private var pickingWhen = false
+    /// "Today", "Yesterday" or "Tue, Nov 17".
+    private var whenLabel: String { Format.dayHeader(Format.isoDay(when)) }
     /// G2-CashRemind: the amount well's focus outline.
     @FocusState private var typingAmount: Bool
     @State private var finding = false
@@ -2055,15 +2057,23 @@ struct MarkPaidSheet: View {
                      : "\(person.name) owes \(Format.amount(person.owes))").font(Nacre.footnote).foregroundColor(Pearl.muted)
                     .multilineTextAlignment(.center)
             }
-            HStack {
-                // G2-BMarkPaid: "When", the day on the right.
-                Text("When").font(Nacre.body).foregroundColor(Pearl.ink)
-                Spacer()
-                DatePicker("When", selection: $when, in: ...Date(), displayedComponents: .date)
-                    .labelsHidden().tint(Pearl.action)
+            // G2-BMarkPaid: "When", the day on the right in `link`; it opens
+            // the Pearl date sheet (G0-DateSheet DP-03), not the stock picker.
+            Button { pickingWhen = true } label: {
+                HStack(spacing: 8) {
+                    Text("When").font(Nacre.body).foregroundColor(Pearl.ink)
+                    Spacer()
+                    Text(whenLabel).font(Nacre.body).foregroundColor(Pearl.link).lineLimit(1)
+                    APChevron()
+                }
+                .padding(.horizontal, 16).frame(minHeight: 52)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 16).frame(minHeight: 52)
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
             .apCard()
+            .pearlDateSheet(isPresented: $pickingWhen, title: "When did \(person.name) pay you?",
+                            selection: $when, range: .pastOnly, quickPicks: true)
             if let line = countsLine {
                 // G2-BMarkPaid S-06uc: "Pizza Nova counts as $80.00 for you from now."
                 Text(line).font(Nacre.footnote).foregroundColor(Pearl.muted)

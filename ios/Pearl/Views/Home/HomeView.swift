@@ -165,8 +165,10 @@ struct HomeView: View {
         do {
             let reply: WorthReply = try await app.api.post("api/worth-a-look", ["action": "clear", "ids": ids])
             withAnimation { worth = reply.items }
+            // TEST-40: the server clears all that qualifies today; Undo brings all of it back.
+            let cleared = reply.cleared ?? ids
             app.say("Cleared", undo: { [api = app.api] in
-                let _: WorthReply = try await api.post("api/worth-a-look", ["action": "undo_clear", "ids": ids])
+                let _: WorthReply = try await api.post("api/worth-a-look", ["action": "undo_clear", "ids": cleared])
             })
         } catch {
             if let words = app.handle(error) { app.say(words) }

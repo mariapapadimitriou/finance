@@ -489,7 +489,8 @@ def test_the_months_cards_stay_whole_when_spent_or_income_filters(tmp_path):
     assert [t["merchant"] for t in spent["transactions"]] == ["Sushi Nami"]
     assert spent["month_totals"]["spent"] == 80 and spent["month_totals"]["income"] == 2000
     came = c.get("/api/transactions/list", query_string={"month": month, "counts": "income"}).get_json()
-    assert [t["merchant"] for t in came["transactions"]] == ["Payroll Acme"]
+    # TEST-46: the tidy name, without the payroll prefix.
+    assert [t["merchant"] for t in came["transactions"]] == ["Acme"]
     assert came["month_totals"] == spent["month_totals"]
 
 

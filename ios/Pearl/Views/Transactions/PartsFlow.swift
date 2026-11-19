@@ -211,6 +211,8 @@ struct PartsSheet: View {
         let amount: Double
         var pending: Bool? = nil
         var query: Bool? = nil
+        /// TEST-46: the payback question (PQ-03) offered it, so it's LIKELY.
+        var likely: Bool? = nil
     }
 
     /// GET …/many-purchases (finance/many_api.py): what's still hers on a
@@ -390,10 +392,12 @@ struct PartsSheet: View {
         var unknown: Bool? = nil
         /// PB-12's "split 2 ways".
         var ways: Int? = nil
+        /// TEST-46: the payback question (PQ-03) offered it, so it's LIKELY.
+        var likely: Bool? = nil
 
         enum CodingKeys: String, CodingKey {
             case charge = "id"
-            case merchant, date, owes, person, theirs, pending, unknown, ways
+            case merchant, date, owes, person, theirs, pending, unknown, ways, likely
         }
 
         /// One row per person per purchase (2026-11-09): a dinner four people
@@ -922,8 +926,17 @@ struct PartsSheet: View {
                 .sorted { $0.date > $1.date }
         }
         let day = String(deposit.date.prefix(10))
-        let before = theirShares.filter { String($0.date.prefix(10)) <= day }
+        // TEST-46: what PQ-03 offered is always likely, whatever its date.
+        let before = theirShares.filter { String($0.date.prefix(10)) <= day || $0.likely == true }
         return (before.isEmpty ? theirShares : before).sorted { $0.date > $1.date }
+    }
+
+    /// TEST-46: her purchases nobody's on that "Is Sam paying you back?"
+    /// offered, under LIKELY with the shares, newest first.
+    private var likelyUnsplit: [UnsplitRow] {
+        guard manyKind == nil, editing.isEmpty else { return [] }
+        let taken = Set(parts.compactMap(\.charge))
+        return unsplit.filter { $0.likely == true && !taken.contains($0.id) }.sorted { $0.date > $1.date }
     }
 
     private var likelyBefore: Bool {
@@ -1002,7 +1015,8 @@ struct PartsSheet: View {
     /// button; search and OTHER PURCHASES only after "Not here? Search other
     /// purchases". With nothing likely, or on TP-03, search shows at once.
     private var searchOpen: Bool {
-        searching || likely.isEmpty || joint != nil || !unsplitPaid.isEmpty
+        searching || (likely.isEmpty && likelyUnsplit.isEmpty) || joint != nil
+            || unsplitPaid.keys.contains { id in !likelyUnsplit.contains { $0.id == id } }
     }
 
     /// PB-30: LIKELY, the shares as Choice (Checkbox) rows, then the running
@@ -1011,6 +1025,7 @@ struct PartsSheet: View {
         let typed = query.trimmingCharacters(in: .whitespaces)
         let rows = typed.isEmpty ? likely
             : theirShares.filter { $0.merchant.localizedCaseInsensitiveContains(typed) }.sorted { $0.date > $1.date }
+        let likelyOthers = typed.isEmpty ? likelyUnsplit : []
         let first = firstName(sender ?? who)
         let open = searchOpen
         let others = open ? otherRows : []
@@ -1026,11 +1041,11 @@ struct PartsSheet: View {
                 // TP-03 for an owner who owes her nothing: who it is, and CHANGE.
                 jointLabel(first)
             }
-            if rows.isEmpty && others.isEmpty {
+            if rows.isEmpty && others.isEmpty && likelyOthers.isEmpty {
                 // G2-APaidBackMore PB-12: the calm empty state.
                 EmptyStateBlock(title: "No purchases match", line: "Search for the purchase, or try another name.",
                                 action: nil) {}
-            } else if !rows.isEmpty {
+            } else if !rows.isEmpty || !likelyOthers.isEmpty {
                 if typed.isEmpty, joint != nil {
                     jointLabel(first)
                 } else if typed.isEmpty {
@@ -1044,6 +1059,10 @@ struct PartsSheet: View {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { i, o in
                         if i > 0 { APSeparator(afterFace: false).padding(.leading, 36) }
                         tickRow(o)
+                    }
+                    ForEach(Array(likelyOthers.enumerated()), id: \.element.id) { i, u in
+                        if i > 0 || !rows.isEmpty { APSeparator(afterFace: false).padding(.leading, 36) }
+                        unsplitRow(u)
                     }
                 }
             }
@@ -1197,14 +1216,20 @@ struct PartsSheet: View {
     /// PB-30's button: "Mark 2 paid back", or "Next: the other $13.35".
     private var tickedButton: String {
         // MP-01 "Mark 3 reimbursed", MP-02 "Mark 2 refunded".
-        tickedCents + unsplitCents >= leftCents && tickedShares.count + unsplitPaid.count > 0
-            ? "Mark \(tickedShares.count + unsplitPaid.count) " + (manyKind == .shop ? "refunded" : manyKind == .work ? "reimbursed" : "paid back")
+        let n = tickedShares.count + unsplitPaid.count
+        let done = manyKind == .shop ? "refunded" : manyKind == .work ? "reimbursed" : "paid back"
+        // TEST-46 (G2-PB30-r): nothing ticked, so nothing to go on to yet.
+        if n == 0 { return "Mark \(done)" }
+        return tickedCents + unsplitCents >= leftCents
+            ? "Mark \(n) \(done)"
             : "Next: the other \(Format.amount(Double(leftCents - tickedCents - unsplitCents) / 100))"
     }
 
-    /// Off while a ticked share would get nothing (the money ran out first).
+    /// Off until something is ticked (TEST-46, G2-PB30-r), and while a
+    /// ticked share would get nothing (the money ran out first).
     private var tickedReady: Bool {
-        tickedShares.allSatisfy { (allocation[$0.id] ?? 0) > 0 } && unsplitCents <= leftCents
+        tickedShares.count + unsplitPaid.count > 0
+            && tickedShares.allSatisfy { (allocation[$0.id] ?? 0) > 0 } && unsplitCents <= leftCents
     }
 
     // MARK: PB-30 OTHER PURCHASES (product owner, 2026-11-18)
@@ -1221,8 +1246,11 @@ struct PartsSheet: View {
         let typed = !query.trimmingCharacters(in: .whitespaces).isEmpty
         let taken = Set(parts.compactMap(\.charge))
         var seen = Set<String>()
-        let ticked = (unsplit + unsplitFound).filter { unsplitPaid[$0.id] != nil }
-        let shown = typed ? unsplitFound.filter { $0.query == true } : unsplit
+        // TEST-46: the likely ones are under LIKELY, not here again.
+        let ticked = (unsplit + unsplitFound).filter { unsplitPaid[$0.id] != nil && (typed || $0.likely != true) }
+        // TEST-46: a search's results newest first.
+        let shown = typed ? unsplitFound.filter { $0.query == true }.sorted { $0.date > $1.date }
+            : unsplit.filter { $0.likely != true }
         return (ticked + shown).filter { !taken.contains($0.id) && seen.insert($0.id).inserted }
     }
 
@@ -1389,7 +1417,7 @@ struct PartsSheet: View {
     private var mineList: some View {
         let typed = query.trimmingCharacters(in: .whitespaces)
         let rows = typed.isEmpty ? likely
-            : mineFound.compactMap { id in mineOwing.first { $0.charge == id } }
+            : mineFound.compactMap { id in mineOwing.first { $0.charge == id } }.sorted { $0.date > $1.date }
         return VStack(alignment: .leading, spacing: 8) {
             PearlField(placeholder: "Search purchases", text: $query, kind: .search)
                 .autocorrectionDisabled().textInputAutocapitalization(.never)
