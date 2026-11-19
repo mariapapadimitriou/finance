@@ -184,7 +184,29 @@ class TestProfileCircleAndPhoto(unittest.TestCase):
         p = code(read("Views", "Profile", "ProfileView.swift"))
         self.assertIn("let goHome: () -> Void", p)
         self.assertNotIn("MainTabs.Tab", p)
-        self.assertIn('accessibilityLabel("Back")', p)
+        # A+ G5-Profile: the glass Back from the Profile kit, labelled there.
+        self.assertIn("APBackButton { dismiss() }", p)
+        kit = code(read("Views", "Profile", "ProfileParts.swift"))
+        self.assertIn('accessibilityLabel("Back")', kit)
+
+    def test_appearance_is_a_pearl_sheet_not_a_menu(self):
+        """G5-SignOut: Appearance picks at once on a Pearl sheet."""
+        p = code(read("Views", "Profile", "ProfileView.swift"))
+        self.assertNotIn("Menu {", p)
+        self.assertIn("AppearanceSheet(selection: $appearance)", p)
+        self.assertIn('"Matches your iPhone"', p)
+
+    def test_profile_rows_and_notifications_parked_moments(self):
+        p = code(read("Views", "Profile", "PrivacyViews.swift"))
+        self.assertNotIn('"progress"', p)
+        self.assertNotIn('"milestones"', p)
+        self.assertNotIn("Menu {", p)
+        a = code(read("Views", "Profile", "AccountsViews.swift"))
+        self.assertIn('"Not in your budget now"', a)
+        self.assertIn("AddAccountSheet", a)
+        i = code(read("Views", "Profile", "IncomeBillsView.swift"))
+        self.assertIn('"answer": yes ? "yes" : "no"', i)
+        self.assertIn('body["answer"] = "no"', i)
 
 
 class TestWords(unittest.TestCase):
