@@ -43,7 +43,8 @@ def test_pb30_likely_first_then_search():
     assert 'label("Likely")' in s
     assert '" · with \\(Format.andList(hidden))"' in s
     # The joint (TP-03) and nothing-likely cases still search at once.
-    assert "searching || likely.isEmpty || joint != nil" in s
+    # TEST-46: the likely ones include PQ-03's purchases nobody's on.
+    assert "searching || (likely.isEmpty && likelyUnsplit.isEmpty) || joint != nil" in s
 
 
 def test_tp03_joint_label_and_line():

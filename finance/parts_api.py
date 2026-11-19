@@ -712,10 +712,12 @@ def unsplit_candidates(st, deposit, target: float, q: str = "", also: str = "",
                "max": amount, "query": found}
         if offered:
             row["likely"] = True
-        rows.append(((-1 if came or offered else 0 if found else 1, round(near + max(gap, 0) / 30.0, 4),
+        rows.append(((-1 if came else 0 if found else 1, round(near + max(gap, 0) / 30.0, 4),
                       -int(c.date[:10].replace("-", ""))), row))
     rows.sort(key=lambda r: r[0])
-    return [r for _, r in rows[:UNSPLIT_LIMIT]]
+    # The offered ones keep their place in the order, and are never cut off.
+    out = [r for _, r in rows[:UNSPLIT_LIMIT]]
+    return out + [r for _, r in rows[UNSPLIT_LIMIT:] if r.get("likely")]
 
 
 def _new_split_asks(st, body: dict) -> tuple[list[tuple[str, str, float]], str | None]:
