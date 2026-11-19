@@ -324,14 +324,23 @@ def invested_in(transactions: list[Transaction], month: str) -> float:
     """
     total = 0.0
     for t in transactions:
-        if t.month != month or t.excluded or is_others(t):
-            continue
-        if (t.category or "") == "Saved":
-            # On a joint account, her share of it (the logic review, gap 18).
-            total += t.my_share if t.joint and t.my_share is not None else t.amount
-        elif t.invested:
-            total += t.invested
+        if t.month == month:
+            total += saved_part(t) or 0.0
     return round(total, 2)
+
+
+def saved_part(t: Transaction) -> float | None:
+    """What this row put away, as the month's Saved counts it, or None when
+    it isn't part of Saved at all. Cash flow's Saved chip lists exactly the
+    rows with a part, so they add up to the card (CF-SCROLL)."""
+    if t.excluded or is_others(t):
+        return None
+    if (t.category or "") == "Saved":
+        # On a joint account, her share of it (the logic review, gap 18).
+        return t.my_share if t.joint and t.my_share is not None else t.amount
+    if t.invested:
+        return t.invested
+    return None
 
 
 def by_category(transactions: list[Transaction], month: str | None = None) -> list[dict]:

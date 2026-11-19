@@ -466,11 +466,8 @@ struct NeedsALookCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .accessibilityElement(children: .combine)
-            // REDESIGN-18: lit = sorted ÷ (sorted + to sort), in twelfths;
-            // VoiceOver "N of M sorted". The words still say Pearl sorted N.
-            if sorted > 0 {
-                SortStreak(sorted: sorted, toSort: count)
-            }
+            // AP-Home (approved r7): no streak dashes on this card; the
+            // words still say Pearl sorted N.
             Button("Sort now", action: onSort)
                 .buttonStyle(PearlPrimaryButtonStyle(busy: busy, busyLabel: "Opening…"))
                 .disabled(busy)

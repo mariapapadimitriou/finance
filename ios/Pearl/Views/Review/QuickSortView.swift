@@ -145,17 +145,23 @@ struct QuickSortView: View {
                 // bottom. No notes under the card (A+ decision): the toast
                 // says what Yes did.
                 header
-                stack.padding(.horizontal, 16).padding(.top, 44)
-                Spacer(minLength: 16)
+                // QS-SAME (G1-QuickSame, approved r7): every card one size
+                // (358 × 420 on the board, never taller than the room here),
+                // centred between the progress and the circles. It never grows.
+                GeometryReader { g in
+                    stack.padding(.horizontal, 16)
+                        .environment(\.quickSortCardHeight, Self.cardHeight(room: g.size.height))
+                        .frame(width: g.size.width, height: g.size.height)
+                }
                 if let error = error {
                     Text(error).font(Nacre.footnote).foregroundColor(Pearl.danger).padding(.bottom, 8)
                 }
-                buttons.padding(.horizontal, 16).padding(.bottom, 26)
-                    .padding(.top, toast == nil && undoPattern == nil && madeTrip == nil ? 0 : 68)
+                buttons.padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 26)
             }
         }
         .nacreScreen()
-        // Its own view, so body stays a small frame (check_stack).
+        // Its own view, so body stays a small frame (check_stack). QS-SAME:
+        // the toast sits between the card and the circles.
         .overlay(alignment: .bottom) { toastView }
         .task { await begin() }
         .sheet(item: $seeingTrip) { t in
@@ -449,36 +455,37 @@ struct QuickSortView: View {
                 .font(.custom("Figtree-SemiBold", size: 12, relativeTo: .caption)).tracking(1.2)
                 .foregroundColor(Pearl.action)
             CFRing(name: t.name, size: 56).padding(.top, 14)
+            // QS-SAME: the name on one line, with an ellipsis.
             Text(t.name).font(Nacre.body).foregroundColor(Pearl.ink)
-                .multilineTextAlignment(.center).lineLimit(2).padding(.top, 10)
+                .lineLimit(1).truncationMode(.tail).padding(.top, 10)
             Text((t.inflow ? "+" : "\u{2212}") + Format.amount(amounts[ask.id] ?? t.shownAmount))
                 .font(.custom("Fraunces-SemiBold", size: 40, relativeTo: .largeTitle)).tracking(-0.8)
                 .foregroundColor(tone(t)).lineLimit(1).minimumScaleFactor(0.6)
             if let note = amounts[ask.id].map({ abs(t.amount) - $0 > 0.005 ? "Your share of \(Format.amount(abs(t.amount)))" : "" }) ?? t.shareNote, !note.isEmpty {
-                Text(note).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                Text(note).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(1)
             }
             Text([Format.relativeDay(t.date), t.accountName].compactMap { $0 }.filter { !$0.isEmpty }
                     .joined(separator: " · "))
                 .font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(1)
             Text(drafts[ask.id]?.label.map { "\($0)?" }
                  ?? (isGuess(ask) ? (ask.item.pair?.question ?? "\(guess(ask))?") : ask.chip))
-                .font(Nacre.title).foregroundColor(Pearl.ink)
-                .multilineTextAlignment(.center).lineLimit(3).minimumScaleFactor(0.7)
+                .font(Self.question).foregroundColor(Pearl.ink)
+                .multilineTextAlignment(.center).lineLimit(2)
                 .padding(.top, 14)
             if let split = drafts[ask.id]?.split {
                 // T-98s (G1-QuickMore): "Sam owes you $42.06. Skip forgets the split."
                 Text((split.note.components(separatedBy: " \u{00B7} ").last ?? split.note) + ". Skip forgets the split.").font(Nacre.footnote).foregroundColor(Pearl.muted)
-                    .multilineTextAlignment(.center).lineLimit(3)
+                    .multilineTextAlignment(.center).lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 6)
             } else if drafts[ask.id]?.label == nil, let evidence = ask.evidence {
                 Text(evidence).font(Nacre.footnote).foregroundColor(Pearl.ink)
-                    .multilineTextAlignment(.center).lineLimit(3)
+                    .multilineTextAlignment(.center).lineLimit(2)
             }
             if let line = cardHint(ask) {
                 // G1-QuickMore (T-93o, T-97, T-98, T-98s, AI-07): one muted line in the card.
                 Text(line).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                    .multilineTextAlignment(.center).lineLimit(3)
+                    .multilineTextAlignment(.center).lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 6)
             }
@@ -512,7 +519,7 @@ struct QuickSortView: View {
                 .foregroundColor(Pearl.action)
             CFRing(name: p.name, size: 56)
             Text(p.who).font(Nacre.headline).foregroundColor(Pearl.ink)
-                .multilineTextAlignment(.center).lineLimit(2)
+                .lineLimit(1).truncationMode(.tail)
             // AI-18b (1332:63964): "$12–$48" over "Usually $27 · about every week"
             // unless every one is within $1.
             if let amount = p.shownAmount {
@@ -523,13 +530,13 @@ struct QuickSortView: View {
             Text(p.each).font(Nacre.footnote).foregroundColor(Pearl.muted)
                 .multilineTextAlignment(.center).lineLimit(2)
             Text(p.question)
-                .font(Nacre.title).foregroundColor(Pearl.ink)
-                .multilineTextAlignment(.center).lineLimit(3).minimumScaleFactor(0.7)
+                .font(Self.question).foregroundColor(Pearl.ink)
+                .multilineTextAlignment(.center).lineLimit(2)
                 .padding(.top, 8)
             // AI-18 (G1-QuickAsk): why Pearl asks, one muted line in the card.
             Text(p.isJoint ? "Your last \(p.count) were \(p.label)." : "Your last \(p.count) at \(p.name) were \(p.label).")
                 .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                .multilineTextAlignment(.center).lineLimit(3)
+                .multilineTextAlignment(.center).lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .modifier(CardFace())
@@ -547,7 +554,7 @@ struct QuickSortView: View {
                    mark: String((t.place ?? "Trip").filter { $0.isLetter }.prefix(2)).uppercased())
             if let place = t.place {
                 Text(place).font(Nacre.headline).foregroundColor(Pearl.ink)
-                    .multilineTextAlignment(.center).lineLimit(2)
+                    .lineLimit(1).truncationMode(.tail)
             }
             Text(t.totals.shown)
                 .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
@@ -557,11 +564,11 @@ struct QuickSortView: View {
             // G7-TripAsk (approved 2026-11-18): "Were you in Montréal?",
             // never "A trip?", and what Pearl saw under it.
             Text(ChatWords.tripQuestion(t))
-                .font(Nacre.title).foregroundColor(Pearl.ink)
-                .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.7)
+                .font(Self.question).foregroundColor(Pearl.ink)
+                .multilineTextAlignment(.center).lineLimit(2)
                 .padding(.top, 8)
             Text(ChatWords.tripAway(t)).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                .multilineTextAlignment(.center)
+                .multilineTextAlignment(.center).lineLimit(2)
         }
         .modifier(CardFace())
         .overlay(alignment: .topLeading) { stamp(guessing: true) }
@@ -608,43 +615,68 @@ struct QuickSortView: View {
             }
     }
 
-    /// A+ (G1-QuickSort, kit `.btnrow`): Skip (control) and Yes or Answer
-    /// (rose) side by side; a plan question has No between them.
+    /// QS-SAME (G1-QuickSame, qs.css `.qbtns`, approved r7): Skip and Yes
+    /// (or Answer) as 56 pt circles with their words under them, 56 apart;
+    /// a plan question has No between them, 32 apart. VoiceOver keeps Skip,
+    /// Yes, No and Answer.
     @ViewBuilder private var buttons: some View {
         let guessing = current.map(hasYes) ?? true
-        HStack(spacing: 12) {
-            Button("Skip") { left() }.buttonStyle(APSecondaryButtonStyle())
+        HStack(spacing: current?.kind == .check ? 32 : 56) {
+            roundButton(symbol: "forward", label: "Skip", filled: false) { left() }
             // Plan questions ("Is TD Savings where you save?") take a No on the card.
             if let ask = current, ask.kind == .check {
-                Button("No") { no(ask) }.buttonStyle(APSecondaryButtonStyle())
+                roundButton(symbol: "xmark", label: "No", filled: false) { no(ask) }
             }
-            Button(guessing ? "Yes" : "Answer") { right() }.buttonStyle(APPrimaryButtonStyle())
+            roundButton(symbol: guessing ? "checkmark" : "text.bubble",
+                        label: guessing ? "Yes" : "Answer", filled: true) { right() }
                 // T-98s (REFRESH-03): "Saves the split and Groceries, for this one."
                 .accessibilityHint(current.flatMap { ask in drafts[ask.id].flatMap { d in
                     d.split != nil ? "Saves the split and \(splitCategory(ask, d)), for this one." : nil } } ?? "")
         }
+        .frame(maxWidth: .infinity)
         .disabled((current == nil && pattern == nil && trip == nil) || leaving != nil)
     }
 
+    /// The pre-A+ `roundButton`, restyled in A+ tokens: a 56 pt circle
+    /// (`card` with its line for Skip and No, `action` for Yes), a 22 pt
+    /// icon, its word under it (13 medium, `action` under Yes). The whole
+    /// column answers the tap: at least 56 × 44.
     private func roundButton(symbol: String, label: String, filled: Bool,
                              action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 8) {
                 Image(systemName: symbol)
                     .font(.system(size: 22, weight: .semibold))
-                    .foregroundColor(filled ? .white : Pearl.ink)
-                    .frame(width: 68, height: 68)
-                    // T-93r dark (1077:1490): Skip is --surface-card with a --border edge (TEST-01).
+                    .foregroundColor(filled ? Pearl.onAction : Pearl.ink)
+                    .frame(width: Self.circle, height: Self.circle)
                     .background(Circle().fill(filled ? Pearl.action
                                               : scheme == .dark ? Pearl.card : Color.white.opacity(0.9)))
                     .overlay(Circle().strokeBorder(!filled && scheme == .dark ? Pearl.border : .clear, lineWidth: 1))
-                    .shadow(color: (filled ? Pearl.action : Color.black).opacity(0.18), radius: 8, y: 4)
-                Text(label).font(Nacre.footnote).foregroundColor(filled ? Pearl.action : Pearl.ink)
+                    .shadow(color: (filled ? Pearl.action.opacity(0.30) : Color.black.opacity(scheme == .dark ? 0.25 : 0.10)),
+                            radius: filled ? 10 : 8, y: 4)
+                Text(label).font(.custom("Figtree-Medium", size: 13, relativeTo: .footnote))
+                    .foregroundColor(filled ? Pearl.action : Pearl.ink)
             }
+            .frame(minWidth: 68, minHeight: 44)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
+        .accessibilityAddTraits(.isButton)
     }
+
+    /// kit `.qcard .q`: the question in Fraunces 24, two lines at most (QS-SAME).
+    static let question = Font.custom("Fraunces-SemiBold", size: 24, relativeTo: .title)
+
+    /// QS-SAME: the circles' size.
+    static let circle: CGFloat = 56
+
+    /// The toast's lift: over the circles and their words, 12 above them.
+    static let toastLift: CGFloat = 26 + circle + 8 + 18 + 12
+
+    /// The card's one height: 420 where it fits, less on a small iPhone.
+    static func cardHeight(room: CGFloat) -> CGFloat { min(420, max(room - 24, 280)) }
 
     // MARK: Done (T-72)
 
@@ -814,20 +846,20 @@ struct QuickSortView: View {
             UndoToast(text: toast.text, undo: toast.undo == nil ? nil : { Task { await undo(toast) } }, stays: true) {
                 withAnimation { if self.toast?.id == toast.id { self.toast = nil } }
             }
-            .padding(.bottom, 84)
+            .padding(.bottom, Self.toastLift)
         } else if let made = madeTrip, done == nil {
             // G7-TripAsk (TEST-48): "Trip to Montréal made", with Undo,
             // the same toast as the chat's.
             UndoToast(text: "\(made.name) made", undo: { Task { await undoTrip(made) } }, stays: true) {
                 withAnimation { if madeTrip == made { madeTrip = nil } }
             }
-            .padding(.bottom, 84)
+            .padding(.bottom, Self.toastLift)
         } else if let p = undoPattern, done == nil {
             // AI-18y (1332:64062): the next card is up; Undo brings this one back.
             UndoToast(text: "\(p.title): sorted from now on", undo: { Task { await undoYes(p) } }, stays: true) {
                 withAnimation { if undoPattern == p { undoPattern = nil } }
             }
-            .padding(.bottom, 84)
+            .padding(.bottom, Self.toastLift)
         }
     }
 
@@ -1089,11 +1121,18 @@ private struct CardFace: ViewModifier {
     var dashed = false
     @Environment(\.colorScheme) private var scheme
 
+    /// QS-SAME: every card the same height, whatever it holds.
+    @Environment(\.quickSortCardHeight) private var height
+
     func body(content: Content) -> some View {
-        // A+ kit `.qcard`: the A+ card at radius 28, 24 / 22 in.
+        // A+ kit `.qcard`, qs.css `.qcard.qfix`: the A+ card at radius 28,
+        // 24 / 22 in, one fixed height with what it holds centred and
+        // clipped, so it never grows.
         content
             .padding(.vertical, 24).padding(.horizontal, 22)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(height: height)
+            .clipped()
             .apCard(radius: Pearl.radiusSort)
             .overlay {
                 if dashed {
@@ -1101,6 +1140,18 @@ private struct CardFace: ViewModifier {
                         .strokeBorder(Pearl.action, style: StrokeStyle(lineWidth: 1.5, dash: [5, 3]))
                 }
             }
+    }
+}
+
+/// QS-SAME: the one height every Quick sort card takes.
+private struct QuickSortCardHeight: EnvironmentKey {
+    static let defaultValue: CGFloat = 420
+}
+
+extension EnvironmentValues {
+    fileprivate var quickSortCardHeight: CGFloat {
+        get { self[QuickSortCardHeight.self] }
+        set { self[QuickSortCardHeight.self] = newValue }
     }
 }
 

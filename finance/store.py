@@ -2514,7 +2514,7 @@ class Store:
             # yours rather than imported. The seed flag is the exception: it
             # records that this emptiness was deliberate.
             c.execute("DELETE FROM settings WHERE key IN "
-                      "('monthly_amount', 'monthly_income')")
+                      "('monthly_amount', 'monthly_income', 'trips', 'trip_skipped', 'trip_ended')")
             c.execute(
                 """INSERT INTO settings (key, value) VALUES ('seeded', 'done')
                    ON CONFLICT(key) DO UPDATE SET value = excluded.value""")
@@ -2575,6 +2575,17 @@ class Store:
         "anchor_unusual", "quick_sort_offered", "quick_sort_batch", "quick_sort_shown_on",
         # A cache: the next sync matches transfers afresh.
         "transfer_destinations",
+        # Trips (finance/trips.py): her trips, the dates she skipped and what
+        # Undo puts back. Their tags go with the rows; kept, these would hide
+        # every past trip from Pearl's asks once the history comes back.
+        "trips", "trip_skipped", "trip_ended",
+        # Pearl sorts for you (finance/pattern_sort.py): what it sorted, her
+        # Yes/Stop/Skip on each pattern, the rows she undid. Keyed by rows
+        # that come back with the same ids, so kept they'd reattach. The
+        # switch stays; its baseline is taken again once the history is in.
+        "pattern_sort_log", "pattern_sort_state", "pattern_sort_never",
+        # "Waiting to be paid back" on a charge (marks.py), by charge id.
+        "reimbursement_waited",
     )
 
     def start_over(self) -> dict:
@@ -2607,6 +2618,15 @@ class Store:
             # Empty on purpose: the seeder must not refill it.
             c.execute("""INSERT INTO settings (key, value) VALUES ('seeded', 'done')
                          ON CONFLICT(key) DO UPDATE SET value = excluded.value""")
+            # Every bank's history is on its way again (plaid_history_ready).
+            from datetime import date as _date
+            marked = _date.today().isoformat()
+            items = {r["item_id"]: marked for r in c.execute("SELECT item_id FROM plaid_items").fetchall()}
+            c.execute("""INSERT INTO settings (key, value) VALUES (?, ?)
+                         ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
+                      (self.HISTORY_PENDING_KEY, json.dumps(items, sort_keys=True)))
+        from . import pattern_sort
+        pattern_sort.after_start_over(self)
         return removed
 
     def seed_suppressed(self) -> bool:
@@ -3571,6 +3591,50 @@ class Store:
                    WHERE item_id = ?""",
                 (cursor, _now(), item_id),
             )
+
+    # ── A bank's whole history, in yet? (2026-11-19) ─────────────────────
+    # After Start over or a new link, Plaid's first pulls can be a recent
+    # slice: a new connection gets about the last month first and the rest
+    # later, and one sync takes at most so many pages. Until every bank has
+    # sent its whole history, what reads "new" against history (trips, a new
+    # subscription, the pattern baseline) waits, for HISTORY_WAIT_DAYS at
+    # most from when the bank was marked: a bank whose history Plaid never
+    # reports as complete doesn't hold them back for good.
+    # {item_id: day marked}; no key, nothing waiting.
+    HISTORY_PENDING_KEY = "plaid_history_pending"
+    HISTORY_WAIT_DAYS = 7
+
+    def _history_marks(self) -> dict[str, str]:
+        try:
+            raw = json.loads(self.setting(self.HISTORY_PENDING_KEY) or "{}")
+        except (TypeError, ValueError):
+            return {}
+        if not isinstance(raw, dict):
+            return {}
+        linked = {i["item_id"] for i in self.plaid_items()}
+        return {k: str(v) for k, v in raw.items() if k in linked}
+
+    def plaid_history_pending(self, today: str | None = None) -> list[str]:
+        """Banks whose history is still coming in, marked in the last
+        HISTORY_WAIT_DAYS."""
+        from datetime import date as _date, timedelta as _td
+        day = _date.fromisoformat(today) if today else _date.today()
+        oldest = (day - _td(days=self.HISTORY_WAIT_DAYS)).isoformat()
+        return sorted(k for k, v in self._history_marks().items() if v[:10] > oldest)
+
+    def plaid_history_ready(self, today: str | None = None) -> bool:
+        return not self.plaid_history_pending(today)
+
+    def set_plaid_history_pending(self, item_id: str, pending: bool, today: str | None = None) -> None:
+        from datetime import date as _date
+        was = self._history_marks()
+        now = dict(was)
+        if pending:
+            now[item_id] = today or _date.today().isoformat()
+        else:
+            now.pop(item_id, None)
+        if now != was:
+            self.set_setting(self.HISTORY_PENDING_KEY, json.dumps(now, sort_keys=True))
 
     def set_plaid_logo(self, item_id: str, logo: str) -> None:
         with self.conn() as c:

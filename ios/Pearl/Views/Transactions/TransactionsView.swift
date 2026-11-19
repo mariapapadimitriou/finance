@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Cash flow (THL-122, T-01): the month's transactions under Spent, Came in
-/// and Leftover, with search (T-45), Filters (T-17), By category (T-18) and
+/// Cash flow (THL-122, T-01; CF-SCROLL T-01s): every transaction in one
+/// list, newest first, a divider per month, under the chosen month's card
+/// (Spent, Came in and Leftover), with search (T-45), Filters (T-17), By category (T-18) and
 /// each category's page (T-46), Choose a month
 /// (T-47), the bank's state: syncing, failed, disconnected (T-36, T-58, T-59),
 /// Select (T-19): a category, a tag or Not counted for several at once
@@ -12,9 +13,18 @@ struct TransactionsView: View {
     @StateObject private var plaid = PlaidLinker()
 
     @State private var months: [String] = []
+    /// The month the card is about (T-47): only its summary follows it.
     @State private var month: String?
-    /// The whole month (or what a server-side filter keeps), newest first.
+    /// CF-SCROLL: every month's rows loaded so far (or what a server-side
+    /// filter keeps), newest first; older pages come as she scrolls.
     @State private var rows: [Transaction] = []
+    /// How many lines the server has in all, for the next page.
+    @State private var total = 0
+    @State private var loadingMore = false
+    /// Bumped by each fresh load, so an older one's pages are dropped.
+    @State private var loadGen = 0
+    /// The folding bar and the pin's position, apart from this view's state.
+    @State private var tracker = CFScrollTracker()
     /// Arrivals merged into a transfer line in `rows`, for a filter that
     /// keeps only that end (TransferEnds, 2026-11-15).
     @State private var merged: [Transaction] = []
@@ -25,10 +35,13 @@ struct TransactionsView: View {
     @State private var tags: [String] = []
     private var categories: [CategoryList.Category] { app.categories }
     @State private var accounts: [AccountsOverview.Account] = []
-    @State private var reviewCount = 0
-    @State private var reviewSorted = 0
-    /// The streak's "to sort": the same count Home's streak uses (REDESIGN-18).
-    @State private var reviewToSort = 0
+    /// AP-CashFlow (r7): the card's count is its month's own; the tab badge
+    /// still counts everything. Needs a look's rows, for the card's filter.
+    @State private var lookByMonth: [String: Int] = [:]
+    @State private var lookIds: Set<String> = []
+    /// The card's Sort: Quick sort over Cash flow.
+    @State private var quickDeck: QuickSortDeck?
+    @State private var openingSort = false
     @State private var loadedOnce = false
     @State private var error: String?
 
@@ -39,8 +52,13 @@ struct TransactionsView: View {
     @State private var resultsMerged: [Transaction] = []
 
     @State private var filters = TxFilters()
-    /// T-67: Spent or Came in tapped, to see just those.
-    @State private var counts: String?
+    /// T-67 (CF-SCROLL): Spent, Saved, Came in or need a look tapped on the
+    /// card: that month and kind, with its chip under the card.
+    @State private var cardFilter: CardFilter?
+    /// That figure's rows, exactly those the card adds up (the server's
+    /// `kind=`); nil while they load.
+    @State private var cardRows: [Transaction]?
+    @State private var loadedCard: CardFilter?
     @State private var showFilters = false
     @State private var showMonths = false
 
@@ -105,60 +123,7 @@ struct TransactionsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                // A+ (AP-CashFlow): the profile circle beside the title, its
-                // visual edge lined up with the filter button's.
-                // A+ (AP-CashFlow, kit `.hdr`): Cash flow in Fraunces 34 with
-                // the profile circle, its visual edge on the filter button's.
-                // G1-Select: while selecting, the title stays and the circle goes.
-                HStack(alignment: .center) {
-                    Text("Cash flow").font(Nacre.largeTitle).foregroundColor(Pearl.ink)
-                        .padding(.leading, 4)
-                        .accessibilityAddTraits(.isHeader)
-                    Spacer(minLength: 8)
-                    if !selecting || inTrip { ProfileCircle().padding(.trailing, -4).disabled(inTrip) }
-                }
-                .frame(minHeight: 44)
-                .padding(.top, 16)
-                if noTransactionsYet {
-                    emptyLedger
-                } else if selecting && !inTrip {
-                    // G1-Select: "3 selected · $89.00   Cancel" under the
-                    // title, then the days with a tick on each row.
-                    listHeader.padding(.top, 14)
-                    list.padding(.top, 16)
-                } else {
-                    // TR-11 / TR-12: Cash flow as it is, but only the trip's
-                    // Select answers taps; search, the tabs and the month wait.
-                    searchRow.disabled(inTrip).padding(.top, 14)
-                    // T-02, T-45: the tabs and the summary stay while searching.
-                    tabs.disabled(inTrip).padding(.top, 14)
-                    if filtersOn && !showCalendar && !inSearch { activeChips.padding(.top, 12) }
-                    if !showCalendar { summaryCard.allowsHitTesting(!inTrip).padding(.top, 16) }
-                    if !inSearch && !inTrip { bankState }
-                    if showCalendar && !inSearch {
-                        CalendarCard(month: month ?? Format.thisMonth(), categories: categories) { m in
-                            month = m
-                            Task { await reload() }
-                        }
-                        .padding(.top, 16)
-                    } else if byCategory && loadedOnce && !shown.isEmpty {
-                        categoryList
-                    } else {
-                        // T-01r: under Newest the first day's header carries
-                        // Select, so the plain list has no header of its own.
-                        if !selectOnFirstDay { listHeader.padding(.top, 24) }
-                        // TEST-46: Add a transaction is the + by Filters, not
-                        // under the month's last row.
-                        list.padding(.top, selectOnFirstDay ? 24 : 8)
-                    }
-                }
-            }
-            .padding(.horizontal, Pearl.gutter)
-            .padding(.bottom, 32)
-        }
-        .scrollDismissesKeyboard(.interactively)
+        scroll
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 toastView
@@ -297,22 +262,25 @@ struct TransactionsView: View {
             focus(on: request)
         }
         .sheet(isPresented: $showFilters) {
-            FilterSheet(filters: filters, month: month, months: months, accounts: filterAccounts,
-                        categories: monthCategories, tags: tags,
-                        count: { visible(applying: $0).count }) { chosen, chosenMonth in
+            // CF-SCROLL (G1-FilterOpen): no Month; "Show N" counts every
+            // month, once every page is here.
+            FilterSheet(filters: filters, accounts: filterAccounts,
+                        categories: allCategories, tags: tags,
+                        counted: rows.count >= total || inTrip,
+                        count: { visible(applying: $0).count }) { chosen in
                 showFilters = false
-                let reload = chosen.needsServer != filters.needsServer || chosenMonth != month
+                let reload = chosen.needsServer != filters.needsServer
                 filters = chosen
-                if let chosenMonth = chosenMonth, chosenMonth != month { month = chosenMonth }
                 if reload { Task { await self.reload() } }
             }
         }
         .sheet(isPresented: $showMonths) {
+            // T-47 (CF-SCROLL): choosing a month changes only the card.
             MonthSheet(months: months, current: month) { chosen in
                 showMonths = false
                 if chosen != month {
                     month = chosen
-                    Task { await reload() }
+                    Task { await loadCard() }
                 }
             }
             .presentationDetents([.medium, .large])
@@ -320,30 +288,213 @@ struct TransactionsView: View {
         }
     }
 
-    /// CashFlowFocus: Cash flow filtered to one category (and its month, if
-    /// given), as if she had picked it in Filters; its chip takes it off.
+    /// CashFlowFocus: Cash flow filtered to one category, every month, as if
+    /// she had picked it in Filters; its chip takes it off. A month given
+    /// puts the card on that month.
     private func focus(on request: CashFlowFocus.Request) {
-        let reload = filters.needsServer || (request.month != nil && request.month != month)
+        let reload = filters.needsServer
         query = ""
         searching = false
         showCalendar = false
-        counts = nil
+        cardFilter = nil
         filters = TxFilters(categories: [request.category])
-        if let m = request.month { month = m }
+        if let m = request.month, m != month { month = m; Task { await loadCard() } }
         if reload { Task { await self.reload() } }
+    }
+
+    // MARK: The scroll (CF-SCROLL)
+
+    /// The top (title, search, tabs, the card) then the list as lazy blocks,
+    /// with the folding bar and the pinned month over it.
+    private var scroll: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                top.padding(.horizontal, Pearl.gutter)
+                if showsBlocks {
+                    ForEach(blocks) { block in
+                        blockView(block).padding(.horizontal, Pearl.gutter)
+                    }
+                    listFoot.padding(.horizontal, Pearl.gutter)
+                }
+            }
+            .padding(.bottom, 32)
+        }
+        .coordinateSpace(name: CFScroll.space)
+        .scrollDismissesKeyboard(.interactively)
+        .onPreferenceChange(CFTopEdgeKey.self) { tracker.top($0) }
+        .onPreferenceChange(CFMonthEdgeKey.self) { tracker.months($0) }
+        .overlay(alignment: .top) {
+            if !selecting && !inTrip && !noTransactionsYet && !showCalendar {
+                CFFoldedBar(tracker: tracker, filtersOn: filtersOn, chips: inSearch ? [] : chipItems,
+                            filters: { showFilters = true }, add: { adding = true })
+            }
+        }
+        .onChange(of: needsEverything) { on in if on { Task { await loadRest() } } }
+        .onChange(of: cardFilter) { _ in Task { await loadCardRows() } }
+        .fullScreenCover(item: $quickDeck) { deck in
+            QuickSortView(asks: deck.asks, categories: categories, names: deck.names,
+                          patterns: deck.patterns, trips: deck.trips) {
+                quickDeck = nil
+                app.changed()
+            }
+        }
+    }
+
+    /// Title, search, tabs, chips, the card, the bank, and the list's own
+    /// states (loading, empty, error) or the calendar.
+    @ViewBuilder private var top: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // A+ (AP-CashFlow, kit `.hdr`): Cash flow in Fraunces 34 with
+            // the profile circle, its visual edge on the filter button's.
+            // G1-Select: while selecting, the title stays and the circle goes.
+            HStack(alignment: .center) {
+                Text("Cash flow").font(Nacre.largeTitle).foregroundColor(Pearl.ink)
+                    .padding(.leading, 4)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 8)
+                if !selecting || inTrip { ProfileCircle().padding(.trailing, -4).disabled(inTrip) }
+            }
+            .frame(minHeight: 44)
+            .padding(.top, 16)
+            if noTransactionsYet {
+                emptyLedger
+            } else if selecting && !inTrip {
+                // G1-Select: "3 selected · $89.00   Cancel" under the
+                // title, then the days with a tick on each row.
+                listHeader.padding(.top, 14)
+                listState.padding(.top, 16)
+            } else {
+                // TR-11 / TR-12: Cash flow as it is, but only the trip's
+                // Select answers taps; search, the tabs and the month wait.
+                searchRow.disabled(inTrip).padding(.top, 14).cfTopEdge()
+                tabs.disabled(inTrip).padding(.top, 14)
+                // T-45 (G1-Search): the card hides while she searches.
+                if !showCalendar && !inSearch { summaryCard.allowsHitTesting(!inTrip).padding(.top, 16) }
+                // T-67 (G1-Months): the card's chip and Filters' chips, under the card.
+                if !showCalendar && !inSearch && !chipItems.isEmpty { CFChipWrap(chips: chipItems).padding(.top, 12) }
+                if !inSearch && !inTrip { bankState }
+                if showCalendar && !inSearch {
+                    // Calendar stays as it is; its month is the card's.
+                    CalendarCard(month: month ?? Format.thisMonth(), categories: categories) { m in
+                        month = m
+                        Task { await loadCard() }
+                    }
+                    .padding(.top, 16)
+                } else {
+                    // T-01r: under Newest each month's first day carries
+                    // Select, so the plain list has no header of its own.
+                    if !selectOnFirstDay { listHeader.padding(.top, 24) }
+                    listState.padding(.top, selectOnFirstDay ? 24 : 8)
+                }
+            }
+        }
+    }
+
+    /// Whether the rows show as blocks (not the calendar, a state or nothing).
+    private var showsBlocks: Bool {
+        guard !noTransactionsYet, !(showCalendar && !inSearch), !(inSearch && query.isEmpty) else { return false }
+        if !inSearch && !loadedOnce || inSearch && results == nil { return false }
+        return !shown.isEmpty
+    }
+
+    /// The list as months, days and cards, newest month first.
+    private var blocks: [CFBlock] {
+        // The first month's divider is left out when it's this month: the
+        // card above already names it (AP-CashFlow, G1-Category). A search
+        // shows every month's (G1-Search).
+        let first = shown.first.map { String($0.date.prefix(7)) }
+        return CFBlock.build(shown, sort: filters.sort, byDay: byDay, byCategory: byCategory,
+                             hideFirst: !inSearch && first == Format.thisMonth(),
+                             select: !selecting && !inTrip && !inSearch && (!byCategory || owedLine == nil))
+    }
+
+    @ViewBuilder private func blockView(_ block: CFBlock) -> some View {
+        switch block {
+        case .divider(let month, let shown):
+            CFMonthDivider(month: month, shown: shown)
+        case .day(let month, let title, let select):
+            // T-01r, A+ (kit `.label`): 24 above and 8 below; TEST-14:
+            // Select is 44 pt to tap, drawn at 18.
+            APSectionLabel(text: title, action: select ? "Select" : nil) { selecting = true }
+                .padding(.top, 24).padding(.bottom, 8)
+                .accessibilityIdentifier("day-header")
+                .cfMonthEdge(month)
+        case .group(let month, let title, let sum):
+            APSectionLabel(text: title, action: nil)
+                .overlay(alignment: .trailing) {
+                    Text(Format.whole(sum)).font(Nacre.label).foregroundColor(Pearl.muted).padding(.trailing, 4)
+                }
+                .padding(.top, 24).padding(.bottom, 8)
+                .cfMonthEdge(month)
+        case .rows(let month, _, let rows, let top, let bottom):
+            if top && bottom {
+                APCard { OwnBody { dayRows(rows) } }
+                    .padding(.top, byDay || filters.sort == .merchant ? 0 : 12)
+                    .cfMonthEdge(month)
+            } else {
+                // Q4: a long card's slice; the line between slices is drawn
+                // as any other row's.
+                VStack(alignment: .leading, spacing: 0) {
+                    if !top { APSeparator().padding(.leading, selecting ? 34 : 0) }
+                    OwnBody { dayRows(rows) }
+                }
+                .modifier(CFCardSlice(top: top, bottom: bottom))
+                .padding(.top, top && !(byDay || filters.sort == .merchant) ? 12 : 0)
+                .cfMonthEdge(month)
+            }
+        case .kind(let month, _, let title, let select):
+            APSectionLabel(text: title, action: select ? "Select" : nil) { selecting = true }
+                .padding(.top, 24).padding(.bottom, 8)
+                .cfMonthEdge(month)
+        case .categories(let month, let key, let lines):
+            categoryCard(month: month, key: key, lines: lines).cfMonthEdge(month)
+        }
+    }
+
+    /// Older pages as she nears the end; a spinner while one comes.
+    @ViewBuilder private var listFoot: some View {
+        if !inSearch && !inTrip && rows.count < total {
+            HStack { Spacer(); CFSpinner(); Spacer() }
+                .frame(minHeight: 64)
+                .onAppear { Task { await loadMore() } }
+                .accessibilityLabel("Loading earlier transactions")
+        }
+    }
+
+    /// Everything must be here: a filter, a sort, a card chip, or Filters
+    /// open (its "Show N" counts every month).
+    private var needsEverything: Bool {
+        !inTrip && (filters.isActive || filters.sort != .newest || cardFilter?.kind == .look || showFilters)
+    }
+
+    /// Each thing narrowing the list, as a chip with its ✕ (cf.css `.fchip`).
+    private var chipItems: [CFChipItem] {
+        var out: [CFChipItem] = []
+        if let c = cardFilter {
+            out.append(CFChipItem(id: "card", label: c.label) { cardFilter = nil })
+        }
+        for chip in filters.chips(accounts: filterAccounts) {
+            out.append(CFChipItem(id: chip.id, label: chip.label) {
+                let reload = chip.needsServer
+                filters.remove(chip.id)
+                if reload { Task { await self.reload() } }
+            })
+        }
+        return out
     }
 
     // MARK: Search
 
     private var inSearch: Bool { searching || !query.isEmpty }
 
-    /// T-54: "No money came into TD Visa this month."
+    /// T-54: "No money came into TD Visa." (CF-SCROLL: every month, so no
+    /// "this month"); a card chip says its month: "Nothing spent in November."
     private var noMatchLine: String {
+        if let c = cardFilter, !filters.isActive { return c.nothingLine }
         let account = filters.accounts.count == 1 ? filterAccounts.first { filters.accounts.contains($0.id) }?.label : nil
-        let when = month.map { $0 == Format.thisMonth() ? "this month" : "in \(Format.monthName($0))" } ?? "this month"
-        if let account = account, filters.types == ["income"] { return "No money came into \(account) \(when)." }
-        if let account = account, filters.types == ["spending"] { return "Nothing was spent on \(account) \(when)." }
-        if let account = account { return "Nothing on \(account) matches \(when)." }
+        if let account = account, filters.types == ["income"] { return "No money came into \(account)." }
+        if let account = account, filters.types == ["spending"] { return "Nothing was spent on \(account)." }
+        if let account = account { return "Nothing on \(account) matches." }
         return "Try fewer filters."
     }
 
@@ -410,22 +561,12 @@ struct TransactionsView: View {
         CFSegmented(options: [(false, "Transactions"), (true, "Calendar")], selection: $showCalendar)
     }
 
-    /// T-53 (G1-Months): "TD Visa ••9021" and each filter that's on, as
-    /// pills, with Show all to take them all off.
-    private var activeChips: some View {
-        CFFilterStrip(pills: filters.chips(accounts: filterAccounts).map(\.label)) {
-            let reload = filters.needsServer
-            filters = TxFilters(sort: filters.sort)
-            if reload { Task { await self.reload() } }
-        }
-    }
-
     // MARK: The month
 
     /// T-01r (TEST-05, REFRESH-00 decision 1), A+ (AP-CashFlow, G1-Over):
     /// the month and Came in, Leftover as the one headline in Fraunces 44, a
     /// bar of Spent (plum) / Saved (green) / Leftover (track), its legend,
-    /// and "8 need a look" with the mini streak and Sort. Red only for over.
+    /// and "6 need a look" with Sort. Red only for over.
     private var summaryCard: some View {
         // T-67 (TEST-34): a filter or a search never changes the month
         // card; it is always the month's own Came in, Leftover and legend.
@@ -442,36 +583,32 @@ struct TransactionsView: View {
                 MonthSummary(month: month.map { Format.monthName($0) } ?? "This month",
                              monthSpoken: month.map { Format.month($0) } ?? "",
                              canPick: !months.isEmpty,
-                             spent: spent, income: income, saved: saved, pay: pay, counts: $counts,
+                             spent: spent, income: income, saved: saved, pay: pay,
+                             picked: cardFilter.flatMap { $0.month == month ? $0.kind : nil },
+                             pick: { pickOnCard($0) },
                              pickMonth: { showMonths = true })
             }
             OwnBody { needsALookRow }
         }
     }
 
-    /// "8 need a look ▪▪▪▪▪▪▪▪▪▪▫▫ Sort ›" (A+ decisions: the chip in the
-    /// tint, never red; the mini streak), or "All sorted".
+    /// T-67 (CF-SCROLL): a figure on the card narrows the list to its month
+    /// and kind; tapped again, or its chip's ✕, shows everything again.
+    private func pickOnCard(_ kind: CardKind) {
+        guard let m = month else { return }
+        let next = CardFilter(month: m, kind: kind)
+        cardFilter = cardFilter == next ? nil : next
+    }
+
+    /// The month's own count (AP-CashFlow r7: 6 on the card, 8 on the tab),
+    /// which narrows the list to them; Sort opens Quick sort. No streak.
     @ViewBuilder private var needsALookRow: some View {
         Rectangle().fill(APlus.separator).frame(height: 0.5).accessibilityHidden(true)
-        if reviewCount > 0 {
-            NavigationLink { ReviewView() } label: {
-                HStack(spacing: 12) {
-                    CFCount(n: reviewCount)
-                    Text("need\(reviewCount == 1 ? "s" : "") a look").font(Nacre.body).foregroundColor(Pearl.ink)
-                        .lineLimit(1)
-                    Spacer(minLength: 8)
-                    SortStreak(sorted: reviewSorted, toSort: reviewToSort, mini: true)
-                    Text("Sort").font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
-                        .foregroundColor(Pearl.link).padding(.leading, -6)
-                    CFChevron()
-                }
-                .padding(.horizontal, 16).padding(.vertical, 8)
-                .frame(minHeight: 52)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(reviewCount) need\(reviewCount == 1 ? "s" : "") a look, Sort")
+        let count = month.flatMap { lookByMonth[$0] } ?? 0
+        if count > 0 {
+            CFLookRow(count: count, on: cardFilter?.kind == .look && cardFilter?.month == month,
+                      look: { pickOnCard(.look) }, sort: { Task { await openQuickSort() } })
+                .disabled(openingSort)
         } else {
             // T-48 (G1-Months): "✓ All sorted" in teal, a 52 pt row.
             HStack(spacing: 8) {
@@ -484,32 +621,17 @@ struct TransactionsView: View {
         }
     }
 
-    private var divider: some View {
-        Rectangle().fill(Nacre.separator).frame(width: 0.5, height: 44).padding(.horizontal, 10)
-    }
-
-    /// One of the three numbers; Spent and Came in narrow the list (T-67).
-    private func stat(_ label: String, _ value: String, _ tone: Color, filter: String?) -> some View {
-        let on = filter != nil && counts == filter
-        let content = VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(Nacre.footnote).foregroundColor(Pearl.muted)
-            Text(value).font(Pearl.display(.title3)).foregroundColor(tone)
-                .lineLimit(1).minimumScaleFactor(0.6)
-        }
-        .padding(.horizontal, on ? 8 : 0).padding(.vertical, on ? 4 : 0)
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .strokeBorder(tone, lineWidth: 1.5).opacity(on ? 1 : 0))
-        .frame(maxWidth: .infinity, alignment: .leading)
-        return Group {
-            if let filter = filter {
-                Button { counts = on ? nil : filter } label: { content.contentShape(Rectangle()) }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(label) \(value)")
-                    .accessibilityHint(on ? "Shows everything again" : "Shows only these")
-                    .accessibilityAddTraits(on ? .isSelected : [])
-            } else {
-                content.accessibilityElement(children: .combine)
-            }
+    /// The card's Sort: every question, as Home's Sort now opens it.
+    private func openQuickSort() async {
+        guard !openingSort else { return }
+        openingSort = true
+        defer { openingSort = false }
+        do {
+            let prompt: QuickSortPrompt = try await app.api.get("api/quick-sort", query: ["all": "1"])
+            quickDeck = QuickSortDeck(asks: prompt.asks, names: prompt.review?.people ?? [],
+                                      patterns: prompt.patterns, trips: prompt.trips)
+        } catch {
+            if let words = app.handle(error) { app.say(words) }
         }
     }
 
@@ -600,12 +722,7 @@ struct TransactionsView: View {
             if results != nil {
                 APSectionLabel(text: shown.count == 1 ? "1 result" : "\(shown.count) results")
             }
-        } else if let counts = counts {
-            // T-67 (G1-Months): "Spending only · 24" as a pill, then Show all.
-            CFFilterStrip(pills: ["\(counts == "income" ? "Money in only" : "Spending only") \u{00B7} \(shown.count)"]) {
-                self.counts = nil
-            }
-        } else if loadedOnce {
+        } else if loadedOnce && !byCategory {
             APSectionLabel(text: shown.count == 1 ? "1 transaction" : "\(shown.count) transactions",
                            action: shown.isEmpty ? nil : "Select") { selecting = true }
         }
@@ -623,8 +740,9 @@ struct TransactionsView: View {
         .padding(.horizontal, 4)
     }
 
-    @ViewBuilder private var list: some View {
-        let sections = self.sections
+    /// The list's own states: loading, couldn't load, nothing to show. The
+    /// rows themselves are the lazy blocks under the top (CF-SCROLL).
+    @ViewBuilder private var listState: some View {
         if inSearch && query.isEmpty {
             EmptyView()
         } else if (!loadedOnce && !inSearch) || (inSearch && results == nil) {
@@ -639,35 +757,23 @@ struct TransactionsView: View {
             if inSearch {
                 // G1-Empty: "No matches · Try another word. · Clear search".
                 CFState(title: "No matches", line: "Try another word.", action: "Clear search") { query = "" }
-            } else if filters.isActive || counts != nil {
-                CFState(title: "Nothing matches", line: noMatchLine, action: "Clear filters") {
-                    let reload = filters.needsServer
-                    filters = TxFilters(sort: filters.sort)
-                    counts = nil
-                    if reload { Task { await self.reload() } }
+            } else if filters.isActive || cardFilter != nil {
+                if rows.count < total && cardFilter?.kind.server == nil || cardFilter?.kind.server != nil && cardRows == nil {
+                    CFLoadingRows()
+                } else {
+                    CFState(title: "Nothing matches", line: noMatchLine, action: "Clear filters") {
+                        let reload = filters.needsServer
+                        filters = TxFilters(sort: filters.sort)
+                        cardFilter = nil
+                        if reload { Task { await self.reload() } }
+                    }
                 }
             } else {
-                CFState(title: "Nothing yet in \(month.map { Format.monthName($0) } ?? "this month")",
-                        line: "Transactions show up here as your bank sends them.")
+                // CF-SCROLL: one list for every month, so no month in the words.
+                CFState(title: "Nothing yet", line: "Transactions show up here as your bank sends them.")
             }
-        } else {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(sections, id: \.title) { section in
-                    let first = section.title == sections.first?.title
-                    if byDay {
-                        dayHeader(section, first: first)
-                    } else if !section.title.isEmpty {
-                        APSectionLabel(text: section.title,
-                                       action: nil)
-                            .overlay(alignment: .trailing) {
-                                Text(Format.whole(section.rows.reduce(0) { $0 + $1.amount }))
-                                    .font(Nacre.label).foregroundColor(Pearl.muted).padding(.trailing, 4)
-                            }
-                            .padding(.top, first ? 16 : 24).padding(.bottom, 8)
-                    }
-                    APCard { OwnBody { dayRows(section.rows) } }
-                }
-            }
+        } else if byCategory, let line = owedLine {
+            owedSection(line)
         }
     }
 
@@ -694,15 +800,6 @@ struct TransactionsView: View {
         }
     }
 
-    /// T-01r, A+ (kit `.label`): "TODAY", "WED, NOV 12" over each day's
-    /// card, 24 above and 8 below; the first one also carries Select.
-    private func dayHeader(_ section: Section, first: Bool) -> some View {
-        // TEST-14: Select is 44 pt to tap; the label still draws at 18.
-        APSectionLabel(text: section.title, action: first && selectOnFirstDay ? "Select" : nil) { selecting = true }
-            .padding(.top, first ? 0 : 24).padding(.bottom, 8)
-            .accessibilityIdentifier("day-header")
-    }
-
     // MARK: By category (T-18)
 
     /// Sorting by category shows the categories themselves, not their rows.
@@ -712,55 +809,34 @@ struct TransactionsView: View {
     /// the chips to take each off.
     private var filtersOn: Bool { filters.isActive || filters.sort != .newest }
 
-    private struct CategoryLine: Identifiable {
-        let name: String
-        let rows: [Transaction]
-        let total: Double
-        var id: String { name }
-    }
-
-    /// The shown rows that count this way, one line per category, biggest first.
-    private func categoryLines(_ counts: String) -> [CategoryLine] {
-        var by: [String: [Transaction]] = [:]
-        for t in shown where t.counts == counts { by[t.label, default: []].append(t) }
-        return by.map { name, rows in
-            let sum = rows.reduce(0) { $0 + (counts == "spending" && $1.inflow ? -$1.amount : $1.amount) }
-            return CategoryLine(name: name, rows: rows, total: sum)
-        }
-        .sorted { ($0.total, $1.name) > ($1.total, $0.name) }
-    }
-
-    /// Owed to you, then Spent, Money in and Not counted by category
-    /// (G1-Category: kit `.label`, then a card of icon rows with the total).
-    @ViewBuilder private var categoryList: some View {
+    /// Owed to you, over the months' categories (G1-Category: kit `.label`,
+    /// then a card of icon rows with the total). It isn't a month's.
+    private func owedSection(_ line: OwedLine) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let line = owedLine {
-                categoryHeading("Owed to you", first: true)
-                APCard {
-                    NavigationLink { OwedView() } label: {
-                        categoryRow(line.names.joined(separator: " and "), symbol: "person.2",
-                                    count: line.count, total: line.total)
-                    }
-                    .buttonStyle(.plain)
+            categoryHeading("Owed to you", first: true)
+            APCard {
+                NavigationLink { OwedView() } label: {
+                    categoryRow(line.names.joined(separator: " and "), symbol: "person.2",
+                                count: line.count, total: line.total)
                 }
+                .buttonStyle(.plain)
             }
-            ForEach([("spending", "Spent"), ("income", "Money in"), ("none", "Not counted")], id: \.0) { key, title in
-                let lines = categoryLines(key)
-                if !lines.isEmpty {
-                    categoryHeading(title, first: owedLine == nil && key == "spending")
-                    APCard {
-                        ForEach(Array(lines.enumerated()), id: \.element.id) { i, c in
-                            if i > 0 { APSeparator() }
-                            NavigationLink {
-                                CategoryPage(name: c.name, month: month, counts: key, rows: c.rows, total: c.total)
-                            } label: {
-                                categoryRow(c.name, symbol: CategorySheet.symbol(for: c.name),
-                                            count: c.rows.count, total: c.total)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
+        }
+    }
+
+    /// One month's Spent, Money in or Not counted, by category; each opens
+    /// its page for that month (T-46).
+    private func categoryCard(month: String, key: String, lines: [CFCategoryLine]) -> some View {
+        APCard {
+            ForEach(Array(lines.enumerated()), id: \.element.id) { i, c in
+                if i > 0 { APSeparator() }
+                NavigationLink {
+                    CategoryPage(name: c.name, month: month, counts: key, rows: c.rows, total: c.total)
+                } label: {
+                    categoryRow(c.name, symbol: CategorySheet.symbol(for: c.name),
+                                count: c.rows.count, total: c.total)
                 }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -1056,16 +1132,20 @@ struct TransactionsView: View {
 
     private var shown: [Transaction] { visible(applying: filters) }
 
-    /// The rows the list shows under these filters: the search's or the
-    /// month's, narrowed, then sorted.
+    /// The rows the list shows under these filters and the card's chip:
+    /// the search's or every month's, narrowed, then sorted. Grouped by
+    /// month afterwards (CFBlock), so each sort stays within its month.
     private func visible(applying f: TxFilters) -> [Transaction] {
-        let base = inSearch ? (results ?? []) : rows
+        let card = inSearch ? nil : cardFilter
+        let figure = card?.kind.server != nil
+        let base = inSearch ? (results ?? []) : figure ? (cardRows ?? []) : rows
+        let look = lookIds
         let kept: (Transaction) -> Bool = { t in
-            f.matches(t, owed: owed) && (inSearch || counts == nil || t.counts == counts)
+            f.matches(t, owed: owed) && (card?.matches(t, look: look) ?? true)
         }
         // A transfer's arrival, where the filter keeps it but not the line
         // it was merged into ("Savings" kept, the line is Chequing's).
-        var out = TransferEnds.adding(inSearch ? resultsMerged : merged, to: base.filter(kept), keep: kept,
+        var out = TransferEnds.adding(inSearch ? resultsMerged : figure ? [] : merged, to: base.filter(kept), keep: kept,
                                        id: { $0.id }, line: { $0.mergedInto }, date: { $0.date })
         switch f.sort {
         case .largest: out.sort { $0.amount > $1.amount }
@@ -1076,47 +1156,13 @@ struct TransactionsView: View {
         return out
     }
 
-    private struct Section { let title: String; let rows: [Transaction] }
-
     /// T-01r: Newest first is a card per day, under its day. A search (T-45)
-    /// stays one card of results, each with its day, as its frames draw it.
+    /// is a card of results per month, each with its day (G1-Search).
     private var byDay: Bool { filters.sort == .newest && !inSearch }
 
-    /// The plain month, newest first: Select sits on the first day's header.
+    /// Newest first: Select sits on each month's first day.
     private var selectOnFirstDay: Bool {
-        byDay && counts == nil && !selecting && loadedOnce && !shown.isEmpty
-    }
-
-    /// One card, or one per day, category or merchant when sorted that way.
-    private var sections: [Section] {
-        let rows = shown
-        let key: ((Transaction) -> String)?
-        switch filters.sort {
-        case .category: key = { $0.label }
-        case .merchant: key = { $0.merchant }
-        case .newest where byDay:
-            // T-01r: one card per day. Days are kept in the order they first
-            // come, so a row out of order never makes a second card for a day.
-            var order: [String] = []
-            var by: [String: [Transaction]] = [:]
-            for t in rows {
-                let day = Format.dayHeader(t.date)
-                if by[day] == nil { order.append(day) }
-                by[day, default: []].append(t)
-            }
-            return order.map { Section(title: $0, rows: by[$0] ?? []) }
-        default: key = nil
-        }
-        guard let key = key else { return [Section(title: "", rows: rows)] }
-        var out: [Section] = []
-        for t in rows {
-            if let last = out.last, last.title == key(t) {
-                out[out.count - 1] = Section(title: last.title, rows: last.rows + [t])
-            } else {
-                out.append(Section(title: key(t), rows: [t]))
-            }
-        }
-        return out
+        byDay && !selecting && loadedOnce && !shown.isEmpty
     }
 
     /// "Paid back · Sushi Nami": the charge a payback is for, when it's in view.
@@ -1126,7 +1172,7 @@ struct TransactionsView: View {
         return (rows + (results ?? [])).first { $0.id == id }?.merchant
     }
 
-    /// The month's accounts, named as Accounts names them when it can.
+    /// Every account in the list, named as Accounts names them when it can.
     private var filterAccounts: [FilterAccount] {
         var out: [FilterAccount] = []
         for t in rows {
@@ -1138,8 +1184,8 @@ struct TransactionsView: View {
         return out.sorted { $0.label < $1.label }
     }
 
-    /// The month's categories, most used first.
-    private var monthCategories: [String] {
+    /// Every category in the list, most used first.
+    private var allCategories: [String] {
         var count: [String: Int] = [:]
         for t in rows { count[t.label, default: 0] += 1 }
         return count.sorted { ($0.value, $1.key) > ($1.value, $0.key) }.map(\.key)
@@ -1158,18 +1204,14 @@ struct TransactionsView: View {
         async let summaryReply: Summary? = try? api.get("api/summary")
         async let reviewReply: Review? = try? api.get("api/review")
         async let accountsReply: AccountsOverview? = try? api.get("api/accounts/overview")
-        if month != nil {
-            // Already on a month: its list needn't wait for the months.
-            await reload()
-        }
+        // CF-SCROLL: the list is every month's, so it needn't wait for them.
+        async let listed: Void = reload()
         if let summary = await summaryReply {
-            let was = month
             months = summary.months ?? []
             if month == nil || !months.contains(month!) { month = summary.latestMonth ?? months.last }
-            if month != was || !loadedOnce { await reload() }
-        } else if !loadedOnce {
-            await reload()
         }
+        await loadCard()
+        _ = await listed
         if let review = await reviewReply { took(review) }
         if let overview = await accountsReply { accounts = overview.linked }
         if !syncedOnce {
@@ -1184,35 +1226,122 @@ struct TransactionsView: View {
         }
     }
 
+    /// A page of rows; older pages follow as she scrolls (`loadMore`).
+    private static let page = 200
+
+    /// The server's own filters (left out, subscriptions), on every page.
+    private var listQuery: [String: String] {
+        var p: [String: String] = [:]
+        if filters.only.contains(.leftOut) { p["excluded"] = "1" }
+        if filters.only.contains(.subscriptions) { p["recurring"] = "1" }
+        return p
+    }
+
+    /// The list from the top, as many rows as were already here (so a
+    /// change made deep in the list keeps her place), then the rest if a
+    /// filter or a sort needs every month.
     private func reload() async {
         defer { loadedOnce = true }
         if let p = tripPick {
             await reloadTrip(p)
             return
         }
-        var p = ["limit": "1000"]
-        if let month = month { p["month"] = month }
-        if filters.only.contains(.leftOut) { p["excluded"] = "1" }
-        if filters.only.contains(.subscriptions) { p["recurring"] = "1" }
+        loadGen += 1
+        let gen = loadGen
+        let want = max(Self.page, rows.count)
+        var got: [Transaction] = []
+        var arrivals: [Transaction] = []
         do {
-            let list: TransactionList = try await app.api.get("api/transactions/list", query: p)
-            rows = list.transactions
-            merged = list.merged
-            owed = Set(list.owedIds)
-            owedLine = list.owedTotal > 0.005
-                ? OwedLine(names: list.owedNames, count: list.owedCount, total: list.owedTotal) : nil
-            tags = list.tags
-            if filters.needsServer, let month = month {
-                // The cards are the month's, whatever the list is narrowed to.
-                let plain: TransactionList? = try? await app.api.get("api/transactions/list",
-                                                                     query: ["month": month, "limit": "1"])
-                monthTotals = plain?.monthTotals ?? list.monthTotals
-            } else {
-                monthTotals = list.monthTotals
-            }
+            repeat {
+                var p = listQuery
+                p["offset"] = String(got.count)
+                p["limit"] = String(min(1000, want - got.count))
+                let list: TransactionList = try await app.api.get("api/transactions/list", query: p)
+                guard gen == loadGen else { return }
+                if got.isEmpty {
+                    owed = Set(list.owedIds)
+                    owedLine = list.owedTotal > 0.005
+                        ? OwedLine(names: list.owedNames, count: list.owedCount, total: list.owedTotal) : nil
+                    tags = list.tags
+                }
+                got += list.transactions
+                arrivals += list.merged
+                total = list.total
+                if list.transactions.isEmpty { break }
+            } while got.count < min(want, total)
+            rows = got
+            merged = arrivals
             error = nil
         } catch {
+            guard gen == loadGen else { return }
             self.error = app.handle(error)
+        }
+        if needsEverything { await loadRest() }
+        if cardFilter?.kind.server != nil { await loadCardRows() }
+    }
+
+    /// A card chip's rows: what the card's Spent, Saved or Came in adds up
+    /// for its month, from the server, so they match it exactly (CF-SCROLL).
+    private func loadCardRows() async {
+        guard let c = cardFilter, let kind = c.kind.server else { cardRows = nil; return }
+        if cardRows == nil || c != loadedCard { cardRows = nil }
+        var got: [Transaction] = []
+        var p = listQuery
+        p["month"] = c.month
+        p["kind"] = kind
+        p["limit"] = "1000"
+        do {
+            repeat {
+                p["offset"] = String(got.count)
+                let list: TransactionList = try await app.api.get("api/transactions/list", query: p)
+                guard cardFilter == c else { return }
+                got += list.transactions
+                if list.transactions.isEmpty || got.count >= list.total { break }
+            } while true
+            cardRows = got
+            loadedCard = c
+        } catch {
+            guard cardFilter == c else { return }
+            self.error = app.handle(error)
+            cardRows = []
+        }
+    }
+
+    /// The next older page, as the end of the list comes into view.
+    private func loadMore() async {
+        guard !inTrip, !loadingMore, rows.count < total else { return }
+        loadingMore = true
+        defer { loadingMore = false }
+        let gen = loadGen
+        var p = listQuery
+        p["offset"] = String(rows.count)
+        p["limit"] = String(needsEverything ? 1000 : Self.page)
+        guard let list: TransactionList = try? await app.api.get("api/transactions/list", query: p),
+              gen == loadGen else { return }
+        let have = Set(rows.map(\.id))
+        rows += list.transactions.filter { !have.contains($0.id) }
+        merged += list.merged
+        total = list.total
+        if list.transactions.isEmpty { total = rows.count }
+    }
+
+    /// Every month, for a filter, a sort, a card chip or Filters' count.
+    private func loadRest() async {
+        while !inTrip && needsEverything && rows.count < total {
+            let before = rows.count
+            await loadMore()
+            if rows.count == before { break }
+        }
+    }
+
+    /// T-47: the card's month, its own totals (whatever the list shows).
+    /// The cards are the month's, whatever the list is narrowed to.
+    private func loadCard() async {
+        guard !inTrip, let m = month else { return }
+        if let plain: TransactionList = try? await app.api.get("api/transactions/list",
+                                                               query: ["month": m, "limit": "1"]),
+           m == month {
+            monthTotals = plain.monthTotals
         }
     }
 
@@ -1262,14 +1391,15 @@ struct TransactionsView: View {
         Task { await MonthSheet.prefetch(app.api) }
     }
 
-    /// "8 need a look" and its mini streak (REDESIGN-18): lit = sorted ÷
-    /// (sorted + to sort), where sorted is her answers plus Pearl's over the
-    /// same window as the count to sort, exactly as Home's streak.
+    /// "6 need a look" on the card: the month's open questions (no streak).
     private func took(_ review: Review) {
-        // TEST-35: the rows Needs a look lists, as its "All" chip.
-        reviewCount = review.listedOpen
-        reviewToSort = review.listedAll
-        reviewSorted = review.youSorted + review.pearlSorted
+        // TEST-35: the rows Needs a look lists, as its "All" chip, by month
+        // (AP-CashFlow r7: the card counts its own month; the badge, all).
+        let open = review.shownAsks.filter { !$0.skipped }
+        var by: [String: Int] = [:]
+        for ask in open { by[String(ask.t.date.prefix(7)), default: 0] += 1 }
+        lookByMonth = by
+        lookIds = Set(open.map(\.t.id))
     }
 
     private func search() async {
@@ -1684,111 +1814,103 @@ struct TxFilters: Equatable {
     }
 }
 
-/// T-17: transaction and spending type as chips, then a card whose rows
-/// open in place (T-17b to T-17d): month, accounts, category, tags, amount,
-/// and sort, only show and merchant; and whether to show what's left out.
-/// "Show 36" applies it.
+/// T-17 (G1-FilterOpen, CF-SCROLL): every section at once, as chips and
+/// wells: transaction type, spending type, accounts, category, tags,
+/// amount, only show, merchant and sort, then the left-out switch. No
+/// Month (the list is every month) and no More filters. "Show 214" counts
+/// every month and applies it.
 struct FilterSheet: View {
     @State var filters: TxFilters
-    @State var month: String?
-    let months: [String]
     let accounts: [FilterAccount]
     let categories: [String]
     let tags: [String]
+    /// Every month's rows are here, so the count is the whole list's.
+    let counted: Bool
     let count: (TxFilters) -> Int
-    let onApply: (TxFilters, String?) -> Void
-    /// The month the list is on: only its rows can be counted here.
-    private let initialMonth: String?
+    let onApply: (TxFilters) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var open: Row?
-    @State private var allMonths = false
-    /// G1-Search-r: More filters opened in place.
-    @State private var more: Bool
 
-    enum Row { case month, accounts, category, tags, amount, sort, only, merchant }
-
-    init(filters: TxFilters, month: String?, months: [String], accounts: [FilterAccount],
-         categories: [String], tags: [String], count: @escaping (TxFilters) -> Int,
-         onApply: @escaping (TxFilters, String?) -> Void) {
+    init(filters: TxFilters, accounts: [FilterAccount], categories: [String], tags: [String],
+         counted: Bool = true, count: @escaping (TxFilters) -> Int, onApply: @escaping (TxFilters) -> Void) {
         _filters = State(initialValue: filters)
-        _month = State(initialValue: month)
-        // G1-Search-r: the rest opens already when one of them is on.
-        var bare = TxFilters(sort: .newest)
-        bare.types = filters.types
-        _more = State(initialValue: filters != bare)
-        initialMonth = month
-        self.months = months
         self.accounts = accounts
         self.categories = categories
         self.tags = tags
+        self.counted = counted
         self.count = count
         self.onApply = onApply
     }
 
-    /// A+ (G1-Search, Filters): Reset · Filters · ✕, the types as chips
-    /// (kit `.chip`, rose when on), a card of rows, the left-out switch on
-    /// its own card, and "Show 24" as the one Primary.
+    /// A+ (G1-FilterOpen): Reset · Filters · ✕, the sections, and "Show 214"
+    /// as the one Primary.
     var body: some View {
         VStack(spacing: 0) {
-            CFSheetTitle(title: "Filters", left: "Reset", onLeft: {
-                filters = TxFilters()
-                month = initialMonth
-            }) { dismiss() }
+            CFSheetTitle(title: "Filters", left: "Reset", onLeft: { filters = TxFilters() }) { dismiss() }
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    heading("Transaction type")
-                    Chips {
-                        ForEach(TxFilters.typeNames, id: \.key) { y in
-                            CFChip(label: y.name, on: filters.types.contains(y.key)) {
-                                filters.types.formSymmetricDifference([y.key])
-                            }
+                    FilterChipSection(title: "Transaction type", first: true,
+                                      names: TxFilters.typeNames.map { ($0.key, $0.name) },
+                                      on: { filters.types.contains($0) }) { filters.types.formSymmetricDifference([$0]) }
+                    FilterChipSection(title: "Spending type", names: TxFilters.groupNames.map { ($0.key, $0.name) },
+                                      on: { filters.groups.contains($0) }) { filters.groups.formSymmetricDifference([$0]) }
+                    if !accounts.isEmpty {
+                        // T-17c: All accounts first, then each one.
+                        FilterChipSection(title: "Accounts",
+                                          names: [("", "All accounts")] + accounts.map { ($0.id, $0.label + ($0.joint ? " \u{00B7} Joint" : "")) },
+                                          on: { $0.isEmpty ? filters.accounts.isEmpty : filters.accounts.contains($0) }) { id in
+                            if id.isEmpty { filters.accounts = [] } else { toggleAccount(id) }
                         }
                     }
-                    .padding(.vertical, -5)
-                    // G1-Search-r (T-17, approved): Month on its own card,
-                    // then every other filter behind one "More filters" row,
-                    // which opens them in place, on this sheet.
-                    if !months.isEmpty {
-                        APCard { OwnBody { monthRows } }.padding(.top, 16)
+                    if !categories.isEmpty {
+                        FilterChipSection(title: "Category", names: categories.map { ($0, $0) },
+                                          on: { filters.categories.contains($0) }) { filters.categories.formSymmetricDifference([$0]) }
                     }
-                    if more {
-                        heading("Spending type").padding(.top, 20)
-                        Chips {
-                            ForEach(TxFilters.groupNames, id: \.key) { g in
-                                CFChip(label: g.name, on: filters.groups.contains(g.key)) {
-                                    filters.groups.formSymmetricDifference([g.key])
-                                }
-                            }
-                        }
-                        .padding(.vertical, -5)
-                        APCard { OwnBody { rows } }.padding(.top, 16)
-                        APCard { leftOutToggle }.padding(.top, 12)
-                    } else {
-                        APCard {
-                            Button { more = true } label: {
-                                CFRowLabel(symbol: "ellipsis", title: "More filters",
-                                           sub: "Accounts, category, amount, sort, merchant, left out",
-                                           trailing: .chevron)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityHint("Shows the other filters here")
-                        }
-                        .padding(.top, 12)
+                    if Features.tags && !tags.isEmpty {
+                        FilterChipSection(title: "Tags", names: tags.map { ($0, "#" + $0) },
+                                          on: { filters.tags.contains($0) }) { filters.tags.formSymmetricDifference([$0]) }
                     }
+                    amountSection
+                    FilterChipSection(title: "Only show",
+                                      names: TxFilters.Only.allCases.filter { $0 != .leftOut }.map { ($0.rawValue, $0.rawValue) },
+                                      on: { TxFilters.Only(rawValue: $0).map(filters.only.contains) ?? false }) { raw in
+                        if let flag = TxFilters.Only(rawValue: raw) { filters.only.formSymmetricDifference([flag]) }
+                    }
+                    APSectionLabel(text: "Merchant").padding(.top, 22).padding(.bottom, 10)
+                    // REDESIGN-09: a search well.
+                    PearlField(placeholder: "Any merchant", text: $filters.merchant, kind: .search)
+                        .autocorrectionDisabled()
+                    FilterChipSection(title: "Sort", names: TxFilters.Sort.allCases.map { ($0.rawValue, $0.rawValue) },
+                                      on: { filters.sort.rawValue == $0 }) { raw in
+                        if let sort = TxFilters.Sort(rawValue: raw) { filters.sort = sort }
+                    }
+                    APCard { leftOutToggle }.padding(.top, 22)
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 24)
-                .animation(.easeOut(duration: 0.2), value: open)
             }
             .scrollDismissesKeyboard(.interactively)
 
-            Button(showLabel) { onApply(filters, month) }
+            Button(showLabel) { onApply(filters) }
                 .buttonStyle(APPrimaryButtonStyle())
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
         }
         .cfSheet()
         .presentationDragIndicator(.visible)
+    }
+
+    /// "$ 50  to  $ Max": two amount wells (REDESIGN-09).
+    private var amountSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            APSectionLabel(text: "Amount").padding(.top, 22).padding(.bottom, 10)
+            HStack(spacing: 10) {
+                PearlField(placeholder: "Min", text: $filters.min, kind: .amount, identifier: "Min amount")
+                    .frame(maxWidth: .infinity)
+                Text("to").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                PearlField(placeholder: "Max", text: $filters.max, kind: .amount, identifier: "Max amount")
+                    .frame(maxWidth: .infinity)
+            }
+        }
     }
 
     private var leftOutToggle: some View {
@@ -1800,101 +1922,10 @@ struct FilterSheet: View {
         .padding(.horizontal, 16).frame(minHeight: 64)
     }
 
-    /// Month, and its months in place once tapped (T-17b).
-    @ViewBuilder private var monthRows: some View {
-        row(.month, "Month", month.map { Format.monthName($0) } ?? "This month")
-        if open == .month {
-            let shownMonths = allMonths ? Array(months.reversed()) : Array(months.suffix(4).reversed())
-            ForEach(shownMonths, id: \.self) { m in
-                option(allMonths ? Format.month(m) : Format.monthName(m), on: month == m) { month = m }
-            }
-            if months.count > 4 && !allMonths {
-                option("Earlier months", on: false) { allMonths = true }
-            }
-        }
-    }
-
-    @ViewBuilder private var rows: some View {
-        if !accounts.isEmpty {
-            row(.accounts, "Accounts", accountsValue)
-            if open == .accounts {
-                // T-17c (G1-FilterOpen): All accounts first, then each one.
-                option("All accounts", on: filters.accounts.isEmpty) { filters.accounts = [] }
-                ForEach(accounts, id: \.id) { a in
-                    option(a.label + (a.joint ? " · Joint" : ""),
-                           on: filters.accounts.contains(a.id)) { toggleAccount(a.id) }
-                }
-            }
-            APSeparator(afterFace: false)
-        }
-        if !categories.isEmpty {
-            row(.category, "Category", list(filters.categories.sorted()))
-            if open == .category {
-                ForEach(categories, id: \.self) { c in
-                    option(c, on: filters.categories.contains(c)) { filters.categories.formSymmetricDifference([c]) }
-                }
-            }
-            APSeparator(afterFace: false)
-        }
-        if Features.tags && !tags.isEmpty {
-            row(.tags, "Tags", list(filters.tags.sorted().map { "#" + $0 }))
-            if open == .tags {
-                ForEach(tags, id: \.self) { tag in
-                    option("#" + tag, on: filters.tags.contains(tag)) { filters.tags.formSymmetricDifference([tag]) }
-                }
-            }
-            APSeparator(afterFace: false)
-        }
-        row(.amount, "Amount", filters.amountLabel ?? "Any")
-        if open == .amount {
-            HStack(spacing: 12) {
-                amountField("Min", text: $filters.min, prompt: "0")
-                amountField("Max", text: $filters.max, prompt: "Any")
-            }
-            .padding(.horizontal, 16).padding(.bottom, 12)
-        }
-        APSeparator(afterFace: false)
-        row(.sort, "Sort", filters.sort.rawValue)
-        if open == .sort {
-            ForEach(TxFilters.Sort.allCases, id: \.self) { sort in
-                option(sort.rawValue, on: filters.sort == sort) { filters.sort = sort }
-            }
-        }
-        APSeparator(afterFace: false)
-        row(.only, "Only show", list(TxFilters.Only.allCases.filter { $0 != .leftOut && filters.only.contains($0) }
-            .map(\.rawValue)))
-        if open == .only {
-            ForEach(TxFilters.Only.allCases.filter { $0 != .leftOut }, id: \.self) { flag in
-                option(flag.rawValue, on: filters.only.contains(flag)) { filters.only.formSymmetricDifference([flag]) }
-            }
-        }
-        APSeparator(afterFace: false)
-        row(.merchant, "Merchant", filters.merchant.trimmingCharacters(in: .whitespaces).isEmpty ? "Any" : filters.merchant)
-        if open == .merchant {
-            // REDESIGN-09: a search well.
-            PearlField(placeholder: "Any merchant", text: $filters.merchant, kind: .search)
-                .autocorrectionDisabled()
-                .padding(.horizontal, 16).padding(.bottom, 12)
-        }
-    }
-
-    /// "Show 36", or just "Show" when another month is chosen (its rows aren't here yet).
+    /// "Show 214" across every month; just "Show" while the older months
+    /// are still on their way.
     private var showLabel: String {
-        guard month == initialMonth else { return "Show" }
-        return "Show \(count(filters))"
-    }
-
-    private var accountsValue: String {
-        if filters.accounts.isEmpty { return "All accounts" }
-        if filters.accounts.count == 1, let a = accounts.first(where: { filters.accounts.contains($0.id) }) {
-            return a.label
-        }
-        return "\(filters.accounts.count) accounts"
-    }
-
-    /// "Groceries, Dining out", or Any.
-    private func list(_ names: [String]) -> String {
-        names.isEmpty ? "Any" : names.joined(separator: ", ")
+        counted ? "Show \(count(filters))" : "Show"
     }
 
     /// From All accounts, a tap keeps just that one; taps add or take off
@@ -1904,60 +1935,37 @@ struct FilterSheet: View {
         chosen.formSymmetricDifference([id])
         filters.accounts = chosen.count == accounts.count ? [] : chosen
     }
+}
 
-    /// "Month   November ⌄": tapping opens its choices under it, and closes
-    /// whichever was open.
-    private func row(_ which: Row, _ title: String, _ value: String) -> some View {
-        Button { open = open == which ? nil : which } label: {
-            // kit `.kv`: 52 high, the value muted with the chevron (turned
-            // down while its choices show).
-            // G1-FilterOpen: an open row's value turns `link` and its chevron goes.
-            HStack(spacing: 8) {
-                Text(title).font(Nacre.body).foregroundColor(Pearl.ink).layoutPriority(1)
-                Spacer(minLength: 12)
-                Text(value).font(Nacre.body).foregroundColor(open == which ? Pearl.link : Pearl.muted).lineLimit(1)
-                if open != which { CFChevron() }
-            }
-            .padding(.horizontal, 16).frame(minHeight: 52)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityValue(value)
-        .accessibilityHint(open == which ? "Closes the choices" : "Shows the choices")
+/// One Filters section (G1-FilterOpen `.sec`): its label, then its chips
+/// (kit `.chip`, 36 high, rose when on), wrapping. Its own body (stack check).
+struct FilterChipSection: View {
+    let title: String
+    var first = false
+    let names: [(key: String, name: String)]
+    let on: (String) -> Bool
+    let tap: (String) -> Void
+
+    init(title: String, first: Bool = false, names: [(String, String)],
+         on: @escaping (String) -> Bool, tap: @escaping (String) -> Void) {
+        self.title = title
+        self.first = first
+        self.names = names.map { (key: $0.0, name: $0.1) }
+        self.on = on
+        self.tap = tap
     }
 
-    /// One choice under an open row (G1-FilterOpen): 28 in, 16 pt, 48
-    /// high, the rose ✓ on the right when it's on.
-    private func option(_ label: String, on: Bool, _ tap: @escaping () -> Void) -> some View {
-        VStack(spacing: 0) {
-            Rectangle().fill(APlus.separator).frame(height: 0.5).padding(.leading, 28)
-            Button(action: tap) {
-                HStack(spacing: 12) {
-                    Text(label).font(.custom("Figtree-Regular", size: 16, relativeTo: .body))
-                        .foregroundColor(Pearl.ink).lineLimit(1)
-                    Spacer()
-                    if on {
-                        Image(systemName: "checkmark").font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(Pearl.action).accessibilityHidden(true)
-                    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            APSectionLabel(text: title).padding(.bottom, 10)
+            Chips {
+                ForEach(names, id: \.key) { n in
+                    CFChip(label: n.name, on: on(n.key)) { tap(n.key) }
                 }
-                .padding(.leading, 28).padding(.trailing, 16).frame(minHeight: 48)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .accessibilityAddTraits(on ? .isSelected : [])
+            .padding(.vertical, -5)
         }
-    }
-
-    private func heading(_ text: String) -> some View {
-        APSectionLabel(text: text).padding(.bottom, 10)
-    }
-
-    /// REDESIGN-09: Min and Max are amount wells.
-    private func amountField(_ label: String, text: Binding<String>, prompt: String) -> some View {
-        PearlField(label: label, placeholder: prompt, text: text, kind: .amount, identifier: "\(label) amount")
-            .frame(maxWidth: .infinity)
+        .padding(.top, first ? 12 : 22)
     }
 }
 
@@ -2285,7 +2293,7 @@ struct MonthBar: View {
 
 /// The top of Cash flow's month card (AP-CashFlow, G1-Over, G1-Search):
 /// "November ⌄ … Came in $2,150", the headline, the bar and its legend.
-/// Spent and Came in narrow the list (T-67). Its own body (stack check).
+/// Spent, Saved and Came in narrow the list (T-67). Its own body (stack check).
 struct MonthSummary: View {
     let month: String
     let monthSpoken: String
@@ -2294,7 +2302,10 @@ struct MonthSummary: View {
     let income: Double
     let saved: Double
     let pay: TransactionList.Totals.Pay?
-    @Binding var counts: String?
+    /// T-67 (CF-SCROLL): the figure narrowing the list, ringed; nil for none.
+    let picked: CardKind?
+    /// Spent, Saved or Came in tapped: that month and kind. Leftover isn't one.
+    let pick: (CardKind) -> Void
     let pickMonth: () -> Void
 
     private var left: Double { income - spent - saved }
@@ -2320,14 +2331,9 @@ struct MonthSummary: View {
                     Text("Pay expected \(Format.short(day))").font(Nacre.subheadline).foregroundColor(Pearl.muted)
                         .accessibilityLabel("Pay expected \(Format.monthDay(day))")
                 } else {
-                    // T-67: Came in narrows the list to money in.
-                    Button { counts = counts == "income" ? nil : "income" } label: {
-                        Text("Came in \(Format.whole(income))").font(Nacre.subheadline).foregroundColor(Pearl.moneyIn)
-                            .frame(minHeight: 44).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint(counts == "income" ? "Shows everything again" : "Shows only these")
-                    .accessibilityAddTraits(counts == "income" ? .isSelected : [])
+                    // T-67: Came in narrows the list to the month's money in.
+                    figure(.cameIn, "Came in \(Format.whole(income))", dot: nil, tone: Pearl.moneyIn)
+                        .font(Nacre.subheadline)
                 }
             }
             VStack(alignment: .leading, spacing: 0) {
@@ -2348,18 +2354,12 @@ struct MonthSummary: View {
         .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 14)
     }
 
-    /// kit `.legend`: 8 pt dots, 13 pt, 16 apart.
+    /// kit `.legend`: 8 pt dots, 13 pt, 16 apart. Spent and Saved narrow
+    /// the list (cf.css `.legend .lb`); Leftover isn't tappable.
     private var legend: some View {
         HStack(spacing: 16) {
-            // T-67: Spent narrows the list to spending.
-            Button { counts = counts == "spending" ? nil : "spending" } label: {
-                dot("Spent \(Format.whole(spent))", Pearl.moneyOut, Pearl.moneyOut)
-                    .frame(minHeight: 44).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityHint(counts == "spending" ? "Shows everything again" : "Shows only these")
-            .accessibilityAddTraits(counts == "spending" ? .isSelected : [])
-            dot("Saved \(Format.whole(saved))", Pearl.moneyIn, Pearl.moneyIn)
+            figure(.spent, "Spent \(Format.whole(spent))", dot: Pearl.moneyOut, tone: Pearl.moneyOut)
+            figure(.saved, "Saved \(Format.whole(saved))", dot: Pearl.moneyIn, tone: Pearl.moneyIn)
             if let pay = pay {
                 dot("Pay to come \(Format.whole(pay.toCome))", APlus.trackSoft, Pearl.muted)
             } else if over {
@@ -2371,6 +2371,25 @@ struct MonthSummary: View {
         }
         .font(Nacre.footnote).lineLimit(1).minimumScaleFactor(0.8)
         .padding(.vertical, -13)
+    }
+
+    /// One of the card's figures as a button: ringed in its own colour on
+    /// `chip` while it narrows the list (cf.css `.lb.on`), 44 pt to tap.
+    private func figure(_ kind: CardKind, _ text: String, dot fill: Color?, tone: Color) -> some View {
+        let on = picked == kind
+        return Button { pick(kind) } label: {
+            Group {
+                if let fill = fill { dot(text, fill, tone) } else { Text(text).foregroundColor(tone) }
+            }
+            .padding(.horizontal, on ? 8 : 0).padding(.vertical, on ? 3 : 0)
+            .background(Capsule().fill(on ? APlus.chip : .clear))
+            .overlay(Capsule().strokeBorder(tone, lineWidth: 1.5).opacity(on ? 1 : 0))
+            .padding(.horizontal, on ? -8 : 0).padding(.vertical, on ? -3 : 0)
+            .frame(minHeight: 44).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(on ? "Shows everything again" : "Shows only these")
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 
     private func dot(_ text: String, _ fill: Color, _ tone: Color) -> some View {

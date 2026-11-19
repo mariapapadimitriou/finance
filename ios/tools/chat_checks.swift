@@ -400,7 +400,7 @@ struct ChatChecks {
         // PC-08: Was this a trip? One card; Yes is TR-01's own endpoint.
         do {
             let r = server(), w = FakeWriter()
-            w.replies["api/trips/asks/2026-03-04%3A2026-03-09/yes"] = """
+            w.replies["api/trips/asks/2026-03-04:2026-03-09/yes"] = """
             {"ok": true, "trip": {"id": "tr1", "name": "Trip to Montréal", "ids": ["t1"], "start": "2026-03-04",
              "end": "2026-03-09", "count": 23, "totals": [{"currency": "CAD", "amount": 1284.6}]}}
             """
@@ -413,7 +413,7 @@ struct ChatChecks {
             expect(d.said == "Was this a trip?", "the starter's words, for her bubble")
             expect(w.writes.isEmpty, "a trip card changes nothing by itself")
             await e.decide(.yes(d.current!), tap: UserTap("yes"))
-            expect(w.writes.first?.path == "api/trips/asks/2026-03-04%3A2026-03-09/yes", "Yes: TR-01's endpoint")
+            expect(w.writes.first?.path == "api/trips/asks/2026-03-04:2026-03-09/yes", "Yes: TR-01's endpoint")
             if case .done(_, let notes) = e.screen {
                 expect(notes.first?.line == "Done. Trip to Montréal made.", "trip confirmation")
                 expect(notes.first?.link == .trip("tr1"), "a link to where it lives")
@@ -451,7 +451,7 @@ struct ChatChecks {
             await e.decide(.skip(d.current!), tap: UserTap("skip"))
             expect(w.writes.last?.path == "api/pattern-sort/asks/joint:ana/skip", "Skip: AI-18's own skip")
             await e.decide(.skip(deck(e)!.current!), tap: UserTap("skip"))
-            expect(w.writes.last?.path == "api/trips/asks/2026-03-04%3A2026-03-09/skip", "Skip: TR-01's own skip")
+            expect(w.writes.last?.path == "api/trips/asks/2026-03-04:2026-03-09/skip", "Skip: TR-01's own skip")
             if case .start = e.screen {} else { expect(false, "both skipped: back to the starters") }
         }
 
@@ -528,7 +528,7 @@ struct ChatChecks {
         // G7-Confirm (NEW): Undo on "Trip to Montréal made" takes back only that trip.
         do {
             let r = server(), w = FakeWriter()
-            w.replies["api/trips/asks/2026-03-04%3A2026-03-09/yes"] = """
+            w.replies["api/trips/asks/2026-03-04:2026-03-09/yes"] = """
             {"ok": true, "trip": {"id": "tr1", "name": "Trip to Montréal", "ids": ["t1"], "start": "2026-03-04",
              "end": "2026-03-09", "count": 23, "totals": [{"currency": "CAD", "amount": 1284.6}]}}
             """
@@ -593,7 +593,7 @@ struct ChatChecks {
             await e.pick(.trips)
             expect(!r.reads.map(\.0).contains("api/chat/asks"), "trips from what opening read")
             // A Yes changes what's waiting: the next ask reads again.
-            w.replies["api/trips/asks/2026-03-04%3A2026-03-09/yes"] = """
+            w.replies["api/trips/asks/2026-03-04:2026-03-09/yes"] = """
             {"ok": true, "trip": {"id": "tr1", "name": "Trip to Montréal", "ids": ["t1"], "start": "2026-03-04",
              "end": "2026-03-09", "count": 23, "totals": [{"currency": "CAD", "amount": 1284.6}]}}
             """

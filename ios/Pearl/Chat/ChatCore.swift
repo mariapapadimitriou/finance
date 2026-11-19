@@ -780,7 +780,7 @@ enum ChatWords {
     static let tripLives = "Change or remove it in Cash flow, or ask Pearl."
 
     /// "Was this a trip?" with none to ask about (engBOT's words; no frame).
-    static let noTrip = "Pearl didn\u{2019}t spot a trip in the last four months."
+    static let noTrip = "Pearl didn\u{2019}t spot a trip."
 }
 
 // MARK: - The chat

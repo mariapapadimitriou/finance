@@ -2,8 +2,9 @@ import PhotosUI
 import SwiftUI
 
 /// P-01 Profile (THL-104, THL-209, THL-120): who's signed in, then Money,
-/// You, Privacy and Help, each row led by its icon, and Sign out under them.
-/// Everything opens in the app; nothing sends her to the web.
+/// You, Privacy and Help, each row led by its icon. Everything opens in the
+/// app; nothing sends her to the web. Sign out lives on Sign-in and security
+/// now (G5-Profile "the end: no Sign out", G5-Security).
 ///
 /// A+ (REDESIGN-03, AP-Profile): pushed from the profile circle in the
 /// current tab, with Back. The header is her avatar with Add photo / Change
@@ -31,8 +32,9 @@ struct ProfileView: View {
     @State private var showYourData = false
     @State private var showConsent = false
     @AppStorage(Appearance.key) private var appearance = Appearance.automatic.rawValue
-    @State private var confirmSignOut = false
     @State private var showAppearance = false
+    /// P-01n: "Your name" is open.
+    @State private var editingName = false
 
     var body: some View {
         ScrollView {
@@ -48,11 +50,8 @@ struct ProfileView: View {
                 privacyCard
                 helpCard.padding(.top, 4)
 
-                APQuietButton(title: "Sign out", identifier: "profile-sign-out") { confirmSignOut = true }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 14)
                 ProfileNote("Pearl for iPhone \u{00B7} \(version)", centred: true)
-                    .padding(.top, 8)
+                    .padding(.top, 14)
             }
             .padding(.horizontal, Pearl.gutter)
             .padding(.bottom, 32)
@@ -118,16 +117,8 @@ struct ProfileView: View {
         .sheet(isPresented: $showAppearance) {
             AppearanceSheet(selection: $appearance) { showAppearance = false }
         }
-        .sheet(isPresented: $confirmSignOut) {
-            // P-05 (TEST-06): a Pearl sheet, not an action sheet.
-            PearlConfirmSheet(overline: "Sign out", title: "Sign out on this iPhone?",
-                              message: "Pearl stays as it is. You’ll sign in again to come back.",
-                              primary: "Sign out", busyLabel: "Signing out…", secondary: "Stay signed in",
-                              failure: "Couldn’t sign out. Try again.",
-                              onClose: { confirmSignOut = false }) {
-                confirmSignOut = false
-                await app.signOut()
-            }
+        .sheet(isPresented: $editingName) {
+            YourNameSheet { editingName = false }
         }
     }
 
@@ -173,7 +164,7 @@ struct ProfileView: View {
         Group {
             ProfileSection("You")
             APCard {
-                NavigationLink { SignInSecurityView() } label: {
+                NavigationLink { SignInSecurityView(goHome: goHome) } label: {
                     ProfileRow(symbol: "lock", title: "Sign-in and security")
                 }
                 .buttonStyle(.plain)
@@ -246,14 +237,36 @@ struct ProfileView: View {
             .disabled(saving)
             .accessibilityIdentifier("profile-photo")
             VStack(spacing: 2) {
-                Text(name).font(Nacre.title2).foregroundColor(Pearl.ink).lineLimit(1)
-                    .accessibilityAddTraits(.isHeader)
+                nameButton
+                // Her email stays read-only here; it changes on Sign-in and security.
                 if let email = app.user?.email, !email.isEmpty {
                     Text(email).font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(1)
                 }
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// P-01 "Maya Park ✎": her name is a button with the small pencil on
+    /// the action wash; it opens P-01n "Your name".
+    private var nameButton: some View {
+        Button { editingName = true } label: {
+            HStack(spacing: 8) {
+                Text(name).font(Nacre.title2).foregroundColor(Pearl.ink).lineLimit(1)
+                Image(systemName: "pencil")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Pearl.action)
+                    .frame(width: 26, height: 26)
+                    .background(Circle().fill(ProfileTone.actionWash))
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Your name, \(name)")
+        .accessibilityHint("Change your name")
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityIdentifier("profile-name")
     }
 
     // MARK: The photo

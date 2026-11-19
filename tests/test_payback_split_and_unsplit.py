@@ -365,3 +365,74 @@ def test_also_keeps_pb22s_purchase_first(client):
     # Something that can't be split (the money itself) is never offered.
     r = ok(client.get(f"/api/transactions/{dep}/owing", query_string={"person": "Sam", "also": dep}))
     assert dep not in [u["id"] for u in r["unsplit"]]
+
+
+# ── G2-PB30 (approved-r7, 2026-11-19): ticking OTHER PURCHASES covers the
+# whole purchase; Change asks for less. The app sends the whole amount (or
+# as much as the money left after the other purchases ticked covers) and the
+# shares ticked take what's left, the newest part-paid (PB-30o). ──────────
+
+def test_whole_purchase_with_a_share_part_paid(client):
+    """Sam sent $75. Pizza Nova ($60, not split) ticked: all of it. Loblaws
+    (Sam's $45 share) ticked too: it gets the $15 left, Sam still owes $30."""
+    a, b, _, dep, _ = setup(client, sent=75.0)
+    before = world(client)
+    reply = ok(parts(client, dep, {"parts": [
+        {"kind": "payback", "charge": a, "amount": 15.0, "person": "Sam"},
+        {"kind": "payback", "charge": b, "amount": 60.0, "person": "Sam", "new_split": True}]}))
+    assert reply["title"] == "Sam paid back 2 purchases · $75.00"
+    assert [(p["name"], p["amount"]) for p in client.st.splits()[b]["people"]] == [("Sam", 60.0)]
+    assert owes(client, b) == {"Sam": 0.0}
+    assert client.st.get_transaction(b).my_share == 0.0
+    assert cost(client, b) == 0.0
+    assert owes(client, a) == {"Sam": 30.0}
+    assert round(before["numbers"]["spent"] - numbers(client)["spent"], 2) == 75.0
+    ok(client.post("/api/transactions/undo", json=reply["undo"]))
+    assert world(client) == before
+    assert b not in client.st.splits()
+
+
+def test_whole_purchase_is_off_other_purchases_once_linked(client):
+    """Once all of Pizza Nova is paid back it's split with Sam, owing nothing:
+    the next payback from Sam never offers it again, as a share or unsplit."""
+    a, b, _, dep, _ = setup(client, sent=60.0, split_a=False, jo=False)
+    reply = ok(parts(client, dep, {"parts": [
+        {"kind": "payback", "charge": b, "amount": 60.0, "person": "Sam Lee", "new_split": True}]}))
+    assert reply["title"] == "Sam Lee paid back $60.00"
+    nxt = add(client, "chq", row("INTERAC E-TRANSFER FROM SAM LEE 2", -20.0, when=day(0),
+                                 merchant="Sam Lee"))["INTERAC E-TRANSFER FROM SAM LEE 2"]
+    r = owing(client, nxt, person="Sam Lee")
+    assert b not in [u["id"] for u in r["unsplit"]]
+    assert b not in [i["id"] for i in r["items"] if i["theirs"] and i["owes"] > 0]
+
+
+def test_whole_purchase_more_than_the_money(client):
+    """Pizza Nova ($60) with only $40 sent: all of it is more than came in, so
+    the app ticks it for the $40 the money covers; the whole is refused."""
+    a, b, _, dep, _ = setup(client, sent=40.0, split_a=False, jo=False)
+    before = world(client)
+    r = parts(client, dep, {"parts": [
+        {"kind": "payback", "charge": b, "amount": 60.0, "person": "Sam", "new_split": True}]})
+    assert r.status_code == 400
+    assert r.get_json()["error"] == "The parts add up to $20.00 more than came in."
+    assert world(client) == before
+    reply = ok(parts(client, dep, {"parts": [
+        {"kind": "payback", "charge": b, "amount": 40.0, "person": "Sam", "new_split": True}]}))
+    assert owes(client, b) == {"Sam": 0.0}
+    assert client.st.get_transaction(b).my_share == 20.0
+    ok(client.post("/api/transactions/undo", json=reply["undo"]))
+    assert world(client) == before
+
+
+def test_two_whole_purchases_and_change_on_one(client):
+    """Both other purchases ticked, then Change on one (G2-PB30 "After
+    Change: part"): $60 of Pizza Nova and $15 of Loblaws' $90, unsplit."""
+    a, b, _, dep, _ = setup(client, sent=75.0, split_a=False, jo=False)
+    before = world(client)
+    reply = ok(parts(client, dep, {"parts": [
+        {"kind": "payback", "charge": b, "amount": 60.0, "person": "Sam", "new_split": True},
+        {"kind": "payback", "charge": a, "amount": 15.0, "person": "Sam", "new_split": True}]}))
+    assert client.st.get_transaction(b).my_share == 0.0
+    assert client.st.get_transaction(a).my_share == 75.0
+    ok(client.post("/api/transactions/undo", json=reply["undo"]))
+    assert world(client) == before
