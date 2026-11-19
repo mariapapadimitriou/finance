@@ -277,6 +277,11 @@ class TestMoreBills:
         w.load(row(2000, "RNOW", f"{MONTH}-01", merchant="Landlord", category="Rent & Housing"))
         assert w.allowance() == before
 
+    def test_income_and_bills_reads_pearls_clock(self, w):
+        # It kept the real date once, so the share test above passed or
+        # failed with the calendar (a bill 49 days old looked cancelled).
+        assert w.c.get("/api/income-bills").get_json()["today"] == TODAY.isoformat()
+
     def test_told_rent_paid_by_an_unsorted_e_transfer_comes_off_once(self, w):
         w.load(*pay(), row(1500, "E-TRANSFER TO LANDLORD", f"{MONTH}-01", category="Unsorted transfers"))
         w.st.set_setting("home_rent", "1500")
