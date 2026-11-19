@@ -16,6 +16,12 @@ struct PayAndBillsView: View {
     @State private var sheet: Sheet?
     @State private var error: String?
     @State private var busy = false
+    /// G6-PayBills-r: "See all" tapped, so the whole list shows.
+    @State private var allBills = false
+    @State private var allSubscriptions = false
+
+    /// G6-PayBills-r: how many rows a list shows before "See all".
+    static let shownRows = 3
 
     enum Sheet: Identifiable {
         case candidate(IncomeBills.Candidate), pay(IncomeBills.Pay), addPay
@@ -47,19 +53,12 @@ struct PayAndBillsView: View {
             OnbTitle(title: "Your pay and bills", line: "Check these look right.")
             if let data = data {
                 moneyIn(data)
-                section("Bills", action: "Add", act: { sheet = .addBill }) {
-                    ForEach(Array(bills.enumerated()), id: \.element.id) { i, bill in
-                        if i > 0 { APSeparator() }
-                        billRow(bill)
-                    }
-                }
+                // G6-PayBills-r (O-10): each list shows 3, then "See all 5
+                // bills · $1,692 a month"; the count is in the label.
+                billList("Bills", noun: ("bill", "bills"), rows: bills, all: $allBills, add: { sheet = .addBill })
                 if !subscriptions.isEmpty {
-                    section("Subscriptions") {
-                        ForEach(Array(subscriptions.enumerated()), id: \.element.id) { i, bill in
-                            if i > 0 { APSeparator() }
-                            billRow(bill)
-                        }
-                    }
+                    billList("Subscriptions", noun: ("subscription", "subscriptions"), rows: subscriptions,
+                             all: $allSubscriptions, add: nil)
                 }
             } else if error == nil {
                 section("Money in") { APSkeletonRow(); APSeparator(); APSkeletonRow() }
@@ -203,6 +202,36 @@ struct PayAndBillsView: View {
         }
     }
 
+    /// G6-PayBills-r: "BILLS · 5" with Add, the first 3 rows, and under the
+    /// card "See all 5 bills · $1,692 a month", which shows the rest here.
+    private func billList(_ title: String, noun: (one: String, many: String), rows: [IncomeBills.Bill],
+                          all: Binding<Bool>, add: (() -> Void)?) -> some View {
+        let cut = rows.count > Self.shownRows && !all.wrappedValue
+        let shown = cut ? Array(rows.prefix(Self.shownRows)) : rows
+        return VStack(spacing: 0) {
+            section(PayBillsWords.label(title, rows.count), action: add == nil ? nil : "Add", act: add ?? {}) {
+                ForEach(Array(shown.enumerated()), id: \.element.id) { i, bill in
+                    if i > 0 { APSeparator() }
+                    billRow(bill)
+                }
+            }
+            if cut {
+                APQuietButton(title: PayBillsWords.seeAll(rows.count, noun: noun, monthly: monthly(rows)),
+                              identifier: "see-all-\(noun.many)") {
+                    withAnimation { all.wrappedValue = true }
+                }
+                .padding(.top, 2)
+            }
+        }
+    }
+
+    /// What a list's ticked rows come to a month, as the server counts it
+    /// (finance/income_bills.py `monthly`), with her ticks as they are now.
+    private func monthly(_ rows: [IncomeBills.Bill]) -> Double {
+        rows.filter { ticked[$0.key] ?? $0.ticked ?? true }
+            .reduce(0) { $0 + PayBillsWords.monthly($1.amount, cadence: $1.cadence) }
+    }
+
     private func billRow(_ bill: IncomeBills.Bill) -> some View {
         let on = ticked[bill.key] ?? bill.ticked ?? true
         return BillLine(bill: bill, on: on, toggle: { ticked[bill.key] = !on }, edit: { sheet = .bill(bill) })
@@ -248,6 +277,27 @@ struct PayAndBillsView: View {
         } catch {
             self.error = app.handle(error)
         }
+    }
+}
+
+/// G6-PayBills-r's words.
+enum PayBillsWords {
+    static let perYear: [String: Double] = ["weekly": 52, "biweekly": 26, "monthly": 12, "bimonthly": 6,
+                                            "quarterly": 4, "semiannual": 2, "annual": 1]
+
+    /// "Bills · 5": the count in the label.
+    static func label(_ title: String, _ count: Int) -> String {
+        count > 0 ? "\(title) \u{00B7} \(count)" : title
+    }
+
+    /// "See all 5 bills · $1,692 a month".
+    static func seeAll(_ count: Int, noun: (one: String, many: String), monthly: Double) -> String {
+        "See all \(count) \(count == 1 ? noun.one : noun.many) \u{00B7} \(Format.whole(monthly)) a month"
+    }
+
+    /// A bill's amount a month (finance/income_bills.py `monthly`).
+    static func monthly(_ amount: Double, cadence: String) -> Double {
+        amount * (perYear[cadence] ?? 12) / 12
     }
 }
 

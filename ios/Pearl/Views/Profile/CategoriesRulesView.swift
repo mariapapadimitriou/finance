@@ -665,11 +665,12 @@ private extension View {
 
 // MARK: - CR-04 A sorting rule (G5b-Rule)
 
-/// The rule's page: its face and "Always Groceries", Spending / Not
-/// spending, and its category as chips. Save is greyed until it changes;
-/// then "Also moves the 14 earlier ones." with Save (moves them too) and
-/// "Only new ones" (A+, approved 2026-11-18). "Delete this rule" is the
-/// one red row.
+/// G5b-Rule-r (CR-04): the rule's page leads with what it picks: its face and
+/// "Always Groceries", then one row with the category, Spending or Not
+/// spending, and Change. The whole picker opens on a Pearl sheet only on
+/// Change. Once it changes, "Also moves the 14 earlier ones." with Save
+/// (moves them too) and "Only new ones" (A+, approved 2026-11-18).
+/// "Delete this rule" is the one red row.
 @MainActor
 struct RuleEditView: View {
     @EnvironmentObject private var app: AppModel
@@ -686,21 +687,26 @@ struct RuleEditView: View {
     @State private var earlier: Int?
     @State private var busy = false
     @State private var error: String?
+    /// G5b-Rule-r: the category picker, on its Pearl sheet.
+    @State private var choosing = false
 
     private var current: String { rule.category ?? "Other" }
     private var chosen: String { picked ?? current }
     private var changed: Bool { picked != nil && picked != current }
+
+    /// Spending or Not spending, for the chosen category's row.
+    private var chosenKind: String {
+        let group = categories.first { $0.name == chosen }?.group
+        return Self.notSpending(chosen, group: group) ? "Not spending" : "Spending"
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 HStack { APBackButton { dismiss() }; Spacer() }.frame(height: 52)
                 APHero(face: CRLead.letters(rule.name), name: rule.name, lines: ["Always \(chosen)"])
-                CRSegmented(options: ["Spending", "Not spending"], selected: spending ? "Spending" : "Not spending") {
-                    spending = $0 == "Spending"
-                }
-                .padding(.top, 8)
-                RuleChips(groups: groups, chosen: chosen) { pick($0) }
+                RuleCategoryRow(category: chosen, kind: chosenKind) { openPicker() }
+                    .padding(.top, 10)
                 if !changed {
                     APCard {
                         Button(action: onDelete) {
@@ -718,10 +724,29 @@ struct RuleEditView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) { actions }
         .nacreScreen()
         .navigationBarHidden(true)
-        .onAppear { spending = !Self.notSpending(current) }
+        .sheet(isPresented: $choosing) {
+            RuleCategorySheet(spending: $spending, groups: groups, chosen: chosen,
+                              pick: { name in
+                                  choosing = false
+                                  pick(name)
+                              }, close: { choosing = false })
+        }
     }
 
+    /// Change: the picker opens on the chosen category's side.
+    private func openPicker() {
+        spending = chosenKind == "Spending"
+        choosing = true
+    }
+
+    /// G5b-Rule-r: no Save until the category changes.
     @ViewBuilder private var actions: some View {
+        if changed {
+            changedActions
+        }
+    }
+
+    private var changedActions: some View {
         VStack(spacing: 12) {
             if changed, let n = earlier, n > 0 {
                 Text(n == 1 ? "Also moves the earlier one." : "Also moves the \(n) earlier ones.")
@@ -782,6 +807,52 @@ struct RuleEditView: View {
             onSaved(n > 0 ? "Now \(category) · \(n) moved" : "Now \(category)", reply.undo)
         } catch {
             self.error = app.handle(error)
+        }
+    }
+}
+
+/// G5b-Rule-r: the rule's category, what kind it is, and Change, on one card.
+/// The whole row opens the picker.
+private struct RuleCategoryRow: View {
+    let category: String
+    let kind: String
+    let change: () -> Void
+
+    var body: some View {
+        APCard {
+            Button(action: change) {
+                ProfileRow(symbol: CategorySheet.symbol(for: category), title: category, sub: kind, chevron: false) {
+                    Text("Change").font(Nacre.subheadline.weight(.semibold)).foregroundColor(Pearl.action)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(category), \(kind)")
+            .accessibilityHint("Change the category")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier("rule-change")
+        }
+    }
+}
+
+/// G5b-Rule-r: "Category" on a Pearl sheet, opened by Change: Spending / Not
+/// spending, then the chips under each group. A tap picks and closes it.
+private struct RuleCategorySheet: View {
+    @Binding var spending: Bool
+    let groups: [(String, [String])]
+    let chosen: String
+    let pick: (String) -> Void
+    let close: () -> Void
+
+    var body: some View {
+        PearlSheet {
+            APSheetTitle(title: "Category", close: close)
+            CRSegmented(options: ["Spending", "Not spending"], selected: spending ? "Spending" : "Not spending") {
+                spending = $0 == "Spending"
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                RuleChips(groups: groups, chosen: chosen, pick: pick)
+            }
         }
     }
 }

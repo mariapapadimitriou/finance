@@ -688,8 +688,22 @@ enum ChatWords {
     static func maybeSplit(_ names: [String]) -> String { "Maybe split with \(Format.andList(names))?" }
 
     /// PC-05's overline: "Pearl’s guess · 1 of 7", "Your choice · 2 of 7".
-    static func guessOver(choice: Bool, _ counter: String) -> String {
-        (choice ? "Your choice" : "Pearl\u{2019}s guess") + " \u{00B7} " + counter
+    /// After the first card the count moves to the progress line over the
+    /// cards (G7-Tell-r), so the overline is just "Pearl’s guess".
+    static func guessOver(choice: Bool, _ counter: String?) -> String {
+        let head = choice ? "Your choice" : "Pearl\u{2019}s guess"
+        guard let counter = counter else { return head }
+        return head + " \u{00B7} " + counter
+    }
+
+    /// G7-Tell-r: her words cut to their first part, for the small line that
+    /// replaces her bubble after the first card: "Out with friends Saturday,
+    /// brunch with Jo and Sam, Uber home" → "Out with friends Saturday".
+    static func shortSaid(_ said: String) -> String {
+        let t = said.trimmingCharacters(in: .whitespacesAndNewlines)
+        let first = t.split(whereSeparator: { ",;.!?\n".contains($0) }).first
+            .map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+        return first.isEmpty ? t : first
     }
 
     /// PC-07 (G7-TellMore): "Sorted 7. 2 left for later."
@@ -832,12 +846,26 @@ struct Deck {
     /// says "Your choice" (the view knows).
     func overline(choice: Bool = false) -> String {
         switch current {
-        case .sort?: return ChatWords.guessOver(choice: choice, counter)
+        case .sort?: return ChatWords.guessOver(choice: choice, showsProgress ? nil : counter)
         case .trip(let t)?: return ChatWords.tripOver(t)
         case .pattern?: return ChatWords.patternOver
         case .plan?, nil: return ""
         }
     }
+
+    /// G7-Tell-r (PC-05, PC-06): after the first told guess, a small "Out
+    /// with friends Saturday · 2 of 7" and a dash per card replace her whole
+    /// sentence; the count leaves the card's overline.
+    var showsProgress: Bool {
+        guard index > 0, case .sort? = current else { return false }
+        return true
+    }
+
+    /// The progress line's words: her sentence, cut short ("" without one).
+    var progressTitle: String { said.map(ChatWords.shortSaid) ?? "" }
+
+    /// The told guesses in this run, for "2 of 7" and its dashes.
+    var progressTotal: Int { sorts }
 
     /// Pearl's line over the first told guess only.
     var leadLine: String? {

@@ -62,6 +62,46 @@ struct ChatLine: View {
     }
 }
 
+/// G7-Tell-r (PC-05, PC-06): after the first card, her sentence cut short in
+/// muted 15 pt, "2 of 7" in 15 semibold, then one 8 pt dash per card, lit for
+/// the ones behind her (A+ `streak`: 4 apart, the gradient on).
+struct ChatDeckProgress: View {
+    let title: String
+    let done: Int
+    let total: Int
+
+    private var count: String { "\(done + 1) of \(total)" }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                Text(title)
+                    .font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Text(count)
+                    .font(.custom("Figtree-SemiBold", size: 15, relativeTo: .subheadline))
+                    .foregroundColor(Pearl.ink)
+                    .monospacedDigit()
+            }
+            HStack(spacing: 4) {
+                ForEach(0..<max(total, 1), id: \.self) { i in
+                    Capsule()
+                        .fill(i < done
+                              ? AnyShapeStyle(LinearGradient(colors: [APlus.streakFrom, APlus.streakTo],
+                                                             startPoint: .leading, endPoint: .trailing))
+                              : AnyShapeStyle(APlus.trackSoft))
+                        .frame(height: 8)
+                }
+            }
+        }
+        .padding(.horizontal, 4).padding(.top, 14)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title.isEmpty ? count : "\(title), \(count)")
+        .accessibilityIdentifier("chat-deck-progress")
+    }
+}
+
 /// A small muted note: 13 pt (G7: `small`), "Skip forgets the split.".
 struct ChatNote: View {
     let text: String

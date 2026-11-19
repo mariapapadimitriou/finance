@@ -39,7 +39,12 @@ struct ChatDeckView: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 0) {
-                    if let said = deck.said, !said.isEmpty { ChatYou(text: said) }
+                    if deck.showsProgress {
+                        // G7-Tell-r: "Out with friends Saturday · 2 of 7" for her sentence.
+                        ChatDeckProgress(title: deck.progressTitle, done: deck.index, total: deck.progressTotal)
+                    } else if let said = deck.said, !said.isEmpty {
+                        ChatYou(text: said)
+                    }
                     if let lead = deck.leadLine { ChatLine(text: lead) }
                     card
                     under
