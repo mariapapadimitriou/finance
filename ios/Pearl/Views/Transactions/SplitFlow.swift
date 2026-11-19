@@ -708,7 +708,7 @@ struct SplitSheet: View {
 
     private var overTotal: Double { overList.map(\.amount).reduce(0, +) }
 
-    /// S-48c: "Paid $20.00 · locked · even share $33.33, Pearl asks next",
+    /// S-48c: "Paid $20.00 · locked · Pearl asks next",
     /// then what she answered.
     private func payerLine(_ key: String, paid: Double) -> String {
         let share = Double(shareCents(key)) / 100
@@ -717,12 +717,13 @@ struct SplitSheet: View {
             return ["Paid \(Format.amount(paid))", "locked",
                     mode == "shares" && locked(key) ? "not in the shares" : nil].compactMap { $0 }.joined(separator: " · ")
         }
-        let kind = mode == "even" ? "even share" : "share"
         switch answers[key] {
         case .ask?: return "Paid \(Format.amount(paid)) · ask \(key) for \(diff)"
         case .iOwe?: return "Paid \(Format.amount(paid)) · you owe \(key) \(diff)"
         case .gift?: return "Paid \(Format.amount(paid)) · \(diff) is a gift"
-        default: return "Paid \(Format.amount(paid)) · locked · \(kind) \(Format.amount(share)), Pearl asks next"
+        // G2-BSettle2 S-48c: "Paid $20.00 · locked · Pearl asks next"; the
+        // share is said on the next page (S-48a).
+        default: return "Paid \(Format.amount(paid)) · locked · Pearl asks next"
         }
     }
 
