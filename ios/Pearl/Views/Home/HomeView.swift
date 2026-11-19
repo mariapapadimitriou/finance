@@ -218,6 +218,10 @@ struct HomeView: View {
             // Cash flow filtered to that category (CashFlowFocus, TransactionsView.swift).
             if let name = target.name { CashFlowFocus.shared.show(category: name, month: target.month) }
             tab = .cashFlow
+        case "income" where target.month != nil:
+            // T-74 (AP-Paycheque): that month's income in Cash flow (CashFlowFocus).
+            CashFlowFocus.shared.show(category: "Income", month: target.month)
+            tab = .cashFlow
         case "allowance":
             // The new month: Home's own Allowance, the orb at the top.
             toOrb += 1

@@ -688,7 +688,12 @@ struct AccountDetailView: View {
             // AM-09n (TEST-06): a Pearl sheet; Save stays off while it's empty.
             PearlConfirmSheet(overline: [account.name, (account.mask ?? "").isEmpty ? nil : "••\(account.mask!)"]
                                 .compactMap { $0 }.joined(separator: " "),
-                              title: "Nickname", message: "A name you’ll recognise. It shows everywhere in Pearl.",
+                              title: "Nickname",
+                              // #388: no overline now, so the account is the who line.
+                              who: .init(name: account.name,
+                                         amount: [AccountWords.kind(account), (account.mask ?? "").isEmpty ? nil : "••\(account.mask!)"]
+                                            .compactMap { $0 }.joined(separator: " · "), tone: Pearl.muted),
+                              message: "A name you’ll recognise. It shows everywhere in Pearl.",
                               field: .init(label: "Nickname", prompt: account.name, identifier: "nickname"),
                               text: $nickname, primary: "Save", busyLabel: "Saving…",
                               failure: "Couldn’t save the nickname. Nothing changed. Try again.",
@@ -1069,7 +1074,8 @@ struct ManualAccountView: View {
             // AM-14n (TEST-06).
             // G5-AccountMore AM-14n: the account's face and "Added by hand",
             // then the Name well; no explainer (less text).
-            PearlConfirmSheet(face: AccountWords.bank(account), overline: "Added by hand", title: "Name",
+            PearlConfirmSheet(overline: "Added by hand", title: "Name",
+                              who: .init(name: account.name, amount: "Added by hand", tone: Pearl.muted),
                               field: .init(label: "Name", prompt: account.name, identifier: "account-name"),
                               text: $name, primary: "Save", busyLabel: "Saving…",
                               failure: "Couldn’t save the name. Nothing changed. Try again.",
