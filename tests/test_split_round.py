@@ -1059,7 +1059,8 @@ class TestWhoSentThis:
         assert "var credited: [Part] = []" in parts and "if parts.isEmpty { parts = credited }" in parts
         # S-05u on the split card.
         flow = (self.IOS / "Views/Transactions/SplitFlow.swift").read_text(encoding="utf-8")
-        assert 'Text("PAID BACK")' in flow and 'Text("Who sent this?")' in flow
+        # A+: the caps label is APSectionLabel's (it uppercases the words).
+        assert 'APSectionLabel(text: "Paid back")' in flow and 'Text("Who sent this?")' in flow
         assert '\\(u.sender ?? "no name") · paid back \\(Format.andList(u.paidBack))' in flow
         assert "not credited to anyone yet. Who sent this?" in flow
         page = (self.IOS / "Views/Transactions/TransactionDetailView.swift").read_text(encoding="utf-8")
