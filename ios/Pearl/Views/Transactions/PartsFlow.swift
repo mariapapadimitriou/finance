@@ -195,6 +195,12 @@ struct PartsSheet: View {
     @State private var unsplitFound: [UnsplitRow] = []
     @State private var unsplitPaid: [String: Int] = [:]
     @State private var unsplitAsk: UnsplitRow?
+    /// G2-PB30 (approved-r7): PB-13 opened by a ticked row's Change, so Part
+    /// of it is offered even when the money covers all of it; and the parts
+    /// as they were before it, so ✕ goes back to PB-30 with nothing added.
+    @State private var changingShare = false
+    @State private var partsBeforeChange: [Part]?
+    @State private var unsplitBeforeChange: [String: Int] = [:]
     /// PB-30 for someone who owes her nothing (2026-11-18, after #380): who
     /// it's for, with OTHER PURCHASES only. Never anyone added to a split.
     @State private var forPerson: String?
@@ -429,8 +435,19 @@ struct PartsSheet: View {
             APSheetTitleBar(title: title, short: shortTitle) {
                 // S-11k: Close goes back to S-11 v2 with nothing added.
                 if step == .otherKind { otherAmount = nil; step = .kind; return }
-                // OTHER PURCHASES: Close on its amount leaves it unticked, back on PB-30.
+                // OTHER PURCHASES: Close on its amount leaves it as it was (all
+                // of it, or what Change said before), back on PB-30.
                 if step == .howMuch && unsplitAsk != nil { unsplitAsk = nil; shareQueue = []; step = .whose; return }
+                // A LIKELY row's Change: back on PB-30, nothing added (G2-PB30).
+                if step == .howMuch, let before = partsBeforeChange {
+                    parts = before
+                    unsplitPaid = unsplitBeforeChange
+                    partsBeforeChange = nil
+                    changingShare = false
+                    shareQueue = []
+                    step = .whose
+                    return
+                }
                 // S-24x: a held split would be dropped, so ask first.
                 if heldSplit != nil { leaving = true } else { dismiss() }
             }
@@ -439,7 +456,11 @@ struct PartsSheet: View {
                     // S-11xm (THL-301): the whole deposit here, "The $30.00" in the title.
                     // PB-12 / PB-13: "$15.00 · Paid back · Sam Lee".
                     // PB-30: "e-Transfer from Sam Lee" over "+$86.65 · Fri, Nov 14" in money-in green.
-                    if step == .whose {
+                    if step == .howMuch, let u = unsplitAsk {
+                        // PB-30c: "$26.65 · Farm Boy · Nov 3" under who sent it.
+                        APQuestionWho(name: deposit.name, amount: Format.amount(allOfIt ? u.amount : partValue),
+                                      tone: Pearl.muted, sub: "\(u.merchant) · \(Format.short(u.date))", face: sender)
+                    } else if step == .whose {
                         // MP-01 / MP-02: "+$186.40 · Nov 14".
                         APQuestionWho(name: deposit.name, amount: "+" + Format.amount(deposit.whole ?? deposit.amount),
                                        tone: Pearl.moneyIn,
@@ -597,8 +618,10 @@ struct PartsSheet: View {
         // PB-13: "How much of Sam’s $60.00?"
         case .howMuch:
             guard let o = shareQueue.first else { return "" }
-            // MP-04's Change, and OTHER PURCHASES: no one owes it; the purchase is on the line under.
-            if manyKind != nil || unsplitAsk != nil { return "How much of the \(Format.amount(o.owes))?" }
+            // PB-30c (G2-PB30, approved-r7): "How much of Farm Boy’s $41.20?"
+            if unsplitAsk != nil { return "How much of \(possessive(o.merchant)) \(Format.amount(o.owes))?" }
+            // MP-04's Change: no one owes it; the purchase is on the line under.
+            if manyKind != nil { return "How much of the \(Format.amount(o.owes))?" }
             return "How much of \(possessive(firstName(o.person ?? who))) \(Format.amount(o.owes))?"
         }
     }
@@ -1163,17 +1186,28 @@ struct PartsSheet: View {
             .accessibilityLabel("\(possessive(first)) share of \(o.merchant), \(Format.amount(o.owes)), \(sub)"
                                 + (part ? ", \(first) still owes \(Format.amount(o.owes - got))" : ""))
             .accessibilityAddTraits(on ? .isSelected : [])
-            if part {
-                // PB-30o: Change opens PB-13 for this one.
-                Button("Change") { changePart(o) }
-                    .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline)).foregroundColor(Pearl.link)
-                    .frame(minHeight: 44).buttonStyle(.plain)
-                    .accessibilityLabel("Change how much of \(possessive(first)) share of \(o.merchant)")
-            }
             Text(Format.amount(o.owes)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
                 .accessibilityHidden(true)
+            // G2-PB30 (approved-r7): Change after the price on every ticked
+            // row; PB-13 asks how much of this one.
+            changeSlot(on: on, label: "Change how much of \(possessive(first)) share of \(o.merchant)") { changePart(o) }
         }
         .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 64)
+    }
+
+    /// G2-PB30: the 64 pt slot after a row's price, holding Change when the
+    /// row is ticked and empty when it isn't, so every price lines up.
+    private func changeSlot(on: Bool, label: String, _ action: @escaping () -> Void) -> some View {
+        ZStack(alignment: .trailing) {
+            if on {
+                Button("Change", action: action)
+                    .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline)).foregroundColor(Pearl.link)
+                    .frame(minHeight: 44).buttonStyle(.plain)
+                    .accessibilityLabel(label)
+                    .accessibilityIdentifier("pb30-change")
+            }
+        }
+        .frame(width: 64, alignment: .trailing)
     }
 
     private func toggleTick(_ o: Owing) {
@@ -1190,11 +1224,16 @@ struct PartsSheet: View {
         }
     }
 
-    /// PB-30o Change: the others are paid in full; PB-13 asks about this one.
+    /// PB-30 / PB-30o Change: the others are paid as they're ticked; PB-13
+    /// asks about this one. ✕ there puts the parts back as they were.
     private func changePart(_ o: Owing) {
+        partsBeforeChange = parts
+        unsplitBeforeChange = unsplitPaid
         addTicked(except: o)
+        // OTHER PURCHASES ticked go in too, so the money left is what they leave.
+        addUnsplit()
         query = ""
-        startHowMuch([o])
+        startHowMuch([o], changing: true)
     }
 
     /// PB-30's one tap. All add up, or more (PB-30o): mark them all paid
@@ -1254,14 +1293,16 @@ struct PartsSheet: View {
         return (ticked + shown).filter { !taken.contains($0.id) && seen.insert($0.id).inserted }
     }
 
-    /// "Pizza Nova · $60.00" over "Nov 12"; ticked, "Pizza Nova · $30.00 of it" and Change.
+    /// "Farm Boy" over "Oct 27", $38.10; ticked, the whole purchase: "Nov 3 ·
+    /// all of it"; after Change, "$26.65 of it · Nov 3" (G2-PB30, approved-r7).
     private func unsplitRow(_ u: UnsplitRow) -> some View {
         let paid = unsplitPaid[u.id]
         let on = paid != nil
-        let name = "\(u.merchant) · " + (paid.map { "\(Format.amount(Double($0) / 100)) of it" } ?? Format.amount(u.amount))
+        let all = paid == cents(u.amount)
+        let name = "\(u.merchant) · " + (all ? "all of \(Format.amount(u.amount))"
+            : paid.map { "\(Format.amount(Double($0) / 100)) of it" } ?? Format.amount(u.amount))
         let day = u.pending == true ? "Pending" : Format.short(u.date)
-        // REDESIGN-09 (G2-PB30): "$26.65 of it · Nov 3" under the name.
-        let line = paid.map { "\(Format.amount(Double($0) / 100)) of it · \(day)" } ?? day
+        let line = all ? "\(day) · all of it" : paid.map { "\(Format.amount(Double($0) / 100)) of it · \(day)" } ?? day
         return HStack(spacing: 12) {
             Button { toggleUnsplit(u) } label: {
                 HStack(spacing: 12) {
@@ -1278,20 +1319,28 @@ struct PartsSheet: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(name), \(u.pending == true ? "Pending" : Format.monthDay(u.date))")
             .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
-            if on {
-                Button("Change") { askUnsplit(u) }
-                    .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline)).foregroundColor(Pearl.link)
-                    .frame(minHeight: 44).buttonStyle(.plain)
-                    .accessibilityLabel("Change how much of \(u.merchant)")
-            }
             Text(Format.amount(u.amount)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
                 .accessibilityHidden(true)
+            changeSlot(on: on, label: "Change how much of \(u.merchant)") { askUnsplit(u) }
         }
         .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 64)
     }
 
+    /// Ticking one covers the whole purchase (G2-PB30, approved-r7): all of
+    /// it, unless the money left after the other purchases ticked here is
+    /// less; then as much as it covers. The shares ticked take what's left
+    /// (PB-30o), and Change asks for less.
     private func toggleUnsplit(_ u: UnsplitRow) {
-        if unsplitPaid[u.id] != nil { unsplitPaid[u.id] = nil } else { askUnsplit(u) }
+        if unsplitPaid[u.id] != nil { unsplitPaid[u.id] = nil; return }
+        unsplitPaid[u.id] = Self.wholeCovered(amount: cents(u.amount), money: leftCents,
+                                              otherPurchases: unsplitPaid.values.reduce(0, +))
+    }
+
+    /// What ticking an OTHER PURCHASES row covers, in cents: the whole
+    /// purchase, capped by the money the other ticked purchases leave.
+    static func wholeCovered(amount: Int, money: Int, otherPurchases: Int) -> Int {
+        let room = money - otherPurchases
+        return room > 0 ? min(amount, room) : amount
     }
 
     /// What's left of the money for this purchase: the deposit less the
@@ -1490,7 +1539,9 @@ struct PartsSheet: View {
 
     /// "Part of it" is offered while the money is less than they owe; at or
     /// over it, All of it is the answer (more is the extra, S-11 v2 next).
-    private func canPart(_ o: Owing) -> Bool { unsplitAsk != nil || cents(shareRoom) < cents(o.owes) }
+    private func canPart(_ o: Owing) -> Bool {
+        unsplitAsk != nil || changingShare || cents(shareRoom) < cents(o.owes)
+    }
 
     /// OTHER PURCHASES: the money covers all of it, so both are offered.
     private func unsplitCovers(_ o: Owing) -> Bool { unsplitAsk != nil && cents(shareRoom) >= cents(o.owes) }
@@ -1498,7 +1549,8 @@ struct PartsSheet: View {
     /// Part of it: what she typed, or all of what's left of the deposit.
     private var partValue: Double {
         let text = partText.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty else { return shareRoom }
+        // A Change on a share the money covers: up to the share, not the money.
+        guard !text.isEmpty else { return changingShare ? min(shareRoom, shareQueue.first?.owes ?? shareRoom) : shareRoom }
         return Double(text.replacingOccurrences(of: "$", with: "").replacingOccurrences(of: ",", with: "")) ?? 0
     }
 
@@ -1520,12 +1572,19 @@ struct PartsSheet: View {
             // of it isn't offered while the money is less (nothing to let go).
             let mp = manyKind != nil || unsplitAsk != nil
             VStack(alignment: .leading, spacing: 8) {
-                label(mp ? "\(o.merchant) · \(Format.short(o.date))" : "\(o.merchant) · \(first) owes \(Format.amount(o.owes))")
+                // PB-30c: the purchase is in the header already.
+                if unsplitAsk == nil {
+                    label(mp ? "\(o.merchant) · \(Format.short(o.date))" : "\(o.merchant) · \(first) owes \(Format.amount(o.owes))")
+                }
                 APCard {
                     if canPart(o) {
                         // MP-04's Change (MANY-01): no line under Part of it;
                         // the amount already looks editable (copy rule 4).
-                        let owesAfter: Text? = mp ? nil
+                        // PB-30c: "$14.55 stays your spending".
+                        let owesAfter: Text? = unsplitAsk != nil
+                            ? Text("\(Format.amount(max(0, o.owes - partValue))) stays your spending")
+                                .font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                            : mp ? nil
                             : Text("\(first) still owes \(Format.amount(max(0, o.owes - partValue)))")
                             .font(Nacre.subheadline).foregroundColor(Pearl.muted)
                         // G2-HowMuch: Part of it with its amount well on the
@@ -1548,7 +1607,7 @@ struct PartsSheet: View {
                                 HStack(spacing: 4) {
                                     Text("$").foregroundColor(Pearl.muted).accessibilityHidden(true)
                                     TextField("", text: $partText,
-                                              prompt: Text(String(format: "%.2f", shareRoom)).foregroundColor(Pearl.ink))
+                                              prompt: Text(String(format: "%.2f", partValue)).foregroundColor(Pearl.ink))
                                         .multilineTextAlignment(.trailing).keyboardType(.decimalPad)
                                         .focused($partFocused).tint(Pearl.action)
                                         .accessibilityLabel("Part of it")
@@ -1561,9 +1620,10 @@ struct PartsSheet: View {
                                 .padding(.trailing, 16)
                             }
                         }
-                        if !mp || unsplitCovers(o) { APSeparator(afterFace: false) }
+                        if !mp || unsplitAsk != nil { APSeparator(afterFace: false) }
                     }
-                    if !mp || !canPart(o) || unsplitCovers(o) {
+                    // PB-30c: All of it is always offered for OTHER PURCHASES.
+                    if !mp || !canPart(o) || unsplitAsk != nil {
                     Button {
                         allOfIt = true
                         editingPart = false
@@ -1572,7 +1632,10 @@ struct PartsSheet: View {
                         choiceLine(on: allOfIt) {
                             Text("All of it · \(Format.amount(o.owes))").font(Nacre.body).foregroundColor(Pearl.ink)
                             // G2-HowMuch: one short line, "Pearl asks what the other $45.00 is".
-                            Text(other >= 0.005 ? "Pearl asks what the other \(Format.amount(other)) is" : mp ? "" : "\(first)’s paid in full")
+                            // PB-30c: "$14.55 more than Sam sent" when all of it is more than the money.
+                            Text(unsplitAsk != nil ? (o.owes - shareRoom >= 0.005
+                                    ? "\(Format.amount(o.owes - shareRoom)) more than \(firstName(sender ?? who)) sent" : "")
+                                 : other >= 0.005 ? "Pearl asks what the other \(Format.amount(other)) is" : mp ? "" : "\(first)’s paid in full")
                                 .font(Nacre.subheadline).foregroundColor(Pearl.muted)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -1619,7 +1682,9 @@ struct PartsSheet: View {
 
     /// Opens PB-13 on the first share; All of it is chosen when the money
     /// covers it, Part of it (the deposit's amount) when it doesn't.
-    private func startHowMuch(_ queue: [Owing], asked: Bool = false) {
+    private func startHowMuch(_ queue: [Owing], asked: Bool = false, changing: Bool = false) {
+        changingShare = changing
+        if !changing { partsBeforeChange = nil }
         shareQueue = queue
         queueAsked = asked
         nextShareSetup()
@@ -1630,7 +1695,8 @@ struct PartsSheet: View {
         partText = ""
         editingPart = false
         partFocused = false
-        allOfIt = shareQueue.first.map { unsplitAsk != nil ? unsplitCovers($0) : !canPart($0) } ?? false
+        // PB-30c (approved-r7): Part of it first, with what the money leaves.
+        allOfIt = shareQueue.first.map { unsplitAsk != nil ? false : !canPart($0) } ?? false
     }
 
     /// PB-13 Save / Next. All of it with less money than they owe asks first (PB-13b).
@@ -1642,7 +1708,9 @@ struct PartsSheet: View {
             return
         }
         if allOfIt {
-            if canPart(o) { letGoAsk = o; return }
+            // PB-13b only when the money is less than they owe (a Change on
+            // a share the money covers is simply all of it).
+            if cents(shareRoom) < cents(o.owes) { letGoAsk = o; return }
             addShare(o, amount: o.owes)
         } else {
             guard partFits(o) else { return }
@@ -1655,6 +1723,9 @@ struct PartsSheet: View {
     /// otherwise on to what the rest is (S-11 v2) or the extra.
     private func addShare(_ o: Owing, amount: Double, letGo: Bool = false) {
         putShare(o, amount: amount, letGo: letGo)
+        // Answered: ✕ no longer takes a Change back.
+        partsBeforeChange = nil
+        changingShare = false
         if !shareQueue.isEmpty { shareQueue.removeFirst() }
         // Nothing left of the deposit for the others ticked.
         if leftCents == 0 { shareQueue = [] }
