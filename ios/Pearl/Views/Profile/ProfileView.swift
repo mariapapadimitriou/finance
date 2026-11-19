@@ -37,7 +37,7 @@ struct ProfileView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
-                HStack { APBackButton { dismiss() }; Spacer() }.frame(height: 52)
+                HStack { APBackButton(identifier: "profile-back") { dismiss() }; Spacer() }.frame(height: 52)
                 Text("Profile").font(Nacre.largeTitle).foregroundColor(Pearl.ink)
                     .padding(.leading, 4)
                     .accessibilityAddTraits(.isHeader)

@@ -151,15 +151,6 @@ struct RowAvatar: View {
     }
 }
 
-/// The A+ chevron: 8 × 14, `muted`.
-struct APChevron: View {
-    var body: some View {
-        Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold))
-            .foregroundColor(Pearl.muted)
-            .accessibilityHidden(true)
-    }
-}
-
 /// A+ `.row`: an icon (or a face), a title over a line, whatever sits at the
 /// end, and the chevron. 64 high, 16 at the sides, 12 between. A destructive
 /// row is red, icon and words (`.dz`): the only red on the way to a
@@ -284,42 +275,6 @@ struct StatusPill: View {
     }
 }
 
-/// The 44 pt glass Back circle on a pushed page (kit `BACK`).
-struct APBackButton: View {
-    var identifier = "profile-back"
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
-                .foregroundColor(Pearl.ink)
-                .frame(width: 44, height: 44)
-                .background(APCardSurface(radius: 22))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Back")
-        .accessibilityIdentifier(identifier)
-    }
-}
-
-/// A+ `.glassbtn` with a symbol (Accounts' +).
-struct APGlassButton: View {
-    let symbol: String
-    let label: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 17, weight: .semibold))
-                .foregroundColor(Pearl.ink)
-                .frame(width: 44, height: 44)
-                .background(APCardSurface(radius: 22))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
-    }
-}
-
 /// A Profile page (G5 `nav`): the 52 pt row with the glass Back (and what
 /// sits at its right), the content on the ground, and any buttons pinned
 /// along the bottom, 12 apart.
@@ -333,7 +288,7 @@ struct ProfilePage<Content: View, Bottom: View>: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    APBackButton { dismiss() }
+                    APBackButton(identifier: "profile-back") { dismiss() }
                     Spacer()
                     if let navTrailing = navTrailing { navTrailing }
                 }
@@ -473,36 +428,6 @@ struct APChoiceRow: View {
     }
 }
 
-/// `.radio`: 24, a 1.5 pt `muted` ring; on, a 7 pt `action` ring.
-struct APRadio: View {
-    let on: Bool
-
-    var body: some View {
-        Circle()
-            .strokeBorder(on ? Pearl.action : Pearl.muted, lineWidth: on ? 7 : 1.5)
-            .frame(width: 24, height: 24)
-            .accessibilityHidden(true)
-    }
-}
-
-/// `.tickbox`: 24, radius 7; on, `action` with a white tick.
-struct APTickBox: View {
-    let on: Bool
-
-    var body: some View {
-        ZStack {
-            if on {
-                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Pearl.action)
-                Image(systemName: "checkmark").font(.system(size: 13, weight: .bold)).foregroundColor(Pearl.onAction)
-            } else {
-                RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Pearl.muted, lineWidth: 1.5)
-            }
-        }
-        .frame(width: 24, height: 24)
-        .accessibilityHidden(true)
-    }
-}
-
 /// G5 `kv`: a 52 pt row, the key on the left, its value `muted` (or `link`) on the right.
 struct APKeyValueRow<Value: View>: View {
     let key: String
@@ -639,20 +564,6 @@ struct APPillButton: View {
     }
 }
 
-/// The nacre ring round a face (`.ring`, 56; `.ring.sm`, 44).
-struct APRingFace: View {
-    let name: String
-    var size: CGFloat = 56
-
-    var body: some View {
-        RowAvatar(name: name, size: size - 2.4,
-                  font: .custom("Figtree-Medium", size: size >= 56 ? 17 : 15, relativeTo: .body))
-            .padding(1.2)
-            .background(Circle().fill(APlus.nacreRing))
-            .accessibilityHidden(true)
-    }
-}
-
 /// G5 `who`: the ringed face, the name in 22 Fraunces and its line (a sheet's top).
 struct APWho: View {
     let face: String
@@ -693,7 +604,7 @@ struct APHero: View {
             if let symbol = symbol {
                 IconBubble(symbol: symbol)
             } else {
-                APRingFace(name: face)
+                APRingFace(name: face, size: 56)
             }
             Text(name).font(Nacre.title2).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center)

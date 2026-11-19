@@ -185,9 +185,13 @@ class TestProfileCircleAndPhoto(unittest.TestCase):
         self.assertIn("let goHome: () -> Void", p)
         self.assertNotIn("MainTabs.Tab", p)
         # A+ G5-Profile: the glass Back from the Profile kit, labelled there.
-        self.assertIn("APBackButton { dismiss() }", p)
+        self.assertIn('APBackButton(identifier: "profile-back") { dismiss() }', p)
+        # One shared A+ Back (APlus.swift), labelled there; no second copy in Profile.
+        theme = code(read("Theme", "APlus.swift"))
+        self.assertIn('accessibilityLabel("Back")', theme)
         kit = code(read("Views", "Profile", "ProfileParts.swift"))
-        self.assertIn('accessibilityLabel("Back")', kit)
+        for name in ("APBackButton", "APChevron", "APGlassButton", "APRadio", "APTickBox", "APRingFace"):
+            self.assertNotIn("struct %s" % name, kit)
 
     def test_appearance_is_a_pearl_sheet_not_a_menu(self):
         """G5-SignOut: Appearance picks at once on a Pearl sheet."""
