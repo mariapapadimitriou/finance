@@ -156,8 +156,8 @@ struct SplitSheet: View {
     }
 
     var body: some View {
-        // The keyboard's Done bar (TEST-16) needs a navigation stack to
-        // live in; its own bar stays hidden.
+        // A navigation stack with its bar hidden (it held the stock keyboard
+        // bar until TEST-37; the footer has Done now).
         NavigationStack {
         VStack(spacing: 0) {
             APSheetTitleBar(title: sheetTitle) { dismiss() }
@@ -203,6 +203,8 @@ struct SplitSheet: View {
             // "I had some too" and the meter. Here the scroll view ends where
             // Save begins, and the meter and status line scroll above it.
             footer
+                // TEST-37: Done above the keyboard, Next and Save above both.
+                .keyboardDoneFooter { focused = nil; searching = false }
         }
         .background(APSheetSurface())
         // S-47f (TEST-18): "Priya’s $25.00 is linked…", with Options.
@@ -211,14 +213,8 @@ struct SplitSheet: View {
                 PearlToast(model: m) { withAnimation { lockToast = nil } }.padding(.top, 52)
             }
         }
-        // TEST-16 (designBOT's answer): Done over every number pad here; a
-        // tap on the title closes it too.
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") { focused = nil }.tint(Pearl.action).foregroundColor(Pearl.action)
-            }
-        }
+        // TEST-16 (designBOT's answer): Done over every number pad here,
+        // now the footer's own (TEST-37); a tap on the title closes it too.
         .toolbar(.hidden, for: .navigationBar)
         }
         .presentationDetents([.large])
