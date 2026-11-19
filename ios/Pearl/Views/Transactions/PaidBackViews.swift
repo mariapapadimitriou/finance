@@ -38,36 +38,41 @@ struct PaidBackWhoSheet: View {
         return [p] + all.filter { $0 != p }
     }
 
+    /// G2-WhoPaid: the payment's name is the display title ("e-Transfer from
+    /// Sam Lee") and the amount and day are its line ("+$15.00 · Nov 16").
+    private var parts: (title: String, line: String) {
+        let bits = sub.components(separatedBy: " · ")
+        guard bits.count >= 3 else { return (sub, "") }
+        return (bits[1...].dropLast().joined(separator: " · "), [bits[0], bits[bits.count - 1]].joined(separator: " · "))
+    }
+
     var body: some View {
-        PearlSheet {
-            PearlSheetHeader(face: face, overline: "Paid back", title: "Who paid you back?", sub: sub,
-                             subTone: Pearl.moneyIn, close: onClose)
-            PearlSectionLabel(text: "Pick one")
-            PearlOptionCard {
-                ForEach(Array(order.enumerated()), id: \.element) { i, who in
-                    if i > 0 { PearlDivider() }
-                    row(who)
-                }
+        APSheet {
+            APSheetHeader(heading: "Who paid you back?", face: face, overline: "Paid back", title: parts.title,
+                          sub: parts.line.isEmpty ? nil : parts.line, close: onClose)
+            // G2-WhoPaid: the three kinds as tiles, two to a row.
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                ForEach(order, id: \.self) { who in tile(who) }
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Pick one")
         }
     }
 
-    /// PAID-02: the picked row says why ("On this split", "your employer",
-    /// "this shop"); The shop otherwise keeps its line.
-    private func row(_ who: PaidBackWho) -> some View {
+    /// PAID-02: the picked tile says why ("On this split", "your employer",
+    /// "this shop"); The shop otherwise says "A refund" (REDESIGN-09).
+    private func tile(_ who: PaidBackWho) -> some View {
         let on = picked == who
         switch who {
         case .person:
-            return PearlOptionRow(symbol: "person.2", title: "A person",
-                                  sub: on && pickedPerson != nil ? "On this split" : nil,
-                                  checked: on) { onPick(.person) }
+            return APTile(symbol: "person", title: "A person",
+                          sub: on && pickedPerson != nil ? "On this split" : nil, current: on) { onPick(.person) }
         case .shop:
-            return PearlOptionRow(symbol: "arrow.uturn.backward", title: "The shop",
-                                  sub: on ? "this shop" : "A refund · which purchase, all of it or your share",
-                                  checked: on) { onPick(.shop) }
+            return APTile(symbol: "bag", title: "The shop", sub: on ? "this shop" : "A refund",
+                          current: on) { onPick(.shop) }
         case .work:
-            return PearlOptionRow(symbol: "briefcase", title: "Work", sub: on ? "your employer" : nil,
-                                  checked: on) { onPick(.work) }
+            return APTile(symbol: "briefcase", title: "Work", sub: on ? "your employer" : nil,
+                          current: on) { onPick(.work) }
         }
     }
 }
@@ -91,11 +96,11 @@ struct PaidBackLetGoSheet: View {
     private var rest: Double { max(0, owes - paid) }
 
     var body: some View {
-        PearlSheet {
-            PearlSheetHeader(overline: "\(name) · \(merchant)", title: "Let the other \(Format.amount(rest)) go?",
-                             close: onClose)
+        APSheet {
+            APSheetHeader(heading: "Let the other \(Format.amount(rest)) go?", close: onClose)
+                .accessibilityHint("\(name) · \(merchant)")
             Text("\(name) paid \(Format.amount(paid)) of \(Format.amount(owes)). Letting it go marks \(name) paid in full, and the other \(Format.amount(rest)) stays yours.")
-                .font(Pearl.text(.headline)).foregroundColor(Pearl.ink)
+                .font(Nacre.body).foregroundColor(Pearl.ink)
                 .fixedSize(horizontal: false, vertical: true)
         } footer: {
             PearlSheetButtons(primary: "Let it go", secondary: "\(name) still owes it",

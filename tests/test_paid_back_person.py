@@ -58,5 +58,5 @@ def test_no_one_owes_her_opens_pb30_other_purchases():
     body = answer.split("private func paidBack(_ who: PaidBackWho)")[1].split("\n    }\n")[0]
     assert "go(.charges)" not in body and "parting = true" in body
     page = (ROOT / "ios/Pearl/Views/Transactions/WhoSentNamePage.swift").read_text()
-    assert 'SheetTitle(title: "Who sent this?")' in page
+    assert 'APSheetTitleBar(title: "Who sent this?")' in page
     assert "confirmationDialog" not in page and ".alert(" not in page

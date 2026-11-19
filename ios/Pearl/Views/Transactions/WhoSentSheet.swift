@@ -69,12 +69,12 @@ struct WhoSentSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: "Who sent this?") { dismiss() }
+            APSheetTitleBar(title: "Who sent this?") { dismiss() }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     if let q = question {
                         // S-35, UI audit: the deposit in money-in green with its "+".
-                        QuestionHeader(name: q.merchant, amount: "+" + Format.amount(q.amount), tone: Pearl.moneyIn,
+                        APQuestionWho(name: q.merchant, amount: "+" + Format.amount(q.amount), tone: Pearl.moneyIn,
                                        sub: "\(Format.short(q.date)) · paid back \(Format.andList(q.purchases.map(\.merchant)))")
                         content(q)
                     } else if loading {
@@ -89,11 +89,11 @@ struct WhoSentSheet: View {
             if question != nil {
                 // Off until she ticks someone; a spinner while it saves.
                 Button("Save") { save() }
-                    .buttonStyle(NacreButtonStyle(busy: busy)).disabled(picked.isEmpty || busy)
+                    .buttonStyle(APPrimaryButtonStyle(busy: busy)).disabled(picked.isEmpty || busy)
                     .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
             }
         }
-        .background(SheetBackground())
+        .background(APSheetSurface())
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .task { await load() }
@@ -118,9 +118,9 @@ struct WhoSentSheet: View {
         let shops = merchants(q)
         Text("ON \(Format.andList(shops).uppercased())").font(Nacre.caption2).tracking(0.4)
             .foregroundColor(Pearl.muted).padding(.horizontal, 16)
-        GlassCard {
+        APCard {
             ForEach(Array(q.shares.enumerated()), id: \.element.id) { i, s in
-                if i > 0 { RowSeparator() }
+                if i > 0 { APSeparator(afterFace: false) }
                 row(s)
             }
         }

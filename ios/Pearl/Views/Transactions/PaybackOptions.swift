@@ -18,27 +18,20 @@ struct PaybackOptionsSheet: View {
     let onUnlink: () -> Void
 
     var body: some View {
-        PearlSheet {
-            HStack(alignment: .top, spacing: 12) {
-                PearlBubble(symbol: PersonOptionsSheet.symbol(link.kind), size: 44)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(overline).font(Pearl.text(.footnote, .medium)).tracking(0.78).foregroundColor(Pearl.muted)
-                    Text(link.dialog).font(Pearl.heading(22, relativeTo: .title2)).foregroundColor(Pearl.ink)
-                        .accessibilityAddTraits(.isHeader)
-                    Text(link.message).font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                PearlCloseButton(action: onClose)
-            }
-            PearlOptionCard {
+        // G2-Payback: "Jo paid back $30.00" centred with ✕, where the money
+        // came from under it, then View… and Unlink…. The overline is spoken.
+        APSheet {
+            APSheetHeader(heading: link.dialog, line: link.message, close: onClose)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(overline.capitalized), \(link.dialog), \(link.message)")
+            APOptionCard {
                 if let view = link.view {
                     // REFRESH-03 (S-05or): the title alone; it still opens here, never the web.
-                    PearlOptionRow(symbol: "eye", title: view.label, action: onView)
-                    PearlDivider()
+                    APOptionRow(symbol: "arrow.left.arrow.right", title: view.label, action: onView)
+                    APSeparator()
                 }
-                PearlOptionRow(symbol: "xmark", title: link.kind == "refund" ? "Unlink refund…" : "Unlink…",
-                               sub: Self.firstSentence(link.sheet.line), action: onUnlink)
+                APOptionRow(symbol: "link", title: link.kind == "refund" ? "Unlink refund…" : "Unlink…",
+                            sub: Self.firstSentence(link.sheet.line), action: onUnlink)
             }
         }
     }
@@ -84,37 +77,25 @@ struct UnlinkLinkSheet: View {
 
     var body: some View {
         let s = link.sheet
-        PearlSheet(dismissDisabled: busy) {
-            HStack(alignment: .top, spacing: 12) {
-                if link.kind == "refund" || link.kind == "reimbursement" {
-                    PearlBubble(symbol: PersonOptionsSheet.symbol(link.kind), size: 44)
-                } else {
-                    PearlFace(name: s.face)
-                }
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(s.overline ?? "UNLINK").font(Pearl.text(.footnote, .medium)).tracking(0.78)
-                        .foregroundColor(Pearl.muted)
-                    Text(link.sheet.heading ?? s.ask ?? s.title).font(Pearl.heading(22, relativeTo: .title2))
-                        .foregroundColor(Pearl.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityAddTraits(.isHeader)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                PearlCloseButton(action: onCancel).disabled(busy)
-            }
-            Text(s.line).font(Pearl.text(.headline)).foregroundColor(Pearl.ink)
+        APSheet(dismissDisabled: busy) {
+            // A+ confirmation (G2-LetGo's shape): the question centred with
+            // ✕, the line, then the payment.
+            APSheetHeader(heading: link.sheet.heading ?? s.ask ?? s.title, close: onCancel)
+                .disabled(busy)
+                .accessibilityHint(s.overline ?? "Unlink")
+            Text(s.line).font(Nacre.body).foregroundColor(Pearl.ink)
                 .fixedSize(horizontal: false, vertical: true)
             if let card = s.card {
                 HStack(spacing: 12) {
-                    PearlBubble(symbol: PersonOptionsSheet.symbol(link.kind), tone: Pearl.moneyIn, size: 36)
-                    Text(card.label).font(Pearl.text(.callout, .medium)).foregroundColor(Pearl.ink)
+                    APIcon(symbol: PersonOptionsSheet.symbol(link.kind), tone: Pearl.moneyIn)
+                    Text(card.label).font(Nacre.body).foregroundColor(Pearl.ink)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
-                    Text(Format.amount(card.amount)).font(Pearl.text(.callout, .semibold)).monospacedDigit()
+                    Text(Format.amount(card.amount)).font(Nacre.headline).monospacedDigit()
                         .foregroundColor(Pearl.moneyIn)
                 }
-                .padding(12)
-                .pearlCard(radius: Pearl.radiusRow)
+                .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 64)
+                .apCard()
                 .accessibilityElement(children: .combine)
                 // S-34sr (REFRESH-03): the footnote about the whole payment is
                 // gone from the sheet; VoiceOver keeps it on the payment row.
@@ -127,7 +108,7 @@ struct UnlinkLinkSheet: View {
                                   busyLabel: "Unlinking…", secondary: s.keep ?? "Keep linked",
                                   onPrimary: { Task { await unlink() } }, onSecondary: onCancel)
                 if let note = s.note {
-                    Text(note).font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
+                    Text(note).font(Nacre.footnote).foregroundColor(Pearl.muted)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 16).padding(.bottom, 12)

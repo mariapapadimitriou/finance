@@ -305,7 +305,8 @@ class TestSwiftWiring:
 
     def test_let_go_copy_says_allowance(self):
         flow = self.src("ios/Pearl/Views/Transactions/SplitFlow.swift")
-        assert 'InfoNote(text: "Your Allowance doesn’t change.")' in flow
+        # G2-LetGo (A+): the line stays, as a quiet footnote under the message.
+        assert 'Text("Your Allowance doesn’t change.")' in flow
         for path in self.SPLIT_FILES:
             assert "safe to spend" not in self.src(path).lower()
 

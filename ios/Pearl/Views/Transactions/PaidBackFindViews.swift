@@ -106,11 +106,11 @@ struct PaidBackFindSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: "What paid this back?", close: onClose).sheetPart()
+            APSheetTitleBar(title: "What paid this back?", close: onClose).sheetPart()
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     if let f = found {
-                        QuestionHeader(name: f.merchant,
+                        APQuestionWho(name: f.merchant,
                                        amount: "\(Format.amount(f.amount)) · your share \(Format.amount(f.share)) · \(Format.short(f.date))",
                                        tone: Pearl.muted, sub: nil)
                             .padding(.bottom, 4)
@@ -145,7 +145,7 @@ struct PaidBackFindSheet: View {
                 .sheetPart()
             }
         }
-        .background(SheetBackground())
+        .background(APSheetSurface())
         .fitsContent()
         .presentationDragIndicator(.visible)
         .task(id: query) {
@@ -181,9 +181,9 @@ struct PaidBackFindSheet: View {
                         .padding(.horizontal, 16).padding(.top, 4)
                         .accessibilityAddTraits(.isHeader)
                 }
-                GlassCard {
+                APCard {
                     ForEach(Array(g.rows.enumerated()), id: \.element.id) { i, c in
-                        if i > 0 { RowSeparator() }
+                        if i > 0 { APSeparator(afterFace: false) }
                         row(c, on: picked?.id == c.id)
                     }
                 }
@@ -282,8 +282,8 @@ struct PaidBackTakeSheet: View {
         let more = Format.amount(t?.more ?? 0)
         let other = t?.other?.merchant ?? ""
         let none = free < 0.005
-        PearlSheet {
-            PearlSheetHeader(overline: "\(c.payer) · +\(Format.amount(c.amount)) · \(Format.short(c.date))",
+        APSheet {
+            APSheetHeader(overline: "\(c.payer) · +\(Format.amount(c.amount)) · \(Format.short(c.date))",
                              title: "Take \(more) from \(other)?", close: onClose)
             Text(none
                  ? "All of this deposit pays back \(other). Taking it means \(other) counts \(more) more again."

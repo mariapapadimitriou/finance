@@ -32,10 +32,10 @@ struct WhoSentNamePage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: "Who sent this?") { onClose() }
+            APSheetTitleBar(title: "Who sent this?") { onClose() }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    QuestionHeader(name: name, amount: amount, tone: Pearl.moneyIn, sub: Format.short(date))
+                    APQuestionWho(name: name, amount: amount, tone: Pearl.moneyIn, sub: Format.short(date))
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass").foregroundColor(Pearl.muted).accessibilityHidden(true)
                         TextField("", text: $text, prompt: Text("Name").foregroundColor(Pearl.muted))
@@ -49,9 +49,9 @@ struct WhoSentNamePage: View {
                     if !shown.isEmpty {
                         Text("RECENT").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
                             .padding(.horizontal, 16)
-                        GlassCard {
+                        APCard {
                             ForEach(Array(shown.enumerated()), id: \.element) { i, n in
-                                if i > 0 { RowSeparator() }
+                                if i > 0 { APSeparator(afterFace: false) }
                                 row(n)
                             }
                         }
@@ -61,11 +61,11 @@ struct WhoSentNamePage: View {
             }
             .scrollDismissesKeyboard(.interactively)
             Button("Continue") { if let n = picked { onPick(n) } }
-                .buttonStyle(NacreButtonStyle())
+                .buttonStyle(APPrimaryButtonStyle())
                 .disabled(picked == nil)
                 .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 8)
         }
-        .background(SheetBackground())
+        .background(APSheetSurface())
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .task { await load() }

@@ -140,12 +140,14 @@ struct WhoPaidPicker: View {
     private func matches(_ name: String) -> Bool { q.isEmpty || name.localizedCaseInsensitiveContains(q) }
 
     var body: some View {
-        PearlSheet {
-            PearlSheetHeader(overline: "Paid back · Who paid", title: "Who paid you back?", sub: sub, close: onClose)
+        APSheet {
+            // G2-WhoPaid (people): the question centred, the payment under it.
+            APSheetHeader(heading: "Who paid you back?", line: sub, close: onClose)
+                .accessibilityHint("Paid back · Who paid")
             searchField
             let shown = top.filter { matches($0.name) }
             if !shown.isEmpty {
-                if let label = topLabel { PearlSectionLabel(text: label) }
+                if let label = topLabel { APSheetLabel(text: label) }
                 card(shown)
             }
             if let only = onlyPast {
@@ -153,7 +155,7 @@ struct WhoPaidPicker: View {
                     r.fixed ? r : (recent ?? []).first { $0.name == r.name }.map { Row(name: r.name, sub: pastLine($0)) } ?? r
                 }
                 if !past.isEmpty {
-                    PearlSectionLabel(text: "From past splits")
+                    APSheetLabel(text: "From past splits")
                     card(past)
                 }
             } else if pastSplits, let recent = recent {
@@ -161,24 +163,22 @@ struct WhoPaidPicker: View {
                 let past = recent.filter { p in matches(p.name) && !top.contains { samePerson($0.name, p.name) } }
                     .map { Row(name: $0.name, sub: pastLine($0)) }
                 if !past.isEmpty {
-                    PearlSectionLabel(text: "From past splits")
+                    APSheetLabel(text: "From past splits")
                     card(past)
                 }
             }
             if someoneNew {
-                PearlOptionCard {
+                APOptionCard {
                     Button { typing = true } label: {
                         HStack(spacing: 12) {
-                            Text("+").font(.custom("Figtree-Medium", size: 13, relativeTo: .footnote))
+                            Text("+").font(.custom("Figtree-Medium", size: 14, relativeTo: .footnote))
                                 .foregroundColor(Pearl.ink)
-                                .frame(width: 40, height: 40).background(Circle().fill(Pearl.bubble))
+                                .frame(width: 40, height: 40).background(Circle().fill(APlus.face))
                                 .accessibilityHidden(true)
                             texts("Someone new", "Type their name")
                             Spacer(minLength: 8)
-                            Image(systemName: "chevron.right").font(.system(size: 14, weight: .medium))
-                                .foregroundColor(Pearl.muted)
                         }
-                        .padding(.vertical, 10).frame(minHeight: 60).contentShape(Rectangle())
+                        .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 60).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityElement(children: .ignore)
@@ -200,22 +200,14 @@ struct WhoPaidPicker: View {
     }
 
     private var searchField: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").foregroundColor(Pearl.muted).accessibilityHidden(true)
-            TextField("", text: $query, prompt: Text("Search people").foregroundColor(Pearl.muted))
-                .font(Pearl.text(.headline)).foregroundColor(Pearl.ink)
-                .textInputAutocapitalization(.words).autocorrectionDisabled()
-                .submitLabel(.search)
-                .accessibilityLabel("Search people")
-        }
-        .padding(.horizontal, 14).frame(minHeight: 44)
-        .background(Capsule().fill(Pearl.control))
+        PearlField(placeholder: "Search people", text: $query, kind: .search)
+            .textInputAutocapitalization(.words).autocorrectionDisabled()
     }
 
     private func card(_ rows: [Row]) -> some View {
-        PearlOptionCard {
+        APOptionCard {
             ForEach(Array(rows.enumerated()), id: \.element.id) { i, r in
-                if i > 0 { PearlDivider() }
+                if i > 0 { APSeparator() }
                 row(r)
             }
         }
@@ -225,15 +217,12 @@ struct WhoPaidPicker: View {
     private func row(_ r: Row) -> some View {
         Button { onPick(r.name) } label: {
             HStack(spacing: 12) {
-                PearlFace(name: r.name, size: 40)
+                APFace(name: r.name, size: 40)
                 texts(r.name, r.sub)
                 Spacer(minLength: 8)
-                if r.ticked {
-                    Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundColor(Pearl.onAction)
-                        .frame(width: 26, height: 26).background(Circle().fill(Pearl.action))
-                }
+                if r.ticked { APTickBox(on: true) }
             }
-            .padding(.vertical, 10).frame(minHeight: 60).contentShape(Rectangle())
+            .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 60).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
@@ -243,8 +232,8 @@ struct WhoPaidPicker: View {
 
     private func texts(_ title: String, _ sub: String) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(title).font(Pearl.text(.headline, .semibold)).foregroundColor(Pearl.ink)
-            Text(sub).font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
+            Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
+            Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
         }
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -341,7 +330,7 @@ struct NoPaidBackCallout: View {
             Image(systemName: "info.circle").font(.system(size: 18)).foregroundColor(Pearl.ink)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Why there’s no Paid back here").font(Pearl.text(.headline, .semibold)).foregroundColor(Pearl.ink)
+                Text("Why there’s no Paid back here").font(Nacre.headline).foregroundColor(Pearl.ink)
                 Text("Both accounts are only yours, so this is your own money moving. If someone else sent it, tap This isn’t a transfer. Then it’s money in, and What was this? offers Paid back.")
                     .font(Pearl.text(.callout)).foregroundColor(Pearl.ink)
             }
@@ -350,7 +339,7 @@ struct NoPaidBackCallout: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .pearlCard(radius: Pearl.radiusTile)
+        .apCard()
         .accessibilityElement(children: .combine)
     }
 }
