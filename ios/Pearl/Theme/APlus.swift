@@ -563,6 +563,8 @@ struct PearlField: View {
     var error: String? = nil
     var identifier: String? = nil
     var submit: () -> Void = {}
+    /// Focus it as it appears (G2-PB30-r: the search a link opened).
+    var autofocus = false
 
     @FocusState private var focused: Bool
     @Environment(\.isEnabled) private var isEnabled
@@ -606,6 +608,10 @@ struct PearlField: View {
             }
         }
         .opacity(isEnabled ? 1 : 0.45)
+        .onAppear {
+            guard autofocus else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { focused = true }
+        }
     }
 }
 
