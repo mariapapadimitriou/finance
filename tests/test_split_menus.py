@@ -408,7 +408,7 @@ class TestLessWords:
         "ios/Pearl/Views/Onboarding/AccountSetupViews.swift": ['title: "Shared with"',
                                                              '"Up to six. Only you see this."'],
         # G2b-Account (rethought, 2026-11-18): AM-08r1's card says it.
-        "ios/Pearl/Views/Profile/JointMergeViews.swift": ['"Only you see their names."', '"Not joint now"'],
+        "ios/Pearl/Views/Profile/JointMergeViews.swift": ['"Only you see their names."', '"Not joint any more"'],
         "ios/Pearl/Info.plist": ["To pick people faster. Pearl keeps only the name."],
         "finance/unlink.py": ['"Unlink and remove"', 'comes off the split too."', "The cash is forgotten",
                               'Part of {_money(whole)} · also paid back', 'waits to be reimbursed again.'],

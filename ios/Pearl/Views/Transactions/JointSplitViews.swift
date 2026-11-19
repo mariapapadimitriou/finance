@@ -93,8 +93,22 @@ struct PeoplePicker: View {
                              close: onClose)
                 .disabled(busy)
             searchField
-            if let refusal = refusal {
-                CautionBanner(text: refusal)
+            if refusal != nil, let who = refused.first(where: { samePerson($0, q) }) {
+                // G2b-SplitCard S-17j: a joint holder is a dimmed row, "Their part is already off".
+                APOptionCard {
+                    HStack(spacing: 12) {
+                        APFace(name: who, size: 40)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(who).font(Nacre.body).foregroundColor(Pearl.ink)
+                            Text("Their part is already off").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 60)
+                    .opacity(0.45)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(refusal ?? "")
+                }
             }
             if let recent = recent {
                 let mine = recent.filter { r in matches(r.name) && !isRefused(r.name) }
@@ -510,6 +524,208 @@ struct JointChips: View {
     }
 }
 
+// MARK: - T-76 Whose was it? (G2b-Whose)
+
+/// G2b-Whose T-76 (rethought, approved 2026-11-18): three tiles that answer
+/// at once (Mine, Sam Lee's); only Part of it asks for an amount, in one big
+/// well with "of $100.00 was yours" and Save. "Always for Pizza Nova" keeps
+/// the answer for the merchant on this account. The same server calls as
+/// TransactionDetailView's WhoseSheet, which this replaces once the purchase
+/// page opens it (the cash flow engBOT's one-line swap).
+struct WhoseTilesSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let t: Transaction
+    let api: APIClient
+    /// What to say, and the server's Undo when there is one.
+    let done: (String, JSONValue?) -> Void
+
+    @State private var mode: String
+    @State private var part: String
+    /// "Always for Pizza Nova" before Mine is tapped, since Mine answers at once.
+    @State private var always = false
+    @State private var splitAlways: Bool
+    @State private var busy = false
+    @State private var error: String?
+    /// AM-21j for this one purchase: someone has paid on its split.
+    @State private var asking: [JointChange]?
+
+    init(t: Transaction, api: APIClient, done: @escaping (String, JSONValue?) -> Void) {
+        self.t = t
+        self.api = api
+        self.done = done
+        let mine = t.splitting != nil ? (t.jointPart ?? t.amount) : t.amount
+        let start = WhoseAnswer.start(mine: mine, full: t.fullAmount ?? t.amount, shareSet: t.shareSet,
+                                      share: t.jointShare)
+        _mode = State(initialValue: start.mode)
+        _part = State(initialValue: start.part)
+        // As WhoseSheet: a part is remembered for the merchant unless it was
+        // already a part without a set share.
+        _splitAlways = State(initialValue: t.jointShare != nil || start.mode != "part")
+    }
+
+    private var full: Double { t.fullAmount ?? t.amount }
+
+    var body: some View {
+        PearlSheet(dismissDisabled: busy) {
+            APSheetTitle(title: "Whose was it?") { dismiss() }
+            WhoseHead(t: t)
+            WhoseTiles(theirs: "\(t.joint)’s", mode: mode, busy: busy) { pick($0) }
+            if mode == "part" {
+                BigAmountWell(text: $part, placeholder: "0.00", label: "Your part", identifier: "whose-part")
+                Text("of \(Format.amount(full)) was yours").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    .frame(maxWidth: .infinity)
+            } else {
+                APCard { APToggleRow(title: "Always for \(t.merchant)", isOn: $always) }.disabled(busy)
+            }
+            if let error = error { APErrorLine(text: error) }
+        } footer: {
+            if mode == "part" {
+                Button(error == nil ? "Save" : "Try again") { Task { await save() } }
+                    .buttonStyle(APPrimaryButtonStyle(busy: busy))
+                    .disabled(busy || !WhoseAnswer.ready(mode: mode, typed: part, full: full))
+                    .accessibilityIdentifier("whose-save")
+            }
+        }
+        .sheet(isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } })) {
+            if let changes = asking {
+                JointChangeSheet(accountName: t.merchant, share: nil, was: nil, holders: [], changes: changes,
+                                 purchase: true, onClose: { asking = nil }) {
+                    try await send(confirm: true)
+                    asking = nil
+                }
+            }
+        }
+    }
+
+    private struct Reply: Decodable {
+        let rule: String?
+        let needsConfirm: Bool?
+        let changes: [JointChange]?
+        let undo: JSONValue?
+        enum CodingKeys: String, CodingKey {
+            case rule, changes, undo
+            case needsConfirm = "needs_confirm"
+        }
+    }
+
+    /// Mine or theirs answer on the tap; Part of it waits for Save.
+    private func pick(_ answer: String) {
+        mode = answer
+        error = nil
+        guard answer != "part" else { return }
+        Task { await save() }
+    }
+
+    private func save() async {
+        busy = true
+        defer { busy = false }
+        do {
+            try await send(confirm: false)
+        } catch {
+            self.error = "That didn’t save. Try again."
+        }
+    }
+
+    private func send(confirm: Bool) async throws {
+        var body: [String: Any] = confirm ? ["confirm": true] : [:]
+        let amount = WhoseAnswer.amount(part)
+        switch mode {
+        case "theirs": body["my_share"] = 0
+        case "part":
+            body["my_share"] = amount ?? 0
+            body["always"] = splitAlways
+        default: body["my_share"] = NSNull()
+        }
+        do {
+            let reply: Reply = try await api.put("api/transactions/\(t.id)/share", body)
+            if reply.needsConfirm == true {
+                asking = reply.changes ?? []
+                return
+            }
+            let mineAlways = mode == "mine" && always
+            if mineAlways {
+                let _: OK = try await api.put("api/transactions/\(t.id)/mine-always", ["on": true])
+            }
+            let said: String
+            switch mode {
+            case "theirs": said = "Now \(t.joint)’s"
+            case "part": said = reply.rule.flatMap { $0.isEmpty ? nil : $0 } ?? "Your part is \(Format.amount(amount ?? 0))"
+            default: said = mineAlways ? "Yours, and every \(t.merchant) from now on" : "Now yours"
+            }
+            // Undo puts her share back; not "every one from now on", which it can't take back.
+            done(said, mineAlways ? nil : reply.undo)
+        } catch let e as APIError {
+            if case .server = e, confirm { throw SplitMenuError(words: e.localizedDescription) }
+            throw e
+        }
+    }
+}
+
+/// "Pizza Nova", "−$100.00 · joint with Sam Lee", its face on the left.
+private struct WhoseHead: View {
+    let t: Transaction
+
+    var body: some View {
+        HStack(spacing: 12) {
+            APFace(name: t.merchant, size: 44)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(t.merchant).font(Nacre.title2).foregroundColor(Pearl.ink).lineLimit(2)
+                Text("\(Format.money(t)) \u{00B7} joint with \(t.joint)").font(Nacre.footnote).foregroundColor(Pearl.muted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Mine · Sam Lee's · Part of it, two to a row.
+private struct WhoseTiles: View {
+    let theirs: String
+    let mode: String
+    let busy: Bool
+    let pick: (String) -> Void
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+            tile("mine", "person", "Mine", "All of it counts")
+            tile("theirs", "person.2", theirs, "None of it counts")
+            tile("part", "fork.knife", "Part of it", "Say how much")
+        }
+        .disabled(busy)
+    }
+
+    private func tile(_ id: String, _ symbol: String, _ title: String, _ sub: String) -> some View {
+        let on = mode == id
+        return Button { pick(id) } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                APIcon(symbol: symbol).padding(.bottom, 8)
+                Text(title).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1).minimumScaleFactor(0.8)
+                Text(sub).font(Nacre.caption1).foregroundColor(Pearl.muted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .apCard()
+            .overlay(RoundedRectangle(cornerRadius: Pearl.radiusCard, style: .continuous)
+                .strokeBorder(on ? Pearl.action : Color.clear, lineWidth: 1.5))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
+        .accessibilityIdentifier("whose-\(id)")
+    }
+}
+
+/// G2b-SplitPart S-03j v2: the header's line for Split my part, which takes
+/// the place of JointStrip: "Your part $50.00 of $100.00 · Sam Lee’s $50.00
+/// stays theirs". For SplitFlow's header (the splits engBOT's file).
+extension Transaction {
+    var splitMyPartLine: String {
+        let whole = fullAmount ?? amount
+        return "Your part \(Format.amount(splitBase)) of \(Format.amount(whole)) \u{00B7} "
+            + "\(possessive(jointWho)) \(Format.amount(whole - splitBase)) stays theirs"
+    }
+}
+
 // MARK: - S-03j's strip and S-04j's card (JOINT-B)
 
 extension Transaction {
@@ -571,7 +787,8 @@ struct JointPartCard: View {
             APOptionCard {
                 ForEach(Array(holders.enumerated()), id: \.offset) { i, h in
                     if i > 0 { APSeparator() }
-                    line(face: h.name, title: h.name, sub: "On this account · their part", amount: h.amount)
+                    // G2b-SplitCard S-04j: "Their part, on this account".
+                    line(face: h.name, title: h.name, sub: "Their part, on this account", amount: h.amount)
                         .accessibilityLabel("\(h.name), on this account, their part, \(Format.amount(h.amount)), not owed to you")
                         // REFRESH-03 (S-04j): the footnote under the card is gone; this row says it.
                         .accessibilityHint("Only the people in your split owe you.")
@@ -759,24 +976,22 @@ struct JointChangeSheet: View {
 
     var body: some View {
         APSheet(dismissDisabled: busy) {
-            APSheetHeader(symbol: "person.2",
-                             overline: purchase ? "\(accountName) · Whose was it?"
-                                 : share == nil ? accountName : "\(accountName) · Your share",
-                             title: title,
-                             sub: share == nil && !purchase ? "Every purchase on it will count as all yours."
-                                 : "Someone already paid you back on \(purchase ? "this split" : "a split purchase").",
-                             close: onClose)
+            // G2b-Share (AM-21j, AM-08n): the question, one sentence, WHAT
+            // CHANGES, each purchase on one line.
+            APSheetHeader(heading: title, close: onClose)
                 .disabled(busy)
-            APSheetLabel(text: share == nil ? "Split purchases" : "Split purchases that change")
+            Text(sentence).font(Nacre.body).foregroundColor(Pearl.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            APSheetLabel(text: "What changes")
             APOptionCard {
                 ForEach(Array(changes.enumerated()), id: \.element.id) { i, c in
                     if i > 0 { APSeparator() }
-                    HStack(alignment: .top, spacing: 12) {
-                        APFace(name: c.merchant, size: 40)
+                    HStack(alignment: .center, spacing: 12) {
+                        APFace(name: c.merchant, size: 36)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("\(c.merchant) · \(Format.short(c.date))").font(Pearl.text(.headline, .medium))
+                            Text("\(c.merchant) · \(Format.short(c.date))").font(Nacre.body)
                                 .foregroundColor(Pearl.ink)
-                            Text(line(c)).font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
+                            Text(line(c)).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(2)
                         }
                         .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)
@@ -785,13 +1000,12 @@ struct JointChangeSheet: View {
                     .accessibilityElement(children: .combine)
                 }
             }
-            // REFRESH-03 (AM-08n, AM-21j).
-            Text(share == nil && !purchase
-                 ? "\(holders.isEmpty ? "No one" : Format.andList(holders)) \(holders.count > 1 ? "come" : "comes") off this account."
-                 : "Typed amounts stay. Even, % and shares update.")
-                .font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
-                .fixedSize(horizontal: false, vertical: true)
-            if let failed = failed { CautionBanner(text: failed) }
+            if share != nil || purchase {
+                Text("Typed amounts stay. Even, % and shares update.")
+                    .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let failed = failed { APErrorLine(text: failed) }
         } footer: {
             PearlSheetButtons(primary: failed != nil ? "Try again"
                                   : purchase ? "Change my part"
@@ -819,6 +1033,16 @@ struct JointChangeSheet: View {
     }
 
     static func pct(_ x: Double) -> String { x == x.rounded() ? "\(Int(x))%" : String(format: "%.1f%%", x) }
+
+    /// "Every purchase on it counts as all yours. Sam Lee and Maya Reyes
+    /// come off it." or "Someone already paid you back on a split purchase."
+    private var sentence: String {
+        if share == nil && !purchase {
+            let who = holders.isEmpty ? "" : " \(Format.andList(holders)) \(holders.count > 1 ? "come" : "comes") off it."
+            return "Every purchase on it counts as all yours." + who
+        }
+        return "Someone already paid you back on \(purchase ? "this split" : "a split purchase")."
+    }
 
     private func save() async {
         busy = true

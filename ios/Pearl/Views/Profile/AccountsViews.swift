@@ -539,6 +539,7 @@ struct AccountDetailView: View {
     @State private var all: [AccountsOverview.Account] = []
     /// Combined away while AM-09 was open: nothing left to show here.
     @State private var gone = false
+    @State private var combining = false
     @State private var renaming = false
     @State private var nickname = ""
     @State private var removing = false
@@ -602,18 +603,12 @@ struct AccountDetailView: View {
                 .accessibilityIdentifier("account-nickname")
                 if !account.copies(among: all).isEmpty {
                     APSeparator(afterFace: false)
-                    NavigationLink {
-                        SameAccountView(account: account, all: all) { text, goneId in
-                            if goneId == account.id {
-                                gone = true
-                            } else {
-                                withAnimation { toast = (text, nil) }
-                            }
-                        }
-                    } label: {
+                    // G2b-Combine AM-09: a Pearl sheet now, not a page.
+                    Button { combining = true } label: {
                         ProfileRow(title: "Same account twice?")
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("same-account-twice")
                 }
             }
 
@@ -651,7 +646,7 @@ struct AccountDetailView: View {
                     app.changed()
                     let undo = reply.undo
                     withAnimation {
-                        toast = ("\(account.name) isn’t joint any more. Your splits stay.", undo.map { u in {
+                        toast = ("Not joint any more", undo.map { u in {
                             Task {
                                 guard let body = u.any as? [String: Any] else { return }
                                 let _: OK? = try? await app.api.post("api/transactions/undo", body)
@@ -660,6 +655,15 @@ struct AccountDetailView: View {
                             }
                         } })
                     }
+                }
+            }
+        }
+        .sheet(isPresented: $combining, onDismiss: { if gone { dismiss() } }) {
+            SameAccountView(account: account, all: all) { text, goneId in
+                if goneId == account.id {
+                    gone = true
+                } else {
+                    withAnimation { toast = (text, nil) }
                 }
             }
         }

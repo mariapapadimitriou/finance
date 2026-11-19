@@ -208,10 +208,12 @@ struct JointAccountView: View {
                 let reply = try await put(body)
                 asking = nil
                 if a.share == nil {
-                    show("Not joint now", undo: reply?.undo)  // AM-08n1 (REFRESH-03)
+                    show("Not joint any more", undo: reply?.undo)  // G2b-Share AM-08n1
                 } else {
                     syncShare()
-                    show(reply?.toast ?? "Your share is changed", undo: reply?.undo)
+                    // G2b-Share AM-21j1: "Your share is now 60%".
+                    show(account.jointShare.map { "Your share is now \(JointChangeSheet.pct($0))" }
+                         ?? "All yours now", undo: reply?.undo)
                 }
             }
         }
@@ -530,52 +532,62 @@ struct SameAccountView: View {
         return kept.id == account.id ? candidates.first : account
     }
 
+    /// G2b-Combine AM-09 (rethought, approved 2026-11-18): a Pearl sheet.
+    /// Pick which stays, one sentence says the result, Not now is quiet.
+    /// With nothing like it: one line and Got it.
     var body: some View {
-        ProfilePage {
-            ProfileHeading(title: "Same account twice?", intro: "Combine them so nothing shows twice.")
+        PearlSheet(dismissDisabled: busy) {
+            APSheetTitle(title: "Same account twice?") { dismiss() }
             if candidates.isEmpty {
-                ProfileNote("There’s no other account of the same kind to combine with.").padding(.top, 8)
+                Text("There’s no other account like it to combine with.")
+                    .font(Nacre.body).foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 ProfileSection("Keep")
                 APCard {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { i, a in
                         if i > 0 { APSeparator(afterFace: false) }
-                        PickRow(title: a.label, sub: line(a), selected: keep == a.id) { keep = a.id }
+                        PickRow(title: [a.label, (a.mask ?? "").isEmpty ? nil : "••\(a.mask!)"].compactMap { $0 }
+                                    .joined(separator: " "),
+                                sub: line(a), selected: keep == a.id) { keep = a.id }
                     }
                 }
-                if let note = note { ProfileNote(note).padding(.top, 4) }
+                if let note = note {
+                    Text(note).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                        .multilineTextAlignment(.center).frame(maxWidth: .infinity)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            if let error = error { Hint(text: error).padding(.top, 4) }
-        } bottom: {
-            if !candidates.isEmpty {
+            if let error = error { APErrorLine(text: error) }
+        } footer: {
+            if candidates.isEmpty {
+                Button("Got it") { dismiss() }.buttonStyle(APPrimaryButtonStyle())
+            } else {
                 Button("Combine them") { Task { await combine() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
+                    .buttonStyle(APPrimaryButtonStyle(busy: busy))
                     .disabled(busy || copy == nil)
+                APQuietButton(title: "Not now", identifier: "combine-not-now") { dismiss() }
+                    .frame(maxWidth: .infinity)
+                    .disabled(busy)
             }
         }
         .task(id: keep) { await loadPreview() }
     }
 
-    /// "Linked · 312 transactions".
+    /// "Linked · keeps syncing", "Added by you".
     private func line(_ a: AccountsOverview.Account) -> String {
-        let source = a.status == "manual" ? "Imported" : a.status == "disconnected" ? "Disconnected" : "Linked"
-        let n = a.transactions ?? 0
-        return "\(source) · \(n) transaction\(n == 1 ? "" : "s")"
+        if a.isHand || a.status == "manual" { return "Added by you" }
+        if a.status == "disconnected" { return "Disconnected" }
+        return keep == a.id ? "Linked \u{00B7} keeps syncing" : "Linked"
     }
 
-    /// "291 purchases are in both. Your categories and splits stay." and what
-    /// happens to the copy, since combining can't be undone.
+    /// "291 are in both, 7 move across. Your categories and splits stay."
     private var note: String? {
-        guard let copy = copy else { return nil }
-        let leaves = "\(copy.name) leaves Accounts and stops syncing."
-        let word = account.isCard ? "purchase" : "transaction"
-        guard let p = preview else { return "Your categories and splits stay. \(leaves)" }
-        var out = p.matched == 0 ? "Nothing is in both."
-            : "\(p.matched) \(word)\(p.matched == 1 ? " is" : "s are") in both. Your categories and splits stay."
-        if p.moved > 0 {
-            out += " \(p.moved) only on \(copy.name) move\(p.moved == 1 ? "s" : "") across."
-        }
-        return "\(out) \(leaves)"
+        guard copy != nil else { return nil }
+        guard let p = preview else { return "Your categories and splits stay." }
+        var out = p.matched == 0 ? "Nothing is in both" : "\(p.matched) \(p.matched == 1 ? "is" : "are") in both"
+        if p.moved > 0 { out += ", \(p.moved) move\(p.moved == 1 ? "s" : "") across" }
+        return out + ". Your categories and splits stay."
     }
 
     private func loadPreview() async {
