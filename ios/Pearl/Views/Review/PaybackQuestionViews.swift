@@ -99,51 +99,89 @@ private struct PaybackHeader: View {
     }
 }
 
-/// PQ-03p: the flat "Not sorted yet" bar, as Pearl's guess in words on a
-/// dashed card ("Paying you back for Añejo?"). It opens the question.
+/// PQ-03p (G2-APQ): A QUESTION over a plain card: the purchase's icon,
+/// "Paying you back for Añejo?" over "Oct 31 · about a third", and Yes /
+/// Not this as pill buttons under it. Yes answers Pearl's guess (the first
+/// tile) as the sheet's tile would; Not this opens the whole question.
 struct PaybackQuestionCard: View {
-    let card: PaybackQuestion.Card
-    let action: () -> Void
+    let question: PaybackQuestion
+    let onYes: () -> Void
+    let onNot: () -> Void
 
     var body: some View {
-        // A+ (AP-Sheet): Pearl's guess on a dashed rose card, radius 18.
-        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
-        Button(action: action) {
-            HStack(spacing: 12) {
-                CFIcon(symbol: "person.2")
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(card.title).font(Nacre.headline).foregroundColor(Pearl.ink)
-                    Text(card.line).font(Nacre.footnote).foregroundColor(Pearl.muted)
+        let guess = question.tiles.first
+        VStack(alignment: .leading, spacing: 8) {
+            APSectionLabel(text: "A question")
+            APCard {
+                VStack(alignment: .leading, spacing: 0) {
+                    // kit `.row.noface`: the 36 pt icon, the title (17) over its line (15).
+                    HStack(spacing: 12) {
+                        CFIcon(symbol: guess.map { CategorySheet.symbol(for: $0.category) } ?? "person.2")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(question.card.title).font(Nacre.body).foregroundColor(Pearl.ink)
+                            Text(Self.line(question)).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 4)
+                    .accessibilityElement(children: .combine)
+                    HStack(spacing: 8) {
+                        if guess != nil {
+                            APPillButton(title: "Yes", identifier: "payback-question-yes", action: onYes)
+                                .accessibilityLabel("Yes, \(question.card.title.dropLast())")
+                        }
+                        APPillButton(title: "Not this", quiet: true, identifier: "payback-question-not", action: onNot)
+                            .accessibilityHint("Shows the other answers")
+                    }
+                    .padding(.leading, 64).padding(.trailing, 16).padding(.bottom, 8)
                 }
-                .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
             }
-            .padding(.horizontal, 16).padding(.vertical, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(shape.fill(APlus.card))
-            .overlay(shape.strokeBorder(Pearl.action, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])))
-            .contentShape(shape)
         }
-        .buttonStyle(TilePress())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(card.title) \(card.line)")
-        .accessibilityAddTraits(.isButton)
+    }
+
+    /// "Oct 31 · about a third": the server's "Pearl’s guess · about a
+    /// third" with the purchase's day in place of the words (the card says
+    /// it's a question already).
+    static func line(_ q: PaybackQuestion) -> String {
+        guard let tile = q.tiles.first else { return q.card.line }
+        let rest = q.card.line.replacingOccurrences(of: "Pearl’s guess", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: " ·"))
+        return [Format.short(tile.date), rest].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 }
 
-/// PQ-03p: "Name them" under the name, in place of the grey Not counted pill.
-struct NameThemPill: View {
+/// PQ-03p (G2-APQ): "Name them" in `link` on its own line under the hero's
+/// date, while the bank's name is all Pearl has. No pill in the corner.
+struct NameThemLink: View {
     let action: () -> Void
 
     var body: some View {
-        // A+ kit `.pill`, its word in `link`.
         Button("Name them", action: action)
-            .font(Nacre.footnote).foregroundColor(Pearl.link)
-            .padding(.horizontal, 12).frame(height: 28)
-            .background(Capsule().fill(APlus.chip))
+            .font(Nacre.subheadline).foregroundColor(Pearl.link)
             .buttonStyle(.plain)
-            .padding(.top, 4)
+            .frame(minHeight: 44).padding(.vertical, -12)
+            .contentShape(Rectangle())
             .accessibilityHint("Opens Who sent this?")
+    }
+}
+
+extension PaybackQuestion {
+    /// PQ-03's tile (2026-11-16): the person to open PB-30 for, with this
+    /// purchase ticked, when the money is more than the tile's share and that
+    /// person owes on other purchases; nil for the single tap. Offline, nil.
+    /// Shared by the sheet's tile and PQ-03p's Yes.
+    static func partsPerson(api: APIClient, id: String, amount: Double, tile: Tile) async -> String? {
+        struct Reply: Decodable { let from: String?; let items: [Lenient<PartsSheet.Owing>] }
+        let r: Reply? = try? await api.get("api/transactions/\(id)/owing",
+                                           query: tile.person.map { ["person": $0] } ?? [:])
+        let theirs = (r?.items ?? []).compactMap(\.value)
+            .filter { $0.theirs == true && $0.unknown != true && $0.owes >= 0.005 }
+        let cents: (Double) -> Int = { Int((abs($0) * 100).rounded()) }
+        if let from = r?.from, let share = theirs.first(where: { $0.charge == tile.charge }),
+           cents(amount) > cents(share.owes), theirs.count > 1 {
+            return from
+        }
+        return nil
     }
 }

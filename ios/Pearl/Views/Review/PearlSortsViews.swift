@@ -130,6 +130,8 @@ struct PatternWhySheet: View {
     @State private var error: String?
     @State private var showing: [String]?
     @State private var opening: String?
+    /// G7-AutoSort-r: More options opened in place.
+    @State private var moreOptions = false
 
     var body: some View {
         NavigationStack {
@@ -163,47 +165,47 @@ struct PatternWhySheet: View {
         }
     }
 
+    /// G7-AutoSort-r (AI-03, rethought, approved): "Why Pearl sorted this"
+    /// with ✕; the row (face, "Farm Boy · −$27.80" over "Groceries · Nov
+    /// 15"); one line, "Like your last 5 at Farm Boy."; one Primary, "Undo
+    /// this one"; and "More options", which opens See the n, Change it… and
+    /// Stop sorting like this in place.
     @ViewBuilder private func content(_ r: PatternRecord) -> some View {
         let n = r.patternCount ?? r.answered?.count ?? 0
         let sortedCount = r.sortedByPattern?.count ?? 1
         let amount = (r.amount < 0 ? "+" : "\u{2212}") + Format.amount(abs(r.amount))
-        PearlSheetHeader(face: r.merchant, overline: "\(r.merchant) · \(amount)",
-                         title: r.isJoint ? "\(r.label ?? r.answer) of \(r.joint ?? r.account ?? "Joint")" : (r.label ?? r.answer),
-                         sub: "Pearl sorted this · \(Format.short(r.day))", subTone: Pearl.moneyIn, close: onClose)
-        APSectionLabel(text: "Why")
-        VStack(spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                PearlBubble(symbol: r.isJoint ? "person.2" : CategorySheet.symbol(for: r.answer), tone: r.isJoint ? Pearl.moneyIn : Pearl.action)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(r.isJoint ? "Like the last \(n) from \(r.firstName)" : "Like your last \(n) at \(r.patternMerchant ?? r.merchant)")
-                        .font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                    // AI-03 / AI-03b (AI-03c): when she said yes, after how many of her own.
-                    Text(r.confirmed?.line ?? (r.isJoint ? "All into \(r.account ?? "the joint account"), all sorted as \(r.label ?? r.answer) by you"
-                         : "All sorted as \(r.answer) by you"))
-                        .font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-            }
-            .accessibilityElement(children: .combine)
-            HStack(spacing: 8) {
-                Button("See the \(n)") { showing = r.answered ?? [] }.buttonStyle(PearlPillButtonStyle())
-                Button("Change it…") { opening = r.txn }.buttonStyle(PearlPillButtonStyle())
-            }
-        }
-        .padding(16)
-        .apCard()
-        APSectionLabel(text: "Undo")
-        PearlOptionCard {
-            PearlOptionRow(symbol: r.isJoint ? "person.2" : "arrow.uturn.backward", title: "Undo this one") {
-                Task { await undo(r) }
-            }
-            PearlDivider()
-            PearlOptionRow(symbol: "person", title: "Stop sorting like this",
-                           sub: "Undoes the \(sortedCount)") { stopping = true }
-        }
-        .disabled(busy)
+        APSheetTitle(title: "Why Pearl sorted this", close: onClose)
+        APWho(face: r.merchant, name: "\(r.merchant) · \(amount)",
+              line: [r.isJoint ? "\(r.label ?? r.answer) of \(r.joint ?? r.account ?? "Joint")" : (r.label ?? r.answer),
+                     Format.short(r.date)].joined(separator: " · "))
+        Text(r.isJoint ? "Like the last \(n) from \(r.firstName)." : "Like your last \(n) at \(r.patternMerchant ?? r.merchant).")
+            .font(Nacre.body).foregroundColor(Pearl.ink)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 4).padding(.top, 2)
         if let error = error { CautionBanner(text: error) }
+        Button("Undo this one") { Task { await undo(r) } }
+            .buttonStyle(APPrimaryButtonStyle(busy: busy))
+            .disabled(busy)
+            .padding(.top, 4)
+        if moreOptions {
+            PearlOptionCard {
+                PearlOptionRow(symbol: "list.bullet", title: "See the \(n)") { showing = r.answered ?? [] }
+                PearlDivider()
+                PearlOptionRow(symbol: "pencil", title: "Change it…") { opening = r.txn }
+                PearlDivider()
+                PearlOptionRow(symbol: "person", title: "Stop sorting like this",
+                               sub: "Undoes the \(sortedCount)") { stopping = true }
+            }
+            .disabled(busy)
+        } else {
+            Button { withAnimation(.easeOut(duration: 0.2)) { moreOptions = true } } label: {
+                Text("More options").font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+                    .foregroundColor(Pearl.link)
+                    .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("See them, change it, or stop sorting like this")
+        }
     }
 
     private func load() async {

@@ -798,8 +798,8 @@ struct TransactionsView: View {
     /// grid. TR-11 / TR-12: one action.
     ///
     /// A+ (G1-Select, kit `.selbar`): a floating card 12 in from the sides,
-    /// radius 28, the actions as 40 pt chips; Confirm takes its own row in
-    /// rose under them.
+    /// radius 28, the actions as 40 pt chips; TR-07 (G7-TripMore): Make a
+    /// trip takes its own row in rose, and Confirm its own row under it.
     private var selectionBar: some View {
         VStack(spacing: 8) {
             if let p = tripPick {
@@ -808,16 +808,19 @@ struct TransactionsView: View {
                     tripChange(p)
                 }
             } else {
+                // TR-07 (G7-TripMore, kit `.selbar`): Category and Mark as… on
+                // the first row, Make a trip on its own row in rose, then
+                // Confirm on its own row.
                 HStack(spacing: 8) {
                     barButton("Category") { bulk = .category }
                     barButton("Mark as…") { bulk = .mark }
-                    barButton("Make a trip") { tripName = ""; makingTrip = true }
                     if guesses == 0 {
                         barButton("Leave out") { leavingOut = true }
                     }
                 }
+                barButton("Make a trip", on: true) { tripName = ""; makingTrip = true }
                 if guesses > 0 {
-                    barButton("Confirm \(guesses)", on: true) {
+                    barButton("Confirm \(guesses)") {
                         let ids = pickedRows.filter(\.suggested).map(\.id)
                         Task { await change(["ids": ids], path: "api/transactions/batch/confirm") }
                     }
@@ -1367,7 +1370,7 @@ struct TransactionRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(t.merchant).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
                 if !meta.isEmpty {
-                    Text(meta).font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(splitNote == nil ? 1 : 2)
+                    metaText.font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(splitNote == nil ? 1 : 2)
                 }
                 if let extra = extra {
                     Text(extra).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(1)
@@ -1403,6 +1406,15 @@ struct TransactionRow: View {
         .accessibilityAction(named: "Confirm \(t.label)") {
             if t.suggested, !t.asks { onConfirm?() }
         }
+    }
+
+    /// TR-05 (G7-TripMore): the meta line with the trip's name in `action`,
+    /// "Lodging · Trip to Montréal".
+    private var metaText: Text {
+        let line = meta
+        guard showsTrip, let trip = t.trip?.name, !trip.isEmpty, let r = line.range(of: trip) else { return Text(line) }
+        return Text(String(line[..<r.lowerBound])) + Text(trip).foregroundColor(Pearl.action)
+            + Text(String(line[r.upperBound...]))
     }
 
     /// "Health · Today"; "Today · Pending" while it's a guess; "Paid back · Sushi Nami".
@@ -1685,6 +1697,8 @@ struct FilterSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var open: Row?
     @State private var allMonths = false
+    /// G1-Search-r: More filters opened in place.
+    @State private var more: Bool
 
     enum Row { case month, accounts, category, tags, amount, sort, only, merchant }
 
@@ -1693,6 +1707,10 @@ struct FilterSheet: View {
          onApply: @escaping (TxFilters, String?) -> Void) {
         _filters = State(initialValue: filters)
         _month = State(initialValue: month)
+        // G1-Search-r: the rest opens already when one of them is on.
+        var bare = TxFilters(sort: .newest)
+        bare.types = filters.types
+        _more = State(initialValue: filters != bare)
         initialMonth = month
         self.months = months
         self.accounts = accounts
@@ -1722,17 +1740,36 @@ struct FilterSheet: View {
                         }
                     }
                     .padding(.vertical, -5)
-                    heading("Spending type").padding(.top, 20)
-                    Chips {
-                        ForEach(TxFilters.groupNames, id: \.key) { g in
-                            CFChip(label: g.name, on: filters.groups.contains(g.key)) {
-                                filters.groups.formSymmetricDifference([g.key])
+                    // G1-Search-r (T-17, approved): Month on its own card,
+                    // then every other filter behind one "More filters" row,
+                    // which opens them in place, on this sheet.
+                    if !months.isEmpty {
+                        APCard { OwnBody { monthRows } }.padding(.top, 16)
+                    }
+                    if more {
+                        heading("Spending type").padding(.top, 20)
+                        Chips {
+                            ForEach(TxFilters.groupNames, id: \.key) { g in
+                                CFChip(label: g.name, on: filters.groups.contains(g.key)) {
+                                    filters.groups.formSymmetricDifference([g.key])
+                                }
                             }
                         }
+                        .padding(.vertical, -5)
+                        APCard { OwnBody { rows } }.padding(.top, 16)
+                        APCard { leftOutToggle }.padding(.top, 12)
+                    } else {
+                        APCard {
+                            Button { more = true } label: {
+                                CFRowLabel(symbol: "ellipsis", title: "More filters",
+                                           sub: "Accounts, category, amount, sort, merchant, left out",
+                                           trailing: .chevron)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Shows the other filters here")
+                        }
+                        .padding(.top, 12)
                     }
-                    .padding(.vertical, -5)
-                    APCard { OwnBody { rows } }.padding(.top, 16)
-                    APCard { leftOutToggle }.padding(.top, 12)
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 24)
@@ -1757,20 +1794,21 @@ struct FilterSheet: View {
         .padding(.horizontal, 16).frame(minHeight: 64)
     }
 
-    @ViewBuilder private var rows: some View {
-        if !months.isEmpty {
-            row(.month, "Month", month.map { Format.monthName($0) } ?? "This month")
-            if open == .month {
-                let shownMonths = allMonths ? Array(months.reversed()) : Array(months.suffix(4).reversed())
-                ForEach(shownMonths, id: \.self) { m in
-                    option(allMonths ? Format.month(m) : Format.monthName(m), on: month == m) { month = m }
-                }
-                if months.count > 4 && !allMonths {
-                    option("Earlier months", on: false) { allMonths = true }
-                }
+    /// Month, and its months in place once tapped (T-17b).
+    @ViewBuilder private var monthRows: some View {
+        row(.month, "Month", month.map { Format.monthName($0) } ?? "This month")
+        if open == .month {
+            let shownMonths = allMonths ? Array(months.reversed()) : Array(months.suffix(4).reversed())
+            ForEach(shownMonths, id: \.self) { m in
+                option(allMonths ? Format.month(m) : Format.monthName(m), on: month == m) { month = m }
             }
-            APSeparator(afterFace: false)
+            if months.count > 4 && !allMonths {
+                option("Earlier months", on: false) { allMonths = true }
+            }
         }
+    }
+
+    @ViewBuilder private var rows: some View {
         if !accounts.isEmpty {
             row(.accounts, "Accounts", accountsValue)
             if open == .accounts {

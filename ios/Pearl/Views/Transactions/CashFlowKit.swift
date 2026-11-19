@@ -671,6 +671,151 @@ struct CFChip: View {
     }
 }
 
+// MARK: - G2-BCard2 S-04ul / S-04ue
+
+/// S-04ul / S-04ue (G2-BCard2): the split card before the purchase has
+/// loaded: its heading, then two grey rows (a 40 pt disc over 12 pt bars,
+/// 50% and 30% wide, `track2`); or, if it didn't load, "Couldn’t load the
+/// split." over Try again (kit `.btn2`) on a 120 pt card. "See who else owes
+/// you" under it either way. Edit split waits for the split itself.
+struct SplitCardPending: View {
+    let heading: String
+    let failed: Bool
+    let busy: Bool
+    let onRetry: () -> Void
+    let onOwed: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            APSectionLabel(text: heading).padding(.top, 16).padding(.bottom, 8)
+            APCard {
+                if failed {
+                    VStack(spacing: 10) {
+                        Text("Couldn’t load the split.").font(Nacre.body).foregroundColor(Pearl.muted)
+                        Button("Try again", action: onRetry)
+                            .buttonStyle(APSecondaryButtonStyle())
+                            .disabled(busy)
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, minHeight: 120)
+                } else {
+                    VStack(spacing: 0) {
+                        skeletonRow
+                        skeletonRow
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Loading the split")
+                }
+            }
+            Button(action: onOwed) {
+                Text("See who else owes you")
+                    .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline)).foregroundColor(Pearl.link)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 2)
+        }
+    }
+
+    /// kit `.prow`: 60 high, 10 × 16 padding.
+    private var skeletonRow: some View {
+        HStack(spacing: 12) {
+            Circle().fill(APlus.trackSoft).frame(width: 40, height: 40)
+            VStack(alignment: .leading, spacing: 8) {
+                GeometryReader { g in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Capsule().fill(APlus.trackSoft).frame(width: g.size.width * 0.5, height: 12)
+                        Capsule().fill(APlus.trackSoft).frame(width: g.size.width * 0.3, height: 12)
+                    }
+                }
+                .frame(height: 32)
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 60)
+    }
+}
+
+// MARK: - G2b-Purchase S-01jr / S-01jr2
+
+/// S-01jr / S-01jr2 (G2b-Purchase, rethought, approved): whose a joint
+/// purchase was, as a bar: "Half each with Sam Lee" (600) with Change, a
+/// 10 pt bar in two segments 4 apart (hers in `money-out`, theirs in
+/// `track2`), and "You $50.00" / "Sam Lee $50.00" in 13 muted under it.
+/// "All yours" is one full segment. Change opens T-76 Whose was it?.
+struct JointShareBarCard: View {
+    let t: Transaction
+    let onChange: () -> Void
+
+    var body: some View {
+        let whole = abs(t.fullAmount ?? t.amount)
+        let mine = min(max(t.splitBase, 0), whole)
+        let theirs = max(whole - mine, 0)
+        APCard {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text(t.jointShareTitle).font(.custom("Figtree-SemiBold", size: 17, relativeTo: .body))
+                        .foregroundColor(Pearl.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Button("Change", action: onChange)
+                        .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline)).foregroundColor(Pearl.link)
+                        .buttonStyle(.plain)
+                        .frame(minHeight: 44).padding(.vertical, -12)
+                        .contentShape(Rectangle())
+                        .accessibilityLabel("Change whose it was")
+                }
+                GeometryReader { g in
+                    let gap: CGFloat = mine >= 0.005 && theirs >= 0.005 ? 4 : 0
+                    let w = max(g.size.width - gap, 0)
+                    HStack(spacing: gap) {
+                        if mine >= 0.005 {
+                            Capsule().fill(Pearl.moneyOut).frame(width: whole > 0 ? w * mine / whole : 0)
+                        }
+                        if theirs >= 0.005 {
+                            Capsule().fill(APlus.trackSoft).frame(width: whole > 0 ? w * theirs / whole : w)
+                        }
+                    }
+                }
+                .frame(height: 10)
+                .padding(.top, 12)
+                HStack {
+                    Text("You \(Format.amount(mine))")
+                    Spacer(minLength: 8)
+                    if theirs >= 0.005 { Text("\(t.jointWho) \(Format.amount(theirs))").lineLimit(1) }
+                }
+                .font(.custom("Figtree-Regular", size: 13, relativeTo: .footnote)).foregroundColor(Pearl.muted)
+                .padding(.top, 8)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 14)
+            .accessibilityElement(children: .combine)
+        }
+    }
+}
+
+extension Transaction {
+    /// G2b-Purchase: "Half each with Sam Lee", "All yours", "Sam Lee’s", or
+    /// "Yours $30.00 · with Sam Lee".
+    var jointShareTitle: String {
+        let whole = abs(fullAmount ?? amount)
+        let mine = splitBase
+        if mine >= whole - 0.005 { return "All yours" }
+        if mine < 0.005 { return "\(possessive(jointWho))" }
+        if jointPeople.count <= 1, abs(mine * 2 - whole) < 0.015 { return "Half each with \(jointWho)" }
+        return "Yours \(Format.amount(mine)) · with \(jointWho)"
+    }
+
+    /// T-06jr's value beside Whose was it?: "Half each", "Sam Lee’s", "Yours".
+    var jointShareValue: String {
+        let whole = abs(fullAmount ?? amount)
+        let mine = splitBase
+        if mine >= whole - 0.005 { return "Yours" }
+        if mine < 0.005 { return possessive(jointWho) }
+        if jointPeople.count <= 1, abs(mine * 2 - whole) < 0.015 { return "Half each" }
+        return "Yours \(Format.amount(mine))"
+    }
+}
+
 /// The big hero amount (kit `.hero .big`): Fraunces SemiBold 44, −0.88 tracked.
 extension Font {
     static let cfBig = Font.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle)

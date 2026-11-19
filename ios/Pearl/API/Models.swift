@@ -679,6 +679,8 @@ struct Transaction: Decodable, Identifiable, Hashable {
         let name: String
         let start: String
         let end: String
+        /// TR-06: how many transactions are in it ("Mar 4–9 · 23 transactions").
+        var count: Int? = nil
     }
 
     struct Chip: Decodable, Hashable {
@@ -1374,6 +1376,8 @@ struct CategoryList: Decodable {
         let name: String
         let group: String?
         let hidden: Bool?
+        /// G1-WhatWasThis-r: how often she has used it (her four likeliest lead).
+        var uses: Int? = nil
         var id: String { name }
     }
 }

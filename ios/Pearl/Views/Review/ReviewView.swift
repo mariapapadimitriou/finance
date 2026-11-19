@@ -284,6 +284,20 @@ struct ReviewView: View {
         CFChip(label: label, on: on, action: action)
     }
 
+    /// G2-BNeedsLook: the money-in rows' chips say the question. S-21 "Paid
+    /// back by Dad?" (PQ-03's sender), S-21u "Who sent this?" (a payback
+    /// credited to no one), S-21x "A gift?" (the extra on one); the rest as
+    /// before (Ask.chip).
+    static func rowChip(_ ask: Ask) -> String {
+        guard ask.kind == .moneyIn else { return ask.chip }
+        if ask.item.credit != nil { return "Who sent this?" }
+        if ask.item.extra != nil { return "A gift?" }
+        if let q = ask.item.payback, ask.t.learnable != false || ask.item.from != nil {
+            return "Paid back by \(q.who)?"
+        }
+        return ask.chip
+    }
+
     /// Initials, who, when, the question as a dashed chip, and the amount.
     private func row(_ ask: Ask) -> some View {
         let t = ask.t
@@ -305,7 +319,7 @@ struct ReviewView: View {
                     .font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     .lineLimit(ask.item.extra != nil || ask.item.credit != nil ? 2 : 1)
                     .fixedSize(horizontal: false, vertical: true)
-                GuessChip(label: ask.chip, question: false).padding(.top, 4)
+                GuessChip(label: Self.rowChip(ask), question: false).padding(.top, 4)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             // A+ amount colours: money in green, spending plum.
