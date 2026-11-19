@@ -26,6 +26,8 @@ def test_settle_up_type_amounts():
     assert 'if settling { return "Settle up" }' in s
     assert "Settle up · type amounts" not in s
     assert 'Image(systemName: "lock.fill")' in s
+    # Add someone / I had some too stays while settling (function unchanged).
+    assert "if !settling {\n                APCard {\n                    addNewRow" not in s
 
 
 def test_mark_paid_back_cancel_when_and_counts_line():

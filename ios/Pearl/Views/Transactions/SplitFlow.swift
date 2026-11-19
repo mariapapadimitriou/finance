@@ -591,14 +591,12 @@ struct SplitSheet: View {
             // S-03r2 / S-03r2b / S-03j v2 (TEST-08): "I had some too" under
             // the people, where its effect is: on, the rest stays yours; off,
             // your row goes and the rest is left to assign. More people from
-            // here, and back to the amounts after (2026-11-08). G2-BSettle
-            // S-45d: settling up types amounts for the same people only.
-            if !settling {
-                APCard {
-                    addNewRow
-                    APSeparator()
-                    withMeRow()
-                }
+            // here, and back to the amounts after (2026-11-08). Settle up
+            // (S-45d) keeps it too: function stays unless the PO says so.
+            APCard {
+                addNewRow
+                APSeparator()
+                withMeRow()
             }
             status
                 .id(Self.statusID)
