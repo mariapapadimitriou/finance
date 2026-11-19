@@ -357,7 +357,9 @@ class TestLessWords:
             "Opens How to split", "by bank, cash, or another app", "Copy a message for the",
             "Goes at once, with Undo", "Pick it from your money in", "No bank record.",
             "Pearl remembers it next time", "never counted twice", "Tap the message to change it",
-            "already counts in full", "open the e-Transfer and unlink it there", "Who do you share it with?",
+            # "Who do you share it with?" is back on purpose: G2b-Account AM-08r1
+            # (rethought, approved 2026-11-18) asks it on the empty card.
+            "already counts in full", "open the e-Transfer and unlink it there",
             "Pick up to six. Only you can see this.", "share an account with. Pearl keeps only the name you pick",
             "You can still pick people", "the most for one account", "Pearl never contacts them",
             "keep that answer", "is still on this account", "Say it was partly yours first",
