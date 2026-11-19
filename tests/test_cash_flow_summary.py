@@ -37,3 +37,16 @@ def test_no_month_no_saved(client):
     load(client.st, charge(40, "LOBLAWS", "Loblaws", category="Groceries"))
     totals = client.get("/api/transactions/list").get_json()["month_totals"]
     assert "saved" not in totals
+
+
+def test_choose_a_month_has_each_months_result(client):
+    """TEST-41 (T-47, G1-Months): Choose a month says each month's result in
+    one call, the month card's own numbers: Leftover = came in - spent - saved."""
+    load(client.st, charge(40, "LOBLAWS", "Loblaws", category="Groceries"),
+         charge(500, "TO TFSA", "To TFSA", category="Saved"))
+    card = client.get("/api/transactions/list", query_string={"month": MONTH}).get_json()["month_totals"]
+    [m] = [m for m in client.get("/api/transactions/months").get_json()["months"] if m["month"] == MONTH]
+    assert m["spent"] == pytest.approx(card["spent"])
+    assert m["income"] == pytest.approx(card["income"])
+    assert m["saved"] == pytest.approx(card["saved"])
+    assert m["left"] == pytest.approx(card["income"] - card["spent"] - card["saved"])

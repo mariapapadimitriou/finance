@@ -313,7 +313,8 @@ struct MainTabs: View {
 
     private func loadCount() async {
         if let review: Review = try? await app.api.get("api/review") {
-            reviewCount = review.open ?? review.count
+            // TEST-35: the rows Needs a look lists, as its "All" chip.
+            reviewCount = review.listedOpen
         }
     }
 }

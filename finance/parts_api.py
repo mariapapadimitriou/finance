@@ -668,12 +668,15 @@ def _splittable(st, c, splits) -> bool:
     return True
 
 
-def unsplit_candidates(st, deposit, target: float, q: str = "", also: str = "") -> list[dict]:
+def unsplit_candidates(st, deposit, target: float, q: str = "", also: str = "",
+                       likely: set[str] | None = None) -> list[dict]:
     """OTHER PURCHASES: her purchases that aren't split, recent and close
     to `target` (what's left of the money after the person's shares) first.
     `q`, a name or an amount, finds any in the last year (`query`).
     `also` (PB-22, 2026-11-18): the purchase she came from, first whenever
-    it can be split, however old or far from the amount."""
+    it can be split, however old or far from the amount. `likely` (TEST-46):
+    the ones the payback question offered, always listed, marked `likely`."""
+    likely = likely or set()
     from .many_api import _cents as cents
     splits = st.splits()
     when = date.fromisoformat(deposit.date[:10])
@@ -695,19 +698,22 @@ def unsplit_candidates(st, deposit, target: float, q: str = "", also: str = "") 
             hay = " ".join(x for x in (shown, c.merchant, c.description or "", c.category or "") if x).lower()
             found = needle in hay or (wanted is not None and abs(cents(c.amount) - wanted) <= 1)
         came = bool(also) and c.fingerprint == also
+        offered = c.fingerprint in likely
         recent = -3 <= gap <= UNSPLIT_DAYS
-        if not (came or recent or (found and -3 <= gap <= UNSPLIT_SEARCH_DAYS)):
+        if not (came or offered or recent or (found and -3 <= gap <= UNSPLIT_SEARCH_DAYS)):
             continue
         if needle and not found and not came:
             continue
         amount = round(c.amount, 2)
         # Close in amount, then recent: a $31 dinner for $30 back first.
         near = abs(amount - target) / max(target, 1.0)
-        rows.append(((-1 if came else 0 if found else 1, round(near + max(gap, 0) / 30.0, 4),
-                      -int(c.date[:10].replace("-", ""))),
-                     {"id": c.fingerprint, "merchant": shown, "date": c.date[:10], "amount": amount,
-                      "category": c.category or "Other", "pending": bool((c.raw or {}).get("pending")),
-                      "max": amount, "query": found}))
+        row = {"id": c.fingerprint, "merchant": shown, "date": c.date[:10], "amount": amount,
+               "category": c.category or "Other", "pending": bool((c.raw or {}).get("pending")),
+               "max": amount, "query": found}
+        if offered:
+            row["likely"] = True
+        rows.append(((-1 if came or offered else 0 if found else 1, round(near + max(gap, 0) / 30.0, 4),
+                      -int(c.date[:10].replace("-", ""))), row))
     rows.sort(key=lambda r: r[0])
     return [r for _, r in rows[:UNSPLIT_LIMIT]]
 
@@ -1746,8 +1752,15 @@ def owing(txn_id: str):
     left = max(_cents(-t.amount) - owed_them, 0) / 100 or round(-t.amount, 2)
     q = " ".join(str(request.args.get("q") or "").split())[:80]
     also = str(request.args.get("also") or "")[:200]
+    # TEST-46: every purchase "Is Sam paying you back?" (PQ-03) offered is
+    # LIKELY here too, split with them or not.
+    from .payback_question import for_deposit
+    offered = {tile["charge"] for tile in ((for_deposit(st, t) or {}).get("tiles") or [])}
+    for i in items:
+        if i["id"] in offered:
+            i["likely"] = True
     return jsonify({"from": frm, "named": named if not theirs_u else None, "items": items,
-                    "linked": linked, "unsplit": unsplit_candidates(st, t, left, q, also)})
+                    "linked": linked, "unsplit": unsplit_candidates(st, t, left, q, also, likely=offered)})
 
 
 # ── Who sent this? (SPLIT-22b, THL-181; S-05u, S-35c, S-21u) ─────────────

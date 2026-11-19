@@ -485,6 +485,20 @@ class TestAnswers:
         r = post(client, "undo_clear", ids)
         assert [i["id"] for i in r["items"]] == ids
 
+    def test_clear_clears_everything_that_qualifies_today(self, client):
+        """TEST-40: after Clear, Home stays calm; the next items don't slide
+        up. Undo brings every one back. A new event still shows."""
+        crave(client)
+        bill(client, "Hydro", 1)
+        bill(client, "Rogers", 2)
+        netflix(client)
+        shown = [i["id"] for i in items(client)]
+        r = post(client, "clear", shown)
+        assert r["items"] == [] and set(shown) < set(r["cleared"])
+        assert items(client) == []
+        r = post(client, "undo_clear", r["cleared"])
+        assert [i["id"] for i in r["items"]] == shown
+
     def test_drops_off_after_seven_days(self, client):
         crave(client)
         assert items(client)[0]["since"] == TODAY.isoformat()

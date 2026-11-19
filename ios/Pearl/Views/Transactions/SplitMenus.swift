@@ -1288,7 +1288,9 @@ struct PersonOptionsSheet: View {
     /// G2-APersonStates (S-40c, S-40c2; Rethought, approved): PAID WITH /
     /// PAID SO FAR, every payment one row in one card; a tap opens its options.
     @ViewBuilder private var paymentsCard: some View {
-        if !links.isEmpty {
+        // TEST-46 (G2-Person S-40a): while they still owe, the payments sit in
+        // the PAID SO FAR card with Mark the rest paid back (stateCard).
+        if !links.isEmpty && !(p.owes >= 0.005 && p.letGo == nil) {
             APSheetLabel(text: paidInFull ? "Paid with" : "Paid so far")
             APOptionCard {
                 ForEach(Array(links.enumerated()), id: \.element.id) { i, link in
@@ -1313,7 +1315,14 @@ struct PersonOptionsSheet: View {
             // REFRESH-03 (S-40a, S-40b): subtitles that only described the
             // row are gone; VoiceOver keeps them as hints. The one that
             // costs money ("becomes your spending") stays.
+            // G2-Person S-40a (TEST-46): PAID SO FAR is one card, each payment
+            // then Mark the rest paid back, Remind and Let the rest go.
+            if !links.isEmpty { APSheetLabel(text: "Paid so far") }
             APOptionCard {
+                ForEach(links) { link in
+                    paymentRow(link)
+                    APSeparator()
+                }
                 APOptionRow(symbol: "arrow.uturn.backward", title: part ? "Mark the rest paid back" : "Mark paid back",
                                prominent: true) { onChoose(.markPaid) }
                     .accessibilityHint("By bank, cash or another app")

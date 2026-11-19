@@ -103,6 +103,18 @@ class TestAsking:
         [ask] = review["trip_asks"]
         assert ask["key"] in client.get("/api/quick-sort?all=1").get_json()["keys"]
 
+    def test_homes_count_leaves_the_trip_question_out(self, client):
+        """TEST-35: one number on every screen. Needs a look lists rows; the
+        trip is Quick sort's own card (G7-TripAsk), so Home's "to sort"
+        doesn't count it."""
+        home(client)
+        away(client)
+        ps.switched_on(client.st)
+        review = client.get("/api/review").get_json()
+        assert review["trip_asks"]
+        listed = review["count"] - len(review["trip_asks"]) - len(review["pattern_asks"])
+        assert client.get("/api/home").get_json()["review_count"] == listed
+
     def test_yes_makes_the_trip_and_its_tag(self, client):
         home(client)
         rows = away(client)

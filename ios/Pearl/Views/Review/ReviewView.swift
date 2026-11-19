@@ -810,6 +810,13 @@ extension Review {
         YourPlanGate.shown ? asks : asks.filter { $0.kind != .check }
     }
 
+    /// TEST-35: what Needs a look lists and its "All" chip counts, the one
+    /// number on the tab badge and the month card too. The trip and pattern
+    /// questions are Quick sort's own cards (G7-TripAsk), not rows.
+    var listedOpen: Int { shownAsks.filter { !$0.skipped }.count }
+    /// The same, skipped ones included (the streak's "to sort", as Home's).
+    var listedAll: Int { shownAsks.count }
+
     /// The open Your plan questions the server counted but the app parks;
     /// taken off Cash flow's "need a look" count.
     var parkedPlanQuestions: Int {

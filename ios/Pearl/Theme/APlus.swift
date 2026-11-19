@@ -315,13 +315,17 @@ struct APSectionLabel: View {
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 8)
             if let action = action {
-                Button(action, action: act)
-                    .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
-                    .foregroundColor(Pearl.link)
-                    .buttonStyle(.plain)
-                    .frame(minHeight: 44)
-                    .padding(.vertical, -13)
-                    .contentShape(Rectangle())
+                // TEST-45: the 44 pt target is the button's own label, so
+                // the button itself is 44 × 44; it still lays out at 18.
+                Button(action: act) {
+                    Text(action)
+                        .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+                        .foregroundColor(Pearl.link)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.vertical, -13)
             }
         }
         .frame(minHeight: 18)

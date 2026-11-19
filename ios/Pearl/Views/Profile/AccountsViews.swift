@@ -60,7 +60,11 @@ enum AccountWords {
         case "disconnected":
             return (a.disconnectedOn ?? a.updatedAt).map { "Since \(Format.short($0))" } ?? (mask ?? "")
         case "manual":
-            return a.updatedAt.map { stale($0) ?? Format.short($0) } ?? ""
+            // TEST-43 (G5-Accounts, AM-01): its digits too, "••1004"; the date
+            // only when there are no digits, and always once it's stale.
+            let old = a.updatedAt.flatMap { stale($0) }
+            let date = mask == nil ? a.updatedAt.map { Format.short($0) } : nil
+            return [mask, old ?? date].compactMap { $0 }.joined(separator: " · ")
         default:
             // C-01: while a bank needs her, every row says how it's doing.
             if states { return "Up to date" }
