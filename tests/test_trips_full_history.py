@@ -281,6 +281,19 @@ class TestHistoryStillComingIn:
         assert client.st.plaid_history_ready()
         assert [(a["start"], a["end"]) for a in asks(client)] == [span(t) for t in EXPECTED]
 
+    def test_a_week_at_most(self, client, monkeypatch):
+        """A bank Plaid never reports as complete stops holding trips back
+        HISTORY_WAIT_DAYS after it was marked (2026-11-19)."""
+        from finance import secrets_box
+        monkeypatch.setenv(secrets_box.KEY_ENV, "unit-test-key-that-is-definitely-long-enough")
+        client.st.add_plaid_item("item-1", "tok", "TD")
+        load(client)
+        client.st.set_plaid_history_pending("item-1", True, today=day(6))
+        assert asks(client) == [] and not client.st.plaid_history_ready()
+        client.st.set_plaid_history_pending("item-1", True, today=day(7))
+        assert client.st.plaid_history_ready()
+        assert [(a["start"], a["end"]) for a in asks(client)] == [span(t) for t in EXPECTED]
+
     def test_a_new_link_waits_too(self, client, monkeypatch):
         from finance import plaid_link, secrets_box
         monkeypatch.setenv(secrets_box.KEY_ENV, "unit-test-key-that-is-definitely-long-enough")

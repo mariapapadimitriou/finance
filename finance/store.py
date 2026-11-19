@@ -2619,10 +2619,12 @@ class Store:
             c.execute("""INSERT INTO settings (key, value) VALUES ('seeded', 'done')
                          ON CONFLICT(key) DO UPDATE SET value = excluded.value""")
             # Every bank's history is on its way again (plaid_history_ready).
-            items = [r["item_id"] for r in c.execute("SELECT item_id FROM plaid_items").fetchall()]
+            from datetime import date as _date
+            marked = _date.today().isoformat()
+            items = {r["item_id"]: marked for r in c.execute("SELECT item_id FROM plaid_items").fetchall()}
             c.execute("""INSERT INTO settings (key, value) VALUES (?, ?)
                          ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
-                      (self.HISTORY_PENDING_KEY, json.dumps(sorted(items))))
+                      (self.HISTORY_PENDING_KEY, json.dumps(items, sort_keys=True)))
         from . import pattern_sort
         pattern_sort.after_start_over(self)
         return removed
@@ -3595,25 +3597,44 @@ class Store:
     # slice: a new connection gets about the last month first and the rest
     # later, and one sync takes at most so many pages. Until every bank has
     # sent its whole history, what reads "new" against history (trips, a new
-    # subscription, the pattern baseline) waits. No key: nothing waiting.
+    # subscription, the pattern baseline) waits, for HISTORY_WAIT_DAYS at
+    # most from when the bank was marked: a bank whose history Plaid never
+    # reports as complete doesn't hold them back for good.
+    # {item_id: day marked}; no key, nothing waiting.
     HISTORY_PENDING_KEY = "plaid_history_pending"
+    HISTORY_WAIT_DAYS = 7
 
-    def plaid_history_pending(self) -> list[str]:
+    def _history_marks(self) -> dict[str, str]:
         try:
-            pending = json.loads(self.setting(self.HISTORY_PENDING_KEY) or "[]")
+            raw = json.loads(self.setting(self.HISTORY_PENDING_KEY) or "{}")
         except (TypeError, ValueError):
-            return []
+            return {}
+        if not isinstance(raw, dict):
+            return {}
         linked = {i["item_id"] for i in self.plaid_items()}
-        return [i for i in pending if i in linked] if isinstance(pending, list) else []
+        return {k: str(v) for k, v in raw.items() if k in linked}
 
-    def plaid_history_ready(self) -> bool:
-        return not self.plaid_history_pending()
+    def plaid_history_pending(self, today: str | None = None) -> list[str]:
+        """Banks whose history is still coming in, marked in the last
+        HISTORY_WAIT_DAYS."""
+        from datetime import date as _date, timedelta as _td
+        day = _date.fromisoformat(today) if today else _date.today()
+        oldest = (day - _td(days=self.HISTORY_WAIT_DAYS)).isoformat()
+        return sorted(k for k, v in self._history_marks().items() if v[:10] > oldest)
 
-    def set_plaid_history_pending(self, item_id: str, pending: bool) -> None:
-        was = set(self.plaid_history_pending())
-        now = was | {item_id} if pending else was - {item_id}
+    def plaid_history_ready(self, today: str | None = None) -> bool:
+        return not self.plaid_history_pending(today)
+
+    def set_plaid_history_pending(self, item_id: str, pending: bool, today: str | None = None) -> None:
+        from datetime import date as _date
+        was = self._history_marks()
+        now = dict(was)
+        if pending:
+            now[item_id] = today or _date.today().isoformat()
+        else:
+            now.pop(item_id, None)
         if now != was:
-            self.set_setting(self.HISTORY_PENDING_KEY, json.dumps(sorted(now)))
+            self.set_setting(self.HISTORY_PENDING_KEY, json.dumps(now, sort_keys=True))
 
     def set_plaid_logo(self, item_id: str, logo: str) -> None:
         with self.conn() as c:

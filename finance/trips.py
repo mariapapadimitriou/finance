@@ -371,7 +371,7 @@ def candidates(st, txns: list[Transaction], today: str) -> list[dict]:
     month, comes first; each is still its own question). None while a
     bank's history is still coming in (after Start over or a new link): a
     recent slice alone would make every merchant look new."""
-    if not st.plaid_history_ready():
+    if not st.plaid_history_ready(today):
         return []
     spend = sorted((t for t in txns if _spending(t) or FEE.search(t.description or "")),
                    key=lambda t: (t.date, t.fingerprint))

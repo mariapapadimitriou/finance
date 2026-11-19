@@ -156,7 +156,7 @@ def _subscriptions(ctx: _Ctx) -> list[dict]:
     """A new recurring charge in a subscription category that she hasn't
     answered in I-04 (or kept on Insights)."""
     from .recommendations import SUBSCRIPTION_CADENCES, SUBSCRIPTION_CATEGORIES
-    if not ctx.st.plaid_history_ready():
+    if not ctx.st.plaid_history_ready(ctx.today.isoformat()):
         return []                   # a recent slice only: everything would look new
     kept = core._json_setting(ctx.st, "subscription_choices", {})
     since = (ctx.today - timedelta(days=NEW_DAYS)).isoformat()
