@@ -259,9 +259,16 @@ struct ChatChecks {
             expect(w.writes.first?.path == "api/transactions/a/mark", "Yes marks the transaction")
             expect(w.writes.first?.body["remember"] as? Bool == false, "a told guess saves no rule")
             expect(w.writes.first?.body["category"] as? String == "Dining", "as she said")
-            expect(deck(e)?.overline() == "Pearl’s guess · 2 of 3", "PC-06 overline: \(deck(e)?.overline() ?? "")")
-            expect(deck(e)?.overline(choice: true) == "Your choice · 2 of 3", "a held answer says Your choice")
+            // G7-Tell-r: after the first card the count is in the progress line.
+            expect(deck(e)?.overline() == "Pearl’s guess", "PC-06 overline: \(deck(e)?.overline() ?? "")")
+            expect(deck(e)?.overline(choice: true) == "Your choice", "a held answer says Your choice")
             expect(deck(e)?.leadLine == nil, "the lead is over the first card only")
+            expect(deck(e)?.showsProgress == true, "G7-Tell-r: the progress line after the first card")
+            expect(deck(e)?.progressTitle == "went out with friends Saturday", "her words, short: \(deck(e)?.progressTitle ?? "")")
+            expect(deck(e)?.progressTotal == 3 && deck(e)?.index == 1, "2 of 3")
+            expect(d.showsProgress == false, "the first card keeps her bubble")
+            expect(ChatWords.shortSaid("Out with friends Saturday, brunch with Jo and Sam, Uber home") == "Out with friends Saturday",
+                   "G7-Tell-r: her sentence to its first part")
 
             await e.decide(.skip(deck(e)!.current!), tap: UserTap("skip"))
             expect(w.writes.count == 1, "Skip on a told guess sends nothing: it stays in Needs a look")
