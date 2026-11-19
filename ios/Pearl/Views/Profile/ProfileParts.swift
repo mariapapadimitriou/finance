@@ -880,9 +880,13 @@ enum PearlDoc: String, Identifiable {
                 Part(heading: "Too many tries?", text: "Sign-in pauses for 15 minutes after too many attempts. Nothing about your money changes while it’s paused."),
             ]
         case .privacy:
-            return [Part(text: "A plain-language draft, not yet a formal policy.")]
-                + Self.storeFacts.map { Part(heading: $0.label, text: $0.text + ".") }
-                + [Part(heading: "Who sees it", text: "Plaid, to connect to your bank, read-only. Our cloud host (Vercel and Neon), to run Pearl. Our email service, for sign-in codes. An investing partner only if you choose to go there — we always ask first.")]
+            // G5-Extras LG-02: four short cards; the Draft pill says it's a draft.
+            return [
+                Part(heading: "We keep", text: "Account names and types, balances, transactions, and the categories and goals you set."),
+                Part(heading: "We never keep", text: "Your bank username or password, or full card or account numbers."),
+                Part(heading: "Where", text: "Our cloud database, encrypted when stored and when it moves."),
+                Part(heading: "For how long", text: "While you use Pearl. Delete your account and it goes straight away; backups within 30 days."),
+            ]
         case .terms:
             return [
                 Part(text: "A plain-language draft, not yet formal terms of service."),

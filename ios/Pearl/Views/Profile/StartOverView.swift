@@ -185,16 +185,14 @@ struct StartedOverView: View {
                 sortingButtons(enabled: false)
             }
         case .back(let imported, let needsALook):
-            DataResult(title: "You’re starting fresh", line: backLine(imported) + lookLine(needsALook),
-                       showsArt: setup?.active != true) {
+            DataResult(title: "You’re starting fresh", line: backLine(imported) + lookLine(needsALook)) {
                 setupList
             } actions: {
                 sortingButtons(enabled: true)
             }
         case .late:
             DataResult(title: "You’re starting fresh",
-                       line: "Your banks are still sending your history. It’ll show in Cash flow when it’s ready.",
-                       showsArt: setup?.active != true) {
+                       line: "Your banks are still sending your history. It’ll show in Cash flow when it’s ready.") {
                 setupList
             } actions: {
                 sortingButtons(enabled: true)
@@ -209,8 +207,10 @@ struct StartedOverView: View {
                 Button("Link a bank") { Task { await link() } }
                     .buttonStyle(APPrimaryButtonStyle(busy: linking))
                     .disabled(linking)
+                // G5-Extras SO-05b: the second way back is the grey secondary.
                 Button("Add a balance by hand") { adding = true }
-                    .buttonStyle(APQuietTextStyle())
+                    .buttonStyle(APSecondaryButtonStyle())
+                    .padding(.top, 8)
                     .disabled(linking)
                 Button("Not now", action: close)
                     .buttonStyle(APQuietTextStyle())
@@ -225,11 +225,15 @@ struct StartedOverView: View {
         }
     }
 
-    /// SO-04b (THL-300): what only she can say, here as on Home.
+    /// SO-04b (THL-300; AP-SetupAgain, rethought 2026-11-18): one action
+    /// (Start sorting); the steps wait on Home, so here it's one quiet note.
     @ViewBuilder private var setupList: some View {
-        if let setup = setup, setup.active {
-            SetupAgainCard(setup: setup, hideable: false) { Task { await loadSetup() } }
-                .padding(.top, 12)
+        if let setup = setup, setup.active, setup.left > 0 {
+            Text(setup.left == 1 ? "1 thing to set again waits on Home."
+                 : "\(setup.left) things to set again wait on Home.")
+                .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                .multilineTextAlignment(.center)
+                .padding(.top, 6)
         }
     }
 

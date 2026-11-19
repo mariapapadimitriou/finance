@@ -506,6 +506,12 @@ private struct CRTagsSection: View {
     let rename: (RulesBook.TagTotal) -> Void
     let remove: (RulesBook.TagTotal) -> Void
 
+    /// CR-03 (REDESIGN-22): a tag's total is a total, like a trip's: plum
+    /// with no minus; net money in is green with "+".
+    static func total(_ spent: Double) -> String {
+        spent < 0 ? "+" + Format.amount(spent) : Format.amount(spent)
+    }
+
     var body: some View {
         if tags.isEmpty {
             CREmpty(symbol: "tag", title: "No tags yet", line: "Tag a transaction, or several at once, from Cash flow.")
@@ -513,7 +519,8 @@ private struct CRTagsSection: View {
             Section {
                 ForEach(Array(tags.enumerated()), id: \.element.id) { i, tag in
                     Button { rename(tag) } label: {
-                        CRRow(title: tag.tag, sub: line(tag), amount: Format.amount(tag.spent)) { CRLead(name: tag.tag) }
+                        CRRow(title: tag.tag, sub: line(tag), amount: Self.total(tag.spent),
+                              amountTone: tag.spent < 0 ? Pearl.moneyIn : Pearl.moneyOut) { CRLead(name: tag.tag) }
                     }
                     .crRow(first: i == 0, last: i == tags.count - 1)
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -578,6 +585,8 @@ private struct CRRow<Leading: View>: View {
     var sub: String? = nil
     var pill: String? = nil
     var amount: String? = nil
+    /// The amount's colour: ink, or a tag's total (plum, green when net in).
+    var amountTone: Color = Pearl.ink
     var value: String? = nil
     @ViewBuilder var leading: () -> Leading
 
@@ -593,7 +602,7 @@ private struct CRRow<Leading: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             if let pill = pill { StatusPill(text: pill, tone: .anchor, small: true) }
             if let amount = amount {
-                Text(amount).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
+                Text(amount).font(Nacre.headline).monospacedDigit().foregroundColor(amountTone)
                     .pearlAmountFit().fixedSize()
             }
             if let value = value {
@@ -715,7 +724,7 @@ struct RuleEditView: View {
     @ViewBuilder private var actions: some View {
         VStack(spacing: 12) {
             if changed, let n = earlier, n > 0 {
-                Text("Also moves the \(n == 1 ? "1 earlier one" : "\(n) earlier ones").")
+                Text(n == 1 ? "Also moves the earlier one." : "Also moves the \(n) earlier ones.")
                     .font(Nacre.subheadline).foregroundColor(Pearl.ink)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16).padding(.vertical, 12)

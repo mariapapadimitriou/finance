@@ -43,10 +43,15 @@ struct PearlChatView: View {
         case plan
     }
 
+    /// PC-12/PC-13 plans in chat. Your plan is parked with Save (product
+    /// owner, 2026-11-18), so the chat never offers a plan card, never links
+    /// "See it in Your plan" and never opens it while YourPlanGate.shown is off.
+    static var plans: Bool { Features.chatPlans && YourPlanGate.shown }
+
     init(api: APIClient, describe: @escaping (Error) -> String, onSearch: @escaping () -> Void) {
         _engine = StateObject(wrappedValue: ChatEngine(
-            brain: PearlIntelligence.brain(plans: Features.chatPlans), reader: ChatReader(APIChatReading(api: api)),
-            executor: ChatExecutor(writer: APIChatWriting(api: api)), allowsPlans: Features.chatPlans,
+            brain: PearlIntelligence.brain(plans: Self.plans), reader: ChatReader(APIChatReading(api: api)),
+            executor: ChatExecutor(writer: APIChatWriting(api: api)), allowsPlans: Self.plans,
             describe: describe))
         self.onSearch = onSearch
     }
@@ -68,7 +73,9 @@ struct PearlChatView: View {
                 case .needsALook: ReviewView()
                 case .trip(let id): TripPage(id: id)
                 case .rules: CategoriesRulesView()
-                case .plan: YourPlanView()
+                case .plan:
+                    // Parked with Save: no way into Your plan from chat.
+                    if YourPlanGate.shown { YourPlanView() }
                 }
             }
         }
@@ -470,6 +477,12 @@ private struct ChatDoneCard: View {
     let note: DoneNote
     let open: (DoneLink) -> Void
 
+    /// "See it in Your plan" stays hidden while Your plan is parked.
+    static func linkShown(_ link: DoneLink) -> Bool {
+        if case .plan = link { return YourPlanGate.shown }
+        return true
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if note.kind == .trip {
@@ -506,7 +519,7 @@ private struct ChatDoneCard: View {
                 if let n = note.note { ChatNote(text: n) }
             } else {
                 ChatIconCard(symbol: note.kind == .plan ? "fork.knife" : "sparkles", title: note.title, sub: note.sub)
-                if let label = note.linkLabel, let link = note.link {
+                if let label = note.linkLabel, let link = note.link, Self.linkShown(link) {
                     ChatQuietLink(title: label) { open(link) }.padding(.top, 8)
                 }
             }

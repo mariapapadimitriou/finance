@@ -96,6 +96,12 @@ enum AccountWords {
         return "updated \(Format.short(day))"
     }
 
+    /// AM-06: a balance by hand untouched for a month or more asks for an update.
+    static func stale(_ day: String?, now: Date = Date()) -> Bool {
+        guard let day = day, let d = Format.localDay(day) else { return false }
+        return (Calendar.current.dateComponents([.day], from: d, to: now).day ?? 0) >= 30
+    }
+
     /// C-01: some bank needs her or isn't responding.
     static func trouble(_ a: AccountsOverview.Account) -> Bool {
         ["sign_in", "retrying", "disconnected"].contains(a.status ?? "")
@@ -553,18 +559,6 @@ struct AccountDetailView: View {
             if account.needsReconnect {
                 ConnectionBanner(account: account) { reconnecting = true }
             }
-            if joint {
-                // AM-04: who it's shared with, under the balance.
-                APCard {
-                    NavigationLink { JointAccountView(account: account) } label: {
-                        ProfileRow(title: "Shared with") {
-                            Text(people).font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-
             ProfileSection("Settings")
             APCard {
                 toggleRow(title: "Include in my budget",
@@ -575,6 +569,24 @@ struct AccountDetailView: View {
                     toggleRow(title: "Shared with someone",
                               sub: "Only your share counts",
                               on: $joint) { on in Task { await setJoint(on) } }
+                }
+                if joint {
+                    // G5-AccountMore AM-04: who it's shared with and her share
+                    // sit in Settings, each opening the joint page (AM-08r).
+                    APSeparator(afterFace: false)
+                    NavigationLink { JointAccountView(account: account) } label: {
+                        APKeyValueRow(key: "Shared with", value: people, link: people == "Add", chevron: true)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("account-shared-with")
+                    APSeparator(afterFace: false)
+                    NavigationLink { JointAccountView(account: account) } label: {
+                        APKeyValueRow(key: "Your share",
+                                      value: account.jointShare.map { "\(Int($0.rounded()))%" } ?? "50%",
+                                      chevron: true)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("account-your-share")
                 }
                 if account.canAnchor == true {
                     APSeparator(afterFace: false)
@@ -788,7 +800,11 @@ struct AccountDetailView: View {
 
     private func setJoint(_ on: Bool) async {
         if on {
-            await save(["joint_share": 50], saying: "Only your share of \(account.name) counts now: 50%.")
+            // AM-04: the short toast, with Undo (just hers again).
+            guard await save(["joint_share": 50], saying: nil) != nil else { return }
+            withAnimation {
+                toast = ("Only your share counts now \u{00B7} 50%", { Task { await setJoint(false) } })
+            }
         } else {
             // AM-08n: split purchases on it are asked about first.
             do {
@@ -997,10 +1013,24 @@ struct ManualAccountView: View {
     var body: some View {
         ProfilePage {
             AccountHero(account: account,
-                        note: account.updatedAt.map { "Added by you · \(AccountWords.updatedLine($0))" } ?? "Added by you")
-            Button("Update balance") { updating = true }
-                .buttonStyle(APSecondaryButtonStyle())
-                .padding(.top, 10)
+                        note: account.updatedAt.map { "Added by you · \(AccountWords.updatedLine($0).capitalizedFirst)" } ?? "Added by you")
+            if AccountWords.stale(account.updatedAt) {
+                // G5-AccountMore AM-06: a month old, the champagne banner asks.
+                HStack(spacing: 12) {
+                    APIcon.warn("calendar")
+                    Text("A month since you updated it.").font(Nacre.subheadline).foregroundColor(Pearl.ink)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    APQuietButton(title: "Update", identifier: "account-update-stale") { updating = true }.fixedSize()
+                }
+                .padding(.horizontal, 16).padding(.vertical, 12)
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(ProfileTone.bannerFill))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Pearl.champagne, lineWidth: 1))
+                .padding(.top, 16)
+            } else {
+                Button("Update balance") { updating = true }
+                    .buttonStyle(APSecondaryButtonStyle())
+                    .padding(.top, 16)
+            }
 
             ProfileSection("Settings")
             APCard {
@@ -1033,8 +1063,9 @@ struct ManualAccountView: View {
         .onAppear { counted = account.counted ?? true; anchor = account.anchor == true }
         .sheet(isPresented: $renaming) {
             // AM-14n (TEST-06).
-            PearlConfirmSheet(overline: "Added by hand", title: "Name",
-                              message: "What you call this account. It shows everywhere in Pearl.",
+            // G5-AccountMore AM-14n: the account's face and "Added by hand",
+            // then the Name well; no explainer (less text).
+            PearlConfirmSheet(face: AccountWords.bank(account), overline: "Added by hand", title: "Name",
                               field: .init(label: "Name", prompt: account.name, identifier: "account-name"),
                               text: $name, primary: "Save", busyLabel: "Saving…",
                               failure: "Couldn’t save the name. Nothing changed. Try again.",
@@ -1053,7 +1084,7 @@ struct ManualAccountView: View {
                 updating = false
                 if let a = a {
                     account = a
-                    withAnimation { toast = "Updated. \(a.name) is \(a.balance.map { Format.amount($0) } ?? "saved")." }
+                    withAnimation { toast = "\(a.name) is \(a.balance.map { Format.amount($0) } ?? "saved")" }
                     app.changed()
                 }
             }
@@ -1106,12 +1137,15 @@ struct UpdateBalanceSheet: View {
 
     var body: some View {
         PearlSheet(dismissDisabled: busy) {
+            // G5-AccountMore AM-06: what it holds today, in one big well.
             APSheetTitle(title: "Update \(account.name)") { finished(nil) }
-            PearlField(label: "Balance today", placeholder: "0.00", text: $balance, kind: .amount,
-                       identifier: "balance-today")
+            Text("What it holds today.").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                .frame(maxWidth: .infinity)
+            BigAmountWell(text: $balance, placeholder: "0.00", label: "Balance today", identifier: "balance-today")
+                .padding(.top, 14)
             if let error = error { APErrorLine(text: error) }
         } footer: {
-            PearlSheetButtons(primary: error == nil ? "Save" : "Try again", busy: busy, busyLabel: "Saving\u{2026}",
+            PearlSheetButtons(primary: error == nil ? "Save balance" : "Try again", busy: busy, busyLabel: "Saving\u{2026}",
                               onPrimary: { Task { await save() } })
                 .disabled(balance.isEmpty)
         }
