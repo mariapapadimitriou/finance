@@ -108,6 +108,11 @@ struct JointAccountView: View {
     @State private var apply = "all"
     @State private var adding = false
     @State private var removing: Removing?
+    /// Raised once the picker has gone (a sheet can't open while one closes).
+    @State private var pendingRemove: Removing?
+    /// AM-08's sheet; AM-21j waits for it to go.
+    @State private var editingShare = false
+    @State private var pendingAsk: Asking?
     /// AM-21j / AM-08n: the server's needs_confirm, and what to send again.
     @State private var asking: Asking?
     @State private var busy = false
@@ -134,64 +139,30 @@ struct JointAccountView: View {
         return fixed && enteredShare != account.jointShare
     }
 
+    /// G2b-Account (rethought, approved 2026-11-18): one share ring and one
+    /// people row; Remove lives in Edit; Not a joint account is a quiet link.
     var body: some View {
         ProfilePage {
             hero
-            ProfileSection("Shared with")
-            PearlOptionCard {
-                if people.isEmpty {
-                    // AM-08r1: nobody named yet (or the last one removed, decision 5).
-                    PearlOptionRow(symbol: "person.2", title: "Add who it’s shared with",
-                                   sub: "People you’ve split with, or your contacts") { adding = true }
-                        .disabled(busy)
-                } else {
-                    ForEach(Array(people.enumerated()), id: \.element) { i, name in
-                        if i > 0 { PearlDivider() }
-                        personRow(name)
-                    }
-                    // The server keeps six at most.
-                    if people.count < 6 {
-                        PearlDivider()
-                        PearlOptionRow(symbol: "person.2", title: "Add someone") { adding = true }
-                            .disabled(busy)
-                    }
-                }
-            }
-            ProfileNote("Only you see these names.")
-            ProfileSection("Your share")
-            APCard {
-                PickRow(title: "All mine unless I mark it",
-                        sub: "Mark the purchases someone else paid for",
-                        selected: !fixed) { fixed = false }
-                APSeparator(afterFace: false)
-                PickRow(title: "A fixed share", sub: "For example, 50%", selected: fixed) { fixed = true }
-                if fixed {
-                    APSeparator(afterFace: false)
-                    InlineField(label: "Your share", text: $shareText, prompt: "50", keyboard: .decimalPad, suffix: "%")
-                }
-            }
-            if changed {
-                ProfileSection("Which purchases")
-                APCard {
-                    PickRow(title: "All purchases from this account",
-                            sub: "Ones you marked as someone else’s, or gave your own part, stay as you said.",
-                            selected: apply == "all") { apply = "all" }
-                    APSeparator(afterFace: false)
-                    PickRow(title: "Starting today",
-                            sub: "Earlier purchases keep counting the way they do now.",
-                            selected: apply == "from_today") { apply = "from_today" }
-                }
-            }
-            if let error = error { Hint(text: error).padding(.top, 4) }
-        } bottom: {
-            if changed {
-                Button("Save") { Task { await saveShare() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
-                    .disabled(busy || (fixed && !shareIsValid))
-            }
-            Button("Not a joint account") { Task { await stopSharing() } }
-                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+            JointShareCard(share: account.jointShare) { syncShare(); editingShare = true }
                 .disabled(busy)
+                .padding(.top, 16)
+            if people.isEmpty {
+                JointNoOneCard { adding = true }.disabled(busy)
+            } else {
+                JointPeopleRow(people: people) { adding = true }.disabled(busy)
+            }
+            if let error = error, !editingShare { APErrorLine(text: error).padding(.top, 4) }
+            Button("Not a joint account") { Task { await stopSharing() } }
+                .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+                .foregroundColor(Pearl.action)
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .padding(.top, 12)
+                .disabled(busy)
+                .accessibilityIdentifier("not-joint")
+        } bottom: {
+            EmptyView()
         }
         .overlay(alignment: .bottom) {
             if let toast = toast {
@@ -200,10 +171,18 @@ struct JointAccountView: View {
             }
         }
         .onAppear(perform: syncShare)
-        .sheet(isPresented: $adding) {
-            // AM-08p: up to six, counting who's on it already (ticked, dimmed).
+        .sheet(isPresented: $editingShare, onDismiss: { if let a = pendingAsk { pendingAsk = nil; asking = a } }) {
+            // AM-08: Your share, with the keypad.
+            JointShareSheet(fixed: $fixed, shareText: $shareText, apply: $apply, busy: busy, error: error,
+                            valid: changed && (!fixed || shareIsValid), onClose: { editingShare = false; error = nil }) {
+                Task { await saveShare() }
+            }
+        }
+        .sheet(isPresented: $adding, onDismiss: { if let r = pendingRemove { pendingRemove = nil; removing = r } }) {
+            // AM-08p: up to six; in Edit, who's on it is a chip whose × asks first.
             PeoplePicker(api: app.api, overline: "\(account.name) · Joint", title: "Shared with",
-                         sub: "Up to six. Only you see this.", already: people, limit: 6,
+                         already: people, limit: 6, joint: true,
+                         onRemoveExisting: { name in pendingRemove = Removing(name: name); adding = false },
                          onClose: { adding = false }) { names in
                 let reply = try await put(["joint_people": people + names])
                 adding = false
@@ -229,47 +208,31 @@ struct JointAccountView: View {
                 let reply = try await put(body)
                 asking = nil
                 if a.share == nil {
-                    show("Not joint now", undo: reply?.undo)  // AM-08n1 (REFRESH-03)
+                    show("Not joint any more", undo: reply?.undo)  // G2b-Share AM-08n1
                 } else {
                     syncShare()
-                    show(reply?.toast ?? "Your share is changed", undo: reply?.undo)
+                    // G2b-Share AM-21j1: "Your share is now 60%".
+                    show(account.jointShare.map { "Your share is now \(JointChangeSheet.pct($0))" }
+                         ?? "All yours now", undo: reply?.undo)
                 }
             }
         }
     }
 
+    /// G2b-Account: the bank's small icon, the name, and one line:
+    /// "Joint · ••1123 · $2,418.30" ("—" with no balance, TEST-13).
     private var hero: some View {
-        VStack(spacing: 10) {
-            NacreAvatar(text: account.bankLetters, size: 56)
+        VStack(spacing: 6) {
+            APIcon(symbol: "building.columns")
             Text(account.name).font(Nacre.title2).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center)
-            // TEST-13: the same hero as AM-08: "—" with no balance, not
-            // $0.00, and "Owing" for a card.
-            Text(account.balance.map { Format.amount(abs($0)) } ?? "—")
-                .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
-                .tracking(-0.88)
-                .foregroundColor(Pearl.ink)
-                .lineLimit(1).minimumScaleFactor(0.6)
-            Text([account.owing == true ? "Owing" : account.kindWord, (account.mask ?? "").isEmpty ? nil : "••\(account.mask!)"]
+                .accessibilityAddTraits(.isHeader)
+            Text(["Joint", (account.mask ?? "").isEmpty ? nil : "••\(account.mask!)",
+                  account.balance.map { (account.owing == true ? "Owing " : "") + Format.amount(abs($0)) } ?? "—"]
                 .compactMap { $0 }.joined(separator: " · "))
-                .font(Nacre.footnote).foregroundColor(Pearl.ink)
-            StatusPill(text: "Joint", tone: .joint)
+                .font(Nacre.footnote).foregroundColor(Pearl.muted)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 4)
-    }
-
-    /// "SL  Sam Lee  •••". Anyone can go, the last one too (decision 5).
-    private func personRow(_ name: String) -> some View {
-        HStack(spacing: 12) {
-            PearlFace(name: name, size: 40)
-            Text(name).font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-            PearlMoreButton(label: "Options for \(name)") { removing = Removing(name: name) }
-                .disabled(busy)
-        }
-        .padding(.vertical, 10)
     }
 
     /// "SA" for Sam, "SL" for Sam Lee.
@@ -291,9 +254,12 @@ struct JointAccountView: View {
         guard let reply = await send(body) else { return }
         if reply.needsConfirm == true {
             // AM-21j: "All mine unless I mark it" is all of each purchase.
-            asking = Asking(body: body, share: fixed ? (enteredShare ?? 0) : 100, changes: reply.changes ?? [])
+            // It opens once AM-08's sheet has gone.
+            pendingAsk = Asking(body: body, share: fixed ? (enteredShare ?? 0) : 100, changes: reply.changes ?? [])
+            editingShare = false
             return
         }
+        editingShare = false
         syncShare()
         show(reply.toast ?? "Saved", undo: reply.undo)
     }
@@ -367,6 +333,172 @@ struct JointAccountView: View {
     }
 }
 
+// MARK: - G2b-Account parts
+
+/// The share ring: her share round the ring, "50%" (or "All") in the middle.
+struct JointShareRing: View {
+    let share: Double?
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(APlus.trackSoft, lineWidth: 6)
+            Circle().trim(from: 0, to: CGFloat((share ?? 100) / 100))
+                .stroke(Pearl.action, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Text(share.map { JointChangeSheet.pct($0) } ?? "All")
+                .font(.custom("Fraunces-SemiBold", size: 18, relativeTo: .headline))
+                .foregroundColor(Pearl.ink).lineLimit(1).minimumScaleFactor(0.6)
+                .padding(8)
+        }
+        .frame(width: 64, height: 64)
+        .accessibilityHidden(true)
+    }
+}
+
+/// AM-08r: "Your share · 50% of each purchase · Change", or AM-08r1's
+/// "All yours · Until you mark a purchase as someone else’s". A tap changes it.
+struct JointShareCard: View {
+    let share: Double?
+    let change: () -> Void
+
+    var body: some View {
+        Button(action: change) {
+            HStack(spacing: 14) {
+                JointShareRing(share: share)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(share == nil ? "All yours" : "Your share").font(Nacre.body).foregroundColor(Pearl.ink)
+                    Text(share.map { "\(JointChangeSheet.pct($0)) of each purchase" }
+                         ?? "Until you mark a purchase as someone else’s")
+                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if share != nil {
+                    Text("Change").font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+                        .foregroundColor(Pearl.link)
+                }
+            }
+            .padding(16).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .apCard()
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Changes your share")
+        .accessibilityIdentifier("joint-share")
+    }
+}
+
+/// AM-08r: the faces, "Sam Lee and Maya Reyes", "Shared with", Edit.
+struct JointPeopleRow: View {
+    let people: [String]
+    let edit: () -> Void
+
+    var body: some View {
+        Button(action: edit) {
+            HStack(spacing: 12) {
+                HStack(spacing: -8) {
+                    ForEach(people.prefix(3), id: \.self) { APFace(name: $0, size: 32) }
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(names).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(2)
+                    Text("Shared with").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Text("Edit").font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+                    .foregroundColor(Pearl.link)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 64).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .apCard()
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Add or remove people")
+        .accessibilityIdentifier("joint-people")
+    }
+
+    /// "Sam Lee", "Sam Lee and Maya Reyes", "Sam, Maya and Jo".
+    private var names: String {
+        guard people.count > 1 else { return people.first ?? "" }
+        return people.dropLast().joined(separator: ", ") + " and " + people.last!
+    }
+}
+
+/// AM-08r1: nobody named yet. "Who do you share it with?" and Add people.
+struct JointNoOneCard: View {
+    let add: () -> Void
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Text("Who do you share it with?").font(Nacre.body).foregroundColor(Pearl.ink)
+            Text("Only you see their names.").font(Nacre.footnote).foregroundColor(Pearl.muted)
+            Button("Add people", action: add)
+                .buttonStyle(APPrimaryButtonStyle())
+                .padding(.top, 10)
+                .accessibilityIdentifier("joint-add-people")
+        }
+        .frame(maxWidth: .infinity)
+        .padding(16)
+        .apCard()
+    }
+}
+
+/// AM-08 "Your share": A fixed share or Mine unless I mark it, the share
+/// in one big well with the keypad, then All purchases or Starting today.
+struct JointShareSheet: View {
+    @Binding var fixed: Bool
+    @Binding var shareText: String
+    @Binding var apply: String
+    let busy: Bool
+    let error: String?
+    let valid: Bool
+    let onClose: () -> Void
+    let onSave: () -> Void
+
+    var body: some View {
+        PearlSheet(dismissDisabled: busy) {
+            APSheetTitle(title: "Your share", close: onClose)
+            APSegmented(options: [("fixed", "A fixed share"), ("auto", "Mine unless I mark it")],
+                        selection: Binding(get: { fixed ? "fixed" : "auto" }, set: { fixed = $0 == "fixed" }))
+            if fixed { JointPercentWell(text: $shareText) }
+            APSegmented(options: [("all", "All purchases"), ("from_today", "Starting today")],
+                        selection: Binding(get: { apply }, set: { apply = $0 ?? "all" }))
+            if let error = error { APErrorLine(text: error) }
+        } footer: {
+            Button(error == nil ? "Save" : "Try again", action: onSave)
+                .buttonStyle(APPrimaryButtonStyle(busy: busy))
+                .disabled(busy || !valid)
+                .accessibilityIdentifier("joint-share-save")
+        }
+    }
+}
+
+/// "60 %": the big well for a share, keypad up from the start.
+struct JointPercentWell: View {
+    @Binding var text: String
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            TextField("", text: $text, prompt: Text("50").foregroundColor(Pearl.muted))
+                .keyboardType(.decimalPad).focused($focused)
+                .foregroundColor(Pearl.ink).tint(Pearl.action)
+                .fixedSize()
+                .accessibilityLabel("Your share, percent")
+                .accessibilityIdentifier("joint-share-percent")
+            Text("%").foregroundColor(Pearl.muted).accessibilityHidden(true)
+        }
+        .font(.custom("Fraunces-SemiBold", size: 36, relativeTo: .largeTitle))
+        .monospacedDigit()
+        .frame(maxWidth: .infinity, minHeight: 72)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(APlus.well))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .strokeBorder(focused ? Pearl.action : APlus.wellLine, lineWidth: focused ? 2 : 1))
+        .contentShape(Rectangle())
+        .onTapGesture { focused = true }
+        .onAppear { focused = true }
+    }
+}
+
 // MARK: - AM-09 Same account twice?
 
 @MainActor
@@ -400,52 +532,62 @@ struct SameAccountView: View {
         return kept.id == account.id ? candidates.first : account
     }
 
+    /// G2b-Combine AM-09 (rethought, approved 2026-11-18): a Pearl sheet.
+    /// Pick which stays, one sentence says the result, Not now is quiet.
+    /// With nothing like it: one line and Got it.
     var body: some View {
-        ProfilePage {
-            ProfileHeading(title: "Same account twice?", intro: "Combine them so nothing shows twice.")
+        PearlSheet(dismissDisabled: busy) {
+            APSheetTitle(title: "Same account twice?") { dismiss() }
             if candidates.isEmpty {
-                ProfileNote("There’s no other account of the same kind to combine with.").padding(.top, 8)
+                Text("There’s no other account like it to combine with.")
+                    .font(Nacre.body).foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 ProfileSection("Keep")
                 APCard {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { i, a in
                         if i > 0 { APSeparator(afterFace: false) }
-                        PickRow(title: a.label, sub: line(a), selected: keep == a.id) { keep = a.id }
+                        PickRow(title: [a.label, (a.mask ?? "").isEmpty ? nil : "••\(a.mask!)"].compactMap { $0 }
+                                    .joined(separator: " "),
+                                sub: line(a), selected: keep == a.id) { keep = a.id }
                     }
                 }
-                if let note = note { ProfileNote(note).padding(.top, 4) }
+                if let note = note {
+                    Text(note).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                        .multilineTextAlignment(.center).frame(maxWidth: .infinity)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            if let error = error { Hint(text: error).padding(.top, 4) }
-        } bottom: {
-            if !candidates.isEmpty {
+            if let error = error { APErrorLine(text: error) }
+        } footer: {
+            if candidates.isEmpty {
+                Button("Got it") { dismiss() }.buttonStyle(APPrimaryButtonStyle())
+            } else {
                 Button("Combine them") { Task { await combine() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
+                    .buttonStyle(APPrimaryButtonStyle(busy: busy))
                     .disabled(busy || copy == nil)
+                APQuietButton(title: "Not now", identifier: "combine-not-now") { dismiss() }
+                    .frame(maxWidth: .infinity)
+                    .disabled(busy)
             }
         }
         .task(id: keep) { await loadPreview() }
     }
 
-    /// "Linked · 312 transactions".
+    /// "Linked · keeps syncing", "Added by you".
     private func line(_ a: AccountsOverview.Account) -> String {
-        let source = a.status == "manual" ? "Imported" : a.status == "disconnected" ? "Disconnected" : "Linked"
-        let n = a.transactions ?? 0
-        return "\(source) · \(n) transaction\(n == 1 ? "" : "s")"
+        if a.isHand || a.status == "manual" { return "Added by you" }
+        if a.status == "disconnected" { return "Disconnected" }
+        return keep == a.id ? "Linked \u{00B7} keeps syncing" : "Linked"
     }
 
-    /// "291 purchases are in both. Your categories and splits stay." and what
-    /// happens to the copy, since combining can't be undone.
+    /// "291 are in both, 7 move across. Your categories and splits stay."
     private var note: String? {
-        guard let copy = copy else { return nil }
-        let leaves = "\(copy.name) leaves Accounts and stops syncing."
-        let word = account.isCard ? "purchase" : "transaction"
-        guard let p = preview else { return "Your categories and splits stay. \(leaves)" }
-        var out = p.matched == 0 ? "Nothing is in both."
-            : "\(p.matched) \(word)\(p.matched == 1 ? " is" : "s are") in both. Your categories and splits stay."
-        if p.moved > 0 {
-            out += " \(p.moved) only on \(copy.name) move\(p.moved == 1 ? "s" : "") across."
-        }
-        return "\(out) \(leaves)"
+        guard copy != nil else { return nil }
+        guard let p = preview else { return "Your categories and splits stay." }
+        var out = p.matched == 0 ? "Nothing is in both" : "\(p.matched) \(p.matched == 1 ? "is" : "are") in both"
+        if p.moved > 0 { out += ", \(p.moved) move\(p.moved == 1 ? "s" : "") across" }
+        return out + ". Your categories and splits stay."
     }
 
     private func loadPreview() async {

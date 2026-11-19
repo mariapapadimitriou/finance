@@ -394,7 +394,7 @@ struct AccountSetupPage: View {
         .sheet(isPresented: $picking) {
             // AM-08p from setup (O-09cr): the same picker. Nothing saves until Save.
             PeoplePicker(api: app.api, overline: "\(account.name) · Joint", title: "Shared with",
-                         sub: "Up to six. Only you see this.", already: people, limit: 6,
+                         sub: "Up to six. Only you see this.", already: people, limit: 6, joint: true,
                          onClose: { picking = false }) { picked in
                 people = Array((people + picked.filter { !people.contains($0) }).prefix(6))
                 picking = false

@@ -22,7 +22,8 @@ struct AllowanceView: View {
                 .font(Nacre.label).tracking(0.78).foregroundColor(Pearl.muted)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 10)
-            AllowanceCard(month: cardMonth, amount: ringAmount, line: caption)
+            AllowanceCard(month: cardMonth, amount: ringAmount, line: caption,
+                          over: !skipped && allowance?.state == "over" && (allowance?.overBy ?? 0) >= 0.5)
             ProfileSection("Your first steps")
             APCard {
                 Button { if skipped { linkBank() } } label: {
@@ -203,12 +204,14 @@ struct AllowanceCard: View {
     let month: String
     let amount: String
     let line: String
+    /// G6-Over O-11c: over this month's plan, the amount is red (red only for over).
+    var over = false
 
     var body: some View {
         VStack(spacing: 4) {
             Text("Your Allowance \u{00B7} \(month)").font(Nacre.subheadline).foregroundColor(Pearl.muted)
             Text(amount).font(.custom("Fraunces-SemiBold", size: 56, relativeTo: .largeTitle))
-                .tracking(-1).monospacedDigit().foregroundColor(Pearl.ink)
+                .tracking(-1).monospacedDigit().foregroundColor(over ? Pearl.danger : Pearl.ink)
                 .pearlAmountFit()
             if !line.isEmpty {
                 Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted)

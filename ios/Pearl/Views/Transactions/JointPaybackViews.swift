@@ -70,17 +70,13 @@ struct JointPaybackFlow: ViewModifier {
                 picked = nil
                 if let next = next { linking = next }
             }) { s in
-                // PP-01 with the account's people (TP-01, more than one other owner).
-                WhoPaidPicker(api: api, sub: "+\(Format.amount(s.deposit.amount)) · \(s.deposit.name) · \(Format.short(s.deposit.date))",
-                              top: s.people.map { WhoPaidPicker.Row(name: $0, sub: "Your joint account") },
-                              pastSplits: false, someoneNew: false,
-                              onPick: { name in
-                                  var next = s
-                                  next.person = name
-                                  picked = next
-                                  asking = nil
-                              },
-                              onClose: { asking = nil })
+                // TP-01 (G2b-JointIn): Who paid? is a tile per other owner.
+                JointWhoPaidSheet(start: s, onPick: { name in
+                    var next = s
+                    next.person = name
+                    picked = next
+                    asking = nil
+                }, onClose: { asking = nil })
             }
             .sheet(item: $linking) { s in
                 // TP-03: PB-30 with them picked; PB-11 is skipped.
@@ -322,24 +318,56 @@ struct WhoPaidAskSheet: View {
     }
 }
 
-/// TP-05: "Why there’s no Paid back here" under a transfer between two
-/// accounts only hers.
+/// TP-05 (G2b-JointIn, rethought): under a transfer between two accounts
+/// only hers, one quiet line says why there's no Paid back.
 struct NoPaidBackCallout: View {
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "info.circle").font(.system(size: 18)).foregroundColor(Pearl.ink)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Why there’s no Paid back here").font(Nacre.headline).foregroundColor(Pearl.ink)
-                Text("Both accounts are only yours, so this is your own money moving. If someone else sent it, tap This isn’t a transfer. Then it’s money in, and What was this? offers Paid back.")
-                    .font(Pearl.text(.callout)).foregroundColor(Pearl.ink)
+        Text("Both accounts are only yours.")
+            .font(Nacre.caption1).foregroundColor(Pearl.muted)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 4)
+            .accessibilityLabel("Both accounts are only yours, so there’s no Paid back here.")
+    }
+}
+
+/// TP-01 (G2b-JointIn, rethought): "Who paid you back?" on money in from a
+/// joint account with more than one other owner: the account and the
+/// amount, then a tile per owner ("Mom · Joint with you"). A tap answers.
+struct JointWhoPaidSheet: View {
+    let start: JointPaybackStart
+    let onPick: (String) -> Void
+    let onClose: () -> Void
+
+    var body: some View {
+        PearlSheet {
+            APSheetTitle(title: "Who paid you back?", close: onClose)
+            HStack(spacing: 12) {
+                APFace(name: start.account, size: 44)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(start.account).font(Nacre.title2).foregroundColor(Pearl.ink).lineLimit(1)
+                    Text("+\(Format.amount(start.deposit.amount)) \u{00B7} \(Format.short(start.deposit.date))")
+                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
+            .accessibilityElement(children: .combine)
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                ForEach(start.people, id: \.self) { name in
+                    Button { onPick(name) } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            APIcon(symbol: "person").padding(.bottom, 8)
+                            Text(name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                            Text("Joint with you").font(Nacre.caption1).foregroundColor(Pearl.muted)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .apCard()
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("joint-who-\(name)")
+                }
+            }
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .apCard()
-        .accessibilityElement(children: .combine)
     }
 }

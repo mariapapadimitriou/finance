@@ -588,7 +588,8 @@ def for_store(st, today: str | None = None) -> dict:
     # Questions about her plan (finance/checks.py): Yes or No cards.
     from . import checks
     from . import api as core_api
-    review["checks"] = checks.build(st, txns, today or core_api._today_iso())
+    # Parked with Your plan (checks.PARKED): not asked, so not counted.
+    review["checks"] = [] if checks.PARKED else checks.build(st, txns, today or core_api._today_iso())
     open_checks = sum(1 for c in review["checks"] if not c["skipped"])
     review["count"] += len(review["checks"])
     review["open"] += open_checks

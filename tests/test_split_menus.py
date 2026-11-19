@@ -357,7 +357,9 @@ class TestLessWords:
             "Opens How to split", "by bank, cash, or another app", "Copy a message for the",
             "Goes at once, with Undo", "Pick it from your money in", "No bank record.",
             "Pearl remembers it next time", "never counted twice", "Tap the message to change it",
-            "already counts in full", "open the e-Transfer and unlink it there", "Who do you share it with?",
+            # "Who do you share it with?" is back on purpose: G2b-Account AM-08r1
+            # (rethought, approved 2026-11-18) asks it on the empty card.
+            "already counts in full", "open the e-Transfer and unlink it there",
             "Pick up to six. Only you can see this.", "share an account with. Pearl keeps only the name you pick",
             "You can still pick people", "the most for one account", "Pearl never contacts them",
             "keep that answer", "is still on this account", "Say it was partly yours first",
@@ -391,9 +393,12 @@ class TestLessWords:
             '"One Undo puts both back."', 'stays cash in hand.',
             'is the most. You’ll sort the other'],
         "ios/Pearl/Views/Transactions/JointSplitViews.swift": [
-            '"How to settle?"', '?? "Nobody owes after this."', 'stays yours. Nobody owes for \\(t.merchant).',
+            # G2-BSettle (S-45a, round 2): "Settle up" and one line under the ways.
+            'APSheetHeader(heading: "Settle up"', '"Your Allowance doesn’t change now."',
+            'stays yours and nobody owes you.', '"Didn’t pay · that’s fine"',
             '"Typed amounts stay. Even, % and shares update."', '"Six is the most."',
-            '"Pick from your splits, or type a name."', 'part is already off.'],
+            # G2-AAddPeople S-17 v2: Contacts off is one quiet line.
+            '"Contacts are off for Pearl."', '"Tick as many as you like"', 'part is already off.'],
         "ios/Pearl/Views/Transactions/TransactionDetailView.swift": [
             'showSplit("Copied"', '"None of it is yours to split."', 'let title = "\\(p.name) removed"',
             '("Settled up", {', '"Split reopened"'],
@@ -407,7 +412,8 @@ class TestLessWords:
         # "Only you see this. Nothing is sent." line went with O-09b.
         "ios/Pearl/Views/Onboarding/AccountSetupViews.swift": ['title: "Shared with"',
                                                              '"Up to six. Only you see this."'],
-        "ios/Pearl/Views/Profile/JointMergeViews.swift": ['"Only you see these names."', '"Not joint now"'],
+        # G2b-Account (rethought, 2026-11-18): AM-08r1's card says it.
+        "ios/Pearl/Views/Profile/JointMergeViews.swift": ['"Only you see their names."', '"Not joint any more"'],
         "ios/Pearl/Info.plist": ["To pick people faster. Pearl keeps only the name."],
         "finance/unlink.py": ['"Unlink and remove"', 'comes off the split too."', "The cash is forgotten",
                               'Part of {_money(whole)} · also paid back', 'waits to be reimbursed again.'],

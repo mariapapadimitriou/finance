@@ -28,31 +28,38 @@ struct ConfirmDeviceView: View {
         _how = State(initialValue: "approve")
     }
 
+    /// G6-NewDevice A-11 (rethought, approved 2026-11-18): one line and one
+    /// button. "Ask my Mac", or with no other device, "No other device to
+    /// ask" and Contact support. Recovery codes are left out (2026-11-04).
     var body: some View {
-        OnbScreen {
-            OnbTitle(title: "Confirm it’s you",
-                     line: "This iPhone is new to your account. Approve it from a device you’re signed in on.")
-            APCard {
-                if let approve = choices.approve {
-                    APChoiceRow(title: "Approve on my other device", sub: deviceLine(approve),
-                                selected: how == "approve") { how = "approve" }
+        OnbScreen(scrolls: false) {
+            if let approve = choices.approve {
+                OnbMessage(title: "Confirm it’s you",
+                           line: "This iPhone is new. Approve it on your \(Self.device(approve.label)).", top: 98) {
+                    OnbOrb(symbol: "laptopcomputer")
                 }
-                // Recovery codes are left out for now (2026-11-04).
+            } else {
+                OnbMessage(title: "No other device to ask", line: "We’ll help you get back in.", top: 98) {
+                    OnbOrb(symbol: "lock.slash")
+                }
             }
-            if choices.approve == nil {
-                APErrorLine(text: "There’s no other device to confirm this iPhone with. Contact support to get back in.")
-            }
-            if let error = error { APErrorLine(text: error) }
+            if let error = error { APErrorLine(text: error).padding(.top, 12) }
         } actions: {
-            OnbPrimary(title: "Continue", busy: busy, enabled: choices.approve != nil) { Task { await go() } }
+            if let approve = choices.approve {
+                OnbPrimary(title: "Ask my \(Self.device(approve.label))", busy: busy) { Task { await go() } }
+            } else if let contact = app.contact, !contact.isEmpty, let mail = URL(string: "mailto:\(contact)") {
+                Link(destination: mail) { Text("Contact support") }
+                    .buttonStyle(APPrimaryButtonStyle())
+            }
             APQuietButton(title: "Use a different email") { Task { await startOver() } }
         }
     }
 
-    /// "Mac · Chrome, used today".
-    private func deviceLine(_ a: DeviceChoices.Approve) -> String {
-        let when = a.usedAt.map { SignInSecurityView.ago($0).lowercased() }
-        return [a.label, when.map { "used \($0)" }].compactMap { $0 }.joined(separator: ", ")
+    /// "Mac · Chrome" → "Mac"; nothing known → "other device".
+    static func device(_ label: String?) -> String {
+        let first = (label ?? "").components(separatedBy: " \u{00B7} ").first?
+            .trimmingCharacters(in: .whitespaces) ?? ""
+        return first.isEmpty ? "other device" : first
     }
 
     private func go() async {
@@ -100,8 +107,9 @@ struct WaitingApprovalView: View {
     var body: some View {
         OnbScreen(back: false) {
             OnbMessage(title: "Check your other device",
-                       line: "Open Pearl there and approve this sign-in\(from.map { " from \($0)" } ?? "").", top: 98) {
-                OnbOrb(symbol: "iphone")
+                       line: "Open Pearl there and approve this sign-in\(from.map { " from \($0)" } ?? ""). This page carries on by itself.",
+                       top: 98) {
+                OnbOrb(symbol: "laptopcomputer")
             }
             if let said = said {
                 APErrorLine(text: said)
@@ -196,34 +204,47 @@ struct RecoveryCodeView: View {
 // MARK: - SEC-10 Is this you signing in?
 
 /// On a signed-in iPhone: another device is asking to sign in as her.
+/// G6-NewDevice SEC-10 (rethought, approved 2026-11-18): the device in one
+/// line ("Mac · Chrome", "Near Toronto · just now"), then Yes, it's me and
+/// No, it wasn't me. The close button leaves it unanswered; it runs out.
 struct ApprovalPrompt: View {
+    @Environment(\.dismiss) private var dismiss
     let approval: Approval
     let answer: (Bool) -> Void
 
     var body: some View {
-        VStack(spacing: 10) {
-            Text("NEW DEVICE").font(Nacre.caption1).foregroundColor(Pearl.ink).padding(.top, 24)
-            Text("Is this you signing in?").font(Nacre.title2).foregroundColor(Pearl.ink)
-                .accessibilityAddTraits(.isHeader)
-            if let email = approval.account?.email, !email.isEmpty {
-                Text("To Pearl as \(email)").font(Nacre.headline).foregroundColor(Pearl.ink)
+        VStack(spacing: 0) {
+            APSheetTitle(title: "Is this you signing in?") { dismiss() }
+                .padding(.top, 16)
+            VStack(spacing: 4) {
+                Image(systemName: "laptopcomputer").font(.system(size: 18)).foregroundColor(Pearl.action)
+                    .frame(width: 36, height: 36)
+                    .background(Circle().fill(ProfileTone.actionWash))
+                    .accessibilityHidden(true)
+                Text(approval.label ?? "A new device").font(Nacre.headline).foregroundColor(Pearl.ink)
+                    .padding(.top, 6)
+                Text(where_).font(Nacre.footnote).foregroundColor(Pearl.muted)
             }
-            Text("\(place), just now. Only approve it if you’re signing in yourself.")
-                .font(Nacre.body).foregroundColor(Pearl.muted).multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-            Button("Approve") { answer(true) }
-                .buttonStyle(APPrimaryButtonStyle())
-            Button("No, it wasn’t me") { answer(false) }
-                .buttonStyle(APSecondaryButtonStyle())
+            .frame(maxWidth: .infinity)
+            .padding(.top, 14)
+            .accessibilityElement(children: .combine)
+            Spacer(minLength: 16)
+            VStack(spacing: 12) {
+                Button("Yes, it’s me") { answer(true) }
+                    .buttonStyle(APPrimaryButtonStyle())
+                    .accessibilityIdentifier("approval-yes")
+                Button("No, it wasn’t me") { answer(false) }
+                    .buttonStyle(APSecondaryButtonStyle())
+                    .accessibilityIdentifier("approval-no")
+            }
         }
-        .padding(.horizontal, 20).padding(.bottom, 8)
+        .padding(.horizontal, 16).padding(.bottom, 8)
         .background(SheetBackground())
         .interactiveDismissDisabled()
     }
 
-    private var place: String {
-        let label = approval.label ?? "A new device"
-        return approval.near.map { "\(label), near \($0)" } ?? label
+    /// "Near Toronto · just now".
+    private var where_: String {
+        approval.near.map { "Near \($0) \u{00B7} just now" } ?? "Just now"
     }
 }

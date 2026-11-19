@@ -465,20 +465,21 @@ struct ExpectedIncomeSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 APSheetTitle(title: "Your own amount") { dismiss() }
-                Text("Each month, after tax").font(Nacre.footnote).foregroundColor(Pearl.muted)
-                    .frame(maxWidth: .infinity).padding(.top, 2)
-                BigAmountWell(text: $amount, placeholder: varies ? "Pearl works it out" : "0")
-                    // The latest answer wins (decision 7): typing an amount means it doesn't change.
-                    .onChange(of: amount) { typed in if !typed.isEmpty { varies = false } }
-                if let estimate = expected?.estimate, estimate > 0 {
-                    ProfileNote("Pearl\u{2019}s estimate is \(Format.whole(estimate))", centred: true)
-                }
-                APCard {
-                    APToggleRow(title: "It changes month to month",
-                                isOn: Binding(get: { varies }, set: { on in
-                                    varies = on
-                                    if on { amount = "" }
-                                }))
+                if varies {
+                    // G5-Extras IB-03b (rethought, approved 2026-11-18): the
+                    // switch on top, then Pearl's figure instead of a greyed field.
+                    variesSwitch
+                    PearlFigure(estimate: expected?.estimate).padding(.top, 14)
+                } else {
+                    Text("Each month, after tax").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                        .frame(maxWidth: .infinity).padding(.top, 2)
+                    BigAmountWell(text: $amount, placeholder: "0")
+                        // The latest answer wins (decision 7): typing an amount means it doesn't change.
+                        .onChange(of: amount) { typed in if !typed.isEmpty { varies = false } }
+                    if let estimate = expected?.estimate, estimate > 0 {
+                        ProfileNote("Pearl\u{2019}s estimate is \(Format.whole(estimate))", centred: true)
+                    }
+                    variesSwitch
                 }
                 if let error = error { APErrorLine(text: error) }
             }
@@ -490,7 +491,7 @@ struct ExpectedIncomeSheet: View {
                 Button(error == nil ? "Save" : "Try again") { Task { await save() } }
                     .buttonStyle(APPrimaryButtonStyle(busy: busy))
                     .disabled(busy || (amount.isEmpty && !varies))
-                if expected?.estimate != nil || (own != nil && hasPay) {
+                if !varies && (expected?.estimate != nil || (own != nil && hasPay)) {
                     Button(expected?.estimate.map { "Use Pearl\u{2019}s estimate (\(Format.whole($0)))" } ?? "Use my pay instead") {
                         Task { await clear() }
                     }
@@ -506,6 +507,16 @@ struct ExpectedIncomeSheet: View {
         }
         .background(SheetBackground())
         .presentationDetents([.large])
+    }
+
+    private var variesSwitch: some View {
+        APCard {
+            APToggleRow(title: "It changes month to month",
+                        isOn: Binding(get: { varies }, set: { on in
+                            withAnimation(.easeInOut(duration: 0.2)) { varies = on }
+                            if on { amount = "" }
+                        }))
+        }
     }
 
     private func save() async {
@@ -592,11 +603,40 @@ private struct NoIncomeLine: View {
     }
 }
 
+/// IB-03b: "Pearl works it out", her estimate in Fraunces green ("~$4,520"),
+/// and one line on how it's worked out.
+struct PearlFigure: View {
+    let estimate: Double?
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Text("Pearl works it out").font(Nacre.footnote).foregroundColor(Pearl.muted)
+            if let estimate = estimate, estimate > 0 {
+                Text("~" + Format.whole(estimate))
+                    .font(.custom("Fraunces-SemiBold", size: 36, relativeTo: .largeTitle))
+                    .foregroundColor(Pearl.moneyIn).monospacedDigit()
+                    .lineLimit(1).minimumScaleFactor(0.6)
+            }
+            Text("From your last 3 months, a little under so it never runs ahead of you.")
+                .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 8)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// G5-IncomeEdit's `.fld.big`: a 72 pt well, radius 16, the amount centred
 /// in 36 pt Fraunces SemiBold with its `$`, the keypad up from the start.
 struct BigAmountWell: View {
     @Binding var text: String
     var placeholder = "0"
+    var label = "Each month, after tax"
+    var identifier = "own-amount"
+    /// Off where the sheet opens to read first (O-10a, O-10b).
+    var autofocus = true
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -608,8 +648,8 @@ struct BigAmountWell: View {
                 .foregroundColor(Pearl.ink)
                 .tint(Pearl.action)
                 .fixedSize()
-                .accessibilityLabel("Each month, after tax")
-                .accessibilityIdentifier("own-amount")
+                .accessibilityLabel(label)
+                .accessibilityIdentifier(identifier)
         }
         .font(.custom("Fraunces-SemiBold", size: 36, relativeTo: .largeTitle))
         .monospacedDigit()
@@ -619,6 +659,6 @@ struct BigAmountWell: View {
             .strokeBorder(focused ? Pearl.action : APlus.wellLine, lineWidth: focused ? 2 : 1))
         .contentShape(Rectangle())
         .onTapGesture { focused = true }
-        .onAppear { focused = true }
+        .onAppear { if autofocus { focused = true } }
     }
 }

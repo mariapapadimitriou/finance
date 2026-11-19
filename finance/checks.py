@@ -15,6 +15,11 @@ from __future__ import annotations
 import json
 from datetime import date, timedelta
 
+# Your plan is parked with Save (product owner, 2026-11-18): while it is,
+# Needs a look and Quick sort don't ask these, so nothing counts them (the
+# Home count, the tab badge and Quick sort's prompt agree with what the app
+# shows). The iPhone app's switch is YourPlanGate.shown.
+PARKED = True
 SAVERS_KEY = "saver_accounts"
 NOT_SAVERS_KEY = "saver_no"
 # Two missed cycles, and a few days' grace, before Pearl asks.

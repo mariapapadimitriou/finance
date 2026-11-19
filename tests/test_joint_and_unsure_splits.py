@@ -616,8 +616,8 @@ class TestTheApp:
         assert "None of it is yours to split." in detail
         views = src("ios/Pearl/Views/Transactions/JointSplitViews.swift")
         for words in ("Remove the split?", "Keep the split", "Not a joint account?", "Keep it joint",
-                      "How to settle?", "Use what each paid?", "That’s everything?", "Keep it open",
-                      "Nothing to pay", "Contacts are off for Pearl", "Turn on in Settings", "Type a name"):
+                      "Settle up", "Use what each paid?", "That’s everything?", "Keep it open",
+                      "Keep it as it is", "Contacts are off for Pearl", "Turn on in Settings", "Type a name"):
             assert words in views, words
 
     def test_allowance_never_safe_to_spend(self):

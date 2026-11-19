@@ -218,6 +218,10 @@ struct HomeView: View {
             // Cash flow filtered to that category (CashFlowFocus, TransactionsView.swift).
             if let name = target.name { CashFlowFocus.shared.show(category: name, month: target.month) }
             tab = .cashFlow
+        case "income" where target.month != nil:
+            // T-74 (AP-Paycheque): that month's income in Cash flow (CashFlowFocus).
+            CashFlowFocus.shared.show(category: "Income", month: target.month)
+            tab = .cashFlow
         case "allowance":
             // The new month: Home's own Allowance, the orb at the top.
             toOrb += 1
@@ -401,12 +405,14 @@ private struct HomeCards: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // H-02 (THL-120): every bank in trouble, worst first, each its own card.
-            ForEach(troubled) { c in
-                BankAlertCard(connection: c, today: home.today, openAccounts: actions.accounts) {
+            // H-02 (THL-120, rethought): only the worst bank (the server sends
+            // them worst first); the others wait in Accounts.
+            if let c = troubled.first {
+                BankAlertCard(connection: c, today: home.today, more: troubled.count - 1,
+                              openAccounts: actions.accounts) {
                     actions.reconnect(c)
                 }
-                .padding(.top, 18)
+                .padding(.top, 10)
             }
             if let setup = setup, setup.active {
                 SetupAgainCard(setup: setup, onChanged: actions.reload).padding(.top, 18)
@@ -517,35 +523,61 @@ struct SetupAgainCard: View {
     var hideable = true
     let onChanged: () -> Void
 
+    /// AP-SetupAgain (rethought, approved 2026-11-18): SET PEARL UP AGAIN ·
+    /// Hide, then one card: a bar per step (done in green), "1 of 3 done",
+    /// and only the next step as one row.
     var body: some View {
+        let done = setup.steps.filter(\.done).count
         VStack(alignment: .leading, spacing: 8) {
-            APSectionLabel(text: "Set Pearl up again")
-            Text(setup.left == 1 ? "Start over cleared what only you can tell Pearl. 1 thing left to set again."
-                 : "Start over cleared what only you can tell Pearl. \(setup.left) things left to set again.")
-                .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                .padding(.horizontal, 4)
-                .fixedSize(horizontal: false, vertical: true)
-            APCard {
-                ForEach(Array(setup.steps.enumerated()), id: \.element.id) { index, step in
-                    if index > 0 { APSeparator(afterFace: false) }
-                    NavigationLink { destination(step) } label: {
-                        ProfileRow(symbol: symbol(step.key), title: step.title,
-                                   sub: step.done ? "Done" : step.sub)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityValue(step.done ? "Done" : "")
-                }
-            }
             if hideable {
-                Button("Hide this list") {
+                APSectionLabel(text: "Set Pearl up again", action: "Hide") {
                     Task {
                         let _: SetupAgain? = try? await app.api.post("api/setup-again", ["hide": true])
                         onChanged()
                     }
                 }
-                .buttonStyle(NacreTextButtonStyle())
+            } else {
+                APSectionLabel(text: "Set Pearl up again")
             }
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 6) {
+                    ForEach(setup.steps) { step in
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .fill(step.done ? Pearl.moneyIn : APlus.trackSoft)
+                            .frame(height: 6)
+                    }
+                }
+                .accessibilityHidden(true)
+                Text("\(done) of \(setup.steps.count) done")
+                    .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    .padding(.top, 8)
+                if let next = setup.steps.first(where: { !$0.done }) {
+                    NavigationLink { destination(next) } label: { nextRow(next) }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("setup-next-\(next.key)")
+                }
+            }
+            .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 6)
+            .apCard()
         }
+    }
+
+    /// "Next" over the step's title, its icon on the left, a chevron.
+    private func nextRow(_ step: SetupAgain.Step) -> some View {
+        HStack(spacing: 12) {
+            APIcon(symbol: symbol(step.key))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Next").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                Text(step.title).font(Nacre.body).foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            APChevron()
+        }
+        .padding(.vertical, 10)
+        .frame(minHeight: 56)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder
@@ -574,47 +606,57 @@ struct SetupAgainCard: View {
     }
 }
 
-/// H-01 (THL-120, THL-123): a bank that needs her, at the top of Home, on
-/// its own A+ card: the same words as Accounts' C-01. Disconnected opens
-/// Accounts; a bank that isn't responding needs nothing from her.
+/// H-01 / H-02 (AP-BankAlert; THL-120, THL-123): a bank that needs her, as
+/// the A+ champagne banner under the Allowance: the warning icon, one line,
+/// and a quiet action (Reconnect, or See accounts when it's disconnected).
+/// H-02 (rethought, approved 2026-11-18): with several banks only the worst
+/// shows; "1 more bank · See accounts" sends her to the rest in Accounts.
 struct BankAlertCard: View {
     let connection: Home.Connection
     let today: String?
+    /// The other banks that need her (H-02); they wait in Accounts.
+    var more: Int = 0
     let openAccounts: () -> Void
     let reconnect: () -> Void
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 12) {
-                APIcon.warn(connection.state == "bank_down" ? "clock" : "arrow.triangle.2.circlepath")
-                Text(text).font(Nacre.body).foregroundColor(Pearl.ink)
+                APIcon.warn("exclamationmark.triangle")
+                Text(text).font(Nacre.subheadline).foregroundColor(Pearl.ink)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                if connection.state == "needs_sign_in" {
+                    APQuietButton(title: "Reconnect", identifier: "bank-reconnect", action: reconnect).fixedSize()
+                } else {
+                    APQuietButton(title: "See accounts", identifier: "bank-see-accounts", action: openAccounts).fixedSize()
+                }
             }
-            switch connection.state {
-            case "needs_sign_in":
-                Button("Reconnect", action: reconnect).buttonStyle(NacreButtonStyle())
-            case "disconnected":
-                Button("See accounts", action: openAccounts).buttonStyle(NacreButtonStyle())
-            default:
-                EmptyView()
+            if more > 0 {
+                Button(action: openAccounts) {
+                    Text("\(more) more bank\(more == 1 ? "" : "s") \u{00B7} See accounts")
+                        .font(.custom("Figtree-Medium", size: 13, relativeTo: .footnote))
+                        .foregroundColor(Pearl.link)
+                        .frame(minHeight: 28)
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 48)
+                .accessibilityIdentifier("bank-more")
             }
         }
-        .padding(18)
-        .apCard()
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(ProfileTone.bannerFill))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Pearl.champagne, lineWidth: 1))
     }
 
+    /// "TD needs you to sign in again. Nothing since Nov 9 counts yet."
     private var text: String {
         let bank = connection.institution ?? "Your bank"
-        switch connection.state {
-        case "needs_sign_in":
-            let what = connection.cardsOnly == true ? "Its purchases" : "Its transactions"
-            let since = connection.lastSynced.map { " since \(Format.short($0))" } ?? ""
-            return "\(bank) needs you to sign in again. \(what)\(since) aren’t counted yet."
-        case "disconnected":
-            return "\(bank) is no longer connected, so its transactions aren’t coming in."
-        default:
-            return "\(bank) isn’t responding right now. Pearl keeps trying; there’s nothing you need to do."
+        if connection.state == "needs_sign_in" {
+            let since = connection.lastSynced.map { "Nothing since \(Format.short($0)) counts yet." }
+                ?? "Nothing new counts yet."
+            return "\(bank) needs you to sign in again. \(since)"
         }
+        return "\(bank) is no longer connected. Nothing new comes in."
     }
 }
