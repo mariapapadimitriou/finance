@@ -569,8 +569,10 @@ struct APQuestionWho: View {
                 Text(name).font(Pearl.heading(22, relativeTo: .title2)).foregroundColor(Pearl.ink)
                     .lineLimit(big ? 3 : 2)
                     .fixedSize(horizontal: false, vertical: true)
+                // S-03j v2: no amount, so the line is the sub alone.
                 (Text(amount).foregroundColor(tone)
-                 + Text(sub.map { $0.isEmpty ? "" : " · " + $0 } ?? "").foregroundColor(Pearl.muted))
+                 + Text(sub.map { $0.isEmpty ? "" : (amount.isEmpty ? "" : " · ") + $0 } ?? "")
+                    .foregroundColor(Pearl.muted))
                     .font(Nacre.subheadline).lineLimit(big ? 3 : 2)
                     .fixedSize(horizontal: false, vertical: true)
             }

@@ -227,8 +227,9 @@ final class Round1FixesUITests: XCTestCase {
         gustoNotSureWithPriyaPaid()
         tap(button("Settle up"), "Settle up")
         tap(button("Type amounts"), "Type amounts")
-        XCTAssertTrue(text(containing: "type amounts").waitForExistence(timeout: 8),
-                      "Type amounts should open on S-45c, Settle up · type amounts")
+        // G2-BSettle S-45d: titled "Settle up", with the methods.
+        XCTAssertTrue(button("Shares").waitForExistence(timeout: 8),
+                      "Type amounts should open on S-45d, Settle up with the methods")
         XCTAssertFalse(text(containing: "Who was it with").exists, "It opened on Who was it with? again")
         XCTAssertTrue(text(containing: "127.50").exists, "The header should show the whole purchase, $127.50")
         // THL-303 (TEST-18): Priya is locked at what she paid.
