@@ -67,6 +67,8 @@ struct AnswerSheet: View {
     /// T-08 / T-12: which side of money in is showing.
     @State private var incomeSide = true
     @State private var intoChoice: String?
+    /// G1-WhatWasThis-r (T-08): Something else… opened in place.
+    @State private var intoEverything = false
     /// The transaction in full, for the options.
     @State private var full: Transaction?
     /// Whether a rule for this name could match the right rows (not "Interac e-Transfer").
@@ -209,7 +211,11 @@ struct AnswerSheet: View {
                               answersAtOnce: true,
                               // Off where other rows are open or it varies: her answer here is for this row.
                               newOnesOn: pageAlways ?? (learnable && t.mixed != true && ask.item.siblings.isEmpty),
-                              showsAlways: pageAlways == nil) { name, remember in
+                              showsAlways: pageAlways == nil,
+                              // G1-WhatWasThis-r (T-04n): Pearl's guess leads, then her
+                              // four likeliest; every other answer under Something else….
+                              leadsWithLikely: !(fromPage && ask.kind == .category),
+                              guess: ask.kind == .category && pageCategory == nil ? ask.item.guess?.text : nil) { name, remember in
                     saveSpending(name, remember)
                 }
             } else if step == .into {
@@ -245,14 +251,13 @@ struct AnswerSheet: View {
         .modifier(JointPaybackFlow(start: $jointStart, api: api) { reply in onAnswer(.done(reply)) })
         .sheet(isPresented: $whosing) {
             if let f = full {
-                WhoseSheet(t: f, api: api) { said, _ in
+                // G2b-Whose T-76: the tiles that answer at once (JointSplitViews).
+                WhoseTilesSheet(t: f, api: api) { said, _ in
                     whosing = false
                     whoseSaid = said
                     // Her part may have changed, so Split my part says so.
                     Task { full = try? await api.get("api/transactions/\(f.id)") }
                 }
-                .fitsContent()
-                .presentationDragIndicator(.visible)
             }
         }
         .sheet(isPresented: $splitting) {
@@ -411,7 +416,9 @@ struct AnswerSheet: View {
                 APCard {
                     if joint {
                         Button { whosing = true } label: {
-                            optionLabel("Whose was it?", done: whoseSaid != nil, icon: "person.2")
+                            // T-06jr (G2b-Purchase): "Whose was it?   Half each ›".
+                            optionLabel("Whose was it?", done: whoseSaid != nil, icon: "person.2",
+                                        value: f.jointShareValue)
                         }
                         .buttonStyle(.plain)
                         if canSplit || f.canOneOff { APSeparator(afterFace: false) }
@@ -454,11 +461,14 @@ struct AnswerSheet: View {
         }
     }
 
-    private func optionLabel(_ title: String, done: Bool, icon: String? = nil) -> some View {
+    private func optionLabel(_ title: String, done: Bool, icon: String? = nil, value: String? = nil) -> some View {
         HStack(spacing: 12) {
             if let icon = icon { CFIcon(symbol: icon) }
             Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
             Spacer(minLength: 4)
+            if let value = value {
+                Text(value).font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
+            }
             if done {
                 Image(systemName: "checkmark").font(.system(size: 13, weight: .bold)).foregroundColor(Nacre.teal)
             }
@@ -591,20 +601,40 @@ struct AnswerSheet: View {
                             .font(Nacre.body).foregroundColor(Pearl.ink)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    if learnable && pageAlways == nil {
-                        Toggle(isOn: $rememberInto) {
-                            Text("Always for \(who)").font(Nacre.body).foregroundColor(Pearl.ink)
-                                .fixedSize(horizontal: false, vertical: true)
+                    // G1-WhatWasThis-r (T-08, approved): OR and four likely
+                    // answers; every other one opens in place under Something
+                    // else…; Always for the payer last. A transfer (TP-02)
+                    // opens with them all, its My own money ringed.
+                    if intoEverything || ask.kind == .transfer {
+                        Text("INCOME").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+                            .padding(.horizontal, 16).accessibilityAddTraits(.isHeader)
+                        CaseGrid(cases: CaseTile.income, chosen: answer(income: true))
+                        Text("NOT INCOME").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+                            .padding(.horizontal, 16).padding(.top, 4).accessibilityAddTraits(.isHeader)
+                        // TP-02: on a transfer, My own money is today's answer, ringed.
+                        CaseGrid(cases: CaseTile.notIncome, chosen: answer(income: false, current: ask.kind == .transfer ? "own" : nil))
+                    } else {
+                        APSectionLabel(text: "Or")
+                        CFTileGrid {
+                            ForEach(CaseTile.likelyIn, id: \.tile.key) { item in
+                                CFTile(symbol: item.tile.symbol, title: item.tile.label, mark: .rest) {
+                                    answer(income: item.income).wrappedValue = item.tile.key
+                                }
+                                .accessibilityLabel(item.tile.label)
+                            }
                         }
-                        .tint(Pearl.action).padding(.horizontal, 4)
+                        APCard {
+                            Button { withAnimation(.easeOut(duration: 0.2)) { intoEverything = true } } label: {
+                                CFRowLabel(symbol: "ellipsis", title: "Something else…",
+                                           sub: "Every other answer, on this page", trailing: .chevron)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Shows every other answer here")
+                        }
                     }
-                    Text("INCOME").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
-                        .padding(.horizontal, 16).accessibilityAddTraits(.isHeader)
-                    CaseGrid(cases: CaseTile.income, chosen: answer(income: true))
-                    Text("NOT INCOME").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
-                        .padding(.horizontal, 16).padding(.top, 4).accessibilityAddTraits(.isHeader)
-                    // TP-02: on a transfer, My own money is today's answer, ringed.
-                    CaseGrid(cases: CaseTile.notIncome, chosen: answer(income: false, current: ask.kind == .transfer ? "own" : nil))
+                    if learnable && pageAlways == nil {
+                        APCard { CFToggleRow(symbol: "repeat", title: "Always for \(who)", isOn: $rememberInto) }
+                    }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 12)
                 .sheetPart()
@@ -958,14 +988,7 @@ struct AnswerSheet: View {
     /// then PB-30 with this one ticked and the others as they add up. Offline,
     /// the single tap.
     private func tapTile(_ tile: PaybackQuestion.Tile) async {
-        struct Reply: Decodable { let from: String?; let items: [Lenient<PartsSheet.Owing>] }
-        let r: Reply? = try? await api.get("api/transactions/\(t.id)/owing",
-                                           query: tile.person.map { ["person": $0] } ?? [:])
-        let theirs = (r?.items ?? []).compactMap(\.value)
-            .filter { $0.theirs == true && $0.unknown != true && $0.owes >= 0.005 }
-        let cents: (Double) -> Int = { Int((abs($0) * 100).rounded()) }
-        if let from = r?.from, let share = theirs.first(where: { $0.charge == tile.charge }),
-           cents(t.amount) > cents(share.owes), theirs.count > 1 {
+        if let from = await PaybackQuestion.partsPerson(api: api, id: t.id, amount: t.amount, tile: tile) {
             partPerson = from
             mustTick = tile.charge
             parting = true

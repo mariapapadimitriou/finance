@@ -299,8 +299,9 @@ def trip_card(st, transactions: list[Transaction], month: str, limit: int = 3) -
 def trips_on(st, iso: str) -> list[dict]:
     """TR-10b: the trips a day is part of, for the row that starts its list."""
     from . import trips
+    # G7-TripMore TR-10: "3 days · 9 transactions".
     return [{"id": t["id"], "name": t["name"], "start": t["start"], "end": t["end"],
-             "totals": trips.summary(st, t)["totals"]}
+             "totals": trips.summary(st, t)["totals"], "count": len(t.get("ids") or [])}
             for t in sorted(trips.all_trips(st).values(), key=lambda t: t["start"])
             if t["start"] <= iso <= t["end"]]
 

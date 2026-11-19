@@ -133,6 +133,8 @@ struct CalendarDay: Decodable {
         let start: String
         let end: String
         let totals: [MoneyTotal]
+        /// TR-10 (G7-TripMore): "3 days · 9 transactions".
+        var count: Int? = nil
     }
 
     struct Spent: Decodable, Hashable {
@@ -389,8 +391,8 @@ struct CalendarCard: View {
                 HStack(spacing: 6) {
                     ForEach(row) { cell in dayCell(cell) }
                 }
-                // TR-10: each trip's band in the 6 pt gap under its days.
-                .overlay(alignment: .bottomLeading) { tripBands(row) }
+                // TR-10 (G7-TripMore): each trip as one `action-wash` run behind its days.
+                .background(alignment: .topLeading) { tripBands(row) }
             }
         }
     }
@@ -468,12 +470,12 @@ struct CalendarCard: View {
 
     // MARK: Trips (TR-10, TR-10b)
 
-    /// TR-10 (1339:8555) / TR-10b (1339:9245): a 6 pt Nacre band under a
-    /// trip's days in this week, in the gap below the row, so it never
-    /// covers a number or a mark. Rounded where the trip starts and ends,
-    /// flat and running to the edge where it carries on into the next week
-    /// or month, or in from the last. Two trips close together are two
-    /// bands. Not a tap target: the day or the Trips card opens the trip.
+    /// TR-10 (G7-TripMore; was 1339:8555's 6 pt band): a trip's days in this
+    /// week as one `action-wash` run behind them (kit `.cal .d.pick`),
+    /// gap-less, rounded (12) only where the trip starts and ends, flat and
+    /// running to the edge where it carries on into the next week or month
+    /// (TR-10b). Two trips close together are two runs. Not a tap target:
+    /// the day or the Trips card opens the trip.
     private func tripBands(_ row: [CalendarMonth.Cell]) -> some View {
         GeometryReader { g in
             let gap: CGFloat = 6
@@ -485,11 +487,10 @@ struct CalendarCard: View {
                     let roundEnd = row[b].date == trip.end
                     let x0 = roundStart ? CGFloat(a) * (w + gap) : 0
                     let x1 = roundEnd ? CGFloat(b) * (w + gap) + w : g.size.width
-                    TripBandShape(roundStart: roundStart, roundEnd: roundEnd)
-                        .fill(LinearGradient(colors: [Color(hex: 0xFFD6E0), Color(hex: 0xE3D4FF), Color(hex: 0xCFF3EE)],
-                                             startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: max(x1 - x0, 6), height: 6)
-                        .offset(x: x0, y: g.size.height)
+                    TripBandShape(roundStart: roundStart, roundEnd: roundEnd, radius: 12)
+                        .fill(Pearl.action.opacity(0.1))
+                        .frame(width: max(x1 - x0, 6), height: g.size.height)
+                        .offset(x: x0)
                 }
             }
         }
@@ -497,22 +498,47 @@ struct CalendarCard: View {
         .accessibilityHidden(true)
     }
 
-    /// TR-10b's day row "Trip   Trip to Lisbon · Oct 29 – Nov 2   $2,140.00".
-    /// The Trips card's rows are `TripCardRow` (TR-17).
-    private func tripLine(lead: String, name: String, totals: [MoneyTotal]) -> some View {
-        HStack(spacing: 12) {
-            Text(lead).foregroundColor(Pearl.muted).fixedSize()
-            Text(name).foregroundColor(Pearl.ink).frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-            // A trip's total is a total, like a category's: no minus, in one
-            // currency or several (TR-02m; note 1329:69536, Wording).
-            Text(totals.shown)
-                .foregroundColor(Pearl.ink).monospacedDigit().pearlAmountFit()
+    /// TR-10 (G7-TripMore) under the grid, for a day inside a trip: the
+    /// trip's days as the label ("Thu, Mar 6 – Sat, Mar 8"), then one row,
+    /// the trip's two-letter face, "Trip to Ottawa" over "3 days · 9
+    /// transactions", its total (no minus, TR-02m) and the chevron. Opens TR-02.
+    @ViewBuilder private func dayTrips(_ trips: [CalendarDay.DayTrip]) -> some View {
+        ForEach(trips, id: \.id) { trip in
+            APSectionLabel(text: trip.start == trip.end ? Format.weekdayDay(trip.start)
+                           : "\(Format.weekdayDay(trip.start)) \u{2013} \(Format.weekdayDay(trip.end))")
+                .padding(.top, 4)
+            APCard {
+                NavigationLink { TripPage(id: trip.id) } label: {
+                    HStack(spacing: 12) {
+                        Initials(name: trip.name, trip: true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(trip.name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                            Text(Self.tripLine(trip)).font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(1)
+                        }
+                        Spacer(minLength: 8)
+                        // A trip's total is a total, like a category's: no minus, in one
+                        // currency or several (TR-02m; note 1329:69536, Wording).
+                        Text(trip.totals.shown).font(Nacre.headline).foregroundColor(Pearl.ink)
+                            .monospacedDigit().pearlAmountFit()
+                        CFChevron()
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 64)
+                    .contentShape(Rectangle())
+                    .accessibilityElement(children: .combine)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens the trip")
+            }
         }
-        .font(Nacre.body)
-        .padding(.vertical, 12)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
+    }
+
+    /// "3 days · 9 transactions".
+    static func tripLine(_ trip: CalendarDay.DayTrip) -> String {
+        let a = Format.localDay(trip.start), b = Format.localDay(trip.end)
+        let days = a.flatMap { a in b.map { Calendar.current.dateComponents([.day], from: a, to: $0).day ?? 0 } }
+            .map { $0 + 1 } ?? 1
+        return ["\(days) day\(days == 1 ? "" : "s")",
+                trip.count.map { "\($0) transaction\($0 == 1 ? "" : "s")" }].compactMap { $0 }.joined(separator: " · ")
     }
 
     // MARK: Under the grid (T-49, T-68)
@@ -549,24 +575,14 @@ struct CalendarCard: View {
         if let day = shownDay ?? data?.cells.first(where: { $0.state == "today" })?.date, let d = dayData {
             let cell = data?.cells.first { $0.date == day }
             let pace = cell?.state == "on" ? " · ON PACE" : cell?.state == "ahead" ? " · OVER PACE" : ""
+            if !d.trips.isEmpty {
+                // TR-10 / TR-10b (G7-TripMore): a day inside a trip starts
+                // with the trip, under the grid, which opens TR-02.
+                dayTrips(d.trips)
+            }
             Text("\(Format.weekdayDay(day).uppercased())\(d.spentTotal.map { " · \(Format.whole($0)) SPENT" } ?? "")\(pace)")
                 .font(Nacre.caption1).foregroundColor(Pearl.ink).padding(.leading, 16).padding(.top, 4)
                 .accessibilityAddTraits(.isHeader)
-            if !d.trips.isEmpty {
-                // TR-10b (1339:9245): a day inside a trip starts with the trip, which opens TR-02.
-                APCard {
-                    ForEach(Array(d.trips.enumerated()), id: \.element.id) { i, trip in
-                        if i > 0 { APSeparator(afterFace: false) }
-                        NavigationLink { TripPage(id: trip.id) } label: {
-                            tripLine(lead: "Trip", name: "\(trip.name) · \(Format.span(trip.start, trip.end))",
-                                     totals: trip.totals)
-                                .padding(.horizontal, 16)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityHint("Opens the trip")
-                    }
-                }
-            }
             if d.spent.isEmpty {
                 ProfileNote(d.past == false ? "Nothing spent yet." : "Nothing was spent.")
             }
@@ -1046,9 +1062,11 @@ extension Array {
 struct TripBandShape: Shape {
     let roundStart: Bool
     let roundEnd: Bool
+    /// TR-10 (G7-TripMore): 12, as a picked day (kit `.cal .d.pick`).
+    var radius: CGFloat = 3
 
     func path(in r: CGRect) -> Path {
-        let rad = min(3, r.height / 2)
+        let rad = min(radius, r.height / 2)
         let a = roundStart ? rad : 0
         let b = roundEnd ? rad : 0
         var p = Path()

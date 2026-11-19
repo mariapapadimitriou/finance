@@ -270,6 +270,8 @@ struct TransactionDetailView: View {
 
     /// The full detail once it's come back; the list's row until then.
     @State private var detail: Transaction?
+    /// S-04ue (G2-BCard2): the full detail didn't come back.
+    @State private var loadFailed = false
     /// What was this?: the page sorting happens on, shared with Needs a look and Quick sort.
     @State private var sorting: Ask?
     @State private var editingNote = false
@@ -515,13 +517,12 @@ struct TransactionDetailView: View {
                         })
         }
         .sheet(isPresented: $whose) {
-            WhoseSheet(t: t, api: app.api) { said, undo in
+            // G2b-Whose T-76: the tiles that answer at once (JointSplitViews).
+            WhoseTilesSheet(t: t, api: app.api) { said, undo in
                 whose = false
                 // "Yours." (POLISH-01): a toast with Undo, not a line under the page.
                 Task { await run { withAnimation { toast = (said, undoing(undo)) }; return nil } }
             }
-            .fitsContent()
-            .presentationDragIndicator(.visible)
         }
         .navigationDestination(isPresented: $seeingOwed) { OwedView() }
         .sheet(isPresented: $editingNote) {
@@ -579,7 +580,13 @@ struct TransactionDetailView: View {
             .padding(.horizontal, Pearl.gutter)
             .padding(.bottom, 32)
         }
-        .safeAreaInset(edge: .bottom) { guessActions }
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 0) {
+                guessActions
+                // S-01jr (G2b-Purchase) and TP-01 (G2b-JointIn): the page's one Primary.
+                OwnBody { pagePrimary }
+            }
+        }
         .nacreScreen()
         .navigationBarBackButtonHidden(true)
         .toolbar {
@@ -1056,6 +1063,10 @@ struct TransactionDetailView: View {
                     .font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     .multilineTextAlignment(.center)
             }
+            if namesSender {
+                // PQ-03p (G2-APQ): "Name them" on its own line under the date.
+                NameThemLink { asking = Asking(step: .sender) }
+            }
             OwnBody { heroPills }
         }
         .frame(maxWidth: .infinity)
@@ -1087,21 +1098,28 @@ struct TransactionDetailView: View {
         }
     }
 
-    /// T-03's Counts pill: Spending, Income, Refund or Not counted. PQ-03p:
-    /// "Name them" in its place on a deposit Pearl asks a payback about,
-    /// while the bank's name is all it has; it opens T-14 Who sent this?.
+    /// T-03's Counts pill: Spending, Income, Refund or Not counted. PQ-03p
+    /// (G2-APQ): no pill on a deposit Pearl asks a payback about while the
+    /// bank's name is all it has; "Name them" sits under the date instead
+    /// and opens T-14 Who sent this?.
     @ViewBuilder private var countsOrName: some View {
         if t.transfer != nil {
             // TF-01's Counts pill (G1-TxMore): "⇄ Doesn’t count".
             CFPill(text: "Doesn’t count", symbol: "arrow.left.arrow.right", symbolTone: Pearl.muted)
-        } else if let q = paybackAsk, !q.named, t.asks {
-            NameThemPill { asking = Asking(step: .sender) }
+        } else if namesSender {
+            EmptyView()
         } else {
-            // T-41w: "↺ Paid back"; otherwise the Counts arrow.
-            CFPill(text: countsPill.label,
-                   symbol: paidBackAnswer != nil ? "arrow.counterclockwise" : countsPill.up ? "arrow.up" : "arrow.down",
+            // G2-BPayback (S-33 v2, T-41w, T-41m): "↑ Payback", "↑ Paid back",
+            // "↑ Refund"; otherwise the Counts arrow.
+            CFPill(text: countsPill.label, symbol: countsPill.up ? "arrow.up" : "arrow.down",
                    symbolTone: countsPill.tone)
         }
+    }
+
+    /// PQ-03p: the payback question's sender has no name of hers yet.
+    private var namesSender: Bool {
+        guard let q = paybackAsk else { return false }
+        return !q.named && t.asks && t.transfer == nil
     }
 
     /// The hero's name: TP-04 (Paybacks 2) "From Mom · Joint ··1123" on
@@ -1153,8 +1171,73 @@ struct TransactionDetailView: View {
     /// deposit's question, Needs a look's question, or its category.
     @ViewBuilder private var whatItIs: some View {
         if let label = guessName { guessCard(label) }
-        else if !t.parts.isEmpty { partsCard } else if jointAsks { jointGuessCard }
-        else if t.asks { askingOrPayback } else { categoryCard }
+        // S-33 v2 (G2-BPayback): the parts' label says what it was; PB-41 keeps its card.
+        else if !t.parts.isEmpty { if paidBackOnly { partsCard } } else if jointAsks { jointGuessCard }
+        else if t.asks { askingOrPayback }
+        // T-41w / T-41m (G2-BPayback): the PAID BACK / REFUND FOR card and
+        // its Options say it; no category card.
+        else if !sharePaidBack {
+            if showsShareBar {
+                // S-01jr / S-01jr2 (G2b-Purchase): whose it was, as a bar, over the category.
+                JointShareBarCard(t: t) { whose = true }.padding(.top, 8)
+            }
+            categoryCard
+        }
+    }
+
+    /// The page shows the category card (whatItIs), which carries TR-06's trip.
+    private var showsCategoryCard: Bool {
+        t.transfer == nil && guessName == nil && t.parts.isEmpty && !jointAsks && !t.asks && !sharePaidBack
+    }
+
+    /// S-01jr: a joint purchase not split yet, sorted: the share bar in place
+    /// of Options' Whose was it?, and Split my part as the page's Primary.
+    private var showsShareBar: Bool {
+        jointCharge && t.splitting == nil && t.refundOf == nil && guessName == nil && !t.asks
+            && t.parts.isEmpty && !jointAsks
+    }
+
+    /// S-01jr "Split my part" / S-01jr2 "Split it with friends"; TP-01
+    /// "Mom paid me back" over the quiet "This isn’t a transfer".
+    @ViewBuilder private var pagePrimary: some View {
+        if guessName == nil {
+            if let transfer = t.transfer, guessing == nil, let joint = transfer.joint, t.inflow,
+               let out = transfer.otherId {
+                VStack(spacing: 12) {
+                    Button(joint.people.count == 1 ? "\(joint.people[0]) paid me back" : "Someone paid me back") {
+                        startJointPayback(joint, out: out)
+                    }
+                    .buttonStyle(APPrimaryButtonStyle(busy: busy))
+                    .disabled(busy)
+                    .accessibilityHint("Pick what it paid for")
+                    Button { unpairing = true } label: {
+                        Text("This isn’t a transfer")
+                            .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline)).foregroundColor(Pearl.link)
+                            .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                }
+                .padding(.horizontal, 16).padding(.bottom, 8)
+            } else if showsShareBar && canSplitJoint && t.splitBase >= 0.005 {
+                Button(t.splitsMyPart ? "Split my part" : "Split it with friends") { splitting = true }
+                    .buttonStyle(APPrimaryButtonStyle(busy: busy))
+                    .disabled(busy)
+                    .padding(.horizontal, 16).padding(.bottom, 8)
+            }
+        }
+    }
+
+    /// T-41w / T-41m: money in that paid back (or refunded) her own share.
+    private var sharePaidBack: Bool {
+        if let charge = t.refundOf { return charge.share == true }
+        if let charge = t.repaysCharge, charge.person == "me" { return true }
+        return false
+    }
+
+    /// "Your share of $120.00 · Nov 12" (T-41w, T-41m).
+    private func shareLine(whole: Double, date: String) -> String {
+        "Your share of \(Format.amount(abs(whole))) · \(Format.short(date))"
     }
 
     /// "Wed, Nov 11 · TD Chequing ••4417".
@@ -1183,20 +1266,17 @@ struct TransactionDetailView: View {
         } else if !t.inflow && t.splitsMyPart {
             lead = "Your part \(Format.amount(t.splitBase))"
         }
-        // TR-06 (1327:6382): "Thu, Mar 5 · TD Visa ••9021 · Trip to Montréal".
-        return [lead, when, t.account, t.trip?.name].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+        // TR-06 (G7-TripMore): "Mon, Mar 4 · TD Visa ••9021"; the trip has its
+        // own row under the category, so the hero names it only without that card.
+        let trip = showsCategoryCard ? nil : t.trip?.name
+        return [lead, when, t.account, trip].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     // MARK: What it counts as
 
     private var categoryCard: some View {
         APCard {
-            Button {
-                if t.leftToSort { parting = deposit(rest: true) }
-                // Income opens What was this?: its kinds, and what else it could be (2026-11-08).
-                // T-41w: her answer opens What was this? again, as income does.
-                else if isIncome || paidBackAnswer != nil { asking = Asking(step: .into) } else { sorting = sortAsk(.category) }
-            } label: {
+            Button { changeWhatItIs() } label: {
                 // T-03: the category's icon and name; income says what kind
                 // (T-37, "Salary"). The pill above says what it counts as.
                 // T-03r (1074:698): "Change" by the chevron.
@@ -1212,6 +1292,20 @@ struct TransactionDetailView: View {
             .buttonStyle(.plain)
             .disabled(busy)
             .accessibilityHint(isIncome || paidBackAnswer != nil ? "Changes what it was" : "Changes the category")
+            if let trip = t.trip {
+                // TR-06 (G7-TripMore): the trip it's in, under the category,
+                // "Trip to Montréal" over "Mar 4–9 · 23 transactions"; it opens TR-02.
+                APSeparator(afterFace: false)
+                NavigationLink { TripPage(id: trip.id) } label: {
+                    row(title: trip.name,
+                        sub: [Format.span(trip.start, trip.end),
+                              trip.count.map { "\($0) transaction\($0 == 1 ? "" : "s")" }]
+                            .compactMap { $0 }.joined(separator: " · "),
+                        chevron: true, icon: "airplane")
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens the trip")
+            }
             if alwaysInCategoryCard {
                 // T-03r (1074:698, dark 1074:814): Always for the merchant is
                 // part of what it is, so it sits under the category, not in Options.
@@ -1386,6 +1480,10 @@ struct TransactionDetailView: View {
         // T-41w: a deposit that paid a purchase back says so.
         if paidBackAnswer != nil { return ("Paid back", true, Pearl.moneyIn) }
         if t.refundOf != nil { return ("Refund", true, Pearl.moneyIn) }
+        // S-33 v2 (G2-BPayback): a deposit in parts that pays something back.
+        if t.partOf == nil, !paidBackOnly, t.parts.contains(where: { $0.kind == "payback" }) {
+            return ("Payback", true, Pearl.moneyIn)
+        }
         switch t.counts {
         case "income": return ("Income", true, Pearl.moneyIn)
         case "spending": return ("Spending", t.inflow, t.inflow ? Pearl.moneyIn : Pearl.moneyOut)
@@ -1416,15 +1514,35 @@ struct TransactionDetailView: View {
         }
     }
 
-    /// PQ-03p: "Paying you back for Añejo?" on a dashed card in place of
-    /// the flat Not sorted yet one; it opens Needs a look's question.
+    /// PQ-03p (G2-APQ): A QUESTION, "Paying you back for Añejo?" with Yes
+    /// and Not this, in place of the flat Not sorted yet card. Not this
+    /// opens Needs a look's question with every answer.
     @ViewBuilder private var askingOrPayback: some View {
         if let q = paybackAsk {
-            PaybackQuestionCard(card: q.card) { Task { await openQuestion() } }
+            PaybackQuestionCard(question: q, onYes: { Task { await answerPaybackGuess(q) } },
+                                onNot: { Task { await openQuestion() } })
                 .disabled(busy)
+                .padding(.top, 8)
         } else {
             askingCard
         }
+    }
+
+    /// PQ-03p's Yes: Pearl's guess, as the sheet's first tile answers it
+    /// (PQ-03c's toast with Undo). When the money is more than that share and
+    /// the person owes on other purchases, the question opens instead, where
+    /// the tile goes on to PB-30 with this one ticked.
+    @inline(never)
+    private func answerPaybackGuess(_ q: PaybackQuestion) async {
+        guard let tile = q.tiles.first else { return }
+        busy = true
+        let parts = await PaybackQuestion.partsPerson(api: app.api, id: t.id, amount: t.amount, tile: tile)
+        busy = false
+        if parts != nil {
+            await openQuestion()
+            return
+        }
+        await answered(.payback(t.id, charge: tile.charge, toast: tile.toast, person: tile.person))
     }
 
     /// PQ-03p: the payback question for this deposit, when Needs a look is
@@ -1489,8 +1607,9 @@ struct TransactionDetailView: View {
             }
         }
         if let charge = t.refundOf, charge.share == true {
-            // TEST-31 Money back T-41m (1302:3306): REFUND FOR, "Pai Northern
-            // Thai" over "Your share · Nov 12", what it refunded of her share.
+            // TEST-31 Money back T-41m (G2-BPayback): REFUND FOR, "Pai Northern
+            // Thai" over "Your share of $120.00 · Nov 12", what it refunded of
+            // her share; Options: Change what it refunded, Unlink.
             let paid = charge.paid ?? abs(t.amount)
             section("Refund for")
             SolidCard {
@@ -1499,7 +1618,7 @@ struct TransactionDetailView: View {
                         Initials(name: charge.merchant)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(charge.merchant).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
-                            Text("Your share · \(Format.short(charge.date))").font(Nacre.subheadline)
+                            Text(shareLine(whole: charge.amount, date: charge.date)).font(Nacre.subheadline)
                                 .foregroundColor(Pearl.muted).lineLimit(1)
                         }
                         Spacer(minLength: 8)
@@ -1514,6 +1633,7 @@ struct TransactionDetailView: View {
                 .accessibilityHint("Opens its split")
                 .accessibilityAddTraits(.isButton)
             }
+            shareOptions(change: "Change what it refunded") { unlinkingRefund = true }
         } else if let charge = t.refundOf {
             section("Refund for")
             SolidCard {
@@ -1547,9 +1667,9 @@ struct TransactionDetailView: View {
     /// What this money in paid back: her share (TEST-31 T-41w) or a split.
     @ViewBuilder private var paysBack: some View {
         if let charge = t.repaysCharge, charge.person == "me", t.refundOf == nil {
-            // TEST-31 T-41w (1297:64759, dark 1297:64849): work paid her
-            // share. PAID BACK, the purchase over "Your share · Nov 12",
-            // opening its split card; then Unlink.
+            // TEST-31 T-41w (G2-BPayback): work paid her share. PAID BACK, the
+            // purchase over "Your share of $120.00 · Nov 12", opening its
+            // split card; Options: Change what it paid back, Unlink.
             let paid = charge.paid ?? abs(t.amount)
             section("Paid back")
             SolidCard {
@@ -1558,7 +1678,7 @@ struct TransactionDetailView: View {
                         Initials(name: charge.merchant ?? charge.name)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(charge.merchant ?? charge.name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
-                            Text("Your share · \(Format.short(charge.date))").font(Nacre.subheadline)
+                            Text(shareLine(whole: charge.amount, date: charge.date)).font(Nacre.subheadline)
                                 .foregroundColor(Pearl.muted).lineLimit(1)
                         }
                         Spacer(minLength: 8)
@@ -1573,20 +1693,13 @@ struct TransactionDetailView: View {
                 .accessibilityHint("Opens its split")
                 .accessibilityAddTraits(.isButton)
             }
-            section("Options")
-            APCard {
-                Button {
-                    if let link = charge.link {
-                        unlinkingLink = link
-                    } else {
-                        unlinkingPayback = PaybackLink(charge: charge.id, inflow: t.id, who: t.merchant,
-                                                       name: t.merchant, amount: paid, date: t.date)
-                    }
-                } label: {
-                    row(title: "Unlink", chevron: true)
+            shareOptions(change: "Change what it paid back") {
+                if let link = charge.link {
+                    unlinkingLink = link
+                } else {
+                    unlinkingPayback = PaybackLink(charge: charge.id, inflow: t.id, who: t.merchant,
+                                                   name: t.merchant, amount: paid, date: t.date)
                 }
-                .buttonStyle(.plain)
-                .disabled(busy)
             }
         } else if let charge = t.repaysCharge, t.refundOf == nil {
             section("Pays back")
@@ -1632,6 +1745,34 @@ struct TransactionDetailView: View {
                 .disabled(busy)
             }
         }
+    }
+
+    /// T-41w / T-41m (G2-BPayback): OPTIONS, "Change what it paid back" (or
+    /// refunded), which opens What was this? as the category card did, and
+    /// Unlink, which asks first.
+    @ViewBuilder private func shareOptions(change: String, unlink: @escaping () -> Void) -> some View {
+        section("Options")
+        APCard {
+            Button { changeWhatItIs() } label: {
+                row(title: change, chevron: true, icon: "arrow.left.arrow.right")
+            }
+            .buttonStyle(.plain)
+            .disabled(busy)
+            APSeparator(afterFace: false)
+            Button(action: unlink) {
+                row(title: "Unlink", chevron: true, icon: "link")
+            }
+            .buttonStyle(.plain)
+            .disabled(busy)
+        }
+    }
+
+    /// The category card's tap: what the deposit was, asked again.
+    private func changeWhatItIs() {
+        if t.leftToSort { parting = deposit(rest: true) }
+        // Income opens What was this?: its kinds, and what else it could be (2026-11-08).
+        // T-41w: her answer opens What was this? again, as income does.
+        else if isIncome || paidBackAnswer != nil { asking = Asking(step: .into) } else { sorting = sortAsk(.category) }
     }
 
     private func linkedRow(name: String, sub: String, amount: Double, inflow: Bool,
@@ -1823,7 +1964,22 @@ struct TransactionDetailView: View {
                         onSetShare: { settingShare = true },
                         optionsFor: $optionsFor,
                         onMine: chooseMine)
+        } else if detail == nil, t.splitMode != nil, !t.inflow, t.transfer == nil {
+            // S-04ul / S-04ue (G2-BCard2): the split card while the purchase
+            // loads (two grey rows), or "Couldn’t load the split." with Try again.
+            SplitCardPending(heading: pendingSplitHeading, failed: loadFailed, busy: busy,
+                             onRetry: { Task { busy = true; await load(); busy = false } },
+                             onOwed: { seeingOwed = true })
         }
+    }
+
+    /// "Split with 2 · Not sure yet" before the split itself has come back:
+    /// what the list row knows (RC-01's ways, SPLIT-C's mode).
+    private var pendingSplitHeading: String {
+        let unsure = t.splitMode == "unknown" || t.cost?.unsure == true
+        let ways = t.cost?.ways ?? 0
+        let lead = ways >= 2 ? "Split \(ways) ways" : "Split"
+        return unsure ? "\(lead) · Not sure yet" : lead
     }
 
     /// "Payback + gift": what a deposit in parts was (S-33).
@@ -1864,8 +2020,9 @@ struct TransactionDetailView: View {
         if paidBackOnly {
             paidBackParts
         } else if !parts.isEmpty {
-            // S-33 v2: PARTS, every one of them, so they add up to the deposit.
-            section(t.partOf.map { "Part of a \(Format.amount($0.amount)) deposit" } ?? "Parts")
+            // S-33 v2 (G2-BPayback): PAYBACK + GIFT, every part, so they add
+            // up to the deposit; the label says what it was (no card above).
+            section(t.partOf.map { "Part of a \(Format.amount($0.amount)) deposit" } ?? partsTitle)
             SolidCard {
                 ForEach(Array(parts.enumerated()), id: \.element.id) { index, p in
                     if index > 0 { APSeparator() }
@@ -1880,14 +2037,15 @@ struct TransactionDetailView: View {
                         editingParts = true
                         parting = deposit(rest: false)
                     } label: {
-                        row(title: "Edit", sub: "Change the parts or what they pay back", chevron: true)
+                        row(title: "Edit", sub: "Change the parts or what they pay back", chevron: true, icon: "pencil")
                     }
                     .buttonStyle(.plain)
                     .disabled(busy)
                     APSeparator(afterFace: false)
                 }
                 Button { unlinking = true } label: {
-                    row(title: "Unlink", sub: "Make it one deposit again", chevron: true)
+                    // S-33 v2: no second line; the sheet says what it does.
+                    row(title: "Unlink", chevron: true, icon: "link")
                 }
                 .buttonStyle(.plain)
                 .disabled(busy)
@@ -2172,12 +2330,16 @@ struct TransactionDetailView: View {
     }
 
     @ViewBuilder private var options: some View {
-        let unlink = t.refundOf != nil
+        // T-41m's Unlink is in its own Options under REFUND FOR (G2-BPayback).
+        let unlink = t.refundOf != nil && t.refundOf?.share != true
         // Income can be left out of the usual month too (2026-11-08).
         let canOneOff = t.canOneOff && (!t.inflow || isIncome)
         let incomeAlways = isIncome ? t.incomeRule?.payer : nil
         // T-03r: on a sorted row Always is in the category card instead.
         let offersNewOnes = self.offersNewOnes && !alwaysInCategoryCard
+        // S-01jr (G2b-Purchase): the share bar and the Primary take Whose was
+        // it? and Split my part out of Options.
+        let jointCharge = self.jointCharge && !showsShareBar
         if canSplit || couldBePay || unlink || canOneOff || canPayFromBank || offersNewOnes
             || incomeAlways != nil || jointCharge {
             section("Options")
@@ -2389,8 +2551,9 @@ struct TransactionDetailView: View {
                 }
             }
             .buttonStyle(.plain)
-            if let trip = t.trip {
-                // TR-06 (1327:6382): the trip it's in, which opens the trip's page (TR-02).
+            if let trip = t.trip, !showsCategoryCard {
+                // TR-06 (1327:6382): the trip it's in, which opens the trip's
+                // page (TR-02); under the category when the page has that card.
                 APSeparator(afterFace: false)
                 NavigationLink { TripPage(id: trip.id) } label: {
                     row(title: "\(trip.name) · \(Format.span(trip.start, trip.end))", chevron: true, icon: "tag")
@@ -2466,6 +2629,38 @@ struct TransactionDetailView: View {
     /// ends with how far apart, and "This isn't a transfer", which asks first
     /// (TF-01c). The red link under a 120 pt gap is gone.
     @ViewBuilder private func transferLegs(_ transfer: Transaction.Transfer) -> some View {
+        if t.inflow, transfer.joint != nil, transfer.otherId != nil {
+            OwnBody { jointLegs(transfer) }
+        } else {
+            OwnBody { plainLegs(transfer) }
+        }
+    }
+
+    /// TP-01 (G2b-JointIn, rethought, approved): the two legs on one line,
+    /// "Joint ••1123 → Chequing ••4417" over "Same day", on one card; "Mom
+    /// paid me back" is the page's Primary and This isn't a transfer the
+    /// quiet link under it (pagePrimary).
+    @ViewBuilder private func jointLegs(_ transfer: Transaction.Transfer) -> some View {
+        let (outDate, inDate) = legDates(transfer)
+        APCard {
+            HStack(spacing: 12) {
+                CFIcon(symbol: "arrow.left.arrow.right")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(transfer.from) \u{2192} \(transfer.to)").font(Nacre.body).foregroundColor(Pearl.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(apartWords(outDate, inDate)).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 64)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("From \(transfer.from) to \(transfer.to), \(apartWords(outDate, inDate))")
+        }
+        .padding(.top, 8)
+        .sheet(isPresented: $unpairing) { unpairSheet(transfer) }
+    }
+
+    @ViewBuilder private func plainLegs(_ transfer: Transaction.Transfer) -> some View {
         let (outDate, inDate) = legDates(transfer)
         section("How it counts")
         APCard {
@@ -2493,11 +2688,6 @@ struct TransactionDetailView: View {
         }
         section("Options")
         APCard {
-            if t.inflow, let joint = transfer.joint, let out = transfer.otherId {
-                // TP-01 (Paybacks 2): "Mom paid me back", above This isn't a transfer.
-                jointPaidBackRow(joint, out: out)
-                APSeparator(afterFace: false)
-            }
             Button { unpairing = true } label: {
                 // TEXT-01: no second line; the sheet asks.
                 row(title: "This isn’t a transfer", chevron: true, icon: "link")
@@ -2506,53 +2696,34 @@ struct TransactionDetailView: View {
             .disabled(busy)
             .accessibilityElement(children: .combine)
         }
-        .sheet(isPresented: $unpairing) {
-            // TF-01c (1390:2451 / 1390:2586): a Pearl sheet, not an alert.
-            // G1-TxSheets (TF-01c): the transfer as the who, ⇄ on a quiet disc.
-            PearlConfirmSheet(overline: "Transfer · \(Format.amount(t.amount))", title: "This isn’t a transfer?",
-                              who: .init(name: "Transfer", amount: Format.amount(t.amount), tone: Pearl.muted,
-                                         sub: "\(transfer.from) \u{2192} \(transfer.to)", symbol: "arrow.left.arrow.right"),
-                              message: "Pearl stops pairing them and asks what each one was.",
-                              primary: "Not a transfer", secondary: "Keep it a transfer",
-                              onClose: { unpairing = false }) {
-                unpairing = false
-                otherSide = transfer.otherId
-                try? await Task.sleep(nanoseconds: 450_000_000)
-                sorting = sortAsk(.transfer)
-            }
-        }
+        .sheet(isPresented: $unpairing) { unpairSheet(transfer) }
         if t.inflow && transfer.mineOnly == true {
             // TP-05 (Paybacks 2): both accounts are only hers, so no Paid back.
             NoPaidBackCallout()
         }
     }
 
-    /// TP-01: "Mom paid me back" over "From your joint account with Mom.
-    /// Pick what it paid for."; with more than one other owner, "Someone on
-    /// Joint ··1123 paid me back" (PP-01 asks who first).
-    private func jointPaidBackRow(_ joint: Transaction.Transfer.JointFrom, out: String) -> some View {
-        let one = joint.people.count == 1 ? joint.people.first : nil
-        return Button {
-            jointStart = JointPaybackStart(deposit: PartsDeposit(id: t.id, name: t.merchant, amount: t.amount, date: t.date),
-                                           people: joint.people, account: joint.account, out: out)
-        } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(one.map { "\($0) paid me back" } ?? "Someone on \(joint.account) paid me back")
-                        .font(Nacre.body).foregroundColor(Pearl.ink)
-                    Text("From your joint account with \(Format.andList(joint.people)). Pick what it paid for.")
-                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
-            }
-            .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 52)
-            .contentShape(Rectangle())
+    /// TF-01c (1390:2451 / 1390:2586): a Pearl sheet, not an alert.
+    /// G1-TxSheets (TF-01c): the transfer as the who, ⇄ on a quiet disc.
+    private func unpairSheet(_ transfer: Transaction.Transfer) -> some View {
+        PearlConfirmSheet(overline: "Transfer · \(Format.amount(t.amount))", title: "This isn’t a transfer?",
+                          who: .init(name: "Transfer", amount: Format.amount(t.amount), tone: Pearl.muted,
+                                     sub: "\(transfer.from) \u{2192} \(transfer.to)", symbol: "arrow.left.arrow.right"),
+                          message: "Pearl stops pairing them and asks what each one was.",
+                          primary: "Not a transfer", secondary: "Keep it a transfer",
+                          onClose: { unpairing = false }) {
+            unpairing = false
+            otherSide = transfer.otherId
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            sorting = sortAsk(.transfer)
         }
-        .buttonStyle(.plain)
-        .disabled(busy)
-        .accessibilityElement(children: .combine)
+    }
+
+    /// TP-01's Primary: PB-30 with the joint account's other owner picked
+    /// (TP-03); with more than one, PP-01 asks who first (Who paid? as tiles).
+    private func startJointPayback(_ joint: Transaction.Transfer.JointFrom, out: String) {
+        jointStart = JointPaybackStart(deposit: PartsDeposit(id: t.id, name: t.merchant, amount: t.amount, date: t.date),
+                                       people: joint.people, account: joint.account, out: out)
     }
 
     /// TF-01: an end of the transfer, as a transaction row with no amount
@@ -2675,6 +2846,10 @@ struct TransactionDetailView: View {
         if let full = full {
             detail = full
             oneOff = nil
+            loadFailed = false
+        } else if detail == nil {
+            // S-04ue: the split card says it couldn't load, with Try again.
+            loadFailed = true
         }
         if canPayFromBank { billKey = bill?.billKey }
         await loadPaybackQuestion()
@@ -3220,193 +3395,6 @@ struct TagsSheet: View {
         guard !tag.isEmpty else { return }
         if !tags.contains(tag) { tags.append(tag) }
         typed = ""
-    }
-}
-
-// MARK: - T-76 Whose was it?
-
-/// A charge on a joint account: hers by default, or all theirs, or a part
-/// she says, which is remembered for that merchant on the account unless she
-/// turns it off (finance/joint.py).
-///
-/// POLISH-01 (audit, note 1394:3149): Mine and theirs answer on the tap, with
-/// a toast and Undo after; Part of it keeps Save, since she types an amount.
-struct WhoseSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    let t: Transaction
-    let api: APIClient
-    /// What to say, and the server's Undo when there is one.
-    let done: (String, JSONValue?) -> Void
-
-    @State private var mode: String
-    @State private var part: String
-    @State private var splitAlways: Bool
-    @State private var mineAlways = false
-    @State private var busy = false
-    @State private var error: String?
-    /// AM-21j for this one purchase (JOINT-B): someone has paid on its split.
-    @State private var asking: [JointChange]?
-
-    init(t: Transaction, api: APIClient, done: @escaping (String, JSONValue?) -> Void) {
-        self.t = t
-        self.api = api
-        self.done = done
-        let full = t.fullAmount ?? t.amount
-        // JOINT-B: on a split purchase the row's amount is her share of the
-        // split; her answer here is her part, before the split.
-        let mine = t.splitting != nil ? (t.jointPart ?? t.amount) : t.amount
-        // 2026-11-15: Part of it starts at her share, not an empty field
-        // that kept Save off (WhoseAnswer).
-        let start = WhoseAnswer.start(mine: mine, full: full, shareSet: t.shareSet, share: t.jointShare)
-        _mode = State(initialValue: start.mode)
-        _part = State(initialValue: start.part)
-        _splitAlways = State(initialValue: t.jointShare != nil || start.mode != "part")
-    }
-
-    private var full: Double { t.fullAmount ?? t.amount }
-
-    /// THL-282: an account set to split every purchase says so.
-    private var footnote: String {
-        if let share = t.accountShare {
-            let mine = Int(share.rounded())
-            return "On this account, purchases are split \(mine)/\(100 - mine) unless you say otherwise. Only your part counts."
-        }
-        return "On a joint account, spending is yours unless you say otherwise. Only your part counts."
-    }
-    private var amount: Double? { WhoseAnswer.amount(part) }
-    private var ready: Bool { WhoseAnswer.ready(mode: mode, typed: part, full: full) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Spacer()
-                Text("Whose was it?").font(Nacre.headline).foregroundColor(Pearl.ink).accessibilityAddTraits(.isHeader)
-                Spacer()
-            }
-            .overlay(alignment: .trailing) { CloseButton { dismiss() } }
-            .padding(.top, 20)
-            .sheetPart()
-            HStack(spacing: 12) {
-                RowAvatar(name: t.merchant, size: 48, font: Nacre.headline)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(t.merchant).font(Nacre.title2).foregroundColor(Pearl.ink)
-                    Text("\(Format.money(t)) · joint with \(t.joint)").font(Nacre.footnote).foregroundColor(Pearl.ink)
-                }
-                Spacer(minLength: 0)
-            }
-            .accessibilityElement(children: .combine)
-            .sheetPart()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    APCard {
-                        ChoiceLine(title: "Mine", sub: "All of it counts as yours", selected: mode == "mine") { pick("mine") }
-                        APSeparator(afterFace: false)
-                        ChoiceLine(title: "\(t.joint)’s", sub: "None of it counts", selected: mode == "theirs") { pick("theirs") }
-                        APSeparator(afterFace: false)
-                        ChoiceLine(title: "Part of it", sub: "Say how much was yours", selected: mode == "part") { mode = "part" }
-                    }
-                    .disabled(busy)
-                    if mode == "part" {
-                        FieldRow(label: "Your part", text: $part, prompt: Format.amount(WhoseAnswer.suggested(full: full, share: t.jointShare)))
-                            .keyboardType(.decimalPad)
-                            .sheetCard()
-                        Toggle("Always split \(t.merchant) like this", isOn: $splitAlways)
-                            .font(Nacre.body).tint(Pearl.action)
-                            .padding(.horizontal, 16).frame(minHeight: 64)
-                            .sheetCard()
-                    } else {
-                        // Before Mine is tapped, since Mine answers at once.
-                        Toggle("Always all mine at \(t.merchant)", isOn: $mineAlways)
-                            .font(Nacre.body).tint(Pearl.action)
-                            .padding(.horizontal, 16).frame(minHeight: 64)
-                            .sheetCard()
-                    }
-                    if t.accountShare != nil {
-                        Text(footnote).font(Nacre.footnote).foregroundColor(Pearl.ink)
-                    }
-                    if let error = error { Hint(text: error) }
-                }
-                .sheetPart()
-            }
-            if mode == "part" {
-                Button("Save") { Task { await save() } }
-                    .buttonStyle(APPrimaryButtonStyle(busy: busy))
-                    .disabled(busy || !ready)
-                    .sheetPart()
-            }
-        }
-        .padding(.horizontal, 16).padding(.bottom, 8)
-        // POLISH-01: sized to content; the gaps between its parts count too.
-        .background(Color.clear.frame(height: 14 * 3 + 8).sheetPart())
-        .cfSheet()
-        .sheet(isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } })) {
-            if let changes = asking {
-                JointChangeSheet(accountName: t.merchant, share: nil, was: nil, holders: [], changes: changes,
-                                 purchase: true, onClose: { asking = nil }) {
-                    try await send(confirm: true)
-                    asking = nil
-                }
-            }
-        }
-    }
-
-    private struct Reply: Decodable {
-        let rule: String?
-        let needsConfirm: Bool?
-        let changes: [JointChange]?
-        let undo: JSONValue?
-        enum CodingKeys: String, CodingKey {
-            case rule, changes, undo
-            case needsConfirm = "needs_confirm"
-        }
-    }
-
-    /// Mine or theirs: answered on the tap.
-    private func pick(_ answer: String) {
-        mode = answer
-        Task { await save() }
-    }
-
-    private func save() async {
-        busy = true
-        defer { busy = false }
-        do {
-            try await send(confirm: false)
-        } catch {
-            self.error = (error as? LocalizedError)?.errorDescription ?? "That didn’t save. Try again."
-        }
-    }
-
-    private func send(confirm: Bool) async throws {
-        var body: [String: Any] = confirm ? ["confirm": true] : [:]
-        switch mode {
-        case "theirs": body["my_share"] = 0
-        case "part":
-            body["my_share"] = amount ?? 0
-            body["always"] = splitAlways
-        default: body["my_share"] = NSNull()
-        }
-        do {
-            let reply: Reply = try await api.put("api/transactions/\(t.id)/share", body)
-            if reply.needsConfirm == true {
-                asking = reply.changes ?? []
-                return
-            }
-            if mode == "mine" && mineAlways {
-                let _: OK = try await api.put("api/transactions/\(t.id)/mine-always", ["on": true])
-            }
-            let said: String
-            switch mode {
-            case "theirs": said = "\(t.joint)’s. It doesn’t count as yours."
-            case "part": said = reply.rule.flatMap { $0.isEmpty ? nil : $0 } ?? "Your part is \(Format.amount(amount ?? 0))."
-            default: said = mineAlways ? "Yours, and every \(t.merchant) on this account from now on." : "Yours."
-            }
-            // Undo puts her share back; not "every one from now on", which it can't take back.
-            done(said, mode == "mine" && mineAlways ? nil : reply.undo)
-        } catch let e as APIError {
-            if case .server = e, confirm { throw SplitMenuError(words: e.localizedDescription) }
-            throw e
-        }
     }
 }
 

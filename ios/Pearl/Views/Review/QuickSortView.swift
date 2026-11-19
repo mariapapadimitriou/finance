@@ -161,23 +161,10 @@ struct QuickSortView: View {
             }
         }
         .task { await begin() }
-        .fullScreenCover(item: $seeingTrip) { t in
-            // TR-14 (1347:75265): AI-09's plain list, "Montréal · Mar 4–9 · 23",
-            // each row opening its page; Back returns to the card.
-            NavigationStack {
-                PatternRowsView(title: [t.place, Format.span(t.start, t.end), "\(t.count)"]
-                                    .compactMap { $0 }.joined(separator: " · "),
-                                ids: t.ids)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarLeading) {
-                            Button { seeingTrip = nil } label: {
-                                Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
-                                    .foregroundColor(Pearl.ink)
-                            }
-                            .accessibilityLabel("Back")
-                        }
-                    }
-            }
+        .sheet(item: $seeingTrip) { t in
+            // TR-14 (G7-TripMore): "In the trip · 23" as a sheet over the
+            // card, its first rows and "and 19 more"; each row opens its page.
+            TripRowsSheet(count: t.count, ids: t.ids) { seeingTrip = nil }
         }
         .fullScreenCover(item: Binding(get: { asking.flatMap { $0.opensPage(accounts) ? $0 : nil } },
                                        set: { asking = $0 }), onDismiss: comeBack) { ask in
@@ -1072,4 +1059,75 @@ struct QuickWhoPaid: Identifiable {
     let ask: Ask
     let who: WhoPaidAsk
     var id: String { who.id }
+}
+
+/// TR-14 (G7-TripMore): the trip card's rows before she answers, as a sheet
+/// over the card: "In the trip · 23" with ✕, one card of its first four rows
+/// (face, name over the day, the amount), and "and 19 more", which shows the
+/// rest in place. Each row opens its page; ✕ goes back to the card.
+struct TripRowsSheet: View {
+    @EnvironmentObject private var app: AppModel
+    let count: Int
+    let ids: [String]
+    let onClose: () -> Void
+    @State private var rows: [Transaction] = []
+    @State private var all = false
+    @State private var failed = false
+
+    private static let first = 4
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                CFSheetTitle(title: "In the trip · \(count)", close: onClose)
+                ScrollView {
+                    VStack(spacing: 8) {
+                        if rows.isEmpty && !failed {
+                            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 32)
+                        } else if failed && rows.isEmpty {
+                            Text("Couldn’t load the trip’s rows.").font(Nacre.body).foregroundColor(Pearl.muted)
+                                .padding(.vertical, 24)
+                        }
+                        if !rows.isEmpty {
+                            APCard {
+                                ForEach(Array(rows.enumerated()), id: \.element.id) { i, t in
+                                    if i > 0 { APSeparator() }
+                                    NavigationLink { TransactionByID(id: t.id, categories: app.categories) } label: {
+                                        // "Hotel Le Germain" over "Mar 4".
+                                        TransactionRow(t: t, showsCategory: false, showsTrip: false)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        let more = ids.count - rows.count
+                        if !all && more > 0 && !rows.isEmpty {
+                            Button { all = true } label: {
+                                Text("and \(more) more").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                                    .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Shows the rest")
+                        }
+                    }
+                    .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 16)
+                }
+            }
+            .cfSheet()
+            .toolbar(.hidden, for: .navigationBar)
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .task(id: all) { await load() }
+    }
+
+    private func load() async {
+        let wanted = all ? ids : Array(ids.prefix(Self.first))
+        var out = rows
+        for id in wanted.dropFirst(rows.count) {
+            if let t: Transaction = try? await app.api.get("api/transactions/\(id)") { out.append(t) }
+            else { failed = true }
+        }
+        rows = out
+    }
 }

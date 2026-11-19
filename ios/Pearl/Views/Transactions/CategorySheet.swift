@@ -49,6 +49,12 @@ struct CategorySheet: View {
     var showsAlways = true
     /// The Always switch: whether new rows from the merchant sort the same way.
     @State private var newOnes = true
+    /// G1-WhatWasThis-r (T-04n, approved): Pearl's guess leads with one
+    /// button, then her four likeliest, and every other answer opens in place
+    /// under "Something else…". What was this? only; nil guess leads with the four.
+    var leadsWithLikely = false
+    var guess: String? = nil
+    @State private var everything = false
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var app: AppModel
@@ -65,7 +71,10 @@ struct CategorySheet: View {
          notSpending: [CaseTile]? = nil, startNotSpending: Bool = false, onCase: ((String, Bool) -> Void)? = nil,
          confirmsCurrent: Bool = false, caseRule: ((String) -> String?)? = nil, extras: AnyView? = nil,
          answersAtOnce: Bool = false, newOnesOn: Bool = true, showsAlways: Bool = true,
+         leadsWithLikely: Bool = false, guess: String? = nil,
          onSave: @escaping (String, Bool) -> Void) {
+        self.leadsWithLikely = leadsWithLikely
+        self.guess = guess
         self.answersAtOnce = answersAtOnce
         self.showsAlways = showsAlways
         _newOnes = State(initialValue: newOnesOn)
@@ -154,7 +163,110 @@ struct CategorySheet: View {
     }
 
     var body: some View {
-        if answersAtOnce { onePage } else { steps }
+        if answersAtOnce && leadsWithLikely { likelyPage } else if answersAtOnce { onePage } else { steps }
+    }
+
+    // MARK: G1-WhatWasThis-r (T-04n)
+
+    /// T-04n (G1-WhatWasThis-r, approved): the who; PEARL'S GUESS, "Dining
+    /// out?" (Fraunces 24) and "Yes, Dining out" on one card; OR and her four
+    /// likeliest as slim tiles; "Something else…", which opens every other
+    /// answer here, on this page; and Always for the merchant last.
+    private var likelyPage: some View {
+        VStack(spacing: 0) {
+            CFSheetTitle(title: title) { dismiss() }.sheetPart()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    header
+                    if let guess = guess, available.contains(where: { $0.name == guess }) {
+                        guessCard(guess).padding(.top, 14)
+                    }
+                    if available.isEmpty {
+                        LoadState(error: app.categoriesError) { Task { await app.loadCategories() } }
+                    } else {
+                        groupLabel("Or")
+                        CFTileGrid { ForEach(likely) { c in tile(c) } }
+                    }
+                    if everything {
+                        everyAnswer
+                    } else {
+                        APCard {
+                            Button { withAnimation(.easeOut(duration: 0.2)) { everything = true } } label: {
+                                CFRowLabel(symbol: "ellipsis", title: "Something else…",
+                                           sub: "Every other answer, on this page", trailing: .chevron)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Shows every other answer here")
+                        }
+                        .padding(.top, 12)
+                    }
+                    if let merchant = merchant, showsAlways {
+                        APCard { CFToggleRow(symbol: "repeat", title: "Always for \(merchant)", isOn: $newOnes) }
+                            .padding(.top, 12)
+                    }
+                }
+                .padding(.horizontal, 16).padding(.bottom, 16)
+                .sheetPart()
+            }
+        }
+        .cfSheet()
+        .fitsContent()
+        .presentationDragIndicator(.visible)
+        .task { if available.isEmpty { await app.loadCategories() } }
+    }
+
+    /// PEARL'S GUESS (12, `action`, 1.2 tracked), "Dining out?" and the one
+    /// Primary, on a plain card (kit `.card`, 16 padding, 12 apart).
+    private func guessCard(_ guess: String) -> some View {
+        APCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("PEARL’S GUESS")
+                    .font(.custom("Figtree-SemiBold", size: 12, relativeTo: .caption)).tracking(1.2)
+                    .foregroundColor(Pearl.action)
+                Text("\(guess)?").font(Pearl.heading(24, relativeTo: .title2)).foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Yes, \(guess)") {
+                    onRegularBill?(bill)
+                    onSave(guess, merchant != nil && newOnes)
+                }
+                .buttonStyle(APPrimaryButtonStyle())
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Her four likeliest spending categories, not Pearl's guess: the ones
+    /// she has used most (GET /api/categories `uses`), in the list's order
+    /// between equals. Hers, never a fixed list.
+    private var likely: [CategoryList.Category] {
+        let pool = Self.spendingGroups.flatMap { tiles(in: $0) }.filter { $0.name != guess }
+        let ranked = pool.enumerated().sorted { a, b in
+            let ua = a.element.uses ?? 0, ub = b.element.uses ?? 0
+            return ua != ub ? ua > ub : a.offset < b.offset
+        }
+        return ranked.prefix(4).map(\.element)
+    }
+
+    /// Something else…: every answer, in place, as the one page had them.
+    @ViewBuilder private var everyAnswer: some View {
+        ForEach(Self.spendingGroups, id: \.self) { group in
+            let items = tiles(in: group).filter { c in !likely.contains(c) && c.name != guess }
+            if !items.isEmpty {
+                groupLabel(Self.groupNames[group] ?? group)
+                CFTileGrid { ForEach(items) { c in tile(c) } }
+            }
+        }
+        if let cases = notSpending {
+            groupLabel("Not spending")
+            CaseGrid(cases: cases, chosen: Binding(get: { nil }, set: { key in
+                if let key = key { onCase?(key, newOnes && caseRule?(key) != nil && key != "not_mine") }
+            }))
+        }
+        if onRegularBill != nil {
+            APCard { CFToggleRow(symbol: "calendar", title: "Regular bill", isOn: $bill) }.padding(.top, 16)
+        }
+        if let extras = extras { extras.padding(.top, 16) }
     }
 
     private var steps: some View {
@@ -338,6 +450,12 @@ struct CaseTile: Identifiable, Hashable {
         CaseTile(key: "out_of_savings", label: "Out of savings", symbol: "lifepreserver"),
         CaseTile(key: "lent_back", label: "Money I lent, back", symbol: "arrow.down.backward"),
         CaseTile(key: "not_mine", label: "Not mine", symbol: "person.crop.circle.badge.xmark"),
+    ]
+
+    /// G1-WhatWasThis-r (T-08): the four likely answers for money in, first:
+    /// My pay, A gift, Paid back and Other income; the rest under Something else….
+    static let likelyIn: [(tile: CaseTile, income: Bool)] = [
+        (income[0], true), (income[2], true), (notIncome[0], false), (income[3], true),
     ]
 
     /// T-78 for deposits: the answers that need nothing per row.

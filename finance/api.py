@@ -57,15 +57,19 @@ def health():
 
 @bp.get("/categories")
 def categories():
+    from collections import Counter
     from .marks import hidden_categories
     hidden = hidden_categories(store())
+    # G1-WhatWasThis-r (T-04n): how often she has used each, so What was
+    # this? can lead with her four likeliest. Hers, never a fixed list.
+    uses = Counter(t.category for t in store().all_transactions() if t.category)
     return jsonify({
         "categories": [
             # The group (Essentials, Lifestyle…) is what Change category
             # (R-02) lays its chips out by. `hidden` is a category she never
             # uses (Profile › Categories and rules): out of the pickers, but
             # still a category wherever it already is.
-            {"name": name, "group": group_of(name), "hidden": name in hidden, **meta}
+            {"name": name, "group": group_of(name), "hidden": name in hidden, "uses": uses.get(name, 0), **meta}
             for name, meta in CATEGORIES.items()
         ],
         "overrides": store().overrides(),
@@ -157,7 +161,9 @@ def _txlist_rows(st, excluded: bool = False, joint: bool = False, everything: bo
         # TR-05 / TR-06: which trip a row is in ("Shopping · Trip to Montréal").
         trip = in_trip.get(t.fingerprint)
         if trip is not None:
-            r["trip"] = {"id": trip["id"], "name": trip["name"], "start": trip["start"], "end": trip["end"]}
+            # G7-TripMore TR-06: "Mar 4–9 · 23 transactions".
+            r["trip"] = {"id": trip["id"], "name": trip["name"], "start": trip["start"], "end": trip["end"],
+                         "count": len(trip.get("ids") or [])}
         return r
     if only is not None:
         # One transaction's page (2026-11-08): describing every row to show
