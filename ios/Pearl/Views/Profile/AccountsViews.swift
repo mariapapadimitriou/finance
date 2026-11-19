@@ -110,6 +110,18 @@ enum AccountWords {
     static func bank(_ a: AccountsOverview.Account) -> String {
         (a.institution ?? "").isEmpty ? a.name : a.institution!
     }
+
+    /// G5-Accounts-r (AM-01): one list, so the bank leads each row's
+    /// sub-line: "TD · ••2210", "TD · ••4417 · owing". Where a pill says
+    /// more ("RBC · Joint · 50%"), the bank and the pill; a balance added by
+    /// hand keeps its date, so a stale one still shows.
+    static func listLine(_ a: AccountsOverview.Account) -> String {
+        let bank = (a.institution ?? "").trimmingCharacters(in: .whitespaces)
+        let detail = (listPill(a) == nil || a.isHand) ? line(a) : ""
+        let parts = [bank, detail].filter { !$0.isEmpty }
+        let joined = parts.joined(separator: " \u{00B7} ")
+        return listPill(a) != nil && !joined.isEmpty ? joined + " \u{00B7}" : joined
+    }
 }
 
 /// "Amex Business no longer counts. Allowance is now $738.58.  Undo".
@@ -237,11 +249,11 @@ struct AccountsView: View {
 
     @ViewBuilder private var content: some View {
         if !loaded && error == nil {
-            // G5-Load: rows hold their place.
-            ProfileSection(" ")
-            APCard { APSkeletonRow(); APSeparator(); APSkeletonRow() }
-            ProfileSection(" ")
-            APCard { APSkeletonRow(); APSeparator(); APSkeletonRow() }
+            // G5-Load: rows hold their place, in the one list (G5-Accounts-r).
+            APCard {
+                APSkeletonRow(); APSeparator(); APSkeletonRow(); APSeparator(); APSkeletonRow()
+            }
+            .padding(.top, 20)
         } else if let error = error, linked.isEmpty && added.isEmpty {
             APEmptyState(title: "Couldn\u{2019}t load your accounts", line: error, top: 120) {
                 IconBubble(symbol: "exclamationmark.triangle", kind: .warn)
@@ -264,39 +276,16 @@ struct AccountsView: View {
                 ConnectionBanner(account: first) { reconnecting = first }
                     .padding(.top, 8)
             }
-            ForEach(banks, id: \.self) { bank in
-                ProfileSection(bank)
-                APCard {
-                    let rows = linked.filter { AccountWords.bank($0) == bank }
-                    ForEach(Array(rows.enumerated()), id: \.element.id) { i, a in
-                        if i > 0 { APSeparator() }
-                        NavigationLink {
-                            if a.status == "disconnected" {
-                                DisconnectedAccountView(account: a)
-                            } else {
-                                AccountDetailView(account: a)
-                            }
-                        } label: { row(a) }
+            // G5-Accounts-r (AM-01): one list, each bank in its rows' sub-line,
+            // grouped by bank in the server's order; balances added by hand last.
+            APCard {
+                ForEach(Array(listed.enumerated()), id: \.element.id) { i, a in
+                    if i > 0 { APSeparator() }
+                    NavigationLink { detail(a) } label: { row(a) }
                         .buttonStyle(.plain)
-                    }
                 }
             }
-            if !added.isEmpty {
-                ProfileSection("Added by you")
-                APCard {
-                    ForEach(Array(added.enumerated()), id: \.element.id) { i, a in
-                        if i > 0 { APSeparator() }
-                        NavigationLink {
-                            if a.isHand {
-                                ManualAccountView(account: a)
-                            } else {
-                                AccountDetailView(account: a)
-                            }
-                        } label: { row(a) }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
+            .padding(.top, 20)
             if let error = error { APErrorLine(text: error).padding(.top, 8) }
             Color.clear.frame(height: 40)
         }
@@ -307,6 +296,23 @@ struct AccountsView: View {
         var seen: [String] = []
         for a in linked where !seen.contains(AccountWords.bank(a)) { seen.append(AccountWords.bank(a)) }
         return seen
+    }
+
+    /// The one list: a bank's accounts together, then the ones added by hand.
+    private var listed: [AccountsOverview.Account] {
+        banks.flatMap { bank in linked.filter { AccountWords.bank($0) == bank } } + added
+    }
+
+    /// What a row opens: a disconnected account's choices, a hand-added
+    /// balance, or the account's page.
+    @ViewBuilder private func detail(_ a: AccountsOverview.Account) -> some View {
+        if a.status == "disconnected" {
+            DisconnectedAccountView(account: a)
+        } else if a.isHand {
+            ManualAccountView(account: a)
+        } else {
+            AccountDetailView(account: a)
+        }
     }
 
     /// The Add an account sheet has gone: now Plaid, or the hand-added balance.
@@ -326,10 +332,10 @@ struct AccountsView: View {
         withAnimation { toast = notice }
     }
 
-    /// G5-Accounts: face, name over "••2210" (and its pill), the balance on
-    /// the right edge; a disconnected account's balance is muted.
+    /// G5-Accounts-r: face, name over "TD · ••2210" (and its pill), the
+    /// balance on the right edge; a disconnected account's balance is muted.
     private func row(_ a: AccountsOverview.Account) -> some View {
-        ProfileRow(initials: AccountWords.bank(a), title: a.name, sub: AccountWords.line(a),
+        ProfileRow(initials: AccountWords.bank(a), title: a.name, sub: AccountWords.listLine(a),
                    pill: AccountWords.listPill(a)) {
             if let b = a.balance {
                 Text(Format.amount(abs(b))).font(Nacre.headline)
