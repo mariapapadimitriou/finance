@@ -1025,6 +1025,21 @@ def _install_auth(app: Flask) -> None:
         user = users.update_onboarding(base, user.id, **fields)
         return jsonify({"ok": True, "user": status_user(user)})
 
+    @app.post("/api/account/name")
+    def _account_name():
+        """P-01n "Your name" on Profile: her name, changed after sign-up.
+        Unlike onboarding, an empty name is refused (the sheet's Save is
+        off until there's one), so she never ends up with no name."""
+        user = g.get("user")
+        if user is None:
+            return jsonify({"error": "Sign in first.", "unauthorized": True}), 401
+        body = request.get_json(silent=True) or {}
+        name = users.clean_name(body.get("first_name"))
+        if not name:
+            return jsonify({"error": "Add your name."}), 400
+        user = users.update_onboarding(base, user.id, first_name=name)
+        return jsonify({"ok": True, "user": status_user(user)})
+
     @app.post("/api/auth/stay")
     def _auth_stay():
         """The iPhone with Face ID on: Face ID guards opening the app, so the

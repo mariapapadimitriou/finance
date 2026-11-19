@@ -123,8 +123,16 @@ enum ProfileName {
 
     /// "M" from Maya, "MP" from Maya Park, or the first letter of her email.
     static func initials(_ user: PearlUser?) -> String {
-        let source = user?.firstName?.isEmpty == false ? user!.firstName! : (user?.email ?? "")
-        let words = source.split { !$0.isLetter }.prefix(2)
+        initials(name: user?.firstName, email: user?.email)
+    }
+
+    /// The same from a name being typed (P-01n "Your name"'s live circle):
+    /// "Maya Lin" → ML; empty → her email's first letter.
+    static func initials(name: String?, email: String?) -> String {
+        let typed = name?.trimmingCharacters(in: .whitespaces) ?? ""
+        // An email gives one letter ("maya@example.com" is M, not ME).
+        let source = typed.isEmpty ? (email ?? "") : typed
+        let words = source.split { !$0.isLetter }.prefix(typed.isEmpty ? 1 : 2)
         let out = words.compactMap { $0.first.map(String.init) }.joined().uppercased()
         return out.isEmpty ? "P" : out
     }
