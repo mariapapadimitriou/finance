@@ -40,7 +40,7 @@ struct IncomeBillsView: View {
         /// O-10f, O-10g and Income each month (POLISH-01 audits 8 and 9) size to their content.
         var fits: Bool {
             switch self {
-            case .ask, .expected: return true
+            case .ask: return true
             default: return false
             }
         }
@@ -64,19 +64,16 @@ struct IncomeBillsView: View {
             if let data = data {
                 content(data)
             } else if error == nil {
-                ProgressView().frame(maxWidth: .infinity, minHeight: 200)
+                // G5-Load: rows hold their place.
+                ProfileSection(" ")
+                APCard { APSkeletonRow(); APSeparator(); APSkeletonRow() }
             }
-            if let error = error { Hint(text: error).padding(.top, 4) }
+            if let error = error { APErrorLine(text: error).padding(.top, 4) }
         } bottom: {
-            if data != nil {
-                if confirming {
-                    Button(confirmLabel) { Task { await confirmBills() } }
-                        .buttonStyle(NacreButtonStyle(busy: busy))
-                        .disabled(busy)
-                } else {
-                    Button("Check again") { checking = true }
-                        .buttonStyle(SecondaryButtonStyle())
-                }
+            if data != nil && confirming {
+                Button(confirmLabel) { Task { await confirmBills() } }
+                    .buttonStyle(APPrimaryButtonStyle(busy: busy))
+                    .disabled(busy)
             }
         }
         .overlay(alignment: .bottom) {
@@ -98,7 +95,7 @@ struct IncomeBillsView: View {
             // IB-04 (TEST-06): a Pearl sheet, not an action sheet.
             let who = q.recipient ?? "them"
             PearlConfirmSheet(face: q.recipient, overline: "A question", title: "Are these your rent?",
-                              message: "Your e-Transfers to \(who) look like rent. If they are, they count as Rent from now on, and \(Format.whole(q.amount)) a month is set aside.",
+                              message: "If your e-Transfers to \(who) are rent, they count as Rent and \(Format.whole(q.amount)) a month is set aside.",
                               primary: "Yes, it’s my rent", busyLabel: "Saving…", secondary: "No",
                               failure: "Couldn’t save that. Nothing changed. Try again.",
                               onClose: { rent = nil }) {
@@ -124,17 +121,40 @@ struct IncomeBillsView: View {
 
     // MARK: The page
 
+    /// G5-Income: the summary, Your plan, Income (with Add), Regular bills
+    /// (with Add) and Subscriptions; found pay and a found rent answer Yes or
+    /// No right on the row (IB-02, approved 2026-11-18); then Check again.
     @ViewBuilder
     private func content(_ data: IncomeBills) -> some View {
-        // YP-09: replaces #350's plain "Your plan" row under the bills.
-        APCard {
-            NavigationLink { YourPlanView() } label: {
-                PlanCardLine(title: planCardTitle(data.yourPlan))
+        if confirming || !data.candidates.isEmpty || data.rentQuestion != nil {
+            APBanner(symbol: "sparkles", text: foundLine(data)).padding(.top, 8)
+        } else if let income = data.totals?.income, income > 0 {
+            APCard {
+                APKeyValueRow(key: "Comes in") {
+                    Text("+\(Format.whole(income)) a month").font(Nacre.headline).foregroundColor(Pearl.moneyIn)
+                }
+                APSeparator(afterFace: false)
+                APKeyValueRow(key: "Set aside for bills") {
+                    Text("\(Format.whole(data.totals?.bills ?? 0)) a month").font(Nacre.headline).foregroundColor(Pearl.moneyOut)
+                }
             }
-            .buttonStyle(.plain)
+            .padding(.top, 8)
         }
 
-        MoneySection(title: "Income") {
+        // YP-09: Your plan, its own card above Income (kept as built).
+        APCard {
+            NavigationLink { YourPlanView() } label: {
+                ProfileRow(symbol: "calendar", title: "Your plan") {
+                    Text(planValue(data.yourPlan)).font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("income-your-plan")
+        }
+        .padding(.top, 8)
+
+        ProfileSection("Income", action: "Add") { sheet = .addPay }
+        APCard {
             if let own = data.expected?.amount, own > 0 {
                 IncomeLine(name: "Your own amount",
                            sub: data.expected?.varies == true ? "A month after tax · it changes" : "A month after tax",
@@ -146,9 +166,9 @@ struct IncomeBillsView: View {
                 APSeparator()
             }
             ForEach(data.candidates) { c in
-                QuestionLine(name: c.name, sub: "Found · \(cadence(c.cadence).lowercased())",
-                             question: "Your pay?") { sheet = .candidate(c) }
-                    .accessibilityHint("Pearl found this in your transactions. Say whether it’s your pay.")
+                FoundLine(name: c.name, question: "Your pay?", open: { sheet = .candidate(c) },
+                          yes: { Task { await answerPay(c, yes: true) } },
+                          no: { Task { await answerPay(c, yes: false) } })
                 APSeparator()
             }
             ForEach(data.asks ?? []) { a in
@@ -160,36 +180,35 @@ struct IncomeBillsView: View {
                     IncomeLine(name: "Pearl’s estimate", sub: "The average of your last 3 months",
                                amount: estimate) { sheet = .expected }
                 } else {
-                    QuestionLine(name: "No income confirmed yet", sub: "Tell us what comes in each month",
-                                 question: "Add") { sheet = .expected }
+                    NoIncomeLine { sheet = .expected }
                 }
-                APSeparator()
-            }
-            AddLine(title: "Add other income") { sheet = .addPay }
-            if !confirming, !noIncome(data), !((data.expected?.amount ?? 0) > 0) {
-                APSeparator()
-                AddLine(title: "Set my own amount") { sheet = .expected }
-                    .accessibilityHint("Use what you expect each month instead of what Pearl works out")
+            } else if !((data.expected?.amount ?? 0) > 0) {
+                Button { sheet = .expected } label: {
+                    ProfileRow(symbol: "square.and.pencil", title: "Set my own amount")
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Use what you expect each month instead of what Pearl works out")
             }
         }
 
-        MoneySection(title: "Regular bills") {
+        ProfileSection("Regular bills", action: "Add") { sheet = .addBill }
+        APCard {
             if let q = data.rentQuestion {
-                QuestionLine(name: "e-Transfers to \(q.recipient ?? "someone")",
-                             sub: "\(Format.whole(q.amount)) · monthly" + (q.day.map { " · around the \(ordinal($0))" } ?? ""),
-                             question: "Your rent?") { rent = q }
-                APSeparator()
+                FoundLine(name: q.recipient ?? "e-Transfers", question: "Your rent?", open: { rent = q },
+                          yes: { Task { await answerRent(q, yes: true) } },
+                          no: { Task { await answerRent(q, yes: false) } })
+                if !regular(data).isEmpty { APSeparator() }
             }
-            ForEach(regular(data)) { bill in
+            ForEach(Array(regular(data).enumerated()), id: \.element.id) { i, bill in
+                if i > 0 { APSeparator() }
                 billRow(bill)
-                APSeparator()
             }
-            AddLine(title: "Add a bill") { sheet = .addBill }
         }
 
         let subs = data.bills.filter { subscriptionCategories.contains($0.category ?? "") }
         if !subs.isEmpty {
-            MoneySection(title: "Subscriptions", note: "Untick any you don’t want set aside.") {
+            ProfileSection("Subscriptions")
+            APCard {
                 ForEach(Array(subs.enumerated()), id: \.element.id) { i, bill in
                     if i > 0 { APSeparator() }
                     billRow(bill)
@@ -197,9 +216,13 @@ struct IncomeBillsView: View {
             }
         }
 
-        ProfileSection("Something changed?")
-        // YP-09 (TEXT-01): one line.
-        ProfileNote("Check again with your latest transactions.")
+        if !confirming {
+            Button("Check again") { checking = true }
+                .buttonStyle(APSecondaryButtonStyle())
+                .padding(.top, 10)
+                .accessibilityIdentifier("income-check-again")
+        }
+        Color.clear.frame(height: 24)
     }
 
     private func billRow(_ bill: IncomeBills.Bill) -> some View {
@@ -248,29 +271,26 @@ struct IncomeBillsView: View {
 
     // MARK: Words
 
-    /// YP-09: "Your plan · in use · $1,160 a month", "Your plan · not in
-    /// use", or "Your plan · none yet".
-    private func planCardTitle(_ card: IncomeBills.PlanCard?) -> String {
-        guard let card = card, card.rows > 0 else { return "Your plan \u{00B7} none yet" }
-        if card.inUse { return "Your plan \u{00B7} in use \u{00B7} \(Format.whole(card.total)) a month" }
-        return "Your plan \u{00B7} not in use"
+    /// YP-09: "$1,160 a month" in use, "Not in use", or "None yet".
+    private func planValue(_ card: IncomeBills.PlanCard?) -> String {
+        guard let card = card, card.rows > 0 else { return "None yet" }
+        if card.inUse { return "\(Format.whole(card.total)) a month" }
+        return "Not in use"
     }
 
-    /// IB-02 while there's something found to confirm; otherwise the totals.
+    /// G5-Income: only the page with no income says anything under the title.
     private var lead: String? {
-        guard let data = data else { return nil }
-        if confirming || !data.candidates.isEmpty {
-            let pay = data.candidates.isEmpty ? nil : (data.candidates.count == 1 ? "new pay" : "\(data.candidates.count) new pays")
-            let n = confirming ? found(data).count : 0
-            let bills = n == 0 ? nil : (n == 1 ? "a bill" : "\(n) bills")
-            let what = [pay, bills].compactMap { $0 }.joined(separator: " and ")
-            return "Pearl found \(what) in your transactions. Say which are right."
-        }
-        guard let income = data.totals?.income, income > 0 else {
-            return "Add your income so your Allowance is right."
-        }
-        let bills = data.totals?.bills ?? 0
-        return "\(Format.whole(income)) a month in · \(Format.whole(bills)) in bills set aside before your Allowance."
+        guard let data = data, noIncome(data), data.rentQuestion == nil, !confirming else { return nil }
+        return "Add your income so your Allowance is right."
+    }
+
+    /// "Pearl found new pay and 3 bills. Say which are right."
+    private func foundLine(_ data: IncomeBills) -> String {
+        let pay = data.candidates.isEmpty ? nil : (data.candidates.count == 1 ? "new pay" : "\(data.candidates.count) new pays")
+        let n = (confirming ? found(data).count : 0) + (data.rentQuestion == nil ? 0 : 1)
+        let bills = n == 0 ? nil : (n == 1 ? "a bill" : "\(n) bills")
+        let what = [pay, bills].compactMap { $0 }.joined(separator: " and ")
+        return "Pearl found \(what.isEmpty ? "something" : what). Say which are right."
     }
 
     /// Found, not confirmed (IB-02): she hasn't confirmed her bills yet, and
@@ -320,7 +340,7 @@ struct IncomeBillsView: View {
         app.changed()
         if let r = reply.removed {
             withAnimation {
-                toast = ("\(r.name) removed. It no longer counts in your bills.", { Task { await putBack(r) } })
+                toast = ("\(r.name) removed", { Task { await putBack(r) } })
             }
         }
     }
@@ -371,6 +391,29 @@ struct IncomeBillsView: View {
         }
     }
 
+    /// IB-02 Yes / No on the row: the same answer the pay sheet gives.
+    private func answerPay(_ c: IncomeBills.Candidate, yes: Bool) async {
+        do {
+            let reply: IncomeBills = try await app.api.post("api/income-bills/pay/answer",
+                                                            ["payer": c.payer, "answer": yes ? "yes" : "no"])
+            saved(reply)
+        } catch {
+            self.error = app.handle(error)
+        }
+    }
+
+    /// IB-04 on the row: Yes counts them as Rent; No stops Pearl asking.
+    private func answerRent(_ q: IncomeBills.RentQuestion, yes: Bool) async {
+        do {
+            var body: [String: Any] = ["key": q.key]
+            if !yes { body["answer"] = "no" }
+            let reply: IncomeBills = try await app.api.post("api/income-bills/rent", body)
+            saved(reply)
+        } catch {
+            self.error = app.handle(error)
+        }
+    }
+
     /// Undo a removed bill: add it back as it was.
     private func putBack(_ r: IncomeBills.Removed) async {
         withAnimation { toast = nil }
@@ -407,52 +450,53 @@ struct ExpectedIncomeSheet: View {
 
     private var own: Double? { expected?.amount.flatMap { $0 > 0 ? $0 : nil } }
 
+    /// G5-IncomeEdit "Your own amount": the big amount well, Pearl's
+    /// estimate under it, the switch, and Save riding above the keypad.
     var body: some View {
-        // POLISH-01 audit 9: one field and a switch, so sized to what it shows.
-        SheetFrame(title: "Income each month", subtitle: subtitle, symbol: "chart.line.uptrend.xyaxis",
-                   heading: "Your own amount", close: { dismiss() }) {
-            FieldRow(label: "Each month, after tax", text: $amount, prompt: varies ? "Pearl works it out" : "$0.00")
-                .keyboardType(.decimalPad)
-                .sheetCard()
-                // The latest answer wins (decision 7): typing an amount means it doesn't change.
-                .onChange(of: amount) { typed in if !typed.isEmpty { varies = false } }
-            Toggle("It changes month to month", isOn: Binding(get: { varies }, set: { on in
-                varies = on
-                if on { amount = "" }
-            }))
-                .font(Nacre.body).tint(Pearl.action)
-                .padding(.horizontal, 16).frame(minHeight: 52)
-                .sheetCard()
-            Text(varies ? "Pearl plans carefully when it changes, so your Allowance doesn’t run ahead of you."
-                        : "Your own amount is used instead of Pearl’s estimate until you clear it.")
-                .font(Nacre.footnote)
-            if let error = error { Hint(text: error) }
-        } actions: {
-            Button("Save") { Task { await save() } }
-                .buttonStyle(NacreButtonStyle(busy: busy))
-                .disabled(busy || (amount.isEmpty && !varies))
-            if expected?.estimate != nil || (own != nil && hasPay) {
-                Button(expected?.estimate.map { "Use Pearl’s estimate (\(Format.whole($0)))" } ?? "Use my pay instead") {
-                    Task { await clear() }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                APSheetTitle(title: "Your own amount") { dismiss() }
+                Text("Each month, after tax").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    .frame(maxWidth: .infinity).padding(.top, 2)
+                BigAmountWell(text: $amount, placeholder: varies ? "Pearl works it out" : "0")
+                    // The latest answer wins (decision 7): typing an amount means it doesn't change.
+                    .onChange(of: amount) { typed in if !typed.isEmpty { varies = false } }
+                if let estimate = expected?.estimate, estimate > 0 {
+                    ProfileNote("Pearl\u{2019}s estimate is \(Format.whole(estimate))", centred: true)
                 }
-                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
-                .disabled(busy)
-            } else {
-                Button("Cancel") { dismiss() }.buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                APCard {
+                    APToggleRow(title: "It changes month to month",
+                                isOn: Binding(get: { varies }, set: { on in
+                                    varies = on
+                                    if on { amount = "" }
+                                }))
+                }
+                if let error = error { APErrorLine(text: error) }
             }
+            .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 16)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 4) {
+                Button(error == nil ? "Save" : "Try again") { Task { await save() } }
+                    .buttonStyle(APPrimaryButtonStyle(busy: busy))
+                    .disabled(busy || (amount.isEmpty && !varies))
+                if expected?.estimate != nil || (own != nil && hasPay) {
+                    Button(expected?.estimate.map { "Use Pearl\u{2019}s estimate (\(Format.whole($0)))" } ?? "Use my pay instead") {
+                        Task { await clear() }
+                    }
+                    .buttonStyle(APQuietTextStyle())
+                    .disabled(busy)
+                }
+            }
+            .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8)
         }
         .onAppear {
             varies = expected?.varies ?? false
-            if let own = own, !varies { amount = String(format: "%.2f", own) }
+            if let own = own, !varies { amount = String(format: "%.0f", own) }
         }
-        .fitsContent()
-    }
-
-    private var subtitle: String {
-        if let estimate = expected?.estimate, estimate > 0 {
-            return "Pearl’s estimate is \(Format.whole(estimate)), from your last 3 months"
-        }
-        return "Roughly what comes in each month after tax"
+        .background(SheetBackground())
+        .presentationDetents([.large])
     }
 
     private func save() async {
@@ -484,23 +528,88 @@ struct ExpectedIncomeSheet: View {
     }
 }
 
-/// YP-09: "›  Your plan · in use · $1,160 a month", in Pearl's tint, as the
-/// card's one row. It opens Your plan (YP-01, YP-03, or YP-06 with none yet).
-private struct PlanCardLine: View {
-    let title: String
+/// IB-02: something Pearl found, answered Yes or No right on the row (the
+/// row itself opens the sheet with the details).
+private struct FoundLine: View {
+    let name: String
+    let question: String
+    let open: () -> Void
+    let yes: () -> Void
+    let no: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "chevron.right.circle.fill").font(.system(size: 22)).foregroundColor(Pearl.action)
-                .accessibilityHidden(true)
-            Text(title).font(Nacre.body).foregroundColor(Pearl.action)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
+            Button(action: open) {
+                HStack(spacing: 12) {
+                    RowAvatar(name: name)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                        Text(question).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityHint("Shows what Pearl found")
+            APPillButton(title: "Yes", identifier: "found-yes-\(name)", action: yes)
+                .accessibilityLabel("Yes, \(question.lowercased().replacingOccurrences(of: "?", with: "")) \(name)")
+            APPillButton(title: "No", quiet: true, identifier: "found-no-\(name)", action: no)
+                .accessibilityLabel("No, not \(question.lowercased().replacingOccurrences(of: "your ", with: "my ").replacingOccurrences(of: "?", with: ""))")
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
-        .frame(minHeight: 52)
+        .frame(minHeight: 64)
+    }
+}
+
+/// G5-Income, no income yet: what comes in each month, and Add.
+private struct NoIncomeLine: View {
+    let add: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            IconBubble(symbol: "dollarsign.square")
+            VStack(alignment: .leading, spacing: 2) {
+                Text("No income yet").font(Nacre.body).foregroundColor(Pearl.ink)
+                Text("What comes in each month").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            APPillButton(title: "Add", identifier: "income-add-own", action: add)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(minHeight: 64)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// G5-IncomeEdit's `.fld.big`: a 72 pt well, radius 16, the amount centred
+/// in 36 pt Fraunces SemiBold with its `$`, the keypad up from the start.
+struct BigAmountWell: View {
+    @Binding var text: String
+    var placeholder = "0"
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text("$").foregroundColor(Pearl.muted).accessibilityHidden(true)
+            TextField("", text: $text, prompt: Text(placeholder).foregroundColor(Pearl.muted))
+                .keyboardType(.decimalPad)
+                .focused($focused)
+                .foregroundColor(Pearl.ink)
+                .tint(Pearl.action)
+                .fixedSize()
+                .accessibilityLabel("Each month, after tax")
+                .accessibilityIdentifier("own-amount")
+        }
+        .font(.custom("Fraunces-SemiBold", size: 36, relativeTo: .largeTitle))
+        .monospacedDigit()
+        .frame(maxWidth: .infinity, minHeight: 72)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(APlus.well))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .strokeBorder(focused ? Pearl.action : APlus.wellLine, lineWidth: focused ? 2 : 1))
         .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
+        .onTapGesture { focused = true }
+        .onAppear { focused = true }
     }
 }

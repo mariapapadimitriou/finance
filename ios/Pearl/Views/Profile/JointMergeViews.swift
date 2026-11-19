@@ -43,16 +43,13 @@ struct NacreAvatar: View {
             .font(size > 40 ? Nacre.headline : Nacre.footnote)
             .foregroundColor(Pearl.ink)
             .frame(width: size, height: size)
-            .background(Circle().fill(Nacre.glass))
-            .overlay(Circle().strokeBorder(
-                AngularGradient(colors: [Nacre.rose, Nacre.lilac, Nacre.seaglass, Nacre.rose], center: .center),
-                lineWidth: 1.5))
+            .background(Circle().fill(APlus.face))
+            .overlay(Circle().strokeBorder(APlus.nacreRing, lineWidth: 1.2))
             .accessibilityHidden(true)
     }
 }
 
-/// One of several: a title, a line under it, a trailing tick when it's the
-/// one (the Choice component's Radio type; iOS has no radio buttons).
+/// One of several: the A+ radio row.
 struct PickRow: View {
     let title: String
     var sub: String? = nil
@@ -60,28 +57,7 @@ struct PickRow: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let sub = sub {
-                        Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                Image(systemName: "checkmark")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(Pearl.action)
-                    .opacity(selected ? 1 : 0)
-            }
-            .padding(.horizontal, 16).padding(.vertical, 11)
-            .frame(minHeight: 52)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        APChoiceRow(title: title, sub: sub, selected: selected, action: action)
     }
 }
 
@@ -181,8 +157,7 @@ struct JointAccountView: View {
                     }
                 }
             }
-            Text("Only you see these names.")
-                .font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 4)
+            ProfileNote("Only you see these names.")
             ProfileSection("Your share")
             APCard {
                 PickRow(title: "All mine unless I mark it",
@@ -427,11 +402,7 @@ struct SameAccountView: View {
 
     var body: some View {
         ProfilePage {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Same account twice?").font(Nacre.title).foregroundColor(Pearl.ink)
-                    .accessibilityAddTraits(.isHeader)
-                Text("Combine them so nothing shows twice.").font(Nacre.footnote).foregroundColor(Pearl.ink)
-            }
+            ProfileHeading(title: "Same account twice?", intro: "Combine them so nothing shows twice.")
             if candidates.isEmpty {
                 ProfileNote("There’s no other account of the same kind to combine with.").padding(.top, 8)
             } else {
@@ -533,40 +504,33 @@ struct AddHandBalanceSheet: View {
         return "For a bank Pearl can’t link yet."
     }
 
+    /// G5-AccountEdit "Add a balance": wells for the name, the kind on the
+    /// segmented track, the last four digits and today's balance; Add account
+    /// rides just above the keyboard, greyed until it can add.
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Color.clear.frame(width: 44, height: 10)
-                    Text("Add a balance").font(Nacre.headline).foregroundColor(Pearl.ink)
-                        .frame(maxWidth: .infinity)
-                        .accessibilityAddTraits(.isHeader)
-                    CloseButton { dismiss() }
+            VStack(alignment: .leading, spacing: 14) {
+                APSheetTitle(title: "Add a balance") { dismiss() }
+                PearlField(label: "Name", placeholder: "TD TFSA", text: $name, identifier: "hand-name")
+                APSegmented(options: kinds.map { (id: $0.0, title: $0.1) }, selection: $kind)
+                if takesDigits {
+                    PearlField(label: "Last four digits", placeholder: "Optional", text: $last4, identifier: "hand-last4")
+                        .keyboardType(.numberPad)
                 }
-                APCard {
-                    InlineField(label: "Name", text: $name, prompt: "TD TFSA")
-                }
-                HStack(spacing: 8) {
-                    ForEach(kinds, id: \.0) { id, title in
-                        FilterChip(label: title, on: kind == id) { kind = id }
-                    }
-                }
-                APCard {
-                    if takesDigits {
-                        InlineField(label: "Last four digits", text: $last4, prompt: "Optional", keyboard: .numberPad)
-                        APSeparator(afterFace: false)
-                    }
-                    InlineField(label: "Balance today", text: $balance, prompt: "$0.00", keyboard: .decimalPad)
-                }
+                PearlField(label: "Balance today", placeholder: "0.00", text: $balance, kind: .amount,
+                           identifier: "hand-balance")
                 ProfileNote(note)
-                if let error = error { Hint(text: error) }
-                Button("Add account") { Task { await add() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
-                    .disabled(!canAdd || busy)
+                if let error = error { APErrorLine(text: error) }
             }
-            .padding(.horizontal, 16).padding(.top, 24).padding(.bottom, 16)
+            .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 16)
         }
         .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            Button(error == nil ? "Add account" : "Try again") { Task { await add() } }
+                .buttonStyle(APPrimaryButtonStyle(busy: busy, busyLabel: "Adding\u{2026}"))
+                .disabled(!canAdd || busy)
+                .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8)
+        }
         .foregroundColor(Pearl.ink)
         .onChange(of: last4) { value in
             let digits = String(value.filter(\.isNumber).prefix(4))

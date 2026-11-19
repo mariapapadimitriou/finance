@@ -363,6 +363,17 @@ class TestTheEndpoints:
         d = client.delete(f"/api/income-bills/bills/{added['key']}").get_json()
         assert not any(b["source"] == "added" for b in d["bills"])
 
+    def test_no_on_the_rent_row_stops_the_question_and_keeps_the_category(self, client):
+        """G5-Income (A+, 2026-11-18): No right on the found rent row."""
+        d = client.get("/api/income-bills").get_json()
+        key = d["rent_question"]["key"]
+        d = client.post("/api/income-bills/rent", json={"key": key, "answer": "no"}).get_json()
+        assert d["rent_question"] is None
+        row = next(b for b in d["bills"] if b["key"] == key)
+        assert row["name"] != "Rent" and not row.get("rent")
+        # Asked again on the next load? No: the answer is kept.
+        assert client.get("/api/income-bills").get_json()["rent_question"] is None
+
     @pytest.mark.parametrize("path,method,body", [
         ("/api/income-bills/pay/answer", "post", {"payer": "Northwind Ltd", "answer": "maybe"}),
         ("/api/income-bills/pay", "post", {"name": "", "amount": 10, "cadence": "weekly",

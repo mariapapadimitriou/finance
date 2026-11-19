@@ -346,6 +346,12 @@ def income_bills_rent():
     if series is None:
         return _error("We couldn’t find those e-Transfers any more.", 404)
     recipient = key[len("rent:"):]
+    if body.get("answer") == "no":
+        # IB-02's No on the row (A+, 2026-11-18): not rent, so Pearl stops
+        # asking; the e-Transfers keep their category.
+        state["rent"][recipient] = "no"
+        ib.save(st, state)
+        return jsonify(_payload(st))
     state["rent"][recipient] = "yes"
     state["bills"][key] = {"state": "yes"}
     st.set_destination(recipient, ib.RENT, series["recipient"])

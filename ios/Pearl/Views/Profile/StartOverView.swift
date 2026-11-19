@@ -17,34 +17,35 @@ struct StartOverView: View {
     @State private var showFresh = false
     @State private var leaving = false
 
+    /// G5-StartOver SO-02: what goes (rose dots) and what stays (teal dots).
     var body: some View {
         ProfilePage {
-            VStack(alignment: .leading, spacing: 12) {
-                DataHeading(title: "Start over", line: "Here’s what happens.")
+            VStack(alignment: .leading, spacing: 8) {
+                DataHeading(title: "Start over", line: "Your banks stay. Everything else starts fresh.")
                 DataCaption("What goes")
                 DataCard {
-                    DataRow(icon: "DataGoes", title: "Your transactions and how you sorted them")
+                    APBullet(text: "Your transactions and how you sorted them")
                     APSeparator(afterFace: false)
-                    DataRow(icon: "DataGoes", title: "Your rules and account setup")
+                    APBullet(text: "Your rules and account setup")
                     APSeparator(afterFace: false)
-                    DataRow(icon: "DataGoes", title: "Income, bills and budgets")
+                    APBullet(text: "Income, bills and budgets")
                     APSeparator(afterFace: false)
-                    // The design has this under "What stays", but Start over
-                    // clears goals and the Anchor (Store.start_over, 2026-10-28).
-                    DataRow(icon: "DataGoes", title: "Your Anchor and goals")
+                    // Start over clears goals and the Anchor (Store.start_over, 2026-10-28).
+                    APBullet(text: "Your Anchor and goals")
                 }
                 DataCaption("What stays")
                 DataCard {
-                    DataRow(icon: "DataStays", title: "Your bank connections, and which accounts sync")
+                    APBullet(text: "Your bank connections, and which accounts sync", dot: Nacre.teal)
                     APSeparator(afterFace: false)
-                    DataRow(icon: "DataStays", title: "Sign-in and privacy")
+                    APBullet(text: "Sign-in and privacy", dot: Nacre.teal)
                 }
             }
         } bottom: {
             Button("Continue") { confirming = true }
-                .buttonStyle(NacreButtonStyle())
+                .buttonStyle(APPrimaryButtonStyle())
+                .accessibilityIdentifier("start-over-continue")
             Button("Download a copy first", action: downloadFirst)
-                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                .buttonStyle(APQuietTextStyle())
         }
         .toolbar(.hidden, for: .tabBar)
         .sheet(isPresented: $confirming, onDismiss: { if started { showFresh = true } }) {
@@ -52,8 +53,8 @@ struct StartOverView: View {
                 started = true
                 confirming = false
             }
-            .background(BandedSheetBackground())
-            .presentationDetents([.height(290)])
+            .background(SheetBackground())
+            .presentationDetents([.large])
             .presentationDragIndicator(.visible)
         }
         .fullScreenCover(isPresented: $showFresh, onDismiss: { if leaving { goHome() } }) {
@@ -81,29 +82,42 @@ struct ConfirmStartOverSheet: View {
         typed.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ") == "start over"
     }
 
+    /// G5-StartOver SO-03: type "start over" in the well; Start over rides
+    /// above the keyboard, greyed until the words are right. Couldn't: the
+    /// reason, Try again and Keep everything.
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SheetTitle(title: "Start over?") { dismiss() }
-                .padding(.horizontal, -16)
-                .padding(.bottom, -2)
-            DataCard {
-                FieldRow(label: "Type “start over”", text: $typed, tone: Pearl.ink) {
+        VStack(alignment: .leading, spacing: 0) {
+            APSheetTitle(title: "Start over?") { dismiss() }
+                .padding(.top, 14)
+            VStack(alignment: .leading, spacing: 8) {
+                PearlField(label: "Type \u{201C}start over\u{201D}", placeholder: "start over", text: $typed,
+                           identifier: "start-over-confirm") {
                     if ready { Task { await confirm() } }
                 }
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                if let error = error {
+                    APErrorLine(text: error)
+                } else {
+                    ProfileNote("Nothing changes until you do.")
+                }
             }
-            Text(error ?? "Nothing changes until you do.")
-                .font(Nacre.footnote)
-                .foregroundColor(error == nil ? Pearl.ink : Pearl.caution)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 16)
-            Button("Start over") { Task { await confirm() } }
-                .buttonStyle(NacreButtonStyle(busy: busy))
-                .disabled(!ready || busy)
+            .padding(.top, 16)
             Spacer(minLength: 0)
+            VStack(spacing: 12) {
+                Button(error == nil ? "Start over" : "Try again") { Task { await confirm() } }
+                    .buttonStyle(APPrimaryButtonStyle(busy: busy, busyLabel: "Starting over\u{2026}"))
+                    .disabled(!ready || busy)
+                if error != nil || busy {
+                    Button("Keep everything") { dismiss() }
+                        .buttonStyle(APSecondaryButtonStyle())
+                        .disabled(busy)
+                }
+            }
+            .padding(.bottom, 8)
         }
         .padding(.horizontal, 16)
         .interactiveDismissDisabled(busy)
-        .onChange(of: typed) { _ in error = nil }
     }
 
     private func confirm() async {
@@ -114,7 +128,7 @@ struct ConfirmStartOverSheet: View {
             let _: OK = try await app.api.post("api/data/start-over", ["confirm": "start over"])
             done()
         } catch {
-            self.error = app.handle(error)
+            self.error = app.handle(error).map { _ in "Couldn\u{2019}t start over. Nothing changed. Try again." }
         }
     }
 }
@@ -171,11 +185,8 @@ struct StartedOverView: View {
                 sortingButtons(enabled: false)
             }
         case .back(let imported, let needsALook):
-            DataResult(title: "You’re starting fresh", line: backLine(imported), showsArt: setup?.active != true) {
-                if needsALook > 0 {
-                    StatusPill(text: "\(needsALook.formatted()) need\(needsALook == 1 ? "s" : "") a look",
-                               tone: .needsALook)
-                }
+            DataResult(title: "You’re starting fresh", line: backLine(imported) + lookLine(needsALook),
+                       showsArt: setup?.active != true) {
                 setupList
             } actions: {
                 sortingButtons(enabled: true)
@@ -193,22 +204,22 @@ struct StartedOverView: View {
             // balance by hand brings her money back.
             DataResult(title: "You’re starting fresh",
                        line: "Link a bank to bring your history back, or add a balance by hand.") {
-                if let error = error { Hint(text: error).padding(.top, 4) }
+                if let error = error { APErrorLine(text: error).padding(.top, 4) }
             } actions: {
                 Button("Link a bank") { Task { await link() } }
-                    .buttonStyle(NacreButtonStyle(busy: linking))
+                    .buttonStyle(APPrimaryButtonStyle(busy: linking))
                     .disabled(linking)
                 Button("Add a balance by hand") { adding = true }
-                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                    .buttonStyle(APQuietTextStyle())
                     .disabled(linking)
                 Button("Not now", action: close)
-                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                    .buttonStyle(APQuietTextStyle())
                     .disabled(linking)
             }
             .sheet(isPresented: $adding) {
                 AddHandBalanceSheet { app.changed(); close() }
                     .background(SheetBackground())
-                    .presentationDetents([.height(450), .large])
+                    .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
         }
@@ -229,11 +240,16 @@ struct StartedOverView: View {
     private func sortingButtons(enabled: Bool) -> some View {
         Group {
             NavigationLink { ReviewView() } label: { Text("Start sorting") }
-                .buttonStyle(NacreButtonStyle())
+                .buttonStyle(APPrimaryButtonStyle())
             Button("Go to Home", action: close)
-                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                .buttonStyle(APQuietTextStyle())
         }
         .disabled(!enabled)
+    }
+
+    /// " 48 need a look."
+    private func lookLine(_ n: Int) -> String {
+        n > 0 ? " \(n.formatted()) need\(n == 1 ? "s" : "") a look." : ""
     }
 
     private func backLine(_ imported: Int) -> String {

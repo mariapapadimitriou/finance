@@ -766,6 +766,112 @@ struct APSkeletonRow: View {
     }
 }
 
+/// `.quiet` as a button style: `link` 15/500, the full width, 44 to tap.
+struct APQuietTextStyle: ButtonStyle {
+    var tone: Color = Pearl.link
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+            .foregroundColor(tone)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .opacity(configuration.isPressed ? 0.6 : 1)
+            .contentShape(Rectangle())
+    }
+}
+
+/// `.seg`: the segmented track on `chip` (38 high, radius 19, 3 in); the
+/// picked one on the card white with a soft shadow. 15/500 words.
+struct APSegmented: View {
+    let options: [(id: String, title: String)]
+    @Binding var selection: String?
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(options, id: \.id) { o in
+                let on = selection == o.id
+                Button { selection = o.id } label: {
+                    Text(o.title)
+                        .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+                        .foregroundColor(Pearl.ink)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                        .frame(maxWidth: .infinity, minHeight: 32)
+                        .background {
+                            if on {
+                                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(APSegmented.thumb)
+                                    .shadow(color: Pearl.ink.opacity(0.12), radius: 1.5, y: 1)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
+            }
+        }
+        .padding(3)
+        .frame(minHeight: 38)
+        .background(RoundedRectangle(cornerRadius: 19, style: .continuous).fill(APlus.chip))
+    }
+
+    /// `surface-card`: white, or the deep ocean in dark.
+    static let thumb = Pearl.dynamic(light: 0xFFFFFF, dark: 0x262E63)
+}
+
+/// G5-Email `.code`: six 46 × 56 wells, 8 apart, the digits in 28 pt
+/// Fraunces; the next one has the 2 pt action ring and caret; a wrong code
+/// rings them all in danger. One hidden field takes the digits, so iOS can
+/// fill it from Mail and paste works.
+struct ProfileCodeWells: View {
+    @Binding var code: String
+    var failed = false
+    var onComplete: () -> Void = {}
+
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        ZStack {
+            TextField("", text: $code)
+                .keyboardType(.numberPad)
+                .textContentType(.oneTimeCode)
+                .focused($focused)
+                .foregroundColor(.clear)
+                .tint(.clear)
+                .accessibilityLabel("6-digit code")
+                .accessibilityIdentifier("code-wells")
+                .onChange(of: code) { value in
+                    let digits = String(value.filter(\.isNumber).prefix(6))
+                    if digits != value { code = digits }
+                    if digits.count == 6 { onComplete() }
+                }
+            HStack(spacing: 8) {
+                ForEach(0..<6, id: \.self) { i in
+                    let chars = Array(code)
+                    let current = i == chars.count && focused && !failed
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous).fill(APlus.well)
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(failed ? Pearl.danger : (current ? Pearl.action : APlus.wellLine),
+                                          lineWidth: failed || current ? 2 : 1)
+                        if i < chars.count {
+                            Text(String(chars[i])).font(.custom("Fraunces-SemiBold", size: 28, relativeTo: .title))
+                                .foregroundColor(Pearl.ink)
+                        } else if current {
+                            RoundedRectangle(cornerRadius: 1).fill(Pearl.action).frame(width: 2, height: 28)
+                        }
+                    }
+                    .frame(width: 46, height: 56)
+                }
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture { focused = true }
+        .onAppear { focused = true }
+    }
+}
+
 /// The Pearl mark (LogoMark), sized by width.
 struct APMark: View {
     var width: CGFloat = 150
