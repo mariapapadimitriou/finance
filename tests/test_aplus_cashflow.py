@@ -28,7 +28,7 @@ class TestCashFlow(unittest.TestCase):
         self.assertIn("ProfileCircle()", self.tv)
 
     def test_need_a_look_has_the_mini_streak_and_a_tint_chip(self):
-        self.assertIn("SortStreak(sorted: reviewSorted, toSort: reviewCount, mini: true)", self.tv)
+        self.assertIn("SortStreak(sorted: reviewSorted, toSort: reviewToSort, mini: true)", self.tv)
         self.assertIn("CFCount(n: reviewCount)", self.tv)
         kit = code(read("Views", "Transactions", "CashFlowKit.swift"))
         count = kit[kit.index("struct CFCount"):kit.index("struct CFChip")]

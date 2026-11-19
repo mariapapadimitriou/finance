@@ -8,7 +8,7 @@ struct QuickSortPrompt: Decodable {
     let review: Review?
 
     /// The open questions, skipped ones left where they are.
-    var asks: [Ask] { review?.asks.filter { !$0.skipped } ?? [] }
+    var asks: [Ask] { review?.shownAsks.filter { !$0.skipped } ?? [] }
     /// AI-18: the patterns Pearl asks about once, first in the deck.
     var patterns: [PatternAsk] { review?.patternAsks ?? [] }
     /// TR-01: likely trips Pearl asks about, after the patterns.
@@ -482,16 +482,41 @@ struct QuickSortView: View {
                 .multilineTextAlignment(.center).lineLimit(3).minimumScaleFactor(0.7)
                 .padding(.top, 14)
             if let split = drafts[ask.id]?.split {
-                // T-98s: "Your share $42.06 · Sam owes you $42.06".
-                Text(split.note).font(Nacre.footnote).foregroundColor(Pearl.ink)
+                // T-98s (G1-QuickMore): "Sam owes you $42.06. Skip forgets the split."
+                Text((split.note.components(separatedBy: " \u{00B7} ").last ?? split.note) + ". Skip forgets the split.").font(Nacre.footnote).foregroundColor(Pearl.muted)
                     .multilineTextAlignment(.center).lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 6)
             } else if drafts[ask.id]?.label == nil, let evidence = ask.evidence {
                 Text(evidence).font(Nacre.footnote).foregroundColor(Pearl.ink)
                     .multilineTextAlignment(.center).lineLimit(3)
             }
+            if let line = cardHint(ask) {
+                // G1-QuickMore (T-93o, T-97, T-98, T-98s, AI-07): one muted line in the card.
+                Text(line).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    .multilineTextAlignment(.center).lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 6)
+            }
         }
-        .modifier(CardFace())
+        .modifier(CardFace(dashed: drafts[ask.id] == nil && ask.item.unsure != nil))
         .overlay(alignment: .topLeading) { stamp(guessing: hasYes(ask)) }
+    }
+
+    /// G1-QuickMore: what the card's Yes or Skip does, in one line.
+    /// Other: "Tap the card to pick something else."; a merchant that varies:
+    /// "Amazon varies, so just this one."; her choice: "Yes sorts just this
+    /// one."; a held split: "Skip forgets the split."; AI-07: why Pearl isn't sure.
+    private func cardHint(_ ask: Ask) -> String? {
+        if let draft = drafts[ask.id] {
+            if draft.split != nil { return nil }   // its note says it, with Skip forgets the split.
+            return hint.isEmpty ? nil : hint
+        }
+        if let unsure = ask.item.unsure { return unsure.line }
+        guard isGuess(ask), ask.item.pair == nil, ask.incomeGuess == nil else { return nil }
+        if ask.guessesOther { return "Tap the card to pick something else." }
+        if ask.varies(accounts) { return "\(ask.t.name) varies, so just this one." }
+        return nil
     }
 
     /// AI-18 (1326:64004): one card for the whole pattern. It shows "Each one"
@@ -517,6 +542,11 @@ struct QuickSortView: View {
                 .font(Nacre.title).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center).lineLimit(3).minimumScaleFactor(0.7)
                 .padding(.top, 8)
+            // AI-18 (G1-QuickAsk): why Pearl asks, one muted line in the card.
+            Text(p.isJoint ? "Your last \(p.count) were \(p.label)." : "Your last \(p.count) at \(p.name) were \(p.label).")
+                .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                .multilineTextAlignment(.center).lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .modifier(CardFace())
         .overlay(alignment: .topLeading) { stamp(guessing: true) }
@@ -905,7 +935,7 @@ struct QuickSortView: View {
     /// sender was just saved, from Needs a look's list.
     private func followUp(_ ask: Ask) async -> Ask? {
         guard let review: Review = try? await app.api.get("api/review") else { return nil }
-        return review.asks.first { $0.item.key == "extra:" + ask.t.id && !$0.skipped }
+        return review.shownAsks.first { $0.item.key == "extra:" + ask.t.id && !$0.skipped }
     }
 
     private func step(_ ask: Ask, _ body: [String: Any], said: String? = nil, always: String? = nil,
@@ -1018,6 +1048,8 @@ struct QuickSortCard: View {
 /// The card itself: soft nacre, a pearly edge. In dark it is --surface-card
 /// (T-93r dark, 1077:1478), so the ink text on it reads (TEST-01).
 private struct CardFace: ViewModifier {
+    /// AI-07 (G1-QuickMore): an unsure guess has the dashed rose edge.
+    var dashed = false
     @Environment(\.colorScheme) private var scheme
 
     func body(content: Content) -> some View {
@@ -1026,7 +1058,12 @@ private struct CardFace: ViewModifier {
             .padding(.vertical, 24).padding(.horizontal, 22)
             .frame(maxWidth: .infinity)
             .apCard(radius: Pearl.radiusSort)
-
+            .overlay {
+                if dashed {
+                    RoundedRectangle(cornerRadius: Pearl.radiusSort, style: .continuous)
+                        .strokeBorder(Pearl.action, style: StrokeStyle(lineWidth: 1.5, dash: [5, 3]))
+                }
+            }
     }
 }
 

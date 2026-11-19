@@ -525,7 +525,8 @@ struct TransactionDetailView: View {
         }
         .navigationDestination(isPresented: $seeingOwed) { OwedView() }
         .sheet(isPresented: $editingNote) {
-            NoteSheet(note: t.myNote) { note in
+            NoteSheet(note: t.myNote, name: t.merchant,
+                      line: (t.inflow ? "+" : "\u{2212}") + Format.amount(t.amount) + " · " + Format.weekdayDay(t.date)) { note in
                 editingNote = false
                 Task { await save(note: note) }
             }
@@ -1670,13 +1671,21 @@ struct TransactionDetailView: View {
     /// T-40: "Is this Sam's pay?" — Yes, or the whole question.
     private var jointGuessCard: some View {
         let person = t.jointPeople.count == 1 ? t.jointPeople[0] : nil
-        return VStack(spacing: 14) {
-            Text("PEARL’S GUESS")
-                .font(.custom("Figtree-SemiBold", size: 12, relativeTo: .caption)).tracking(1.2)
-                .foregroundColor(Pearl.action)
-            Text(person.map { "Is this \($0)’s pay?" } ?? "Is this your pay?")
-                .font(Nacre.title2).foregroundColor(Pearl.ink).multilineTextAlignment(.center)
+        // T-40 (G1-TxNote): the caps and the question on the left, then
+        // Something else and Yes side by side, Yes on the right.
+        return VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("PEARL’S GUESS")
+                    .font(.custom("Figtree-SemiBold", size: 12, relativeTo: .caption)).tracking(1.2)
+                    .foregroundColor(Pearl.action)
+                Text(person.map { "Is this \($0)’s pay?" } ?? "Is this your pay?")
+                    .font(Nacre.title2).foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack(spacing: 10) {
+                // TEST-32: the control fill reads in both modes.
+                Button("Something else") { asking = Asking(step: .joint) }
+                    .buttonStyle(APSecondaryButtonStyle())
                 Button("Yes") {
                     let answer = ReviewAnswer.joint(t.id, who: person == nil ? "me" : "them", person: person)
                     Task {
@@ -1694,14 +1703,11 @@ struct TransactionDetailView: View {
                     }
                 }
                 .buttonStyle(APPrimaryButtonStyle(busy: busy))
-                // TEST-32: the control fill reads in both modes.
-                Button("Something else") { asking = Asking(step: .joint) }
-                    .buttonStyle(APSecondaryButtonStyle())
             }
             .disabled(busy)
         }
         .padding(16)
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
         // A+: Pearl's guess is the dashed rose outline (G1-TxSpend).
         .background(GuessCardSurface(dashed: true))
     }
@@ -1712,7 +1718,8 @@ struct TransactionDetailView: View {
             section("Joint account")
             APCard {
                 Button { asking = Asking(step: .joint) } label: {
-                    row(title: "Whose pay", sub: jointWhose, chevron: true)
+                    // T-40b (G1-TxNote): "Whose pay   Sam's · not yours ›".
+                    row(title: "Whose pay", chevron: true, value: jointWhose)
                 }
                 .buttonStyle(.plain)
                 .disabled(busy)
@@ -1732,7 +1739,7 @@ struct TransactionDetailView: View {
         switch t.jointFrom {
         case "me": return "Yours"
         case "both": return "Both of yours · your share \(Int((t.jointShare ?? 50).rounded()))% counts"
-        default: return t.jointPerson.map { "\($0)’s · not counted as yours" } ?? "Theirs · not counted as yours"
+        default: return t.jointPerson.map { "\($0)’s · not yours" } ?? "Theirs · not yours"
         }
     }
 
@@ -2112,8 +2119,12 @@ struct TransactionDetailView: View {
 
     // MARK: Options
 
-    /// A charge a piggy bank could have paid for.
-    private var canPayFromBank: Bool { !t.inflow && t.transfer == nil && t.excluded.isEmpty }
+    /// A charge a piggy bank paid for. "Pay from a piggy bank" is parked with
+    /// Save (product owner, 2026-11-18), so the row only shows on a charge a
+    /// piggy bank already paid ("Paid from a piggy bank"), to undo it.
+    private var canPayFromBank: Bool {
+        t.bankId != nil && !t.inflow && t.transfer == nil && t.excluded.isEmpty
+    }
 
     /// T-03: one Options card. Split with others, Regular pay (T-37),
     /// Unlink refund (T-41), Pay from a piggy bank and One-off purchase, each a plain row.
@@ -2232,21 +2243,22 @@ struct TransactionDetailView: View {
                     if canSplit || couldBePay || unlink { APSeparator(afterFace: false) }
                     Toggle(isOn: Binding(get: { oneOff ?? t.oneOff },
                                          set: { on in Task { await setOneOff(on) } })) {
+                        // T-42 (G1-TxNote): what leaving it out does, under the title.
                         HStack(spacing: 12) {
                             CFIcon(symbol: "1.circle")
-                            Text("Exclude from usual month").font(Nacre.body).foregroundColor(Pearl.ink)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Exclude from usual month").font(Nacre.body).foregroundColor(Pearl.ink)
+                                if let line = t.oneOffLine?.line, oneOff ?? t.oneOff {
+                                    Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
                         }
                     }
                     .tint(Pearl.action)
                     .disabled(busy)
-                    .padding(.horizontal, 16).frame(minHeight: 64)
+                    .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 64)
                     .accessibilityHint("Leaves it out of your usual month")
-                    if let line = t.oneOffLine?.line, oneOff ?? t.oneOff {
-                        // T-42: what leaving it out does to the month.
-                        Text(line).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                            .padding(.horizontal, 16).padding(.bottom, 12)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
                 }
                 if offersNewOnes {
                     if canSplit || couldBePay || unlink || canOneOff { APSeparator(afterFace: false) }
@@ -2411,15 +2423,18 @@ struct TransactionDetailView: View {
                 .disabled(busy)
         }
         if t.manual {
-            Button("Delete transaction") { deleting = true }
-                .buttonStyle(NacreTextButtonStyle(tone: Pearl.danger))
+            // G1-PConfirm (T-03x): a red entry row on its own card.
+            APCard {
+                PearlDestructiveRow(symbol: "trash", title: "Delete \(t.merchant)") { deleting = true }
+                    .accessibilityIdentifier("Delete transaction")
+            }
                 .padding(.top, 12)
                 .disabled(busy)
                 .sheet(isPresented: $deleting) {
                     // T-03x (TEST-06): a Pearl sheet; T-03x2 if it fails.
                     PearlConfirmSheet(face: t.merchant, overline: "Added by hand", title: "Delete \(t.merchant)?",
                                       message: "You added it by hand, so it comes out of your numbers. This can’t be undone.",
-                                      primary: "Delete", busyLabel: "Deleting…", secondary: "Keep it",
+                                      primary: "Delete \(t.merchant)", busyLabel: "Deleting…", secondary: "Keep it",
                                       failure: "Couldn’t delete \(t.merchant). Nothing changed. Try again.",
                                       onClose: { deleting = false }) {
                         let _: OK = try await app.api.delete("api/transactions/\(t.id)")
@@ -2492,8 +2507,11 @@ struct TransactionDetailView: View {
         }
         .sheet(isPresented: $unpairing) {
             // TF-01c (1390:2451 / 1390:2586): a Pearl sheet, not an alert.
+            // G1-TxSheets (TF-01c): the transfer as the who, ⇄ on a quiet disc.
             PearlConfirmSheet(overline: "Transfer · \(Format.amount(t.amount))", title: "This isn’t a transfer?",
-                              message: "Pearl stops pairing \(transfer.from) and \(transfer.to), and asks you what each one was. Nothing else changes.",
+                              who: .init(name: "Transfer", amount: Format.amount(t.amount), tone: Pearl.muted,
+                                         sub: "\(transfer.from) \u{2192} \(transfer.to)", symbol: "arrow.left.arrow.right"),
+                              message: "Pearl stops pairing them and asks what each one was.",
                               primary: "Not a transfer", secondary: "Keep it a transfer",
                               onClose: { unpairing = false }) {
                 unpairing = false
@@ -2719,32 +2737,18 @@ struct TransactionDetailView: View {
                       item: Review.Item(key: "sort:" + other.id, txn: brief, skipped: nil))
     }
 
-    /// T-41b: "Unlink? · It goes back to Needs a look."
+    /// T-41b (G1-TxSheets): "Unlink?" with ✕, "Amazon refund · +$68.00 ·
+    /// Nov 13", "It goes back to Needs a look.", Unlink and Keep linked.
     private var refundUnlinkSheet: some View {
-        VStack(spacing: 16) {
-            CFSheetTitle(title: "Unlink?") { unlinkingRefund = false }
-            QuestionHeader(name: t.merchant, amount: "+" + Format.amount(t.amount), tone: Pearl.ink,
-                           sub: Format.short(t.date))
-                .padding(.horizontal, 16)
-            Text("It goes back to Needs a look.").font(Nacre.footnote).foregroundColor(Pearl.ink)
-            HStack(spacing: 10) {
-                Button("Unlink") {
-                    unlinkingRefund = false
-                    Task { await unlinkRefund() }
-                }
-                .buttonStyle(APPrimaryButtonStyle())
-                Button("Keep linked") { unlinkingRefund = false }
-                    .font(Nacre.headline).foregroundColor(Pearl.ink)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Capsule().fill(Pearl.card))
-                    .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 16)
-            Spacer(minLength: 0)
+        PearlConfirmSheet(overline: "Refund", title: "Unlink?",
+                          who: .init(name: "\(t.merchant) refund", amount: "+" + Format.amount(t.amount),
+                                     tone: Pearl.moneyIn, sub: Format.short(t.date)),
+                          message: "It goes back to Needs a look.",
+                          primary: "Unlink", secondary: "Keep linked",
+                          onClose: { unlinkingRefund = false }) {
+            unlinkingRefund = false
+            await unlinkRefund()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .cfSheet()
-        .presentationDetents([.height(300)])
     }
 
     /// Undo for a server change, when it sent one.
@@ -3125,9 +3129,13 @@ struct SolidCard<Content: View>: View {
     }
 }
 
-/// Her own words about it, up to 200 characters.
+/// Her own words about it, up to 200 characters. T-43 (G1-TxNote): Note
+/// with ✕, the purchase (face, name, "−$84.12 · Wed, Nov 11"), the Note
+/// well with "20 of 200" under it, and Save just above the keyboard.
 struct NoteSheet: View {
     @State var note: String
+    var name: String? = nil
+    var line: String? = nil
     let onSave: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focused: Bool
@@ -3135,6 +3143,12 @@ struct NoteSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             CFSheetTitle(title: "Note") { dismiss() }
+            if let name = name {
+                APQuestionWho(name: name, amount: line ?? "", tone: Pearl.muted, sub: nil)
+                    .padding(.horizontal, 16)
+            }
+            Text("Note").font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 20)
+                .padding(.bottom, -6)
             TextField("", text: $note, prompt: Text("What was it for?").foregroundColor(Pearl.muted), axis: .vertical)
                 .font(Nacre.body).lineLimit(3...6)
                 .focused($focused)
@@ -3146,6 +3160,10 @@ struct NoteSheet: View {
                 .padding(.horizontal, 16)
 
                 .onChange(of: note) { value in if value.count > 200 { note = String(value.prefix(200)) } }
+                .accessibilityLabel("Note")
+            Text("\(note.count) of 200").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                .frame(maxWidth: .infinity, alignment: .trailing).padding(.horizontal, 20)
+                .accessibilityHidden(true)
             Spacer()
             Button("Save") { onSave(note.trimmingCharacters(in: .whitespacesAndNewlines)) }
                 .buttonStyle(APPrimaryButtonStyle())
