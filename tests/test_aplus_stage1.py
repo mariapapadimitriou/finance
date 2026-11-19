@@ -125,13 +125,14 @@ class TestPearlTab(unittest.TestCase):
         self.assertIn("guard available, !opened else { return }", self.chat)
 
     def test_composer_is_a_well_with_send(self):
-        self.assertIn(".wellStyle(focused: composing, capsule: true)", self.chat)
+        self.assertIn(".wellStyle(focused: composing.wrappedValue, capsule: true)", self.chat)
         self.assertIn('"arrow.up"', self.chat)
         self.assertIn(".disabled(!canSend)", self.chat)
 
     def test_unavailable_screen_kept(self):
         self.assertIn('"Pearl chat needs Apple Intelligence"', self.chat)
-        self.assertIn('action: "Search instead"', self.chat)
+        # G7-Unavailable: Search instead is the Primary button.
+        self.assertIn('Button("Search instead", action: onSearch)', self.chat)
 
     def test_no_stock_dialogs(self):
         for bad in [".alert(", ".confirmationDialog(", ".actionSheet("]:
