@@ -786,42 +786,50 @@ extension View {
     }
 }
 
-/// "Repeats   Monthly ›" as a menu.
+/// "Repeats   Monthly ›": opens a Pearl sheet of radio rows (house rule,
+/// coordinator 2026-11-18: no stock menu; same pattern as quiet hours).
 func pickerRow(_ label: String, selection: Binding<String>, options: [String]) -> some View {
-    HStack {
-        Text(label).font(Nacre.body)
-        Spacer()
-        Menu {
-            Picker(label, selection: selection) {
-                ForEach(options, id: \.self) { Text(cadence($0)).tag($0) }
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Text(cadence(selection.wrappedValue))
-                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
-            }
-            .font(Nacre.body).foregroundColor(Pearl.muted)
-        }
-    }
-    .padding(.horizontal, 16).frame(minHeight: 52)
+    ChoiceSheetRow(label: label, selection: selection, options: options, words: { cadence($0) })
 }
 
-/// "Goes into   TD Chequing ›", "Category   Choose ›" as a menu.
+/// "Goes into   TD Chequing ›", "Category   Choose ›": the same Pearl sheet.
 func namedPicker(_ label: String, selection: Binding<String>, options: [String], placeholder: String = "Choose") -> some View {
-    HStack {
-        Text(label).font(Nacre.body)
-        Spacer()
-        Menu {
-            Picker(label, selection: selection) {
-                ForEach(options, id: \.self) { Text($0).tag($0) }
+    ChoiceSheetRow(label: label, selection: selection, options: options, placeholder: placeholder, words: { $0 })
+}
+
+/// A key-value row whose value opens a Pearl sheet of radio rows; a tap picks at once.
+struct ChoiceSheetRow: View {
+    let label: String
+    @Binding var selection: String
+    let options: [String]
+    var placeholder = "Choose"
+    let words: (String) -> String
+    @State private var open = false
+
+    var body: some View {
+        Button { open = true } label: {
+            APKeyValueRow(key: label, chevron: true) {
+                Text(selection.isEmpty ? placeholder : words(selection))
+                    .foregroundColor(Pearl.muted).lineLimit(1)
             }
-        } label: {
-            HStack(spacing: 6) {
-                Text(selection.wrappedValue.isEmpty ? placeholder : selection.wrappedValue).lineLimit(1)
-                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityValue(selection.isEmpty ? placeholder : words(selection))
+        .accessibilityIdentifier("choice-\(label)")
+        .sheet(isPresented: $open) {
+            PearlSheet {
+                APSheetTitle(title: label) { open = false }
+                APCard {
+                    ForEach(Array(options.enumerated()), id: \.element) { i, o in
+                        if i > 0 { APSeparator(afterFace: false) }
+                        APChoiceRow(title: words(o), selected: o == selection) {
+                            selection = o
+                            open = false
+                        }
+                    }
+                }
             }
-            .font(Nacre.body).foregroundColor(Pearl.muted)
         }
     }
-    .padding(.horizontal, 16).frame(minHeight: 52)
 }

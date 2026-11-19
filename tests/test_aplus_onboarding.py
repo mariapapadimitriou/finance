@@ -75,3 +75,17 @@ def test_lock_screen_words():
     face = src("FaceIDViews.swift")
     assert '"Pearl is locked"' in face and '"Sign in with password"' in face
     assert '"Turn it on in iPhone Settings › Face ID & Passcode."' in face
+
+
+def test_no_stock_menus_in_onboarding_or_profile():
+    """House rule (coordinator, 2026-11-18): PaySheet and BillSheet's How
+    often, Goes into and Category open Pearl sheets of radio rows."""
+    pb = src("PayAndBillsView.swift")
+    assert "struct ChoiceSheetRow" in pb and "APChoiceRow(" in pb
+    for folder in (ONB, ROOT / "ios/Pearl/Views/Profile"):
+        for f in folder.glob("*.swift"):
+            if f.name == "YourPlanView.swift":
+                continue  # Save is parked; not in this restyle
+            text = f.read_text(encoding="utf-8")
+            assert "Menu {" not in text, f.name
+            assert ".confirmationDialog(" not in text and ".alert(" not in text, f.name
