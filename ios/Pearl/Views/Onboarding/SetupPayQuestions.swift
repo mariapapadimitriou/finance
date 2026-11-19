@@ -132,15 +132,16 @@ struct WhatIsItSheet: View {
                 .sheetPart()
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    QuestionHeader(name: ask.name, amount: Format.whole(ask.amount), tone: Pearl.ink,
+                    // G6-PayEdit O-10g: money in is green with "+"; the answers are radio rows.
+                    QuestionHeader(name: ask.name, amount: "+" + Format.whole(ask.amount), tone: Pearl.moneyIn,
                                    sub: cadence(ask.cadence).lowercased())
                     APCard {
-                        choiceRow("\(who)’s share of a bill", detail: nil, on: choice == "share") { choice = "share" }
+                        APChoiceRow(title: "\(who)’s share of a bill", selected: choice == "share") { choice = "share" }
                         APSeparator(afterFace: false)
-                        choiceRow("Paid back", detail: nil, on: choice == "payback") { save("payback") }
+                        APChoiceRow(title: "Paid back", selected: choice == "payback") { save("payback") }
                         APSeparator(afterFace: false)
-                        choiceRow("Something else", detail: "Pearl will ask about each one in Needs a look.",
-                                  on: choice == "else") { save("else") }
+                        APChoiceRow(title: "Something else", sub: "Pearl asks about each one in Needs a look",
+                                    selected: choice == "else") { save("else") }
                     }
                     .disabled(busy)
                     if choice == "share" {
@@ -152,8 +153,9 @@ struct WhatIsItSheet: View {
                             APCard {
                                 ForEach(Array(likelyBills.enumerated()), id: \.element.id) { i, b in
                                     if i > 0 { APSeparator(afterFace: false) }
-                                    choiceRow(b.name, detail: "\(cadence(b.cadence)) · \(Format.amount(b.amount)) · counts \(Format.amount(max(b.amount - ask.amount, 0))) for you",
-                                              on: false) { save("share", bill: b.key) }
+                                    APChoiceRow(title: b.name,
+                                                sub: "\(Format.amount(b.amount)) \u{00B7} \(Format.amount(max(b.amount - ask.amount, 0))) counts for you",
+                                                selected: false) { save("share", bill: b.key) }
                                 }
                             }
                             .disabled(busy)
@@ -199,24 +201,3 @@ struct WhatIsItSheet: View {
     }
 }
 
-/// One answer: its words, a line under them, and a tick when chosen.
-private func choiceRow(_ label: String, detail: String?, on: Bool, _ tap: @escaping () -> Void) -> some View {
-    Button(action: tap) {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label).font(Nacre.body).foregroundColor(Pearl.ink)
-                if let detail = detail {
-                    Text(detail).font(Nacre.subheadline).foregroundColor(Pearl.muted)
-                }
-            }
-            Spacer(minLength: 8)
-            if on {
-                Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold)).foregroundColor(Pearl.action)
-            }
-        }
-        .padding(.horizontal, 16).frame(minHeight: 64).padding(.vertical, 4)
-        .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .accessibilityAddTraits(on ? .isSelected : [])
-}

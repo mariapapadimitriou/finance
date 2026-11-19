@@ -635,6 +635,8 @@ struct BigAmountWell: View {
     var placeholder = "0"
     var label = "Each month, after tax"
     var identifier = "own-amount"
+    /// Off where the sheet opens to read first (O-10a, O-10b).
+    var autofocus = true
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -657,6 +659,6 @@ struct BigAmountWell: View {
             .strokeBorder(focused ? Pearl.action : APlus.wellLine, lineWidth: focused ? 2 : 1))
         .contentShape(Rectangle())
         .onTapGesture { focused = true }
-        .onAppear { focused = true }
+        .onAppear { if autofocus { focused = true } }
     }
 }

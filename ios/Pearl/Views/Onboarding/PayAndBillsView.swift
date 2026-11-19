@@ -533,40 +533,54 @@ struct PaySheet: View {
 
     private var adding: Bool { payer == nil && payId == nil }
 
+    @State private var when = false
+
+    /// G6-PayEdit O-10b / O-10d (rethought, approved 2026-11-18): the
+    /// amount leads, in one big well; how often, the next pay and where it
+    /// lands are one line ("Every 2 weeks · next Nov 21") that opens them.
     var body: some View {
-        SheetFrame(title: title, subtitle: subtitle, symbol: "chart.line.uptrend.xyaxis",
-                   heading: adding ? "Add income" : "Your pay", close: { dismiss() }) {
-            VStack(spacing: 0) {
-                if adding {
-                    FieldRow(label: "Name", text: $name, prompt: "e.g. Weekend job")
-                    APSeparator(afterFace: false)
-                }
-                FieldRow(label: adding ? "Amount" : "Each pay", text: $amount, prompt: "$0.00")
-                    .keyboardType(.decimalPad)
-                APSeparator(afterFace: false)
-                pickerRow("How often", selection: $how, options: ["weekly", "biweekly", "semimonthly", "monthly", "irregular"])
-                APSeparator(afterFace: false)
-                DatePicker(adding ? "Next payment" : "Next pay", selection: $next, displayedComponents: .date)
-                    .font(Nacre.body).padding(.horizontal, 16).frame(minHeight: 52)
-                if !accounts.isEmpty {
-                    APSeparator(afterFace: false)
-                    namedPicker("Goes into", selection: $account, options: accounts)
+        AmountSheet(heading: adding ? "Add income" : "Your pay", name: adding ? nil : title,
+                    sub: adding ? nil : (account.isEmpty ? nil : "Into \(account)"), close: { dismiss() }) {
+            if adding {
+                FieldRow(label: "Name", text: $name, prompt: "e.g. Weekend job")
+            }
+            BigAmountWell(text: $amount, placeholder: "0.00", label: adding ? "Amount" : "Each pay",
+                          identifier: "pay-amount", autofocus: false)
+            WhenLine(text: "\(cadence(how)) \u{00B7} next \(Format.short(isoDay.string(from: next)))") { when = true }
+            if !adding {
+                APCard {
+                    APToggleRow(title: "My pay changes each time", isOn: $varies)
                 }
             }
-            .sheetCard()
-            Toggle(adding ? "Amount changes each time" : "My pay changes each time", isOn: $varies)
-                .font(Nacre.body).tint(Pearl.action)
-                .padding(.horizontal, 16).frame(minHeight: 52)
-                .sheetCard()
             if let error = error { APErrorLine(text: error) }
         } actions: {
             Button(adding ? "Add income" : "Save") { Task { await save() } }
                 .buttonStyle(APPrimaryButtonStyle(busy: busy))
-            if adding {
-                Button("Cancel") { dismiss() }.buttonStyle(APSecondaryButtonStyle())
-            } else {
-                Button("This isn’t my pay") { Task { await notMine() } }
-                    .buttonStyle(APSecondaryButtonStyle())
+                .disabled(busy || amount.isEmpty || (adding && name.trimmingCharacters(in: .whitespaces).isEmpty))
+            if !adding {
+                APQuietButton(title: "This isn’t my pay", identifier: "not-my-pay") { Task { await notMine() } }
+                    .disabled(busy)
+            }
+        }
+        .sheet(isPresented: $when) {
+            PearlSheet {
+                APSheetTitle(title: adding ? "How often" : "When it comes") { when = false }
+                APCard {
+                    pickerRow("How often", selection: $how, options: ["weekly", "biweekly", "semimonthly", "monthly", "irregular"])
+                    APSeparator(afterFace: false)
+                    DatePicker(adding ? "Next payment" : "Next pay", selection: $next, displayedComponents: .date)
+                        .font(Nacre.body).tint(Pearl.action).padding(.horizontal, 16).frame(minHeight: 52)
+                    if !accounts.isEmpty {
+                        APSeparator(afterFace: false)
+                        namedPicker("Goes into", selection: $account, options: accounts)
+                    }
+                    if adding {
+                        APSeparator(afterFace: false)
+                        APToggleRow(title: "Amount changes each time", isOn: $varies)
+                    }
+                }
+            } footer: {
+                Button("Done") { when = false }.buttonStyle(APPrimaryButtonStyle())
             }
         }
         .task {
@@ -637,51 +651,84 @@ struct BillSheet: View {
     @State private var error: String?
     @State private var busy = false
 
+    @State private var when = false
+    @State private var more = false
+
+    /// G6-PayEdit O-10a / O-10c (rethought, approved 2026-11-18): the
+    /// amount leads; "Monthly · next Dec 1" is one line that opens when it
+    /// repeats; her share, category and whether it changes sit behind More
+    /// options. Remove bill is the one red quiet link.
     var body: some View {
-        SheetFrame(title: bill?.name ?? "Add a bill",
-                   subtitle: bill.map { "\($0.category ?? "Bill") · \(cadence($0.cadence))" }
-                       ?? "Including ones paid by e-Transfer, cheque or cash",
-                   symbol: "doc.text", heading: bill == nil ? "Add a bill" : "Edit bill", close: { dismiss() }) {
-            VStack(spacing: 0) {
-                if bill == nil {
-                    FieldRow(label: "Name", text: $name, prompt: "e.g. Tuition")
-                    APSeparator(afterFace: false)
-                }
-                FieldRow(label: "Amount", text: $amount, prompt: "$0.00").keyboardType(.decimalPad)
-                APSeparator(afterFace: false)
-                pickerRow("Repeats", selection: $how,
-                          options: ["weekly", "biweekly", "monthly", "bimonthly", "quarterly", "semiannual", "annual"])
-                APSeparator(afterFace: false)
-                DatePicker("Next payment", selection: $next, displayedComponents: .date)
-                    .font(Nacre.body).padding(.horizontal, 16).frame(minHeight: 52)
-                APSeparator(afterFace: false)
-                FieldRow(label: "Your share", text: $share, prompt: "100%").keyboardType(.numberPad)
-                if !categories.isEmpty {
-                    APSeparator(afterFace: false)
-                    namedPicker("Category", selection: $category, options: categories, placeholder: "Choose")
-                }
+        AmountSheet(heading: bill?.name ?? "Add a bill", name: bill?.name,
+                    sub: bill.map { $0.category ?? "Bill" }, close: { dismiss() }) {
+            if bill == nil {
+                FieldRow(label: "Name", text: $name, prompt: "e.g. Tuition")
             }
-            .sheetCard()
-            VStack(spacing: 0) {
-                Toggle("Amount changes each month", isOn: $varies)
-                    .font(Nacre.body).tint(Pearl.action)
-                    .padding(.horizontal, 16).frame(minHeight: 52)
-                if let counted = counted {
-                    APSeparator(afterFace: false)
-                    Toggle("Count this bill", isOn: counted)
-                        .font(Nacre.body).tint(Pearl.action)
-                        .padding(.horizontal, 16).frame(minHeight: 52)
+            BigAmountWell(text: $amount, placeholder: "0.00", label: "Amount", identifier: "bill-amount",
+                          autofocus: false)
+            WhenLine(text: "\(cadence(how)) \u{00B7} next \(Format.short(isoDay.string(from: next)))") { when = true }
+            Button { more = true } label: {
+                HStack(spacing: 12) {
+                    APIcon(symbol: "slider.horizontal.3")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("More options").font(Nacre.body).foregroundColor(Pearl.ink)
+                        Text("Your share, category, amount changes").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    APChevron()
                 }
+                .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 64)
+                .contentShape(Rectangle())
             }
-            .sheetCard()
+            .buttonStyle(.plain)
+            .apCard()
+            .accessibilityIdentifier("bill-more-options")
             if let error = error { APErrorLine(text: error) }
         } actions: {
             Button(bill == nil ? "Add bill" : "Save") { Task { await save() } }
                 .buttonStyle(APPrimaryButtonStyle(busy: busy))
+                .disabled(busy || amount.isEmpty || (bill == nil && name.trimmingCharacters(in: .whitespaces).isEmpty))
             if let bill = bill {
                 // O-10a: any bill can come off, found or added.
-                Button("Remove bill") { Task { await remove(bill) } }
-                    .buttonStyle(APSecondaryButtonStyle())
+                APQuietButton(title: "Remove bill", tone: Pearl.danger, identifier: "remove-bill") {
+                    Task { await remove(bill) }
+                }
+                .disabled(busy)
+            }
+        }
+        .sheet(isPresented: $when) {
+            PearlSheet {
+                APSheetTitle(title: "How often") { when = false }
+                APCard {
+                    pickerRow("Repeats", selection: $how,
+                              options: ["weekly", "biweekly", "monthly", "bimonthly", "quarterly", "semiannual", "annual"])
+                    APSeparator(afterFace: false)
+                    DatePicker("Next payment", selection: $next, displayedComponents: .date)
+                        .font(Nacre.body).tint(Pearl.action).padding(.horizontal, 16).frame(minHeight: 52)
+                }
+            } footer: {
+                Button("Done") { when = false }.buttonStyle(APPrimaryButtonStyle())
+            }
+        }
+        .sheet(isPresented: $more) {
+            PearlSheet {
+                APSheetTitle(title: "More options") { more = false }
+                APCard {
+                    FieldRow(label: "Your share", text: $share, prompt: "100%").keyboardType(.numberPad)
+                        .padding(.horizontal, 16).padding(.vertical, 8)
+                    if !categories.isEmpty {
+                        APSeparator(afterFace: false)
+                        namedPicker("Category", selection: $category, options: categories, placeholder: "Choose")
+                    }
+                    APSeparator(afterFace: false)
+                    APToggleRow(title: "Amount changes each month", isOn: $varies)
+                    if let counted = counted {
+                        APSeparator(afterFace: false)
+                        APToggleRow(title: "Count this bill", isOn: counted)
+                    }
+                }
+            } footer: {
+                Button("Done") { more = false }.buttonStyle(APPrimaryButtonStyle())
             }
         }
         .task {
@@ -776,6 +823,66 @@ struct SheetFrame<Content: View, Actions: View>: View {
         }
         .foregroundColor(Pearl.ink)
         .background(SheetBackground())
+    }
+}
+
+/// G6-PayEdit: the centred title with its close, the face, name and line
+/// (kit `.who`) for one that exists, the fields, and the actions riding
+/// above the keyboard.
+struct AmountSheet<Content: View, Actions: View>: View {
+    let heading: String
+    var name: String? = nil
+    var sub: String? = nil
+    let close: () -> Void
+    @ViewBuilder var content: () -> Content
+    @ViewBuilder var actions: () -> Actions
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    APSheetTitle(title: heading, close: close).padding(.top, 6)
+                    if let name = name {
+                        HStack(spacing: 12) {
+                            CFRing(name: name, size: 44)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(name).font(Nacre.title2).foregroundColor(Pearl.ink).lineLimit(2)
+                                if let sub = sub {
+                                    Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(1)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                    content()
+                }
+                .padding(16)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            VStack(spacing: 12, content: actions).padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8)
+        }
+        .foregroundColor(Pearl.ink)
+        .background(SheetBackground())
+    }
+}
+
+/// "Monthly · next Dec 1", centred in `link` under the amount; it opens
+/// how often and when.
+struct WhenLine: View {
+    let text: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(text).font(.custom("Figtree-Medium", size: 13, relativeTo: .footnote))
+                .foregroundColor(Pearl.link)
+                .frame(maxWidth: .infinity, minHeight: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Changes how often and when")
+        .accessibilityIdentifier("when-line")
     }
 }
 
