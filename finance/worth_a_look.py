@@ -56,6 +56,10 @@ LESS_BY = 20.0
 COMPARE = {"Food Delivery": "takeout", "Dining": "dining out"}
 # A price rise worth asking about: at least this much, and this share.
 RISE_MIN, RISE_SHARE = 1.0, 0.04
+# A trip ask is news here only if it ended this recently. Quick sort asks
+# about every trip in her history (finance/trips.py); after Start over that
+# can be years of them, and Home stays about now.
+TRIP_DAYS = 120
 
 TIERS = ("yes", "heads_up", "good")
 ACTIONS = ("seen", "not_now", "clear", "undo_clear", "yes", "undo_yes", "got_it")
@@ -232,7 +236,10 @@ def _duplicates(ctx: _Ctx, review: dict) -> list[dict]:
 def _trips(ctx: _Ctx, review: dict) -> list[dict]:
     """Quick sort's trip question (TR-01) while it is open."""
     out = []
+    recent = (ctx.today - timedelta(days=TRIP_DAYS)).isoformat()
     for c in review.get("trip_asks") or []:
+        if c["end"] < recent:
+            continue
         where = f"in {c['place']}" if c.get("place") else "away"
         out.append(_item(f"trip:{c['id']}", "trip", "yes",
                          f"Were you {where} {_span(c['start'], c['end'])}?", "trip", "rose",

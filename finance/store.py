@@ -2514,7 +2514,7 @@ class Store:
             # yours rather than imported. The seed flag is the exception: it
             # records that this emptiness was deliberate.
             c.execute("DELETE FROM settings WHERE key IN "
-                      "('monthly_amount', 'monthly_income')")
+                      "('monthly_amount', 'monthly_income', 'trips', 'trip_skipped', 'trip_ended')")
             c.execute(
                 """INSERT INTO settings (key, value) VALUES ('seeded', 'done')
                    ON CONFLICT(key) DO UPDATE SET value = excluded.value""")
@@ -2575,6 +2575,10 @@ class Store:
         "anchor_unusual", "quick_sort_offered", "quick_sort_batch", "quick_sort_shown_on",
         # A cache: the next sync matches transfers afresh.
         "transfer_destinations",
+        # Trips (finance/trips.py): her trips, the dates she skipped and what
+        # Undo puts back. Their tags go with the rows; kept, these would hide
+        # every past trip from Pearl's asks once the history comes back.
+        "trips", "trip_skipped", "trip_ended",
     )
 
     def start_over(self) -> dict:
