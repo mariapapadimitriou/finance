@@ -19,7 +19,10 @@ kinds of signal:
   same hotel and restaurants, is still away;
 * a booking: a flight (Travel) in the two weeks before or during it, or a
   hotel (Lodging) then that isn't in her home city;
-* foreign transaction fees during it (on two days or more, a run too).
+* foreign transaction fees during it (on two days or more, a run too);
+* gone from home: with away only, nothing spent in her home city on any of
+  those days, where she spends there most days around them (a road trip
+  with no booking, to a place she's been before).
 
 A run of one kind and a second kind with it make an ask; one alone never
 does. Runs that touch are one trip. A stay longer than RUN_SPAN days isn't
@@ -57,6 +60,9 @@ BEFORE = 14                         # a flight or hotel booked up to two weeks b
 SETTLE = 30                         # days of history before a merchant counts as "new"
 HOME_MONTHS = 2                     # home: her usual city within two months either side
 HOME_MIN = 10                       # rows with a city needed to say so; else her usual city overall
+AROUND = 28                         # "gone from home": the days either side that show her usual
+STEADY_DAYS = 14                    # at least this many of them in her history
+STEADY_SHARE = 0.5                  # and she spent in her home city on at least half
 FEE =re.compile(r"\b(foreign transaction fee|forex fee|fx fee|foreign fee|non-sterling|conversion fee)\b", re.I)
 
 
@@ -362,7 +368,11 @@ def candidates(st, txns: list[Transaction], today: str) -> list[dict]:
     """Likely trips Pearl may ask about, across her whole history: two kinds
     of signal agree, none overlapping a trip or dates she skipped, newest
     first (the one she remembers best, and the one that matters to this
-    month, comes first; each is still its own question)."""
+    month, comes first; each is still its own question). None while a
+    bank's history is still coming in (after Start over or a new link): a
+    recent slice alone would make every merchant look new."""
+    if not st.plaid_history_ready():
+        return []
     spend = sorted((t for t in txns if _spending(t) or FEE.search(t.description or "")),
                    key=lambda t: (t.date, t.fingerprint))
     if not spend:
@@ -394,6 +404,20 @@ def candidates(st, txns: list[Transaction], today: str) -> list[dict]:
     flights_all = [t for t in spend if t.category == "Travel"]
     hotels_all = [t for t in spend if t.category == "Lodging" and not (_city(t) and _city(t) == home(_day(t)))]
     there_days = [_day(t) for t in there]
+    at_home = {_day(t) for t in there if _city(t) and _city(t) == home(_day(t))}
+
+    def gone_from_home(start: str, end_: str) -> bool:
+        """Nothing spent at home those days, where she spends there most days
+        around them: a home with steady daily spending, so a quiet spell
+        isn't taken for being away."""
+        s, e = date.fromisoformat(start), date.fromisoformat(end_)
+        if any((s + timedelta(days=i)).isoformat() in at_home for i in range((e - s).days + 1)):
+            return False
+        near = [d for d in ((s - timedelta(days=i)).isoformat() for i in range(1, AROUND + 1))
+                if d >= first_day] + \
+               [d for d in ((e + timedelta(days=i)).isoformat() for i in range(1, AROUND + 1))
+                if d < today]
+        return len(near) >= STEADY_DAYS and sum(d in at_home for d in near) >= STEADY_SHARE * len(near)
     busy = [(t["start"], t["end"]) for t in all_trips(st).values()] + [tuple(s) for s in _skipped(st)]
     taken = trip_of(st)
     out = []
@@ -414,8 +438,9 @@ def candidates(st, txns: list[Transaction], today: str) -> list[dict]:
         elsewhere = Counter(_city(t) for t in with_city if _city(t) != home(_day(t)))
         top = elsewhere.most_common(1)
         place = top[0][0] if top and top[0][1] * 2 >= len(with_city) else None
-        signals = ["new" in w["kinds"], "away" in w["kinds"] or place is not None,
-                   bool(flights or hotels), "fees" in w["kinds"] or bool(fees)]
+        away_ = "away" in w["kinds"] or place is not None
+        signals = ["new" in w["kinds"], away_, bool(flights or hotels), "fees" in w["kinds"] or bool(fees),
+                   away_ and gone_from_home(start, end_)]
         if sum(signals) < 2:
             continue                                        # one signal is not enough
         rows = inside + flights + hotels + fees

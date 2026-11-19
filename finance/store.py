@@ -2579,6 +2579,13 @@ class Store:
         # Undo puts back. Their tags go with the rows; kept, these would hide
         # every past trip from Pearl's asks once the history comes back.
         "trips", "trip_skipped", "trip_ended",
+        # Pearl sorts for you (finance/pattern_sort.py): what it sorted, her
+        # Yes/Stop/Skip on each pattern, the rows she undid. Keyed by rows
+        # that come back with the same ids, so kept they'd reattach. The
+        # switch stays; its baseline is taken again once the history is in.
+        "pattern_sort_log", "pattern_sort_state", "pattern_sort_never",
+        # "Waiting to be paid back" on a charge (marks.py), by charge id.
+        "reimbursement_waited",
     )
 
     def start_over(self) -> dict:
@@ -2611,6 +2618,13 @@ class Store:
             # Empty on purpose: the seeder must not refill it.
             c.execute("""INSERT INTO settings (key, value) VALUES ('seeded', 'done')
                          ON CONFLICT(key) DO UPDATE SET value = excluded.value""")
+            # Every bank's history is on its way again (plaid_history_ready).
+            items = [r["item_id"] for r in c.execute("SELECT item_id FROM plaid_items").fetchall()]
+            c.execute("""INSERT INTO settings (key, value) VALUES (?, ?)
+                         ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
+                      (self.HISTORY_PENDING_KEY, json.dumps(sorted(items))))
+        from . import pattern_sort
+        pattern_sort.after_start_over(self)
         return removed
 
     def seed_suppressed(self) -> bool:
@@ -3575,6 +3589,31 @@ class Store:
                    WHERE item_id = ?""",
                 (cursor, _now(), item_id),
             )
+
+    # ── A bank's whole history, in yet? (2026-11-19) ─────────────────────
+    # After Start over or a new link, Plaid's first pulls can be a recent
+    # slice: a new connection gets about the last month first and the rest
+    # later, and one sync takes at most so many pages. Until every bank has
+    # sent its whole history, what reads "new" against history (trips, a new
+    # subscription, the pattern baseline) waits. No key: nothing waiting.
+    HISTORY_PENDING_KEY = "plaid_history_pending"
+
+    def plaid_history_pending(self) -> list[str]:
+        try:
+            pending = json.loads(self.setting(self.HISTORY_PENDING_KEY) or "[]")
+        except (TypeError, ValueError):
+            return []
+        linked = {i["item_id"] for i in self.plaid_items()}
+        return [i for i in pending if i in linked] if isinstance(pending, list) else []
+
+    def plaid_history_ready(self) -> bool:
+        return not self.plaid_history_pending()
+
+    def set_plaid_history_pending(self, item_id: str, pending: bool) -> None:
+        was = set(self.plaid_history_pending())
+        now = was | {item_id} if pending else was - {item_id}
+        if now != was:
+            self.set_setting(self.HISTORY_PENDING_KEY, json.dumps(sorted(now)))
 
     def set_plaid_logo(self, item_id: str, logo: str) -> None:
         with self.conn() as c:

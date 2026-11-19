@@ -12,7 +12,8 @@ plain news or a single transaction on its own.
 Rules (product owner):
 
 * At most `MAX_ITEMS`: every `yes` first, then `heads_up`, then the one best
-  `good` item, last, if there's room.
+  `good` item, last, if there's room. When there is a heads-up, `yes` items
+  take at most `MAX_ITEMS - 1`, so the heads-up always shows.
 * Not now is for good, for that id. Clear hides what was passed and
   everything else that qualifies today (TEST-40); Undo brings it back. Seen (she tapped it) hides it too.
 * An item drops off `DROP_DAYS` after it was first shown
@@ -155,6 +156,8 @@ def _subscriptions(ctx: _Ctx) -> list[dict]:
     """A new recurring charge in a subscription category that she hasn't
     answered in I-04 (or kept on Insights)."""
     from .recommendations import SUBSCRIPTION_CADENCES, SUBSCRIPTION_CATEGORIES
+    if not ctx.st.plaid_history_ready():
+        return []                   # a recent slice only: everything would look new
     kept = core._json_setting(ctx.st, "subscription_choices", {})
     since = (ctx.today - timedelta(days=NEW_DAYS)).isoformat()
     out = []
@@ -178,8 +181,10 @@ def _subscriptions(ctx: _Ctx) -> list[dict]:
 def _price_rises(ctx: _Ctx) -> list[dict]:
     """A bill she counts whose last charge was more than the bill says.
     Her own amount (I-05, or a bill she added) is compared as it is; for one
-    Pearl found, the recurring detector must have seen the price change
-    (`price_change`), so a bill that just varies isn't asked about."""
+    Pearl found, the last charge is compared with the one before it
+    (product owner, 2026-11-19), never a median over her whole history, so
+    a rise from a year ago isn't news after Start over. A bill she says
+    varies isn't asked about."""
     recs = {_key(r["merchant"]): r for r in ctx.recs() if r.get("active")}
     state = ctx.bill_state()
     out = []
@@ -198,11 +203,15 @@ def _price_rises(ctx: _Ctx) -> list[dict]:
                 continue
             rec = r.get("rec")
             own = bool(answer.get("amount"))
-            if not own and not (rec and (rec.get("price_change") or {}).get("direction") == "increase"):
-                continue
         if not rec or not rec.get("active"):
             continue
-        latest, billed = round(rec["amount"], 2), round(r["full"], 2)
+        if own:
+            billed = r["full"]
+        elif rec.get("previous_amount") is not None:
+            billed = rec["previous_amount"]
+        else:
+            continue
+        latest, billed = round(rec["amount"], 2), round(billed, 2)
         rise = round(latest - billed, 2)
         if rise < max(RISE_MIN, billed * RISE_SHARE):
             continue
@@ -479,9 +488,14 @@ def _rank(found: list[dict], rows: dict[str, dict], today: date) -> list[dict]:
             continue
         live.append(it)
     live.sort(key=lambda it: (TIERS.index(it["tier"]), it["_order"], it["_rank"], it["id"]))
-    asks = [it for it in live if it["tier"] != "good"]
+    yes = [it for it in live if it["tier"] == "yes"]
+    heads = [it for it in live if it["tier"] == "heads_up"]
     good = [it for it in live if it["tier"] == "good"]
-    return (asks + good[:1])[:MAX_ITEMS]
+    # A heads-up (a bill, a card due) always has a place (product owner,
+    # 2026-11-19): questions take at most MAX_ITEMS - 1 then.
+    if heads:
+        yes = yes[:MAX_ITEMS - 1]
+    return (yes + heads + good[:1])[:MAX_ITEMS]
 
 
 def items(st, today: date, found: list[dict] | None = None) -> list[dict]:

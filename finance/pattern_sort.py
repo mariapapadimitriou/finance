@@ -102,6 +102,27 @@ def is_on(st) -> bool:
     return bool(_json(st, BASELINE_KEY, None))
 
 
+def after_start_over(st) -> None:
+    """Start over (2026-11-19): the switch stays as she left it, but its
+    baseline waits for the history to come back (`resync`), so the rows the
+    resync brings aren't "new since she switched it on"."""
+    if is_on(st):
+        _save(st, BASELINE_KEY, {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                                 "known": [], "resync": True})
+
+
+def settle_baseline(st) -> bool:
+    """Once every bank's history is back (and there's a history), take the
+    baseline again from what's there. True while it's still waiting."""
+    base = _json(st, BASELINE_KEY, None)
+    if not (isinstance(base, dict) and base.get("resync")):
+        return False
+    if not st.plaid_history_ready() or not st.all_transactions():
+        return True
+    switched_on(st)
+    return False
+
+
 # ── Patterns ───────────────────────────────────────────────────────────────
 
 def _sender(t: Transaction) -> str:
@@ -240,6 +261,8 @@ def line(p: dict) -> str:
 def run(st, today: str) -> list[dict]:
     """Sort what can be sorted now; return the new records. Nothing when
     the switch is off, nothing older than the switch, at most DAILY_CAP a day."""
+    if settle_baseline(st):
+        return []                           # after Start over: the history isn't back yet
     base = _json(st, BASELINE_KEY, None)
     if not base:
         return []
