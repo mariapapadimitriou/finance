@@ -54,6 +54,13 @@ struct PeoplePicker: View {
     var refused: [String] = []
     /// AM-08p4: six on a joint account.
     var limit: Int? = nil
+    /// G2b-Picker (rethought, approved 2026-11-18): who a joint account is
+    /// shared with. Picked people are chips on top, one Suggested list with
+    /// the tick on the left, Type a name only while searching.
+    var joint = false
+    /// G2b-Account: Remove lives in Edit. With this set, who's on the
+    /// account already shows as chips, and a chip's × asks first (AM-08x).
+    var onRemoveExisting: ((String) -> Void)? = nil
     let onClose: () -> Void
     /// Saves; a thrown message shows as AM-08p7 with the ticks kept.
     let onAdd: ([String]) async throws -> Void
@@ -75,6 +82,10 @@ struct PeoplePicker: View {
     private var q: String { query.trimmingCharacters(in: .whitespaces) }
 
     var body: some View {
+        if joint { jointBody } else { splitBody }
+    }
+
+    private var splitBody: some View {
         APSheet(dismissDisabled: busy) {
             APSheetHeader(overline: overline, title: title,
                              // One name (PP-01's Someone new) has no "most" to say.
@@ -114,6 +125,129 @@ struct PeoplePicker: View {
         .onChange(of: picked.count) { n in
             UIAccessibility.post(notification: .announcement, argument: n == 1 ? "1 person picked" : "\(n) people picked")
         }
+    }
+
+    // MARK: G2b-Picker (joint)
+
+    private var jointBody: some View {
+        APSheet(dismissDisabled: busy) {
+            APSheetHeader(heading: title, close: onClose).disabled(busy)
+            if !chips.isEmpty { JointChips(names: chips, remove: unchip).disabled(busy) }
+            searchField
+            if let refusal = refusal { APErrorLine(text: refusal) }
+            jointList
+            if let failed = failed { APErrorLine(text: failed) }
+        } footer: {
+            PearlSheetButtons(primary: failed != nil ? "Try again" : addLabel, busy: busy, busyLabel: "Adding…") {
+                Task { await add() }
+            }
+            .disabled(names.isEmpty || refusal != nil)
+        }
+        .task { await load() }
+        .onChange(of: picked.count) { n in
+            UIAccessibility.post(notification: .announcement, argument: n == 1 ? "1 person picked" : "\(n) people picked")
+        }
+    }
+
+    /// Who's on it already (in Edit), then who she's picked.
+    private var chips: [String] { (onRemoveExisting == nil ? [] : already) + picked }
+
+    private func unchip(_ name: String) {
+        if picked.contains(name) { pick(name) } else { onRemoveExisting?(name) }
+    }
+
+    /// One list: her splits first ("You split Loblaws"), then her contacts.
+    private var suggested: [(name: String, sub: String)] {
+        let mine = (recent ?? []).map { (name: $0.name, sub: "You split \($0.merchant)") }
+        let others = contactsState == .on
+            ? contacts.filter { c in !(recent ?? []).contains { samePerson($0.name, c) } }.prefix(60)
+                .map { (name: $0, sub: "In your contacts") }
+            : []
+        return (mine + others).filter { p in
+            matches(p.name) && !isRefused(p.name)
+                && !(onRemoveExisting != nil && already.contains { samePerson($0, p.name) })
+        }
+    }
+
+    @ViewBuilder private var jointList: some View {
+        let list = suggested
+        let typed = !q.isEmpty && !picked.contains(q) && !already.contains { samePerson($0, q) } && !isRefused(q)
+        if recent == nil && !loadFailed {
+            skeleton
+        } else if !q.isEmpty {
+            // AM-08p3: matches, and the typed name as one row in the same card.
+            APOptionCard {
+                ForEach(Array(list.enumerated()), id: \.element.name) { i, p in
+                    if i > 0 { APSeparator() }
+                    jointRow(p.name, sub: p.sub)
+                }
+                if typed {
+                    if !list.isEmpty { APSeparator() }
+                    Button { pick(q); query = "" } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "plus").font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(Pearl.action)
+                                .frame(width: 28, height: 28).background(Circle().fill(APlus.actionWash))
+                            Text("Add “\(q)” as a new name").font(Nacre.body).foregroundColor(Pearl.action)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 16).frame(minHeight: 52).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(full)
+                    .accessibilityIdentifier("picker-add-typed")
+                }
+            }
+        } else if list.isEmpty {
+            // AM-08p5: no one to pick yet.
+            Text("Type a name. Only you see it.").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                .frame(maxWidth: .infinity).padding(.top, 4)
+        } else {
+            APSheetLabel(text: "Suggested")
+            APOptionCard {
+                ForEach(Array(list.enumerated()), id: \.element.name) { i, p in
+                    if i > 0 { APSeparator() }
+                    jointRow(p.name, sub: p.sub)
+                }
+            }
+        }
+        if contactsState == .off {
+            // AM-08p2: Contacts off is one quiet line.
+            HStack {
+                Text("Contacts are off for Pearl.").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                Spacer(minLength: 8)
+                Button("Settings", action: openSettings)
+                    .font(.custom("Figtree-Medium", size: 13, relativeTo: .footnote)).foregroundColor(Pearl.link)
+                    .buttonStyle(.plain).frame(minHeight: 32)
+            }
+            .padding(.horizontal, 4)
+        }
+    }
+
+    /// The tick on the left, the face, the name over its line.
+    private func jointRow(_ name: String, sub: String) -> some View {
+        let isAlready = already.contains { samePerson($0, name) }
+        let on = isAlready || picked.contains(name)
+        let dim = isAlready || (!on && full)
+        return Button { pick(name) } label: {
+            HStack(spacing: 12) {
+                APTickBox(on: on)
+                APFace(name: name, size: 36)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name).font(Nacre.body).foregroundColor(Pearl.ink)
+                    Text(isAlready ? "Already shared" : sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 8).frame(minHeight: 60).contentShape(Rectangle())
+            .opacity(dim ? 0.45 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(dim || busy)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(isAlready ? "\(name), already shared" : "\(name), \(sub)")
+        .accessibilityValue(on ? "selected" : (full ? "dimmed, six people picked already" : "not selected"))
+        .accessibilityAddTraits(.isButton)
     }
 
     private var searchField: some View {
@@ -291,7 +425,7 @@ struct PeoplePicker: View {
             failed = e.words
         } catch {
             // AM-08p7: ticks kept.
-            failed = "Couldn’t save. Your picks are kept. Try again."
+            failed = joint ? "Couldn’t save. Nothing changed. Try again." : "Couldn’t save. Your picks are kept. Try again."
         }
     }
 
@@ -339,6 +473,40 @@ struct PeoplePicker: View {
     private func openSettings() {
         // iOS Settings › Pearl, never the web (JOINT-A note 1110:6476).
         if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+    }
+}
+
+/// G2b-Picker: picked people as rose chips (face, name, ×), scrolling sideways.
+struct JointChips: View {
+    let names: [String]
+    let remove: (String) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(names, id: \.self) { name in
+                    Button { remove(name) } label: {
+                        HStack(spacing: 6) {
+                            Text(APFace.initials(name))
+                                .font(.custom("Figtree-Medium", size: 10))
+                                .foregroundColor(Pearl.ink)
+                                .frame(width: 22, height: 22)
+                                .background(Circle().fill(APlus.face))
+                            Text(name).font(.custom("Figtree-Medium", size: 13, relativeTo: .footnote))
+                                .foregroundColor(Pearl.action).lineLimit(1)
+                            Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
+                                .foregroundColor(Pearl.action)
+                        }
+                        .padding(.leading, 4).padding(.trailing, 10).frame(height: 30)
+                        .background(Capsule().fill(APlus.actionWash))
+                        .padding(.vertical, 7)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Remove \(name)")
+                }
+            }
+        }
     }
 }
 
@@ -682,37 +850,22 @@ struct RemoveJointPersonSheet: View {
 
     var body: some View {
         APSheet(dismissDisabled: busy) {
-            APSheetHeader(face: name, overline: "Shared with · \(accountName)", title: "Remove \(name)?",
-                             sub: "\(first) won’t be on this account any more.", close: onClose)
+            // G2b-Account AM-08x (rethought): the question and one sentence.
+            APSheetHeader(heading: "Remove \(name)?", close: onClose)
                 .disabled(busy)
-            // REFRESH-03 (AM-08x): two facts, each once.
-            APOptionCard {
-                row("person.2", share.map { "Your share stays \(JointChangeSheet.pct($0))" } ?? "Your purchases count as they do now",
-                    others.isEmpty ? "The account stays joint, with no one named" : nil)
-                APSeparator()
-                row("checkmark", "Earlier answers stay", nil)
-            }
-            Text("Nothing is sent to \(first).").font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
-                .frame(maxWidth: .infinity)
-            if let failed = failed { CautionBanner(text: failed) }
+            Text(sentence).font(Nacre.body).foregroundColor(Pearl.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            if let failed = failed { APErrorLine(text: failed) }
         } footer: {
             PearlSheetButtons(primary: failed != nil ? "Try again" : "Remove \(first)", busy: busy, busyLabel: "Removing…",
                               secondary: "Keep \(first)", onPrimary: { Task { await save() } }, onSecondary: onClose)
         }
     }
 
-    private func row(_ symbol: String, _ title: String, _ sub: String?) -> some View {
-        HStack(spacing: 12) {
-            APIcon(symbol: symbol)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                if let sub = sub { Text(sub).font(Pearl.text(.callout)).foregroundColor(Pearl.muted) }
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 16).padding(.vertical, 10)
-        .accessibilityElement(children: .combine)
+    /// "Your share stays 50%, and earlier answers stay."
+    private var sentence: String {
+        let share = share.map { "Your share stays \(JointChangeSheet.pct($0))" } ?? "Your purchases count as they do now"
+        return share + ", and earlier answers stay."
     }
 
     private func save() async {

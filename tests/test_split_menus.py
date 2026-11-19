@@ -407,7 +407,8 @@ class TestLessWords:
         # "Only you see this. Nothing is sent." line went with O-09b.
         "ios/Pearl/Views/Onboarding/AccountSetupViews.swift": ['title: "Shared with"',
                                                              '"Up to six. Only you see this."'],
-        "ios/Pearl/Views/Profile/JointMergeViews.swift": ['"Only you see these names."', '"Not joint now"'],
+        # G2b-Account (rethought, 2026-11-18): AM-08r1's card says it.
+        "ios/Pearl/Views/Profile/JointMergeViews.swift": ['"Only you see their names."', '"Not joint now"'],
         "ios/Pearl/Info.plist": ["To pick people faster. Pearl keeps only the name."],
         "finance/unlink.py": ['"Unlink and remove"', 'comes off the split too."', "The cash is forgotten",
                               'Part of {_money(whole)} · also paid back', 'waits to be reimbursed again.'],
