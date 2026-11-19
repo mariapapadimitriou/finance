@@ -244,6 +244,29 @@ struct CFPill: View {
     }
 }
 
+/// G1-Months (T-53, T-67): what's narrowing the list, as pills on the
+/// left, and Show all on the right in `link`. 16 above, 4 at the sides.
+struct CFFilterStrip: View {
+    let pills: [String]
+    let showAll: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(pills, id: \.self) { CFPill(text: $0) }
+                }
+            }
+            Button("Show all", action: showAll)
+                .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+                .foregroundColor(Pearl.link)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .padding(.horizontal, 4)
+    }
+}
+
 // MARK: - Segmented switch
 
 /// kit `.seg`: 38 high on `chip`, 3 in, the chosen half on `surface-card`
@@ -460,16 +483,20 @@ struct CFTileGrid<Content: View>: View {
 /// kit `.banner`: champagne 22% with its 1 pt line, radius 16, 15 pt.
 struct CFBanner<Trailing: View>: View {
     let text: String
+    /// T-58 (G1-Rows): a 16 pt rose ring turning before the words.
+    var busy = false
     var trailing: () -> Trailing
     @Environment(\.colorScheme) private var scheme
 
-    init(text: String, @ViewBuilder trailing: @escaping () -> Trailing) {
+    init(text: String, busy: Bool = false, @ViewBuilder trailing: @escaping () -> Trailing) {
         self.text = text
+        self.busy = busy
         self.trailing = trailing
     }
 
     var body: some View {
         HStack(spacing: 12) {
+            if busy { CFSpinner() }
             Text(text).font(Nacre.subheadline).foregroundColor(Pearl.ink)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
@@ -486,32 +513,92 @@ struct CFBanner<Trailing: View>: View {
 }
 
 extension CFBanner where Trailing == EmptyView {
-    init(text: String) {
-        self.init(text: text) { EmptyView() }
+    init(text: String, busy: Bool = false) {
+        self.init(text: text, busy: busy) { EmptyView() }
+    }
+}
+
+/// The banner's 16 pt ring: 2 pt `action`, a quarter open, turning (still
+/// with Reduce Motion).
+struct CFSpinner: View {
+    @State private var turning = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Circle().trim(from: 0, to: 0.75)
+            .stroke(Pearl.action, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            .frame(width: 14, height: 14)
+            .rotationEffect(.degrees(turning ? 360 : 0))
+            .frame(width: 16, height: 16)
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) { turning = true }
+            }
+            .accessibilityHidden(true)
     }
 }
 
 /// kit `.state`: a title in Fraunces 22, a muted line, and a quiet action.
+/// `warn` (T-35e, G1-Results): the caution icon above, and the action as a
+/// full-width Secondary.
 struct CFState: View {
     let title: String
     let line: String
     var action: String? = nil
+    var warn = false
     var run: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 6) {
+            if warn { APIcon.warn("exclamationmark.triangle") }
             Text(title).font(Nacre.title2).foregroundColor(Pearl.ink).multilineTextAlignment(.center)
+                .padding(.top, warn ? 6 : 0)
             Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted).multilineTextAlignment(.center)
             if let action = action {
-                Button(action, action: run)
-                    .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
-                    .foregroundColor(Pearl.link)
-                    .frame(minHeight: 44)
-                    .padding(.top, 4)
+                if warn {
+                    Button(action, action: run)
+                        .buttonStyle(APSecondaryButtonStyle())
+                        .padding(.top, 14)
+                } else {
+                    Button(action, action: run)
+                        .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+                        .foregroundColor(Pearl.link)
+                        .frame(minHeight: 44)
+                        .padding(.top, 4)
+                }
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 20).padding(.vertical, 40)
+    }
+}
+
+/// T-35l (G1-Results): three rows holding their place while the month
+/// loads: a `track` disc and two 12 pt bars (55% and 30%) in a card.
+struct CFLoadingRows: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Color.clear.frame(height: 32)
+            APCard {
+                ForEach(0..<3, id: \.self) { i in
+                    if i > 0 { APSeparator() }
+                    HStack(spacing: 12) {
+                        Circle().fill(Pearl.track).frame(width: 40, height: 40)
+                        GeometryReader { g in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Capsule().fill(Pearl.track).frame(width: g.size.width * 0.55, height: 12)
+                                Capsule().fill(Pearl.track).frame(width: g.size.width * 0.30, height: 12)
+                            }
+                            .frame(maxHeight: .infinity)
+                        }
+                        .frame(height: 40)
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 64)
+                }
+            }
+        }
+        .accessibilityElement()
+        .accessibilityLabel("Loading your transactions")
     }
 }
 

@@ -215,7 +215,8 @@ struct HomeView: View {
                 }
             }
         case "category":
-            // Cash flow, where categories live (filtering it from here waits for Cash flow).
+            // Cash flow filtered to that category (CashFlowFocus, TransactionsView.swift).
+            if let name = target.name { CashFlowFocus.shared.show(category: name, month: target.month) }
             tab = .cashFlow
         case "allowance":
             // The new month: Home's own Allowance, the orb at the top.

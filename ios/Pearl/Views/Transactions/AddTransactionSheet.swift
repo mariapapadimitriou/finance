@@ -21,6 +21,8 @@ struct AddTransactionSheet: View {
     @State private var pickingCategory = false
     @State private var account = "cash"
     @State private var accounts: [AccountsOverview.Account] = []
+    /// T-62 (G1-PaidWith): Paid with / Goes into on a Pearl sheet.
+    @State private var pickingAccount = false
     @State private var similar: [ServerProblem.Match]?
     @State private var busy = false
     @State private var error: String?
@@ -58,15 +60,8 @@ struct AddTransactionSheet: View {
                             pickingCategory = true
                         }
                         APSeparator(afterFace: false)
-                        Menu {
-                            Picker("", selection: $account) {
-                                Text("Cash").tag("cash")
-                                ForEach(accounts) { a in Text(a.name).tag(a.id) }
-                            }
-                        } label: {
-                            rowLabel(moneyIn ? "Goes into" : "Paid with", value: accountName, placeholder: false)
-                        }
-                        .buttonStyle(.plain)
+                        // T-62 (G1-PaidWith, REDESIGN-18): a Pearl sheet, not a stock Menu.
+                        row(moneyIn ? "Goes into" : "Paid with", value: accountName) { pickingAccount = true }
                     }
                     if let similar = similar {
                         similarCard(similar)
@@ -79,17 +74,32 @@ struct AddTransactionSheet: View {
                 .padding(.horizontal, 16).padding(.bottom, 12)
             }
             .scrollDismissesKeyboard(.interactively)
-            Button(similar == nil ? "Add" : "It’s a different one · add it") {
-                Task { await add(confirm: similar != nil) }
+            VStack(spacing: 12) {
+                Button(similar == nil ? "Add" : "It’s a different one · add it") {
+                    Task { await add(confirm: similar != nil) }
+                }
+                .buttonStyle(APPrimaryButtonStyle(busy: busy))
+                .disabled(!ready || busy)
+                // T-62d: Cancel keeps the one already there and adds nothing.
+                if similar != nil {
+                    Button("Cancel") { dismiss() }
+                        .buttonStyle(APSecondaryButtonStyle())
+                        .disabled(busy)
+                }
             }
-            .buttonStyle(APPrimaryButtonStyle(busy: busy))
-            .disabled(!ready || busy)
             .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
         }
         .cfSheet()
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .task { await loadAccounts() }
+        .sheet(isPresented: $pickingAccount) {
+            PaidWithSheet(title: moneyIn ? "Goes into" : "Paid with", accounts: accounts, chosen: account) { id in
+                account = id
+                similar = nil
+                pickingAccount = false
+            }
+        }
         .sheet(isPresented: $pickingCategory) {
             if moneyIn {
                 kindSheet
@@ -111,10 +121,11 @@ struct AddTransactionSheet: View {
     /// 36, the `$` muted; the 2 pt rose line while she types.
     private var amountField: some View {
         ZStack {
+            // G1-Add: "+$ 150.00" / "−$ 32.00", the sign and $ muted; "$ 0.00" empty.
             HStack(spacing: 6) {
-                Text("$").foregroundColor(Pearl.muted)
+                Text(value == nil ? "$" : (moneyIn ? "+$" : "\u{2212}$")).foregroundColor(Pearl.muted)
                 Text(value.map { Format.amount($0).replacingOccurrences(of: "$", with: "") } ?? "0.00")
-                    .foregroundColor(value == nil ? Pearl.muted : (moneyIn ? Pearl.moneyIn : Pearl.ink))
+                    .foregroundColor(value == nil ? Pearl.muted : Pearl.ink)
             }
             .font(.custom("Fraunces-SemiBold", size: 36, relativeTo: .largeTitle))
             .lineLimit(1).minimumScaleFactor(0.5)
@@ -175,11 +186,12 @@ struct AddTransactionSheet: View {
             .buttonStyle(.plain)
     }
 
+    /// G1-Add: an unanswered row says Choose in `link`.
     private func rowLabel(_ title: String, value: String, placeholder: Bool) -> some View {
         HStack(spacing: 8) {
             Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
             Spacer()
-            Text(value).font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
+            Text(value).font(Nacre.body).foregroundColor(placeholder ? Pearl.link : Pearl.muted).lineLimit(1)
             Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
         }
         .padding(.horizontal, 16).frame(minHeight: 52).contentShape(Rectangle())
@@ -220,28 +232,10 @@ struct AddTransactionSheet: View {
         .presentationDetents([.medium, .large])
     }
 
-    /// "This looks like something already in your transactions:" and what.
+    /// T-62d (G1-Add): the champagne banner "Looks like one already there:"
+    /// holding the match as a payment row.
     private func similarCard(_ matches: [ServerProblem.Match]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("This looks like something already in your transactions:")
-                .font(Nacre.footnote).foregroundColor(Pearl.ink).padding(.horizontal, 16)
-            APCard {
-                ForEach(Array(matches.prefix(3).enumerated()), id: \.element.id) { i, m in
-                    if i > 0 { APSeparator(afterFace: false) }
-
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(m.merchant).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
-                            Text(Format.weekdayDay(m.date)).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                        }
-                        Spacer()
-                        Text((m.amount < 0 ? "+" : "\u{2212}") + Format.amount(m.amount))
-                            .font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
-                    }
-                    .padding(.horizontal, 16).frame(minHeight: 52)
-                }
-            }
-        }
+        SimilarBanner(matches: matches)
     }
 
     // MARK: Server
@@ -278,5 +272,89 @@ struct AddTransactionSheet: View {
                 self.error = error.localizedDescription
             }
         }
+    }
+}
+
+/// T-62d (G1-Add, kit `.banner` stacked): "Looks like one already there:"
+/// over a card of the matches as payment rows.
+private struct SimilarBanner: View {
+    let matches: [ServerProblem.Match]
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Looks like one already there:").font(Nacre.subheadline).foregroundColor(Pearl.ink)
+            APCard {
+                ForEach(Array(matches.prefix(3).enumerated()), id: \.element.id) { i, m in
+                    if i > 0 { APSeparator() }
+                    APPaymentRow(name: m.merchant, line: Format.weekdayDay(m.date),
+                                 money: m.amount < 0 ? .into(abs(m.amount)) : .out(m.amount))
+                }
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(Pearl.champagne.opacity(scheme == .dark ? 0.10 : 0.22)))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Pearl.champagne, lineWidth: 1))
+    }
+}
+
+/// T-62 (G1-PaidWith, REDESIGN-18): Paid with (or Goes into) on a Pearl
+/// sheet. Cash first, then each account she can add to by hand: a radio,
+/// the face, the name over "••4417 · joint". A row picks at once; no Done.
+struct PaidWithSheet: View {
+    let title: String
+    let accounts: [AccountsOverview.Account]
+    let chosen: String
+    let pick: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        APSheet {
+            APSheetHeader(heading: title) { dismiss() }
+            APOptionCard {
+                option(id: "cash", face: "$", name: "Cash", line: "Not in a bank")
+                ForEach(accounts) { a in
+                    APSeparator()
+                    option(id: a.id, face: APFace.initials(a.institution ?? a.name), name: a.name,
+                           line: Self.line(a))
+                }
+            }
+        }
+    }
+
+    /// "••4417", "••0931 · joint".
+    static func line(_ a: AccountsOverview.Account) -> String? {
+        let parts = [a.mask.map { "\u{2022}\u{2022}" + $0 }, a.joint == true ? "joint" : nil].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " \u{00B7} ")
+    }
+
+    private func option(id: String, face: String, name: String, line: String?) -> some View {
+        Button { pick(id) } label: {
+            HStack(spacing: 12) {
+                APRadio(on: chosen == id)
+                Text(face)
+                    .font(.custom("Figtree-Medium", size: 14, relativeTo: .footnote))
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                    .foregroundColor(Pearl.ink)
+                    .frame(width: 40, height: 40)
+                    .background(Circle().fill(APlus.face))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                    if let line = line {
+                        Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            .frame(minHeight: 64)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel([name, line].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityAddTraits(chosen == id ? [.isButton, .isSelected] : .isButton)
     }
 }

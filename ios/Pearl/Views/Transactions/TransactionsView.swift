@@ -27,6 +27,8 @@ struct TransactionsView: View {
     @State private var accounts: [AccountsOverview.Account] = []
     @State private var reviewCount = 0
     @State private var reviewSorted = 0
+    /// The streak's "to sort": the same count Home's streak uses (REDESIGN-18).
+    @State private var reviewToSort = 0
     @State private var loadedOnce = false
     @State private var error: String?
 
@@ -230,15 +232,15 @@ struct TransactionsView: View {
             }
         }
         .sheet(isPresented: $leavingOut) {
-            // T-77c / T-77c2 (TEST-06, TEST-07): Leave out stays off until
-            // there's a reason, and the sheet says why under the field.
+            // T-77c / T-77c2 (G1-PConfirm, rethought): a reason only if she
+            // wants to give one, behind "Add a reason"; Leave out acts at once.
             let n = picked.count
             PearlConfirmSheet(overline: "Leave out · \(n) selected",
                               title: n == 1 ? "Leave out 1 transaction?" : "Leave out \(n) transactions?",
                               message: n == 1 ? "It’s left out of all your numbers. You can put it back from its page."
-                                              : "They’re left out of all your numbers. You can put any back from its page.",
-                              field: .init(label: "Why?", prompt: "For example, a friend’s purchase",
-                                           note: "Say why, so you can tell later.", identifier: "leave-out-reason"),
+                                              : "They’re left out of your numbers. You can put any back from its page.",
+                              field: .init(label: "Why?", prompt: "Say why, so you can tell later",
+                                           needs: .nothing, identifier: "leave-out-reason", reveal: "Add a reason"),
                               text: $leaveReason,
                               primary: n == 1 ? "Leave out" : "Leave out \(n)", busyLabel: "Leaving out…",
                               failure: "Couldn’t leave \(n == 1 ? "it" : "them") out. Nothing changed. Try again.",
@@ -293,6 +295,11 @@ struct TransactionsView: View {
         }
         .reloads { await start() }
         .task(id: query) { await search() }
+        .onReceive(CashFlowFocus.shared.$request) { request in
+            guard let request = request, !inTrip else { return }
+            CashFlowFocus.shared.request = nil
+            focus(on: request)
+        }
         .sheet(isPresented: $showFilters) {
             FilterSheet(filters: filters, month: month, months: months, accounts: filterAccounts,
                         categories: monthCategories, tags: tags,
@@ -315,6 +322,19 @@ struct TransactionsView: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+    }
+
+    /// CashFlowFocus: Cash flow filtered to one category (and its month, if
+    /// given), as if she had picked it in Filters; its chip takes it off.
+    private func focus(on request: CashFlowFocus.Request) {
+        let reload = filters.needsServer || (request.month != nil && request.month != month)
+        query = ""
+        searching = false
+        showCalendar = false
+        counts = nil
+        filters = TxFilters(categories: [request.category])
+        if let m = request.month { month = m }
+        if reload { Task { await self.reload() } }
     }
 
     // MARK: Search
@@ -389,30 +409,13 @@ struct TransactionsView: View {
         CFSegmented(options: [(false, "Transactions"), (true, "Calendar")], selection: $showCalendar)
     }
 
-    /// "TD Visa ••9021 ×": each filter that's on, to take it off in one tap.
+    /// T-53 (G1-Months): "TD Visa ••9021" and each filter that's on, as
+    /// pills, with Show all to take them all off.
     private var activeChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(filters.chips(accounts: filterAccounts), id: \.id) { chip in
-                    Button {
-                        let reload = chip.needsServer
-                        filters.remove(chip.id)
-                        if reload { Task { await self.reload() } }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text(chip.label)
-                            Image(systemName: "xmark").font(.system(size: 11, weight: .semibold))
-                        }
-                        .font(Nacre.footnote)
-                        .foregroundColor(Pearl.ink)
-                        .padding(.horizontal, 12).frame(height: 28)
-                        .background(Capsule().fill(APlus.chip))
-                        .frame(minHeight: 44).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Remove \(chip.label)")
-                }
-            }
+        CFFilterStrip(pills: filters.chips(accounts: filterAccounts).map(\.label)) {
+            let reload = filters.needsServer
+            filters = TxFilters(sort: filters.sort)
+            if reload { Task { await self.reload() } }
         }
     }
 
@@ -457,7 +460,7 @@ struct TransactionsView: View {
                     Text("need\(reviewCount == 1 ? "s" : "") a look").font(Nacre.body).foregroundColor(Pearl.ink)
                         .lineLimit(1)
                     Spacer(minLength: 8)
-                    SortStreak(sorted: reviewSorted, toSort: reviewCount, mini: true)
+                    SortStreak(sorted: reviewSorted, toSort: reviewToSort, mini: true)
                     Text("Sort").font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
                         .foregroundColor(Pearl.link).padding(.leading, -6)
                     CFChevron()
@@ -470,9 +473,14 @@ struct TransactionsView: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(reviewCount) need\(reviewCount == 1 ? "s" : "") a look, Sort")
         } else {
-            Label("All sorted", systemImage: "checkmark")
-                .font(Nacre.body).foregroundColor(Nacre.teal)
-                .padding(.horizontal, 16).frame(minHeight: 52)
+            // T-48 (G1-Months): "✓ All sorted" in teal, a 52 pt row.
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold)).accessibilityHidden(true)
+                Text("All sorted").font(Nacre.body)
+            }
+            .foregroundColor(Nacre.teal)
+            .padding(.horizontal, 16).frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+            .accessibilityElement(children: .combine)
         }
     }
 
@@ -537,7 +545,7 @@ struct TransactionsView: View {
         // G1-Over: kit `.banner` (champagne), with Try again as a quiet link.
         switch sync {
         case .syncing:
-            CFBanner(text: "Getting your latest transactions…").padding(.top, 12)
+            CFBanner(text: "Getting your latest transactions…", busy: true).padding(.top, 12)
         case .failed:
             CFBanner(text: "Couldn’t update just now.") {
                 Button("Try again") { Task { await runSync(force: true) } }
@@ -593,9 +601,10 @@ struct TransactionsView: View {
                 APSectionLabel(text: shown.count == 1 ? "1 result" : "\(shown.count) results")
             }
         } else if let counts = counts {
-            // UI audit: each header button is tapped across 44 × 44 pt.
-            APSectionLabel(text: "\(counts == "income" ? "Money in only" : "Spending only") · \(shown.count)",
-                           action: "Show all") { self.counts = nil }
+            // T-67 (G1-Months): "Spending only · 24" as a pill, then Show all.
+            CFFilterStrip(pills: ["\(counts == "income" ? "Money in only" : "Spending only") \u{00B7} \(shown.count)"]) {
+                self.counts = nil
+            }
         } else if loadedOnce {
             APSectionLabel(text: shown.count == 1 ? "1 transaction" : "\(shown.count) transactions",
                            action: shown.isEmpty ? nil : "Select") { selecting = true }
@@ -619,9 +628,11 @@ struct TransactionsView: View {
         if inSearch && query.isEmpty {
             EmptyView()
         } else if (!loadedOnce && !inSearch) || (inSearch && results == nil) {
-            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
+            // T-35l (G1-Results): the rows hold their place while they load.
+            CFLoadingRows()
         } else if let error = error, shown.isEmpty {
-            CFState(title: "Couldn’t load your transactions", line: error, action: "Try again") {
+            // T-35e (G1-Results): the caution icon, the reason, a Secondary Try again.
+            CFState(title: "Couldn’t load your transactions", line: error, action: "Try again", warn: true) {
                 Task { await reload() }
             }
         } else if shown.isEmpty {
@@ -896,8 +907,10 @@ struct TransactionsView: View {
     /// Leave out every picked row, with her reason (T-77c). Throws so the
     /// sheet stays up with its Banner.
     private func leaveOut() async throws {
-        let reason = leaveReason.trimmingCharacters(in: .whitespaces)
-        guard !reason.isEmpty else { throw SplitMenuError(words: "Say why, so you can tell later.") }
+        // T-77c (rethought): the reason is hers to give; without one the
+        // server keeps "Left out" (it needs words to store).
+        let typed = leaveReason.trimmingCharacters(in: .whitespaces)
+        let reason = typed.isEmpty ? "Left out" : typed
         busy = true
         defer { busy = false }
         let ids = Array(picked)
@@ -1244,11 +1257,13 @@ struct TransactionsView: View {
         if let review = await reviewReply { took(review) }
     }
 
-    /// "8 need a look" and its mini streak (A+): what's still to sort, and
-    /// what she and Pearl sorted today.
+    /// "8 need a look" and its mini streak (REDESIGN-18): lit = sorted ÷
+    /// (sorted + to sort), where sorted is her answers plus Pearl's over the
+    /// same window as the count to sort, exactly as Home's streak.
     private func took(_ review: Review) {
-        reviewCount = review.open ?? review.count
-        reviewSorted = review.sortedToday + review.pearlSorted
+        reviewCount = max(0, (review.open ?? review.count) - review.parkedPlanQuestions)
+        reviewToSort = max(0, review.count - review.parkedPlanQuestions)
+        reviewSorted = review.youSorted + review.pearlSorted
     }
 
     private func search() async {
@@ -1759,9 +1774,11 @@ struct FilterSheet: View {
         if !accounts.isEmpty {
             row(.accounts, "Accounts", accountsValue)
             if open == .accounts {
+                // T-17c (G1-FilterOpen): All accounts first, then each one.
+                option("All accounts", on: filters.accounts.isEmpty) { filters.accounts = [] }
                 ForEach(accounts, id: \.id) { a in
                     option(a.label + (a.joint ? " · Joint" : ""),
-                           on: filters.accounts.isEmpty || filters.accounts.contains(a.id)) { toggleAccount(a.id) }
+                           on: filters.accounts.contains(a.id)) { toggleAccount(a.id) }
                 }
             }
             APSeparator(afterFace: false)
@@ -1836,8 +1853,10 @@ struct FilterSheet: View {
         names.isEmpty ? "Any" : names.joined(separator: ", ")
     }
 
+    /// From All accounts, a tap keeps just that one; taps add or take off
+    /// more; none left, or every one, is All accounts again.
     private func toggleAccount(_ id: String) {
-        var chosen = filters.accounts.isEmpty ? Set(accounts.map(\.id)) : filters.accounts
+        var chosen = filters.accounts
         chosen.formSymmetricDifference([id])
         filters.accounts = chosen.count == accounts.count ? [] : chosen
     }
@@ -1848,11 +1867,12 @@ struct FilterSheet: View {
         Button { open = open == which ? nil : which } label: {
             // kit `.kv`: 52 high, the value muted with the chevron (turned
             // down while its choices show).
+            // G1-FilterOpen: an open row's value turns `link` and its chevron goes.
             HStack(spacing: 8) {
                 Text(title).font(Nacre.body).foregroundColor(Pearl.ink).layoutPriority(1)
                 Spacer(minLength: 12)
-                Text(value).font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
-                CFChevron().rotationEffect(.degrees(open == which ? 90 : 0))
+                Text(value).font(Nacre.body).foregroundColor(open == which ? Pearl.link : Pearl.muted).lineLimit(1)
+                if open != which { CFChevron() }
             }
             .padding(.horizontal, 16).frame(minHeight: 52)
             .contentShape(Rectangle())
@@ -1863,17 +1883,22 @@ struct FilterSheet: View {
         .accessibilityHint(open == which ? "Closes the choices" : "Shows the choices")
     }
 
-    /// One choice under an open row: a ticked circle when it's on.
+    /// One choice under an open row (G1-FilterOpen): 28 in, 16 pt, 48
+    /// high, the rose ✓ on the right when it's on.
     private func option(_ label: String, on: Bool, _ tap: @escaping () -> Void) -> some View {
         VStack(spacing: 0) {
-            Rectangle().fill(APlus.separator).frame(height: 0.5).padding(.leading, 50)
+            Rectangle().fill(APlus.separator).frame(height: 0.5).padding(.leading, 28)
             Button(action: tap) {
                 HStack(spacing: 12) {
-                    SelectTick(on: on)
-                    Text(label).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                    Text(label).font(.custom("Figtree-Regular", size: 16, relativeTo: .body))
+                        .foregroundColor(Pearl.ink).lineLimit(1)
                     Spacer()
+                    if on {
+                        Image(systemName: "checkmark").font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(Pearl.action).accessibilityHidden(true)
+                    }
                 }
-                .padding(.horizontal, 16).frame(height: 52)
+                .padding(.leading, 28).padding(.trailing, 16).frame(minHeight: 48)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -1993,12 +2018,15 @@ struct MonthSheet: View {
                             let inYear = months.reversed().filter { $0.hasPrefix(year) }
                             ForEach(Array(inYear.enumerated()), id: \.element) { index, m in
                                 if index > 0 { APSeparator(afterFace: false) }
-                                Button { chosen = m } label: {
+                                // T-47 (G1-Months, rethought): a month answers on tap; no Done.
+                                Button { chosen = m; onDone(m) } label: {
                                     HStack {
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(Format.monthName(m)).font(Nacre.body).foregroundColor(Pearl.ink)
                                             if let line = line(m) {
-                                                Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                                                // "Over $140" in danger: red only for over.
+                                                Text(line).font(Nacre.subheadline)
+                                                    .foregroundColor(line.hasPrefix("Over") ? Pearl.danger : Pearl.muted)
                                             }
                                         }
                                         Spacer()
@@ -2016,11 +2044,8 @@ struct MonthSheet: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16).padding(.bottom, 16)
+                .padding(.horizontal, 16).padding(.bottom, 24)
             }
-            Button("Done") { onDone(chosen ?? current) }
-                .buttonStyle(APPrimaryButtonStyle())
-                .padding(.horizontal, 16).padding(.bottom, 8)
         }
         .cfSheet()
         .task { await loadTotals() }
@@ -2309,5 +2334,34 @@ private struct HidesTabBar: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+// MARK: - Opening Cash flow filtered (the filtering hook)
+
+/// The one way another screen opens Cash flow filtered to a category
+/// (2026-11-18, the theme follow-up: Home's "$120 less on takeout" opens
+/// Cash flow filtered to Takeout). Set a request, then switch to the Cash
+/// flow tab; Cash flow takes it (once), shows that month if one is given,
+/// and puts the category in Filters with its chip, so one tap takes it off.
+///
+///     CashFlowFocus.shared.show(category: "Takeout", month: "2026-11")
+///     tab = .cashFlow
+@MainActor
+final class CashFlowFocus: ObservableObject {
+    static let shared = CashFlowFocus()
+
+    struct Request: Equatable {
+        /// The category's name, as Filters lists it ("Takeout").
+        let category: String
+        /// "2026-11"; nil keeps the month Cash flow is on.
+        let month: String?
+    }
+
+    /// The waiting request; Cash flow sets it back to nil once it has it.
+    @Published var request: Request?
+
+    func show(category: String, month: String? = nil) {
+        request = Request(category: category, month: month)
     }
 }

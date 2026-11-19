@@ -284,19 +284,24 @@ struct CalendarCard: View {
         .sheet(item: $bandAction) { band in
             // T-49b (TEST-06): Change and Remove as Option rows. Remove acts
             // at once; the toast's Undo puts the days back as they were.
-            PearlOptionsSheet(overline: "Sorted together",
-                              title: band.name.flatMap { $0.isEmpty ? nil : $0 } ?? band.category,
-                              sub: "\(Format.short(band.first)) – \(Format.short(band.last)) · \(band.category)",
+            // G1-Days (T-49b): "Montreal trip" with ✕, Days sorted together
+            // and its line, then Change and a red Remove.
+            PearlOptionsSheet(overline: band.name.flatMap { $0.isEmpty ? nil : $0 } ?? band.category,
+                              title: "Days sorted together",
+                              sub: CalendarCard.bandLine(band, purchases: true),
+                              symbol: CalendarCard.bandSymbol(band),
                               options: [
-                                .init(symbol: "arrow.triangle.2.circlepath", title: "Change",
-                                      sub: "Other days or another category") {
+                                .init(symbol: "pencil", title: "Change",
+                                      sub: "Dates, category or name") {
                                     bandAction = nil
                                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                                         sorting = SortPick(first: band.first, last: band.last, existing: band)
                                     }
                                 },
-                                .init(symbol: "xmark", title: "Remove",
-                                      sub: "Each day goes back to how it was sorted") {
+                                .init(symbol: "trash", title: "Remove",
+                                      sub: band.count.map { "The \($0) go back to how they were" }
+                                          ?? "Each day goes back to how it was sorted",
+                                      destructive: true) {
                                     bandAction = nil
                                     Task { await remove(band.id, undo: false, putBack: band) }
                                 },
@@ -605,39 +610,34 @@ struct CalendarCard: View {
         }
     }
 
-    /// T-68: "Montreal trip · Nov 6 – 8 · Travel · 14 purchases   $612".
+    /// T-68 (G1-Days): DAYS SORTED TOGETHER, then one dashed rose card per
+    /// band: its icon, "Montreal trip" over "Nov 6–8 · Travel · 14", the
+    /// total 17/600 and the chevron.
     @ViewBuilder private var sortedTogether: some View {
         if let bands = data?.bands, !bands.isEmpty {
-            Text("DAYS SORTED TOGETHER").font(Nacre.caption1).foregroundColor(Pearl.ink)
-                .padding(.leading, 16).padding(.top, 4).accessibilityAddTraits(.isHeader)
-            APCard {
-                ForEach(Array(bands.enumerated()), id: \.element.id) { i, band in
-                    if i > 0 { APSeparator(afterFace: false) }
-                    Button { bandAction = band } label: {
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(band.name.flatMap { $0.isEmpty ? nil : $0 } ?? band.category)
-                                    .font(Nacre.body).foregroundColor(Pearl.ink)
-                                Text(["\(Format.short(band.first)) – \(Format.short(band.last))", band.category,
-                                      band.count.map { "\($0) purchase\($0 == 1 ? "" : "s")" }]
-                                    .compactMap { $0 }.joined(separator: " · "))
-                                    .font(Nacre.subheadline).foregroundColor(Pearl.muted)
-                            }
-                            Spacer(minLength: 8)
-                            if let total = band.total {
-                                Text(Format.whole(total)).font(Nacre.body).foregroundColor(Pearl.ink)
-                            }
-                            Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(Pearl.muted)
-                        }
-                        .padding(.horizontal, 16).padding(.vertical, 10)
-                        .contentShape(Rectangle())
-                    }
+            APSectionLabel(text: "Days sorted together").padding(.top, 4)
+            ForEach(bands) { band in
+                Button { bandAction = band } label: { DaysBandCard(band: band) }
                     .buttonStyle(.plain)
                     .accessibilityHint("Change or remove it")
-                }
             }
         }
+    }
+
+    /// "Nov 6–8 · Travel · 14", or with "purchases · $612" on T-49b.
+    static func bandLine(_ band: SortedRange, purchases: Bool = false) -> String {
+        let days = band.first == band.last ? Format.short(band.first)
+            : Format.short(band.first) + "\u{2013}" + (band.first.prefix(7) == band.last.prefix(7)
+                ? String(Int(band.last.suffix(2)) ?? 0) : Format.short(band.last))
+        var parts = [days, band.category]
+        if let n = band.count { parts.append(purchases ? "\(n) purchase\(n == 1 ? "" : "s")" : "\(n)") }
+        if purchases, let total = band.total { parts.append(Format.whole(total)) }
+        return parts.joined(separator: " \u{00B7} ")
+    }
+
+    /// A trip's plane, or the calendar.
+    static func bandSymbol(_ band: SortedRange) -> String {
+        band.category == "Travel" ? "airplane" : "calendar"
     }
 
     private func loadDay() async {
@@ -1063,5 +1063,35 @@ struct TripBandShape: Shape {
         if a > 0 { p.addArc(tangent1End: CGPoint(x: r.minX, y: r.minY), tangent2End: CGPoint(x: r.maxX, y: r.minY), radius: a) }
         p.closeSubpath()
         return p
+    }
+}
+
+/// T-68 (G1-Days): one band of days sorted together, a card with a 1.5 pt
+/// dashed rose edge.
+private struct DaysBandCard: View {
+    let band: SortedRange
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Pearl.radiusCard, style: .continuous)
+        HStack(spacing: 12) {
+            APIcon(symbol: CalendarCard.bandSymbol(band))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(band.name.flatMap { $0.isEmpty ? nil : $0 } ?? band.category)
+                    .font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                Text(CalendarCard.bandLine(band)).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if let total = band.total {
+                Text(Format.whole(total)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
+            }
+            APChevron()
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(minHeight: 64)
+        .background(shape.fill(APlus.card))
+        .overlay(shape.strokeBorder(Pearl.action.opacity(0.8), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])))
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 }

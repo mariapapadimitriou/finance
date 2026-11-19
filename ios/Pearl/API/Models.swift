@@ -1540,6 +1540,9 @@ struct Review: Decodable {
     /// Answers given today, and rows Pearl sorted without asking.
     var sortedToday: Int = 0
     var pearlSorted: Int = 0
+    /// REDESIGN-18: her own answers over the same window as `pearlSorted`
+    /// (Home's `sorted` is this plus `pearlSorted`).
+    var youSorted: Int = 0
     let unsorted: Unsorted?
     let kinds: [String: String]?
 
@@ -1566,6 +1569,7 @@ struct Review: Decodable {
         case threePayMonth = "three_pay_month"
         case sortedToday = "sorted_today"
         case pearlSorted = "pearl_sorted"
+        case youSorted = "you_sorted"
         case patternAsks = "pattern_asks"
         case tripAsks = "trip_asks"
     }
@@ -1589,6 +1593,7 @@ struct Review: Decodable {
         checks = items(.checks)
         sortedToday = (try? c.decodeIfPresent(Int.self, forKey: .sortedToday)) ?? 0
         pearlSorted = (try? c.decodeIfPresent(Int.self, forKey: .pearlSorted)) ?? 0
+        youSorted = (try? c.decodeIfPresent(Int.self, forKey: .youSorted)) ?? 0
         patternAsks = (try? c.decodeIfPresent([Lenient<PatternAsk>].self, forKey: .patternAsks))?
             .compactMap { $0.value } ?? []
         tripAsks = (try? c.decodeIfPresent([Lenient<TripAsk>].self, forKey: .tripAsks))?
@@ -1944,8 +1949,16 @@ extension Review {
         out += whoSent.map { Ask(kind: .whoSent, item: $0) }
         out += duplicate.map { Ask(kind: .duplicate, item: $0) }
         out += recurringTransfer.map { Ask(kind: .recurring, item: $0) }
-        out += checks.map { Ask(kind: .check, item: $0) }
+        // Your plan questions (T-101, T-102, T-109) are parked with Save
+        // (product owner, 2026-11-18): none in Quick sort or Needs a look.
+        if YourPlanGate.shown { out += checks.map { Ask(kind: .check, item: $0) } }
         return out
+    }
+
+    /// The open Your plan questions the server counted but the app parks
+    /// (0 once `YourPlanGate.shown`); taken off "need a look" counts.
+    var parkedPlanQuestions: Int {
+        YourPlanGate.shown ? 0 : checks.filter { $0.skipped != true }.count
     }
 }
 

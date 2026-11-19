@@ -240,7 +240,7 @@ struct ReviewView: View {
                 && !(quick.isEmpty && (review?.patternAsks ?? []).isEmpty && (review?.tripAsks ?? []).isEmpty) {
                 // T-10; REFRESH-03's P1 took "Tap one to sort it." out. AI-18 and TR-01 count too.
                 QuickSortCard(count: quick.count + (review?.patternAsks.count ?? 0) + (review?.tripAsks.count ?? 0),
-                              sorted: (review?.sortedToday ?? 0) + (review?.pearlSorted ?? 0)) {
+                              sorted: (review?.youSorted ?? 0) + (review?.pearlSorted ?? 0)) {
                     sorting = true
                 }
             }

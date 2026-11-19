@@ -2112,8 +2112,12 @@ struct TransactionDetailView: View {
 
     // MARK: Options
 
-    /// A charge a piggy bank could have paid for.
-    private var canPayFromBank: Bool { !t.inflow && t.transfer == nil && t.excluded.isEmpty }
+    /// A charge a piggy bank paid for. "Pay from a piggy bank" is parked with
+    /// Save (product owner, 2026-11-18), so the row only shows on a charge a
+    /// piggy bank already paid ("Paid from a piggy bank"), to undo it.
+    private var canPayFromBank: Bool {
+        t.bankId != nil && !t.inflow && t.transfer == nil && t.excluded.isEmpty
+    }
 
     /// T-03: one Options card. Split with others, Regular pay (T-37),
     /// Unlink refund (T-41), Pay from a piggy bank and One-off purchase, each a plain row.
@@ -2411,15 +2415,18 @@ struct TransactionDetailView: View {
                 .disabled(busy)
         }
         if t.manual {
-            Button("Delete transaction") { deleting = true }
-                .buttonStyle(NacreTextButtonStyle(tone: Pearl.danger))
+            // G1-PConfirm (T-03x): a red entry row on its own card.
+            APCard {
+                PearlDestructiveRow(symbol: "trash", title: "Delete \(t.merchant)") { deleting = true }
+                    .accessibilityIdentifier("Delete transaction")
+            }
                 .padding(.top, 12)
                 .disabled(busy)
                 .sheet(isPresented: $deleting) {
                     // T-03x (TEST-06): a Pearl sheet; T-03x2 if it fails.
                     PearlConfirmSheet(face: t.merchant, overline: "Added by hand", title: "Delete \(t.merchant)?",
                                       message: "You added it by hand, so it comes out of your numbers. This can’t be undone.",
-                                      primary: "Delete", busyLabel: "Deleting…", secondary: "Keep it",
+                                      primary: "Delete \(t.merchant)", busyLabel: "Deleting…", secondary: "Keep it",
                                       failure: "Couldn’t delete \(t.merchant). Nothing changed. Try again.",
                                       onClose: { deleting = false }) {
                         let _: OK = try await app.api.delete("api/transactions/\(t.id)")
