@@ -1458,3 +1458,364 @@ The product owner decided today that the iOS handoff lives in Claude Design from
 - H-00r and H-00n: dropped "Left to spend or save on non-essentials." under the orb (REFRESH-03; HomeView.swift:133 keeps it as the VoiceOver hint only).
 - O-01: "Get started", "I already have an account", Privacy · Terms (AuthFlow.swift:101–109). A-01: "Forgot password?" under the card and "New to Pearl? Create an account" under Sign in; the Face ID line is gone (AuthFlow.swift:397–426).
 - RQ-01: redrawn from AnswerSheet.swift recurringTiles: caption "Every month since March", the card's money line and "Next: around Tue, Dec 2", tiles Rent, Into savings, My other account, Something I pay for, then No, it isn't regular.
+
+### [designBOT → engBOT] 2026-11-18 · REDESIGN-01 · Three directions for a new look (nothing to build yet)
+**Status:** Needs product owner (Awaiting product owner)
+**Jira:** THL-125, THL-254, THL-213, THL-123, THL-122, THL-231, THL-291, THL-289, THL-181, THL-301, THL-232   **Design:** Claude Design › Pearl redesign (https://claude.ai/artifact/2k7iUpAwrxvqbFLpyazvWT), 12 artboards
+
+The product owner asked for a full redesign of the look with the app working exactly as it does now. First step: 2–3 directions on four anchor screens, light and dark, for her to pick from. Each artboard was rendered and checked against the phone screenshots and the Swift views (origin/main 0e549fd) before publishing.
+
+- **Screens (same four in each direction):** H-00r Home (HomeView, AllowanceOrb, NeedsALookCard, OwedNudgeCard, MonthCard, Pearl button); T-01r / RC-01 Cash flow (TransactionsView summaryCard, day headers with Select, TransactionRow with GuessChip, ⇄ transfer, a split row's cost line); S-04r v2 / RC-02 a split purchase (header cost and date lines, Counts pill, category row with Change, SplitPeople with Edit split, You / paid / part paid / owes / let go, See everyone who owes you, Details); LT-03 (PQ-03) Is mPg paying you back? (PaybackHeader with Name them, LOOKS LIKE, the dashed guess tile, Something else, Not a payback).
+- **A · Refined Pearl:** the nacre ground softened with a white veil; one white-glass card; caps section labels outside the card with their quiet action; amounts on one right edge (the ••• on split rows goes; the row already opens PersonOptionsSheet); bars under the words; Home's owed and month cards as two rows of one card.
+- **B · Nacre Blocks:** a plain paper page; colour only in a nacre block (Allowance, a purchase's header) and an ink block (Needs a look, the month); big Fraunces; tinted faces; a 12-dash sorting streak; a 5-part paid-back bar on a split; ••• kept in one column.
+- **C · Pearl Paper:** paper with a faint nacre dawn; inset grouped lists, hairlines, no shadows; the Allowance as a big left-aligned number on a nacre thread with the pearl bead; one 32 pt left edge; PQ-03 as one list.
+- **Polish 2** is folded into all three (one card, one label, one primary button, one face/payment row, one right edge, quiet actions in link colour, feedback above the tab bar, no red filter dot). Copy tidy-ups, all less-text: Sam's "· owes $20.00" and the category row's "Your share · $30.00 of $150.00" go (each is said once already).
+- **Recommendation to the product owner:** A as the base, with two of B's delight moments (the sorting streak on Needs a look, the paid-back bar on a split). It keeps Pearl's identity, fixes what reads as sloppy today (four card styles, three label styles, amounts that wander), and is the smallest build: tokens, PearlCard and the row components, not new layouts.
+- **Design system:** ShellClosed.svg and ShellOpening.svg were already in its asset store and Logos group (byte-identical after the server's SVG normalising); a fresh upload returned the same hashes, so the two new copies (b6904400…, 8ec3a2b8…) are unreferenced duplicates. Product owner, say if you want them deleted.
+- engBOT: nothing to build until the product owner picks a direction.
+
+### [designBOT → engBOT] 2026-11-18 · REDESIGN-02 · Chosen direction (draft): A+ with a new navigation
+**Status:** Needs product owner (draft, awaiting product owner; nothing to build)
+**Jira:** THL-125, THL-254, THL-213, THL-123, THL-122, THL-231, THL-291, THL-289, THL-181, THL-301, THL-232, THL-117, THL-139, THL-209   **Design:** Pearl redesign › row "A+ · Chosen direction (draft)" above A, B and C (AP-Home, AP-CashFlow, AP-Transaction, AP-Sheet, AP-Chat)
+
+The product owner picked A · Refined Pearl plus B's sorting streak and B's paid-back bar, and asked for a new navigation. A, B and C stay on the canvas for reference. Every artboard was rendered and checked.
+
+- **Combined:** the 12-dash streak replaces the bar on Home's "8 to sort" (10 of 12 for 40 of 48), with a small streak in Cash flow's "8 need a look" row. The 5-part paid-back bar sits at the top of the split card, one segment per row in row order; it replaces the per-row bars (each row's line still says it).
+- **Navigation:** tab bar Home · Cash flow · Save · Wins · Pearl (line shell icon), floating glass pill kept, five even items, Cash flow badge kept. Profile leaves the bar for an initials button (36 visual, 44 tap) top right on Home, Cash flow, Save and Wins, lined up with the filter button's edge. The floating Pearl button is gone.
+- **Pearl tab:** the same chat (PC-03 starters, composer, "On this iPhone only", cards, Yes/Skip and Set it/Not now before any change), drawn as a full tab screen with the tab bar showing. Close goes; "New chat" starts over. Recommended over a sheet: a tab should go somewhere rather than open a modal over the current tab, and the visible bar lets her check Cash flow mid-answer.
+- **Open questions for the product owner:** (1) keep the conversation across tab switches, or start fresh each time as today; (2) where Apple Intelligence can't run, show the tab with PC-11 (recommended) or drop to four tabs; (3) Profile as a pushed page in the current tab (draft) or a large sheet; (4) move the button's suggestion ring/dot to the Pearl tab as a nacre dot; (5) a dot on the avatar when Profile needs her; (6) initials or a photo.
+
+### [designBOT → engBOT] 2026-11-18 · REDESIGN-03 · A+ decisions, photo, three fixes, Liquid Glass tab bar
+**Status:** Needs product owner (draft, awaiting product owner; nothing to build)
+**Jira:** THL-125, THL-122, THL-291, THL-117, THL-139, THL-209   **Design:** Pearl redesign › A+ row (version 5): AP-Home, AP-CashFlow, AP-Transaction, AP-Sheet, AP-Chat updated; AP-NavOption, AP-PhotoHome, AP-Profile, AP-PhotoSheet, AP-Crop new
+
+- **Decisions drawn:** the chat keeps its conversation across tabs and New chat clears it. Where Apple Intelligence can't run, the tab shows the unavailable screen with Search and the bar stays at five. The profile circle pushes Profile in the current tab. The Pearl tab gets a nacre dot for a suggestion. The profile circle gets a nacre dot only when Profile needs her (coordinator's default; shown with Accounts "1 needs you").
+- **Photo:** initials by default. Add photo / Change photo sits under the Profile avatar and opens a Pearl sheet: Choose photo, Take photo, Remove photo (only when a photo is set, in danger red), Cancel. Then Move and scale with Use photo / Cancel. The Profile header is no longer the link to Sign-in and security; that row stays under You.
+- **Fixes:** Alex is "Let go · Nov 17". The chat composer is a field with a send up-arrow, off (track grey) while empty and rose when there's text. The Cash flow badge and the "8 need a look" chip use the tab tint, Pearl.action (#B22757 with #FFFFFF; dark #FF8FB1 with #1C1A33). origin/main already sets the badge to this (PearlApp.swift badged()); the phone screenshots predate that.
+- **Tab bar:** redrawn as the iOS 26 Liquid Glass bar: a clear capsule (light blur, saturate, brighten) over the content, a specular rim brightest top-left, a glass lozenge under the selected tab, and the app's own template icons at 10 pt labels. Colours as built: selected #B22757 / #FF8FB1, unselected system label #000000 / #FFFFFF. These sit fine with A+. Possible refinement for the product owner: unselected in ink (#2E2547 / #FBF8F6) through UITabBarAppearance to match the page text.
+- **Option:** Pearl as its own glass circle (the Tab(role: .search) look) on AP-NavOption. Not recommended: that slot and its morph-into-field behaviour are search's in iOS 26, and VoiceOver would treat it as search.
+
+### [designBOT → engBOT] 2026-11-18 · REDESIGN-04 · A+ Home is attention only; Owed to you redesigned
+**Status:** Needs product owner (draft, awaiting product owner; nothing to build)
+**Jira:** THL-125, THL-254, THL-213, THL-291, THL-289, THL-181, THL-303   **Design:** Pearl redesign › A+ row (version 6): AP-Home, AP-Transaction, AP-PhotoHome updated; AP-HomeCalm, AP-Owed, AP-OwedPerson new
+
+- **Home:** the orb, then only cards with something in them. Needs a look (streak, Sort now; See the list moves to the label). "2 people owe you" with $70.10 on the right edge, opening Owed to you. Since you were last here, with Clear. MonthCard is gone. The calm state is the orb plus "You're all caught up." The orb is 188 when cards follow and full size when calm.
+- **Since you were last here:** Jo paid back Loblaws +$30.00 → the purchase; Pay came in +$2,150.00 → the deposit; Pearl sorted 12 on its own → Needs a look, Pearl sorted (replaces AI-01's card). Tapping an item marks it seen, Clear marks all seen, and items older than 7 days drop off. A bank to reconnect keeps H-01's card; a Pearl suggestion stays a dot on the Pearl tab; a plan over shows in the orb.
+- **Owed to you (OwedView):** same sections (Owes you, Not settled with its line, Paid back this month). The total sits in the header ("$70.10 · from 2 people"). Reached from Home's card and from the split purchase's "See who else owes you" (renamed from "See everyone who owes you"). A person row opens a new person page (what they owe for); a purchase there opens that person's existing options sheet for it, plus "Open Loblaws".
+- **Scope for engBOT later:** new function = the feed (update types, last-seen per device, seen, Clear, the 7-day drop-off, an API for it), the person page, and "Open <purchase>" on the options sheet. Visual or wiring only = MonthCard removed, the owes card's words and target, AI-01 folded into the feed, the renamed button, the calm line.
+
+### [designBOT → engBOT] 2026-11-18 · REDESIGN-05 · "Worth a look" replaces "Since you were last here"
+**Status:** Needs product owner (draft, awaiting product owner; nothing to build)
+**Jira:** THL-125, THL-254, THL-213, THL-291, THL-289, THL-181, THL-165   **Design:** Pearl redesign › A+ row (version 8): AP-Home and AP-PhotoHome updated; AP-WorthAnswer and AP-WorthCatalogue new
+
+- **Product owner's rules:** 3 items at most, ranked Pearl needs a yes, then heads-ups, then ONE good-news item. No plain news, no transactions. Nothing qualifies and the section goes. One line each. Clear can be undone with the ink toast. 7-day drop-off.
+- **Home:** New subscription: Crave $19.99/mo (Yes / Not now inline); Rent comes out Friday $1,800.00 (opens the bill); $120 less on takeout than October (opens Cash flow on Takeout).
+- **Answering:** Yes resolves the row ("Crave added to subscriptions"), the ink toast offers Undo, and the next item (Visa is due in 4 days, $612.00) slides up.
+- **Catalogue:** all 17 approved items, with the tap target or inline action for each, marked reuse or NEW.
+  - Reuse: trips, recurring and price_change, duplicates, bill and debt dates, plan pace, Not sure yet splits, piggy progress, the Allowance.
+  - NEW: free-trial end, low-balance forecast, the N-weeks-unpaid rule, the halfway milestone, month-on-month comparison, the sorting streak, the "Your month" recap screen (entry point only), and the section itself (ranking, cap, seen/Clear/Undo, drop-off, an API).
+- **Removed:** every "Since you were last here" item.
+
+### [designBOT → engBOT] 2026-11-18 · REDESIGN-06 · Worth a look: decisions in, the answer shows once
+**Status:** Needs product owner (draft, awaiting product owner; nothing to build)
+**Jira:** THL-125, THL-254, THL-213   **Design:** Pearl redesign › A+ row (version 9): AP-WorthAnswer redrawn; the row's note updated
+
+- **Decided (product owner, "go with your suggestions"):**
+  - Inline Yes / Not now stays on a second line.
+  - "New month", "Sam hasn't paid back" and "Corner Bistro" rank with the heads-ups; "October wrapped" with the good news.
+  - Not now is permanent for that same thing; a new event can show again.
+  - Answering in Worth a look or Quick sort clears both.
+  - Netflix keeps the inline "Update the bill".
+  - "Your month" is designed later with the rest-of-app rollout; only its entry point is drawn.
+- **Fix:** the resolved-row state is gone. On Yes the row leaves, the next item (Visa is due in 4 days) slides up, and only the ink toast says "Crave added to subscriptions", with Undo. Drawn as before and after in light, and after in dark.
+- **Motion note (built later):** the row slides out left and fades (250 ms), the rows below spring up (300 ms), the toast rises above the tab bar, and Yes gets a .success haptic. Reduce Motion: a 200 ms cross-fade.
+
+### [designBOT → engBOT] 2026-11-18 · REDESIGN-07 · Tab icons are the app's own files
+**Status:** Needs product owner (draft, awaiting product owner; nothing to build)
+**Jira:** THL-209   **Design:** Pearl redesign › A+ row (version 10): every A+ tab bar updated; AP-TabCompare new
+
+- **Icons:** TabHome, TabCashFlow, TabSave and TabWins are embedded from Assets.xcassets as they are. Their #000000 is swapped for the tint, as template rendering does (template-rendering-intent "template"). They show at their 26 pt size with their own 1.75 strokes and fills. The earlier drafts had redrawn Save (missing the lifebuoy's segments) and Wins (missing the dots); both are fixed. TabProfile is out of the bar.
+- **Labels:** the system font, 10 pt medium, 2 pt under the icon. PearlApp sets no tab font or item insets, so the system defaults apply. Tint behaviour is as built: selected Pearl.action, unselected system label.
+- **Pearl:** LogoMark, which is what PearlButton renders (Image("LogoMark"), 30 × 25), drawn in its own colours. As a template it becomes a solid clam silhouette, heavier than the line icons, and the pearl and ribs disappear (AP-TabCompare row 2). In SwiftUI that means `.renderingMode(.original)` on the Pearl tab's image; selection still shows through the lozenge and the rose label.
+- **Comparison:** AP-TabCompare shows the phone screenshot's bar, a reference rendered from the asset files in light and dark, and the A+ bar in light and dark.
+
+### [designBOT → engBOT] 2026-11-18 · REDESIGN-08 · See-through light tab bar, A+ in the design system, rollout group 1 (Cash flow and Quick sort)
+**Status:** Needs product owner (draft, awaiting product owner; nothing to build)
+**Jira:** THL-122, THL-123, THL-213, THL-231, THL-232, THL-254, THL-257, THL-263, THL-292, THL-295, THL-296, THL-305, THL-165, THL-209   **Design:** Pearl redesign (version 12): A+ row re-rendered, AP-TabCompare updated; new section "Rollout · Group 1" (G1-*, 17 boards). Pearl Design System (version 7).
+
+- **Light tab bar:** nearly clear glass (white 20% → 8%, a light blur and saturation), so the pink-to-mint page shows through, as on the product owner's phone. The selected lozenge is lilac-tinted glass (`tab-lozenge`). Dark is unchanged. Pearl keeps LogoMark in its own colours.
+- **Design system (A+, marked draft until built):**
+  - New tokens: `card`, `card-line`, `separator`, `chip`, `track-soft`, `face`, `tab-lozenge`, `streak-from`/`streak-to`, `shadow-card-a`.
+  - New components: Card, SectionLabel, PaymentRow, SortStreak, PaidBackBar, WorthItem, ProfileCircle, CalmState.
+  - TabBar rewritten to the A+ five tabs. Toast, Sheet and Button READMEs gained A+ sections.
+  - README gained an "A+ · the chosen redesign" section with the REDESIGN-02 to 07 decisions.
+  - Existing components and the built-app rules are kept.
+- **Group 1:** 17 boards, each two states in light and dark:
+  - Cash flow: over, sync and bank, empty, no matches, search, Filters, by category, a category, calendar, Sort these days, Select, Mark as…
+  - Transaction pages: sorted, Pearl's guess, income, transfer, refund, left out. What was this? for spending and for money in. Change category (also moves others), Add a transaction.
+  - Sorting: Needs a look (list, all sorted), Quick sort (guess, after Yes, no guess, done), RQ-01, PQ-01, PQ-02, Where did it go?, Who sent this?, Same purchase?
+- **Copy cut:**
+  - Quick sort's two footnotes go; the toast says what Yes did.
+  - "Someone sent you $120.00" under a Needs a look row becomes "Who sent this?".
+  - The category goes from each Same purchase? row.
+  - A left-out amount has no sign.
+  - "Why Pearl is asking" goes as a label.
+- **New function:** none in group 1.
+
+### [designBOT → engBOT] 2026-11-18 · REDESIGN-09 · Fields you can see, group 1 fixes, rollout group 2 (Splits and paybacks)
+**Status:** Needs product owner (draft, awaiting product owner; nothing to build)
+**Jira:** THL-289, THL-291, THL-181, THL-301, THL-303, THL-122, THL-123   **Design:** Pearl redesign (version 14): new section "Rollout · Group 2" (G2-*, 16 boards); G1-TxSpend, G1-Change, G1-Asks, G1-Calendar and AP-Chat updated. Pearl Design System (version 10).
+
+- **Group 1 decisions in:** the Quick sort cuts stand; a guess opened from the list hides the tab bar; a category page shows its icon; a left-out amount has no sign.
+- **Fix:** "Always for Loblaws" lost its repeated line. No other toggle or row on G1 or A+ repeats its title.
+- **Where you can type (product owner's rule):**
+  - New TextField in the design system: the `well` / `well-line` tokens; rest, focus (2 px action outline, caret, keyboard), filled, error (red only for a real error) and disabled states; 44 high; `$` before money, a magnifier before search.
+  - AmountField, SearchField and the README updated.
+  - On the canvas: Cash flow search and every sheet search are wells. Add a transaction shows the amount in focus with the number pad (light and dark). Sort these days' Name and the Pearl composer are wells.
+- **Group 2:** 16 boards, two states each in light and dark:
+  - The split card with the paid-back bar; Not sure yet with no bar.
+  - Who was it with? (search in focus with the keyboard); Edit split: Evenly, Amounts with a share in focus and the number pad, Shares, doesn't add up, Not sure.
+  - A person's options and How did Priya pay?; Cash in hand and Remind (message well); Let it go and Remove.
+  - A payback's options, and the toast after Mark paid back.
+  - Who paid you back? (kind, then people).
+  - PB-30 with OTHER PURCHASES ("$26.65 of it", Change), less, and more; How much of Sam's $60.00? (field in focus).
+  - MP-01 and MP-02; PB-20 and LT-01; the PB-41 deposit page and S-04w work reimbursed; S-10 and S-12; S-35a and S-46a.
+  - Owed to you and its person page are AP-Owed and AP-OwedPerson; PQ-03 is AP-Sheet.
+- **Copy cut:** Sam's options header no longer repeats "$30.00 of $30.00"; The shop's line is "A refund".
+- **New function:** none.
+
+### [designBOT → engBOT] 2026-11-19 · REDESIGN-10 · Group 2 tidy-ups, the keyboard rule, rollout group 3 (Save)
+**Status:** Needs product owner (draft, awaiting product owner; nothing to build)
+**Jira:** THL-240, THL-229, THL-230, THL-169, THL-168, THL-170, THL-194, THL-127, THL-198, THL-125, THL-265   **Design:** Pearl redesign (version 15): new section "Rollout · Group 3 · Save" (G3-*, 9 boards); G2 boards updated. Pearl Design System (version 12).
+
+- **Group 2 decisions in:** Not sure yet has no bar until settled; the five-part switch stays one row; Let it go keeps "Your Allowance doesn't change."
+- **Keyboard rule (app-wide):** with the keyboard up, the Primary sits just above it, greyed out until the answer is valid. It's in the README and TextField.
+- **Tidy-ups:**
+  - Edit split lines are now "Paid $20.00 · $8.04 let go" and "Paid $28.04 · $8.04 over". Elsewhere: "Paid $10.00 · owes $20.00", "All of it · Nov 12", "Not paid back yet", "Pizza Nova · Nov 2".
+  - The switch sizes each segment to its word with equal padding and fits a 375 pt phone.
+- **Group 3:** 9 boards, two states each in light and dark:
+  - The Save tab (Anchor, piggy banks, what it could grow into) and its empty state.
+  - The Anchor page (how it adds up, savings accounts) and What's a safety net?
+  - A piggy bank, and the same piggy bank after Add money.
+  - New piggy bank: every year (amount in focus, keypad) and by a date.
+  - Add money and Pay from a piggy bank.
+  - Your plan: proposed and in use; change one category (amount in focus); no plan yet.
+  - Plans and pace, and a plan that's over.
+  - How your Allowance adds up (from the orb), and an estimate.
+- **New function** (Save is blank in the app today; THL-265 took it out): the Save tab and its pages; Add money (piggy banks fill from the Anchor monthly, so a manual top-up is new); plans with pace on Save; the Allowance breakdown from the orb.
+  - Reuses finance/piggy.py, category_budgets.py and your_plan.py.
+  - Restyle only: T-105 and YP-01 to YP-08.
+
+### [designBOT → engBOT] 2026-11-18 · REDESIGN-11 · Save parked; group 5, Profile and settings
+**Status:** Awaiting product owner
+**Jira:** THL-104, THL-114, THL-115, THL-116, THL-117, THL-118, THL-120, THL-121, THL-127, THL-139, THL-172, THL-198, THL-205, THL-208, THL-209, THL-214, THL-234, THL-262, THL-287, THL-294, THL-300, THL-304, THL-305   **Figma:** none (Claude Design canvas "Pearl redesign", version 16)
+Save is parked for a later stage, by the product owner. The G3 boards stay on the canvas under "Group 3 · Save (parked: later stage)", with titles marked Parked. Four questions are still open: Add money, where plans live, the grow-into extras, and the Allowance breakdown. G3-Allowance is parked and Home's orb stays as built. No Save components went into the design system, so there is nothing to mark parked there. Wins is skipped.
+Group 5 has 22 boards, 2 to 4 states each, in light and dark: G5-Profile, SignOut, Photo, Accounts, Account, Remove, AccountEdit, Setup, Income, IncomeEdit, Security, Devices, Lock, Email, Notifications, Privacy, Protect, Data, StartOver, Reset, Delete, Load. Every confirmation is a Pearl sheet. Fields are wells, and with the keyboard up the Primary sits just above it, greyed until valid. Red is only for destructive entries and errors. The copy cuts and the list of new function are in the canvas note nG5.
+New function, only if picked: Appearance as a Pearl sheet, replacing the stock Menu in ProfileView. Add an account as a Pearl sheet from +. Yes / No on found pay and bills. Saving and couldn't-save states for the photo.
+Start over keeps the banks; Reset Pearl also unlinks them. Recovery codes stay deferred. Not in this group: Recurring transfers, Debts, Categories and rules.
+
+### [designBOT → engBOT] 2026-11-18 · REDESIGN-12 · Group 5 decisions; group 5b, Recurring transfers, Debts, Categories and rules
+**Status:** Awaiting product owner (group 5b); group 5 approved by the product owner, design only
+**Jira:** THL-295, THL-128, THL-49, THL-300, THL-123, THL-225, THL-226, THL-234, THL-213, THL-254   **Figma:** none (Claude Design canvas "Pearl redesign", version 17)
+The product owner settled group 5's open decisions; they're recorded in nG5:
+1. Progress and Milestones notifications are hidden until Save and Wins come back. G5-Notifications is updated and re-rendered.
+2. The Your plan row stays on Income and bills.
+3. The Anchor tag and "Part of my Anchor" stay as built.
+4. Appearance and Add an account become Pearl sheets (new function).
+5. Found pay and bills get Yes / No on the row.
+6. Red stays on the destructive entry row only. The final button is the rose Primary naming the action.
+Group 5b has 10 boards: G5b-Recurring, RecurringOne, Debts, DebtEdit, Rules, Rule, Learned, Categories, Merchants, Tags. They cover every list, detail, edit, empty, swipe, confirmation, removing and couldn't-remove state the app has. It's a restyle only, with no new function. Visual notes and copy cuts are in nG5b.
+Not drawn, because the app has none: creating, renaming or merging a category, and a sorting rule that also moves earlier transactions. Only a recurring transfer moves all of them, with Undo.
+
+### [designBOT → engBOT] 2026-11-18 · REDESIGN-13 · Group 5b decisions and fixes; group 6, Onboarding and sign-in
+**Status:** Awaiting product owner (group 6); group 5b approved by the product owner, design only
+**Jira:** THL-114, THL-116, THL-118, THL-119, THL-120, THL-125, THL-127, THL-45, THL-198, THL-123, THL-295   **Figma:** none (Claude Design canvas "Pearl redesign", version 18)
+Group 5b, settled by the product owner and recorded in nG5b:
+- Category create, rename and merge wait for later.
+- Saving a changed rule says inline "Also moves the 14 earlier Loblaws transactions to Shopping, and new ones from now on." with Save and "Only new ones", as group 1's Change category does. New function (G5b-Rule).
+- Undo on "No longer recurring", "Rule deleted" and "Fitness hidden", all the one ink toast. New function.
+Fixes:
+- G5b-RecurringOne now opens at the top. Its third state is the page scrolled to the 9 so far and Stop.
+- Toasts are short: "Now Into savings", "No longer recurring", "Now Shopping · 15 moved", "Rule deleted", "Fitness hidden", "Details saved".
+- G5-Account's toast is now "Not in your budget now". Groups 1 and 2 already had short toasts.
+- G5-Setup's label is now "Part 3 of 3 · Your money", as in the app.
+Group 6 has 13 boards: G6-Welcome, Create, Code, SignIn, Forgot, FaceID, Plaid, Reading, Linked, PayBills, Saving, Allowance, Offline. Reused, not redrawn: G5-Setup (Your accounts), G5-Lock (the app lock) and group 1's Quick sort (the first sort).
+New function, only if picked: a "Can't reach Pearl" screen at launch; an offline banner over Home; Yes / No on found pay in setup. Visual notes and copy cuts are in nG6. Recovery codes stay deferred.
+
+### [designBOT → engBOT] 2026-11-18 · REDESIGN-14 · Group 6 decisions; group 7, Pearl chat, trips and AI (last group)
+**Status:** Awaiting product owner (group 7); group 6 approved by the product owner, design only
+**Jira:** THL-117, THL-139, THL-213, THL-254, THL-122, THL-123, THL-226, THL-257, THL-263, THL-127, THL-165, THL-181, THL-232   **Figma:** none (Claude Design canvas "Pearl redesign", version 19)
+Group 6, settled by the product owner and recorded in nG6:
+- Build Can't reach Pearl and the offline banner (new function).
+- Hide "Build your safety net" while Save is parked; G6-Allowance is updated.
+- Keep "How much do you want to save?".
+- The welcome line is "See what's yours to spend, and plan ahead."; G6-Welcome is updated.
+- Keep "Not you? Use a different email" (new function).
+- The also-move banners are one line: G5b-Rule "Also moves the 14 earlier ones."; G1-Change "Also moves the 6 earlier ones · Allowance +$46".
+Group 7 has 10 boards: G7-Chat, Tell, TellMore, Confirm, Unavailable, TripAsk, Trip, TripCal, Detect, AutoSort. They use AP-Chat's Pearl tab layout, the composer well with the send arrow, and the keyboard rule.
+Rules kept: one card per transaction, never grouped; a trip and a pattern are asked once; nothing changes before Yes or Set it. Your plan appears only as the chat card (Save stays parked).
+New function, only if picked:
+- Undo on what Pearl did in chat (plan set, trip made)
+- a "New chat?" Pearl sheet
+- "Leave it as is" in a trip's options; "Pay from a piggy bank" waits for Save
+- "Were you in Montréal?" wording for trip questions
+Visual notes and copy cuts are in nG7.
+
+### [designBOT → engBOT] 2026-11-18 · REDESIGN-15 · Redesign approved: ready to build (Save and Wins parked)
+**Status:** Redesigned (approved by the product owner; ready to build in stages)
+**Jira:** see REDESIGN-02 to -14   **Figma:** none (Claude Design canvas "Pearl redesign", version 20)
+The product owner settled group 7, and the decisions are recorded in nG7:
+1. Undo in chat after Pearl sets a plan or makes a trip (new function).
+2. "Start a new chat?" as a Pearl sheet before clearing (new function).
+3. Trip questions say "Were you in Montréal?".
+4. Trip options add "Leave it as is". "Pay from a piggy bank" is hidden until Save returns; G7-Trip is updated.
+5. No separate "Pearl sorted" notification for now.
+Every approved section on the canvas is titled "Approved: ready to build": A+, Rollout groups 1, 2, 5, 5b, 6 and 7, and their boards. Group 3, Save, stays "parked: later stage", and Wins was never started. Board titles carry the screen codes and Jira tickets. Each section's note lists its visual changes, copy cuts, new function and decisions.
+engBOT: send design questions in this log with the board name (for example G5b-Rule), and I'll answer here.
+
+### [designBOT → engBOT] 2026-11-18 · REDESIGN-16 · Stage 1 answers: camera off, the Pearl tab dot, first name only
+**Status:** Redesigned (answers, no new boards)
+**Jira:** THL-209, THL-104   **Figma:** none (canvas boards AP-PhotoSheet, AP-Profile, AP-Chat)
+1. Camera off: show the ink toast "Camera is off for Pearl" with a "Settings" action that opens Pearl's page in iOS Settings, not the web. Hide Take photo on an iPhone without a camera. Choose photo uses PHPicker, which needs no permission, so it has no denied state.
+2. Pearl tab dot: the 10 pt nacre dot is drawn into the LogoMark tab image, top right.
+   - Its 1.5 pt ring is the tab bar's background colour.
+   - Use two image variants, with and without the dot.
+   - VoiceOver label: "Pearl, has a suggestion".
+3. Profile:
+   - Back is the 44 pt glass circle.
+   - The header shows her first name (the server has no last name).
+   - With a first name only, the initials are one letter in the same ring.
+
+### [designBOT → engBOT] 2026-11-18 · REDESIGN-17 · Twin coverage, Jira-led names, twins rethought not copied
+**Status:** Redesigned (64 new boards; 18 of them Need product owner, the rest Approved: ready to build)
+**Jira:** per board (every board title and phone caption carries its tickets)   **Figma:** archive read only (ohcxhB9hV25H6nANVw3lq4, Pearl app 751:6166); canvas "Pearl redesign" version 23
+Twin coverage of every screen and state that is built and working in the app:
+- The built list is the Pearl app canvas (the as-built record), reconciled with the Figma archive and ios/Pearl.
+- There are 534 screen codes:
+  - 282 had an A+ twin
+  - 221 are drawn now, on 64 new boards
+  - 18 are replaced (Plaid's or iOS's own screens, the floating Pearl button, old set-up steps)
+  - 13 are parked (Save)
+  - 0 are deferred
+- 39 twins were rethought rather than copied, on 18 boards marked "Needs product owner".
+- The full table (screen code, Jira, Figma frame name, A+ board · state, status, Copied / Rethought, note) is in twin-coverage.md, with a summary note nTwin on the canvas.
+Naming:
+- Every A+ board title now leads with its screen code and Jira tickets, with the old G-name as a [tag].
+- Every phone carries a caption with its own code, name and tickets.
+- Screenshots also exist as `<CODE>_<G-name>.png` next to the old names, which are kept.
+New section "Group 2b · Joint accounts" (11 boards).
+New boards by engBOT area:
+- Theme/Home: AP-BankAlert, AP-SetupAgain, AP-Paycheque.
+- Cash flow: G1-Rows, Months, FilterOpen, Results, Days, TxNote, TxSheets, MoneyIn, Add, NeedsMore, PearlSorted, QuickMore, QuickAsk, TxPage, PConfirm.
+- Splits: G2-A* (13 boards), G2-B* (14 boards), G2-PLeave, and G2b-* (11 boards).
+- Profile/onboarding: G5-AccountMore, G5-Extras, G6-PayEdit, G6-Over, G6-NewDevice.
+- Chat/trips: G7-TripRename, G7-TripMore.
+Boards marked "Needs product owner" are not to be built until they are picked.
+
+### [designBOT → engBOT] 2026-11-18 · REDESIGN-18 · Cash flow follow-ups: Paid with sheet, the one-transaction banner, the streak count
+**Status:** Redesigned
+**Jira:** THL-122, THL-231, THL-125, THL-254   **Figma:** none (canvas "Pearl redesign" version 24, board G1-PaidWith)
+1. **T-62 · Paid with** (G1-PaidWith, new): a Pearl sheet replaces the stock iOS Menu on Add a transaction.
+   - Radio rows show Cash, then each account with its face and last four digits; a joint account says "joint".
+   - Tapping a row picks it and closes the sheet: no Done button.
+   - Money in uses the same sheet, titled "Goes into".
+   - The second state shows the form after picking TD Visa ••9021.
+   - Status: Approved: ready to build (a restyle of the approved picker pattern).
+2. **Change banner, one transaction:** "Also moves the earlier one" is right.
+   - With the Allowance change: "Also moves the earlier one · Allowance +$12".
+   - Two or more: "Also moves the 6 earlier ones · Allowance +$46".
+   - None: no banner.
+3. **The sorting streak, one rule for both** (DS SortStreak): lit dashes = sorted ÷ (sorted + to sort), rounded to twelfths.
+   - "Sorted" counts both her answers and Pearl's own sorts, over the same window as the "to sort" count.
+   - Home's card and Cash flow's mini streak show the same dashes.
+   - Cash flow should count everything sorted in that window, not only today's answers. Home should add her own answers to Pearl's.
+   - The count of Pearl's own sorts stays in words ("Pearl sorted 40"). VoiceOver reads "40 of 48 sorted".
+
+### [designBOT → engBOT] 2026-11-18 · REDESIGN-19 · Product owner: piggy banks hidden, T-74 approved, Your plan parked
+**Status:** Redesigned
+**Jira:** THL-169, THL-229 (piggy banks), THL-127, THL-168 (Your plan), THL-125 (T-74)   **Figma:** none (canvas "Pearl redesign" version 25)
+1. **"Pay from a piggy bank" is hidden until Save returns.**
+   - Its row is gone from the transaction page on G1-TxSpend (T-03r and T-103) and from the page behind G1-Change. Trip options (G7-Trip) already had it hidden.
+   - Any other piggy bank entry stays on the parked G3 boards only.
+   - T-105 stays parked.
+   - Build note: don't show the row while Save is parked.
+2. **T-74, "3 paycheques in October", is a Worth a look good-news item.** AP-Paycheque is now "Approved: ready to build".
+3. **Your plan is parked with Save.**
+   - **Quick sort:** T-101 ("Is TD Savings where you save?") and T-102 ("Still paid by Northwind?") on G1-QuickAsk are parked.
+   - **Needs a look:**
+     - T-109 (the Your plan tab, on G1-PearlSorted) is parked.
+     - The "Your plan · 1" chip is gone from every Needs a look header, so All reads 6: G1-MoneyIn, NeedsMore, PearlSorted and TxSheets.
+   - **Chat:** the plan card on G7-Confirm (PC-12, Done, and "Okay, nothing changed") is parked. The "trip made, with Undo" state stays approved.
+   - **Income and bills:** the "Your plan" row is gone from G5-Income, G5-IncomeEdit and G5-Extras. YP-09 is parked.
+   - Parked states carry "Parked with Save" in their captions, and board titles list the parked codes.
+- The coverage table is updated: 535 codes; 280 twin exists, 219 drawn now, 18 replaced, 18 parked, 40 rethought.
+- The rethought boards are unchanged and still need the product owner.
+
+### [designBOT → engBOT] 2026-11-18 · REDESIGN-20 · The 19 rethought twins are approved; build list
+**Status:** Redesigned (approved; ready to build)
+**Jira:** per board   **Figma:** none (canvas "Pearl redesign" version 28)
+- The product owner approved all 19 rethought twins. They are now "Approved: ready to build":
+  - Home: AP-BankAlert, AP-SetupAgain
+  - Cash flow: G1-Months, G1-PConfirm, G1-TxSheets
+  - Splits: G2-AAddPeople, G2-ADeposit2, G2-APersonStates, G2-BIncome, G2-BShare
+  - Joint accounts: G2b-Account, G2b-Combine, G2b-JointIn, G2b-Picker, G2b-Purchase, G2b-Whose
+  - Profile and onboarding: G5-Extras, G6-NewDevice, G6-PayEdit
+- Anything parked with Save inside them stays parked (the Your plan row on G5-Extras).
+- Phone captions still say "Rethought".
+- The coverage table and the canvas notes (nTwin, nG2b) are updated. T-74 is labelled a Worth a look good-news item.
+- **The canvas now cuts board titles at 120 characters.** Titles read "code · name — first tickets … · [G-name] · status". The full ticket list stays in each phone's caption.
+- **Build list:** twin-build-list.md lists 65 approved boards that the app doesn't have yet, grouped by engBOT area:
+  - theme/Home 3, cash flow 16, splits 28, joint accounts 11, profile/onboarding 5, chat/trips 2
+  - Each entry gives screen codes, tickets, states, the PNG and the most likely app file (found from the code references in ios/Pearl).
+  - Not in the list: the "Proposed rethinks" boards (-r), which are not approved.
+
+### [designBOT → engBOT] 2026-11-18 · REDESIGN-21 · Proposed rethinks of approved boards (not for building yet)
+**Status:** Needs product owner
+**Jira:** same as each approved board   **Figma:** none (canvas "Pearl redesign" version 29, section "Proposed rethinks · Needs product owner")
+New section with 8 proposal boards. Each -r board does the same job as its approved board: same screen codes, Jira tickets and size. The approved boards are unchanged, and they are what to build until the product owner picks a proposal.
+- G1-WhatWasThis-r: Pearl's guess leads with one button, plus 4 likely tiles. Every other answer is behind "Something else…" on the same page, so the one-page rule holds.
+- G1-Search-r: Filters show Transaction type and Month first; the rest is behind "More filters".
+- G2-PB30-r: the likely purchases come first, with one button. Other purchases appear only behind search.
+- G5-Accounts-r: one list, with the bank in each row's sub-line.
+- G5b-Rule-r: the rule page leads with the category it picks; the picker opens only on Change.
+- G6-PayBills-r: each list shows 3 rows and "See all", with the count and total in the label.
+- G7-AutoSort-r: "Why Pearl sorted this" is one line and one button, "Undo this one"; Change it and Stop sit behind "More options".
+- G7-Tell-r: after the first card, a small "n of 7" streak replaces her whole sentence.
+Also fixed: G2-Many's first state is now labelled MP-03, because it shows the less-ticked state on MP-01's page. The coverage row for MP-01 is updated.
+
+### [designBOT → engBOT] 2026-11-18 · REDESIGN-22 · Answers: Only new ones when nothing moves; tag totals
+**Status:** Redesigned
+**Jira:** THL-123, THL-226   **Figma:** none (canvas "Pearl redesign" version 30, G5b-Tags)
+1. **CR-04, a rule edit:**
+   - When no earlier transactions would move (N = 0), show only Save: no banner and no "Only new ones".
+   - When N > 0, show the banner ("Also moves the earlier one" when N is 1, "Also moves the N earlier ones." when N is more), then Save and the quiet "Only new ones".
+2. **CR-03, tag totals:** plum (money-out) with no minus, like a trip's total.
+   - A total isn't a single transaction, so it carries no sign.
+   - A net money-in total is green with "+".
+   - G5b-Tags is updated and re-rendered.
+
+### [designBOT → engBOT] 2026-11-19 · REDESIGN-23 · The 8 rethinks are approved; old boards superseded
+**Status:** Redesigned (approved; ready to build)
+**Jira:** same as each board   **Figma:** none (canvas "Pearl redesign" version 32)
+- The product owner approved all 8 proposals. They are now "Approved: ready to build":
+  - G1-WhatWasThis-r, G1-Search-r, G2-PB30-r, G5-Accounts-r
+  - G5b-Rule-r, G6-PayBills-r, G7-AutoSort-r, G7-Tell-r
+- Build the -r board, and change the existing screen to match it.
+- **Superseded:** the old boards (G1-WhatWasThis, G1-Search, G2-PB30, G5-Accounts, G5b-Rule, G6-PayBills, G7-AutoSort, G7-Tell) are marked "SUPERSEDED by …-r" in their titles and phone captions. Per my role file I mark them superseded; the product owner clears them out.
+- **G5-Accounts-r fix:** the Wealthsimple row's sub-line is now just the "Disconnected" pill, so nothing is cut off. The account name already names the bank.
+- **Coverage table:** the codes on those boards now point to the -r boards, with a "Rethought (approved 2026-11-19)" summary; 64 rethought in all. The canvas notes are updated (nPR, tPR).
+- **Build list:** twin-build-list.md now has 73 boards:
+  - the 8 -r boards, each with "Replaces: <old board> (now SUPERSEDED)"
+  - theme/Home 3, cash flow 18, splits 29, joint accounts 11, profile/onboarding 8, chat/trips 4
+
+### [designBOT → engBOT] 2026-11-19 · REDESIGN-24 · Superseded boards deleted; the rethinks take their names
+**Status:** Redesigned
+**Jira:** same as each board   **Figma:** none (canvas "Pearl redesign" version 33)
+- The product owner said "delete the superseded boards". The 8 old designs are gone from the canvas, with their phones and captions:
+  - G1-WhatWasThis, G1-Search, G2-PB30, G5-Accounts
+  - G5b-Rule, G6-PayBills, G7-AutoSort, G7-Tell
+- Nothing else on the canvas was marked SUPERSEDED. The parked Save boards and the A, B and C direction rows stay.
+- Each rethought design now carries the original board name and sits in the old board's place in its group section. The -r boards and the "Rethinks" section are removed.
+- Titles keep the screen code and Jira tickets, plus "rethought 2026-11-19"; phone captions say "Rethought".
+- **PNGs:** `<board>.png` (and its code-led copy) now shows the new design. `<board>-r.png` stays on disk for the engineers mid-build, with the same content.
+- The coverage table, the canvas note (nTwin) and the build list now name the boards without "-r". The build list still has 73 boards; the 8 rethought ones say "change the existing screen to match this board".
