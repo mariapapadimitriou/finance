@@ -5,9 +5,19 @@ from __future__ import annotations
 
 from flask import jsonify, request
 
-from .api import _today_iso, bp, store
+from . import api as _api
+from .api import bp, store
 from .categorize import CATEGORIES
 from . import recurring_transfers as rt
+
+
+def _today_iso() -> str:
+    """Pearl's one clock, read when asked: a name imported from `api`
+    kept the clock as it was at import, so a frozen day (tests, the
+    logic review's 2026-11-07) never reached these endpoints and Income
+    and bills used the real date instead."""
+    return _api._today_iso()
+
 
 # What a recurring transfer can be, as Needs a look offers it.
 KINDS = {

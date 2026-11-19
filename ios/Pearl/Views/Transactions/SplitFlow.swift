@@ -148,7 +148,8 @@ struct SplitSheet: View {
     /// the usual header on "All mine unless I mark it" (S-03j4).
     private var sheetTitle: String {
         if step == 0 { return "Who was it with?" }
-        if settling { return "Settle up · type amounts" }
+        // G2-BSettle S-45d: "Settle up", the same title as S-45a.
+        if settling { return "Settle up" }
         if let title = title { return title }
         if let focus = focus { return "Change \(possessive(focus)) share" }
         return t.splitsMyPart ? "Split my part" : "How to split"
@@ -294,7 +295,6 @@ struct SplitSheet: View {
             APQuestionWho(name: t.merchant, amount: headAmount, tone: t.tone, sub: headSub)
                 .accessibilityElement(children: .combine)
                 .contentShape(Rectangle()).onTapGesture { focused = nil }
-            if t.splitsMyPart { JointStrip(t: t) }
             stepView
             if let error = error {
                 // G2-BNotSure S-03ue: the error is a red line with ⓘ.
@@ -305,12 +305,22 @@ struct SplitSheet: View {
         }
     }
 
+    /// G2b-SplitPart S-03j v2: Split my part's header has no amount of its
+    /// own; its one line says her part and theirs. S-03j4 (and every other
+    /// split): "−$100.00 · Wed, Nov 13".
+    private var myPartHeader: Bool { t.splitsMyPart && !settling }
+
     private var headAmount: String {
-        settling ? (t.inflow ? "+" : "\u{2212}") + Format.amount(t.splitBase) : Format.money(t)
+        if myPartHeader { return "" }
+        return settling ? (t.inflow ? "+" : "\u{2212}") + Format.amount(t.splitBase) : Format.money(t)
     }
 
+    /// S-03j v2: "Your part $50.00 of $100.00 · Sam Lee’s $50.00 stays
+    /// theirs", in place of the old JointStrip.
     private var headSub: String {
-        t.splitsMyPart ? "Your part \(Format.amount(t.splitBase)) of \(Format.amount(t.fullAmount ?? t.amount))"
+        if myPartHeader { return t.splitMyPartLine }
+        // Settling her part keeps the amount it settles, then what it's of.
+        return t.splitsMyPart ? "Your part \(Format.amount(t.splitBase)) of \(Format.amount(t.fullAmount ?? t.amount))"
             : Format.weekdayDay(t.date)
     }
 
@@ -581,7 +591,8 @@ struct SplitSheet: View {
             // S-03r2 / S-03r2b / S-03j v2 (TEST-08): "I had some too" under
             // the people, where its effect is: on, the rest stays yours; off,
             // your row goes and the rest is left to assign. More people from
-            // here, and back to the amounts after (2026-11-08).
+            // here, and back to the amounts after (2026-11-08). Settle up
+            // (S-45d) keeps it too: function stays unless the PO says so.
             APCard {
                 addNewRow
                 APSeparator()
@@ -606,9 +617,16 @@ struct SplitSheet: View {
                 Text(label(key)).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
                 if let line = caption(key) {
                     // S-03e: what they've paid; S-15 v2 / S-18 v2: the odd cent.
-                    Text(line).font(Nacre.subheadline)
-                        .foregroundColor(settling && (saved(key)?.paid ?? 0) >= 0.005 ? Pearl.action : Pearl.muted)
-                        .fixedSize(horizontal: false, vertical: true)
+                    // G2-BSettle S-45d: a locked payer is "🔒 Paid $20.00 · locked", muted.
+                    let lock = settling && (payer(key) || locked(key))
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        if lock {
+                            Image(systemName: "lock.fill").font(.system(size: 11)).accessibilityHidden(true)
+                        }
+                        Text(line).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .font(Nacre.subheadline)
+                    .foregroundColor(settling && !lock && (saved(key)?.paid ?? 0) >= 0.005 ? Pearl.action : Pearl.muted)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1995,14 +2013,20 @@ struct MarkPaidSheet: View {
                     .multilineTextAlignment(.center)
             }
             HStack {
-                Text("Received").font(Nacre.body).foregroundColor(Pearl.ink)
+                // G2-BMarkPaid: "When", the day on the right.
+                Text("When").font(Nacre.body).foregroundColor(Pearl.ink)
                 Spacer()
-                DatePicker("Received", selection: $when, in: ...Date(), displayedComponents: .date)
+                DatePicker("When", selection: $when, in: ...Date(), displayedComponents: .date)
                     .labelsHidden().tint(Pearl.action)
             }
             .padding(.horizontal, 16).frame(minHeight: 52)
             .apCard()
-            if how == "cash" {
+            if let line = countsLine {
+                // G2-BMarkPaid S-06uc: "Pizza Nova counts as $80.00 for you from now."
+                Text(line).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    .multilineTextAlignment(.center).frame(maxWidth: .infinity)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if how == "cash" && overBy < 0.005 {
                 // S-06rc (REFRESH-03), G2-CashRemind: one centred line, no card.
                 Text("Deposit it later? Pearl won’t count it twice.")
                     .font(Nacre.footnote).foregroundColor(Pearl.muted)
@@ -2016,20 +2040,32 @@ struct MarkPaidSheet: View {
             }
             if let error = error { CautionBanner(text: error) }
         } footer: {
+            // G2-BMarkPaid: Mark … paid back (or Next), then Cancel.
             PearlSheetButtons(primary: overBy >= 0.005 ? "Next"
                                        : "Mark \(Format.amount(typed ?? (unsure ? 0 : person.owes))) paid back",
-                              busy: busy, busyLabel: "Saving…") {
-                if overBy >= 0.005 {
-                    pieces = []
-                    extraAmount = ""
-                    error = nil
-                    extraPage = true
-                } else {
-                    Task { await primary() }
-                }
-            }
+                              busy: busy, busyLabel: "Saving…", secondary: "Cancel",
+                              onPrimary: handPrimary, onSecondary: { dismiss() })
         }
         .task { await loadApps() }
+    }
+
+    private func handPrimary() {
+        if overBy >= 0.005 {
+            pieces = []
+            extraAmount = ""
+            error = nil
+            extraPage = true
+        } else {
+            Task { await primary() }
+        }
+    }
+
+    /// S-06uc, on Not sure yet: what the purchase counts as for her once
+    /// this comes off. Nothing typed yet, or more than it can take: no line.
+    private var countsLine: String? {
+        guard unsure, let paid = typed, paid >= 0.005, overBy < 0.005, let s = t.splitting else { return nil }
+        let after = max((s.still ?? s.you) - paid, 0)
+        return "\(t.merchant) counts as \(Format.amount(after)) for you from now."
     }
 
     /// S-06rd: the apps she named before, then Other… to type one.

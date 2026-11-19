@@ -194,7 +194,7 @@ class TestUnlinkSheetWords:
         s = self.link(client, i["LOBLAWS"], "Sam")
         assert s["heading"] == "Unlink Sam’s e-Transfer?" and s["overline"] == "UNLINK"
         assert s["card"]["label"].startswith("e-Transfer from Sam · ") and s["card"]["amount"] == 30.0
-        assert (s["confirm"], s["keep"], s["note"]) == ("Unlink $30.00", "Keep linked", None)
+        assert (s["confirm"], s["keep"], s["note"]) == ("Unlink", "Keep linked", None)
 
     def test_shared_e_transfer(self, client):
         i = loblaws(client, tx("PIZZA NOVA", 60.0, "Dining", when=day(2)),
@@ -205,8 +205,9 @@ class TestUnlinkSheetWords:
         s = self.link(client, i["LOBLAWS"], "Jo")
         # REFRESH-03 (S-34sr): the title is the question; the footnote is gone
         # (the app reads it as a VoiceOver hint on the payment row).
-        assert s["heading"] == "Unlink only LOBLAWS’ $30.00?"
-        assert s["line"] == "Jo will owe you $30.00 again. The $30.00 goes back to Needs a look."
+        # G2-AUnlink (round 3): "Unlink Jo’s $30.00?" and what stays.
+        assert s["heading"] == "Unlink Jo’s $30.00?"
+        assert s["line"] == "Only LOBLAWS’ $30.00 comes off. PIZZA NOVA stays paid back, and Jo owes you $30.00 again."
         assert s["card"]["amount"] == 60.0 and s["confirm"] == "Unlink $30.00"
         assert s["note"] is None
 
@@ -216,8 +217,11 @@ class TestUnlinkSheetWords:
         client.post(f"/api/transactions/{i['LOBLAWS']}/split/cash",
                     json={"name": "Priya", "amount": 30, "day": day(3), "via": "app", "app": "PayPal"})
         cash, app = self.link(client, i["LOBLAWS"], "Sam"), self.link(client, i["LOBLAWS"], "Priya")
-        assert cash["heading"] == "Unlink Sam’s cash?" and cash["card"]["label"].startswith("Cash · ")
-        assert app["heading"] == "Unlink Priya’s PayPal payment?" and app["card"]["label"].startswith("PayPal · ")
+        # G2-AUnlink S-34kr3: "Forget the cash?" · Forget it · Keep it.
+        assert cash["heading"] == "Forget the cash?" and cash["card"]["label"].startswith("Cash · ")
+        assert (cash["confirm"], cash["keep"]) == ("Forget it", "Keep it")
+        assert cash["line"] == "Sam owes you $30.00 again on LOBLAWS."
+        assert app["heading"] == "Forget the PayPal payment?" and app["card"]["label"].startswith("PayPal · ")
 
     def test_refund(self, client):
         i = add(client, tx("LOBLAWS", 120.0, "Groceries", when=day(1)),
@@ -225,8 +229,16 @@ class TestUnlinkSheetWords:
         client.post(f"/api/transactions/{i['LOBLAWS REFUND']}/mark", json={"case": "refund", "charge": i["LOBLAWS"]})
         s = client.get(f"/api/transactions/{i['LOBLAWS']}").get_json()["refunded_by"][0]["link"]["sheet"]
         assert (s["heading"], s["overline"], s["confirm"], s["keep"]) == (
-            "Unlink refund?", "REFUND", "Unlink refund", "Keep it")
+            "Unlink the refund?", "REFUND", "Unlink refund", "Keep linked")
         assert s["card"]["label"].startswith("Loblaws refund · ")
+
+    def test_full_refund(self, client):
+        # G2-AUnlink S-34kr8: "Costco counts as $64.97 again."
+        i = add(client, tx("COSTCO", 64.97, "Groceries", when=day(1)),
+                tx("COSTCO REFUND", -64.97, "Groceries", when=day(7), merchant="Costco"))
+        client.post(f"/api/transactions/{i['COSTCO REFUND']}/mark", json={"case": "refund", "charge": i["COSTCO"]})
+        s = client.get(f"/api/transactions/{i['COSTCO']}").get_json()["refunded_by"][0]["link"]["sheet"]
+        assert s["line"] == "COSTCO counts as $64.97 again. The refund goes back to Needs a look."
 
     def test_made_the_split(self, client):
         i = add(client, tx("SUSHI", 90.0, "Dining", when=day(1)),
@@ -235,7 +247,7 @@ class TestUnlinkSheetWords:
                     json={"case": "payback", "charge": i["SUSHI"], "person": "Priya"})
         s = self.link(client, i["SUSHI"], "Priya")
         assert s["heading"] == "Unlink Priya’s e-Transfer?" and s["confirm"] == "Unlink and remove"
-        assert s["line"] == "Priya comes off the split too. The e-Transfer goes back to Needs a look."
+        assert s["line"] == "Priya comes off the split too. The $30.00 goes back to Needs a look."
 
 
 class TestSwiftWiring:
@@ -415,7 +427,9 @@ class TestLessWords:
         # G2b-Account (rethought, 2026-11-18): AM-08r1's card says it.
         "ios/Pearl/Views/Profile/JointMergeViews.swift": ['"Only you see their names."', '"Not joint any more"'],
         "ios/Pearl/Info.plist": ["To pick people faster. Pearl keeps only the name."],
-        "finance/unlink.py": ['"Unlink and remove"', 'comes off the split too."', "The cash is forgotten",
+        "finance/unlink.py": ['"Unlink and remove"', 'comes off the split too."', '"Forget it"',
+                              'counts as {_money(amount)} again. The refund goes back to Needs a look.',
+                              'comes off. {_stay(others)}, and {then}',
                               'Part of {_money(whole)} · also paid back', 'waits to be reimbursed again.'],
         "finance/api.py": ['toast="Split removed"', 'toast="Split closed"', 'toast="Split reopened"',
                            '"None of it is yours to split."', "removed\""],
@@ -490,6 +504,6 @@ class TestLessWords:
         i = loblaws(client, tx("E-TRANSFER FROM SAM", -30.0, when=day(3), merchant="Sam"))
         client.post(f"/api/transactions/{i['LOBLAWS']}/paybacks/{i['E-TRANSFER FROM SAM']}", json={"person": "Sam"})
         s = people(client, i["LOBLAWS"])["Sam"]["links"][0]["sheet"]
-        assert s["line"] == "Sam will owe you $30.00 again. The e-Transfer goes back to Needs a look."
+        assert s["line"] == "Sam owes you $30.00 again on LOBLAWS. The $30.00 goes back to Needs a look."
         r = client.post(f"/api/transactions/{i['LOBLAWS']}/split/let-go", json={"name": "Priya"}).get_json()
         assert r["toast"] == "Let go · $30.00"

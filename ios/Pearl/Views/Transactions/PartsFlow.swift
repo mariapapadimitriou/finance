@@ -136,6 +136,8 @@ struct PartsSheet: View {
     @State private var found: [Owing] = []
     /// T-09r: Another purchase was tapped, so the whole list shows.
     @State private var otherRefund = false
+    /// G2-PB30-r: "Not here? Search other purchases" was tapped.
+    @State private var searching = false
     /// S-11 v2 "How much of it?": all of what's left unless she types less.
     @State private var partAmount = ""
     /// S-11 v2 Off a category: the category list, for this amount.
@@ -996,21 +998,35 @@ struct PartsSheet: View {
         ticks = Set(best.map(\.id) + (must.map { [$0.id] } ?? []))
     }
 
-    /// PB-30: search, LIKELY · SAM, BEFORE NOV 14, the shares as Choice
-    /// (Checkbox) rows, then the running total against the deposit.
+    /// G2-PB30-r (rethought, approved 2026-11-19): LIKELY first with the one
+    /// button; search and OTHER PURCHASES only after "Not here? Search other
+    /// purchases". With nothing likely, or on TP-03, search shows at once.
+    private var searchOpen: Bool {
+        searching || likely.isEmpty || joint != nil || !unsplitPaid.isEmpty
+    }
+
+    /// PB-30: LIKELY, the shares as Choice (Checkbox) rows, then the running
+    /// total against the deposit; search behind its link (G2-PB30-r).
     private var whoseList: some View {
         let typed = query.trimmingCharacters(in: .whitespaces)
         let rows = typed.isEmpty ? likely
             : theirShares.filter { $0.merchant.localizedCaseInsensitiveContains(typed) }.sorted { $0.date > $1.date }
         let first = firstName(sender ?? who)
+        let open = searchOpen
+        let others = open ? otherRows : []
+        // G2-PB30-r: "· with Pai Northern Thai" for ticks the search hides.
+        let hidden = tickedShares.filter { o in !rows.contains { $0.id == o.id } }.map(\.merchant)
         return VStack(alignment: .leading, spacing: 8) {
-            PearlField(placeholder: "Search purchases", text: $query, kind: .search)
-                .autocorrectionDisabled().textInputAutocapitalization(.never)
+            if open {
+                PearlField(placeholder: "Search purchases", text: $query, kind: .search,
+                           autofocus: searching && typed.isEmpty)
+                    .autocorrectionDisabled().textInputAutocapitalization(.never)
+            }
             if rows.isEmpty && typed.isEmpty, forPerson != nil, joint != nil {
                 // TP-03 for an owner who owes her nothing: who it is, and CHANGE.
                 jointLabel(first)
             }
-            if rows.isEmpty && otherRows.isEmpty {
+            if rows.isEmpty && others.isEmpty {
                 // G2-APaidBackMore PB-12: the calm empty state.
                 EmptyStateBlock(title: "No purchases match", line: "Search for the purchase, or try another name.",
                                 action: nil) {}
@@ -1018,7 +1034,9 @@ struct PartsSheet: View {
                 if typed.isEmpty, joint != nil {
                     jointLabel(first)
                 } else if typed.isEmpty {
-                    label("Likely · \(first)" + (likelyBefore ? ", before \(Format.short(deposit.date))" : ""))
+                    // G2-PB30-r: "LIKELY", and VoiceOver hears whose and when.
+                    label("Likely")
+                        .accessibilityLabel("Likely, \(first)" + (likelyBefore ? ", before \(Format.short(deposit.date))" : ""))
                 } else {
                     label("Results for “\(typed)”")
                 }
@@ -1029,19 +1047,27 @@ struct PartsSheet: View {
                     }
                 }
             }
-            if !otherRows.isEmpty {
+            if !others.isEmpty {
                 label("Other purchases")
                 APCard {
-                    ForEach(Array(otherRows.enumerated()), id: \.element.id) { i, u in
+                    ForEach(Array(others.enumerated()), id: \.element.id) { i, u in
                         if i > 0 { APSeparator(afterFace: false).padding(.leading, 36) }
                         unsplitRow(u)
                     }
                 }
             }
-            totalLine
+            total(with: typed.isEmpty ? [] : hidden)
+            if !open {
+                // G2-PB30-r: the way to everything else, one quiet link.
+                Button("Not here? Search other purchases") { searching = true }
+                    .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+                    .foregroundColor(Pearl.link).buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .accessibilityIdentifier("pb30-search-other")
+            }
             if let j = joint {
-                // TP-03: what happens to the pair.
-                Text("It stops being a transfer: the \(Format.amount(deposit.amount)) out of \(j.account) counts as \(possessive(first)) money, not yours.")
+                // G2b-JointIn2 TP-03: what happens to the pair, in one line.
+                Text("The \(Format.amount(deposit.amount)) out of \(j.account) counts as \(possessive(first)) money, not yours.")
                     .font(Nacre.footnote).foregroundColor(Pearl.muted)
                     .frame(maxWidth: .infinity).multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1049,25 +1075,24 @@ struct PartsSheet: View {
         }
     }
 
-    /// TP-03: "MOM · FROM YOUR JOINT ACCOUNT · CHANGE".
+    /// G2b-JointIn2 TP-03: "MOM · FROM YOUR JOINT ACCOUNT" with Change on
+    /// the right, as every A+ section label with an action.
     private func jointLabel(_ first: String) -> some View {
-        HStack(spacing: 0) {
-            Text("\(first) · from your joint account · ".uppercased())
-                .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
-            Button("CHANGE") { jointWho = true }
-                .font(Nacre.caption2.weight(.semibold)).tracking(0.4).foregroundColor(Pearl.action)
-                .frame(minHeight: 44).buttonStyle(.plain)
-                .accessibilityLabel("Change who paid you back")
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 16)
+        APSectionLabel(text: "\(first) · from your joint account", action: "Change") { jointWho = true }
+            .accessibilityElement(children: .contain)
+            .accessibilityHint("Change who paid you back")
+            .padding(.top, 8)
     }
 
     /// "$86.65 of $86.65 ✓" (money in; TEXT-01), "… · $13.35 left over"
     /// (muted), "… · $10.95 more than Sam sent" (PB-30o) and "… · $19.47
     /// over" (MP-04) muted too: an allowed over-amount, and red means only
     /// that something is wrong (approved UI audit tweak).
-    private var totalLine: some View {
+    private var totalLine: some View { total(with: []) }
+
+    /// `with`: ticked shares a search hides, "· with Pai Northern Thai"
+    /// after the total (G2-PB30-r).
+    private func total(with hidden: [String]) -> some View {
         let tickedCents = self.tickedCents + unsplitCents
         let ticked = Double(tickedCents) / 100
         let first = firstName(sender ?? who)
@@ -1077,7 +1102,8 @@ struct PartsSheet: View {
             // MP-04: "$119.47 of $100.00 · $19.47 over".
             : manyKind != nil ? ("\(head) · \(Format.amount(Double(tickedCents - leftCents) / 100)) over", Pearl.muted)
             : ("\(head) · \(Format.amount(Double(tickedCents - leftCents) / 100)) more than \(first) sent", Pearl.muted)
-        return Text(words).font(.custom("Figtree-SemiBold", size: 15, relativeTo: .subheadline)).monospacedDigit()
+        let with = hidden.isEmpty ? "" : " · with \(Format.andList(hidden))"
+        return Text(words + with).font(.custom("Figtree-SemiBold", size: 15, relativeTo: .subheadline)).monospacedDigit()
             .foregroundColor(tone)
             .frame(maxWidth: .infinity).multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)

@@ -18,10 +18,19 @@ from datetime import date
 from flask import jsonify, request
 
 from . import income_bills as ib
-from .api import _today_iso, bp, store
+from . import api as _api
+from .api import bp, store
 
 _ROW_FIELDS = ("key", "name", "amount", "full", "share", "varies", "cadence", "next", "day", "category",
                "counts", "ticked", "source", "edited", "question", "recipient", "rent", "shared")
+
+
+def _today_iso() -> str:
+    """Pearl's one clock, read when asked: a name imported from `api`
+    kept the clock as it was at import, so a frozen day (tests, the
+    logic review's 2026-11-07) never reached these endpoints and Income
+    and bills used the real date instead."""
+    return _api._today_iso()
 
 
 def _payload(st) -> dict:
