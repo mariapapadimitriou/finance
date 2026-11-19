@@ -87,10 +87,14 @@ struct PeoplePicker: View {
 
     private var splitBody: some View {
         APSheet(dismissDisabled: busy) {
-            APSheetHeader(overline: overline, title: title,
-                             // One name (PP-01's Someone new) has no "most" to say.
-                             sub: full && (limit ?? 0) > 1 ? "Six is the most." : sub,
-                             close: onClose)
+            // G2-AAddPeople S-17 v2 (rethought, approved 2026-11-18): the title,
+            // "Tick as many as you like", FROM YOUR SPLITS and CONTACTS with
+            // the tick on the right; Contacts off is one quiet line; the typed
+            // name is the one row to tick.
+            APSheetHeader(heading: title,
+                          // One name (PP-01's Someone new) has no "most" to say.
+                          line: full && (limit ?? 0) > 1 ? "Six is the most." : "Tick as many as you like",
+                          close: onClose)
                 .disabled(busy)
             searchField
             if refusal != nil, let who = refused.first(where: { samePerson($0, q) }) {
@@ -113,22 +117,23 @@ struct PeoplePicker: View {
             if let recent = recent {
                 let mine = recent.filter { r in matches(r.name) && !isRefused(r.name) }
                 if !mine.isEmpty {
-                    APSheetLabel(text: "People you’ve split with")
+                    APSheetLabel(text: "From your splits")
                     APOptionCard {
                         ForEach(Array(mine.enumerated()), id: \.element.id) { i, r in
                             if i > 0 { APSeparator() }
-                            row(r.name, sub: "Split \(r.merchant) · \(Format.short(r.date))")
+                            row(r.name, sub: "Last split \(Format.short(r.date))")
                         }
                     }
                 }
                 contactsSection(recent)
             } else if loadFailed {
-                CautionBanner(text: "Couldn’t load the people you’ve split with. You can still type a name.")
+                APErrorLine(text: "Couldn’t load the people you’ve split with. You can still type a name.")
             } else {
                 skeleton
             }
             typeRow
-            if let failed = failed { CautionBanner(text: failed) }
+            if contactsState == .off { contactsOffLine }
+            if let failed = failed { APErrorLine(text: failed) }
         } footer: {
             PearlSheetButtons(primary: failed != nil ? "Try again" : addLabel, busy: busy, busyLabel: "Adding…") {
                 Task { await add() }
@@ -292,54 +297,69 @@ struct PeoplePicker: View {
     @ViewBuilder private func contactsSection(_ recent: [RecentPerson]) -> some View {
         switch contactsState {
         case .asking:
-            APSheetLabel(text: "From your contacts")
+            APSheetLabel(text: "Contacts")
             skeleton
         case .off:
-            APSheetLabel(text: "From your contacts")
-            // AM-08p2: one element; Turn on in Settings is its action.
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top, spacing: 12) {
-                    APIcon(symbol: "info.circle")
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Contacts are off for Pearl").font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                        Text("Pick from your splits, or type a name.")
-                            .font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-                Button("Turn on in Settings", action: openSettings)
-                    .font(Pearl.text(.callout, .semibold)).foregroundColor(Pearl.action)
-                    .frame(minHeight: 44).padding(.leading, 52).buttonStyle(.plain)
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .apCard()
-            .accessibilityElement(children: .combine)
-            .accessibilityAction(named: "Turn on in Settings", openSettings)
+            // S-17 v2: Contacts off is the one quiet line under the list.
+            EmptyView()
         case .on:
             // Anyone already in the first list shows once (same name match).
             let shown = contacts.filter { c in matches(c) && !isRefused(c) && !recent.contains { samePerson($0.name, c) } }
             if !shown.isEmpty {
-                APSheetLabel(text: "From your contacts")
+                APSheetLabel(text: "Contacts")
                 APOptionCard {
                     ForEach(Array(shown.prefix(60).enumerated()), id: \.element) { i, name in
                         if i > 0 { APSeparator() }
-                        row(name, sub: "In your contacts")
+                        row(name, sub: "Contact")
                     }
                 }
             }
         }
     }
 
-    /// AM-08p3: "Add “Maya” as a new name", or Type a name, always last.
-    private var typeRow: some View {
-        let typed = !q.isEmpty && !picked.contains(q) && !already.contains { samePerson($0, q) } && !isRefused(q)
-        return APOptionCard {
-            APOptionRow(symbol: "person", title: typed ? "Add “\(q)” as a new name" : "Type a name",
-                           sub: typed ? "Only you can see it" : "For someone who isn’t here") {
-                if typed { pick(q); query = "" } else { searching = true }
+    /// "Contacts are off for Pearl. Turn on" (Settings › Pearl).
+    private var contactsOffLine: some View {
+        HStack(spacing: 4) {
+            Text("Contacts are off for Pearl.").foregroundColor(Pearl.muted)
+            Button("Turn on", action: openSettings).foregroundColor(Pearl.link).buttonStyle(.plain)
+            Spacer(minLength: 0)
+        }
+        .font(Nacre.footnote)
+        .frame(minHeight: 32)
+        .padding(.horizontal, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityAction(named: "Turn on in Settings", openSettings)
+    }
+
+    /// S-17 v2: while she types a name nobody matches, it is the one row to
+    /// tick ("Maya · New name"), and Add above the keyboard adds it.
+    @ViewBuilder private var typeRow: some View {
+        let typed = !q.isEmpty && !already.contains { samePerson($0, q) } && !isRefused(q)
+            && !(recent ?? []).contains { $0.name.caseInsensitiveCompare(q) == .orderedSame }
+            && !contacts.contains { $0.caseInsensitiveCompare(q) == .orderedSame }
+        if typed {
+            let on = picked.contains(q)
+            APOptionCard {
+                Button { pick(q) } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "plus").font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(Pearl.action)
+                            .frame(width: 40, height: 40).background(Circle().fill(APlus.actionWash))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(q).font(Nacre.body).foregroundColor(Pearl.ink)
+                            Text("New name").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                        }
+                        Spacer(minLength: 8)
+                        tick(on)
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 8).frame(minHeight: 60).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!on && full)
+                .accessibilityLabel("\(q), new name")
+                .accessibilityValue(on ? "selected" : "not selected")
+                .accessibilityIdentifier("picker-typed-name")
             }
-            .disabled(typed && full)
         }
     }
 
@@ -368,11 +388,11 @@ struct PeoplePicker: View {
         let on = isAlready || picked.contains(name)
         let dim = isAlready || (!on && full)
         return Button { pick(name) } label: {
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
                 APFace(name: name, size: 40)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(name).font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                    Text(isAlready ? "Already shared" : sub).font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
+                    Text(name).font(Nacre.body).foregroundColor(Pearl.ink)
+                    Text(isAlready ? "Already shared" : sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
@@ -389,17 +409,11 @@ struct PeoplePicker: View {
         .accessibilityAddTraits(.isButton)
     }
 
+    /// S-17 v2: the A+ tick box on the right.
     private func tick(_ on: Bool) -> some View {
-        ZStack {
-            Circle().strokeBorder(on ? Pearl.action : Pearl.borderStrong, lineWidth: 1.5)
-            if on {
-                Circle().fill(Pearl.action)
-                Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundColor(Pearl.onAction)
-            }
-        }
-        .frame(width: 24, height: 24)
-        .frame(width: 44, height: 44)
-        .accessibilityHidden(true)
+        APTickBox(on: on)
+            .frame(width: 44, height: 44)
+            .accessibilityHidden(true)
     }
 
     private func pick(_ name: String) {
@@ -1262,60 +1276,59 @@ struct ThatsEverythingSheet: View {
 
     var body: some View {
         let paid = split.people.filter { $0.paid >= 0.005 }
-        let none = split.people.filter { $0.paid < 0.005 }
         APSheet(dismissDisabled: busy) {
-            APSheetHeader(face: t.merchant, overline: "That’s everything · \(t.merchant)", title: "That’s everything?",
-                             close: onClose)
+            // G2-BSettle2 S-46a3 / G2-BRemove S-46as, S-46ax: the question, one
+            // sentence, then each person (and You) under WHAT CHANGES.
+            APSheetHeader(heading: "That’s everything?", close: onClose)
                 .disabled(busy)
-            Text(lead(paid)).font(Pearl.text(.headline)).foregroundColor(Pearl.ink)
+            Text(lead(paid)).font(Nacre.body).foregroundColor(Pearl.ink)
                 .fixedSize(horizontal: false, vertical: true)
             APSheetLabel(text: "What changes")
             APOptionCard {
+                ForEach(Array(split.people.enumerated()), id: \.element.id) { i, p in
+                    if i > 0 { APSeparator() }
+                    // S-46a v2 (TEST-11): someone who didn't pay has nothing on the right.
+                    row(p.name, sub(p, everyone: paid.count == split.people.count),
+                        p.paid >= 0.005 ? Format.amount(p.paid) : nil, Pearl.moneyIn)
+                }
                 if split.withMe {
-                    // S-46a3 (TEST-18): your own line, and who paid back.
+                    APSeparator()
+                    // S-46a3 (TEST-18): your own line.
                     row("You", "Your share · what’s left", Format.amount(still), Pearl.ink)
-                    if !paid.isEmpty {
-                        APSeparator()
-                        row(Format.andList(paid.map(\.name)), "Paid back \(Format.amount(paid.reduce(0) { $0 + $1.paid }))",
-                            "", Pearl.muted)
-                    }
-                    APSeparator()
                 }
-                row(t.label, "Stays your spending", Format.amount(still), Pearl.ink)
-                ForEach(none) { p in
-                    APSeparator()
-                    // S-46a v2 (TEST-11): nothing on the right; a status isn't an action.
-                    row(p.name, "Won’t show as owing", nil, Pearl.muted)
-                }
-                APSeparator()
-                row("Allowance", "Already counts the \(Format.amount(still))", "No change", Pearl.muted)
             }
-            if let failed = failed { CautionBanner(text: failed) }
+            if let failed = failed { APErrorLine(text: failed) }
         } footer: {
-            PearlSheetButtons(primary: failed != nil ? "Try again" : "That’s everything", busy: busy, busyLabel: "Closing…",
+            PearlSheetButtons(primary: failed != nil ? "Try again" : "Close the split", busy: busy, busyLabel: "Closing…",
                               secondary: "Keep it open", onPrimary: { Task { await close() } }, onSecondary: onClose)
         }
     }
 
-    /// S-46a (REFRESH-03): "$80.00 stays yours. Nobody owes for Pizza Nova."
+    /// "Everyone has paid. The $17.00 stays yours and nobody owes you." or
+    /// "The split closes. The $80.00 stays yours and nobody owes you."
     private func lead(_ paid: [Transaction.Splitting.Person]) -> String {
         // S-04u8 / S-46a3 (TEST-18): everyone has paid.
-        if !split.people.isEmpty && paid.count == split.people.count {
-            return "Everyone has paid. \(Format.amount(still)) stays yours."
-        }
-        return "\(Format.amount(still)) stays yours. Nobody owes for \(t.merchant)."
+        let first = !split.people.isEmpty && paid.count == split.people.count ? "Everyone has paid." : "The split closes."
+        return "\(first) The \(Format.amount(still)) stays yours and nobody owes you."
+    }
+
+    /// "Keeps what they paid", "Paid you $20.00 · keeps it", "Didn’t pay · that’s fine".
+    private func sub(_ p: Transaction.Splitting.Person, everyone: Bool) -> String {
+        if p.paid < 0.005 { return "Didn’t pay · that’s fine" }
+        return everyone ? "Keeps what they paid" : "Paid you \(Format.amount(p.paid)) · keeps it"
     }
 
     private func row(_ title: String, _ sub: String, _ value: String?, _ tone: Color) -> some View {
         HStack(spacing: 12) {
+            APFace(name: title == "You" ? "Me" : title, size: 36)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                Text(sub).font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
+                Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
+                Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
             }
             .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
             if let value = value {
-                Text(value).font(Pearl.text(.headline, .medium)).monospacedDigit().foregroundColor(tone)
+                Text(value).font(Nacre.headline).monospacedDigit().foregroundColor(tone)
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
@@ -1329,7 +1342,7 @@ struct ThatsEverythingSheet: View {
             try await run()
             failed = nil
         } catch {
-            failed = "Couldn’t close it. Nothing changed. Try again."
+            failed = "Couldn’t close the split. Nothing changed. Try again."
         }
     }
 }

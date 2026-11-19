@@ -32,10 +32,12 @@ struct OwedView: View {
                 if let owed = owed {
                     OwedHeader(owed: owed)
                     OwedSections(owed: owed) { person = $0 }
-                } else if let error = error {
-                    Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).padding(.top, 24)
+                } else if error != nil {
+                    // G2-BOwed S-14ux: Couldn't load who owes you, with Try again.
+                    OwedLoadFailed { Task { await load() } }.padding(.top, 60)
                 } else {
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
+                    // S-14ul: the card's rows as soft placeholders.
+                    OwedSkeleton().padding(.top, 24)
                 }
             }
             .padding(.horizontal, Pearl.gutter).padding(.bottom, 32)
@@ -80,6 +82,48 @@ struct OwedTitle: View {
         Text(title).font(Nacre.largeTitle).foregroundColor(Pearl.ink)
             .padding(.leading, 4).padding(.top, 6)
             .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// S-14ul: three placeholder rows on the card while it loads.
+private struct OwedSkeleton: View {
+    var body: some View {
+        APCard {
+            ForEach(0..<3, id: \.self) { i in
+                if i > 0 { APSeparator() }
+                HStack(spacing: 12) {
+                    Circle().fill(APlus.trackSoft).frame(width: 40, height: 40)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Capsule().fill(APlus.trackSoft).frame(width: 140, height: 10)
+                        Capsule().fill(APlus.trackSoft).frame(width: 90, height: 8)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 16).frame(minHeight: 64)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading")
+    }
+}
+
+/// S-14ux: the warning, "Couldn’t load who owes you", one line, Try again.
+private struct OwedLoadFailed: View {
+    let retry: () -> Void
+
+    var body: some View {
+        VStack(spacing: 6) {
+            APIcon.warn("exclamationmark.triangle")
+            Text("Couldn’t load who owes you").font(Nacre.title2).foregroundColor(Pearl.ink)
+                .multilineTextAlignment(.center).padding(.top, 10)
+            Text("Check your connection and try again.").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                .multilineTextAlignment(.center)
+            Button("Try again", action: retry)
+                .buttonStyle(APSecondaryButtonStyle())
+                .padding(.top, 14)
+                .accessibilityIdentifier("owed-retry")
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 

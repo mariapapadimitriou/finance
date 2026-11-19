@@ -393,9 +393,10 @@ class TestLessWords:
         "ios/Pearl/Views/Transactions/JointSplitViews.swift": [
             # G2-BSettle (S-45a, round 2): "Settle up" and one line under the ways.
             'APSheetHeader(heading: "Settle up"', '"Your Allowance doesn’t change now."',
-            'stays yours. Nobody owes for \\(t.merchant).',
+            'stays yours and nobody owes you.', '"Didn’t pay · that’s fine"',
             '"Typed amounts stay. Even, % and shares update."', '"Six is the most."',
-            '"Pick from your splits, or type a name."', 'part is already off.'],
+            # G2-AAddPeople S-17 v2: Contacts off is one quiet line.
+            '"Contacts are off for Pearl."', '"Tick as many as you like"', 'part is already off.'],
         "ios/Pearl/Views/Transactions/TransactionDetailView.swift": [
             'showSplit("Copied"', '"None of it is yours to split."', 'let title = "\\(p.name) removed"',
             '("Settled up", {', '"Split reopened"'],
