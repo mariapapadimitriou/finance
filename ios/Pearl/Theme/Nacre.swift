@@ -71,9 +71,11 @@ struct NacreBackground: View {
 }
 
 extension View {
-    /// A screen on the A+ ground; its switches are the A+ switch.
+    /// A screen on the A+ ground; its switches are the A+ switch. TEST-38:
+    /// what scrolls under the status bar fades into the ground.
     func nacreScreen() -> some View {
-        background(NacreBackground())
+        scrollEdgeFade()
+            .background(NacreBackground())
             .foregroundColor(Pearl.ink)
             .tint(Pearl.ink)
             .toggleStyle(APToggleStyle())
