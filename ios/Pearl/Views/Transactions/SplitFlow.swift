@@ -255,7 +255,7 @@ struct SplitSheet: View {
             }
         }
         .sheet(isPresented: $choosingMethod) {
-            SplitMethodSheet(modes: modes, chosen: mode, onPick: { m in mode = m; choosingMethod = false },
+            SplitMethodSheet(modes: modes, chosen: mode, onPick: { m in switchMode(to: m); choosingMethod = false },
                              onClose: { choosingMethod = false })
         }
         .sheet(isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } })) {
@@ -510,22 +510,40 @@ struct SplitSheet: View {
             .buttonStyle(.plain)
         } else {
             // REDESIGN-10: the evenly sized five-part switch, one row at 375 pt.
-            APSegments(options: modes, selection: $mode,
+            APSegments(options: modes, selection: Binding(get: { mode }, set: { switchMode(to: $0) }),
                        spoken: { $0 == "Not sure" ? "Not sure yet, split method" : $0 })
         }
+    }
+
+    /// TEST-36: a new method starts from the split as it stands (worked out
+    /// on the method she's leaving), not from nothing.
+    private func switchMode(to m: String) {
+        guard m != mode else { return }
+        let carried = carried(to: m)
+        mode = m
+        values = carried
+        answers = [:]
+        // S-03u: the explainer is read once after the method changes.
+        if m == "unknown" {
+            UIAccessibility.post(notification: .announcement, argument: unsureWords)
+        }
+    }
+
+    /// Each row's share now, in cents; her row keeps whatever nobody has
+    /// (as Save would). Nothing to carry from Not sure, or with a locked
+    /// payer on Settle up, or when the split doesn't add up.
+    private func carried(to m: String) -> [String: String] {
+        guard mode != "unknown", !anyLocked else { return [:] }
+        let theirs = people.map { (key: $0, cents: shareCents($0)) }
+        let left = totalCents - theirs.map(\.cents).reduce(0, +)
+        guard withMe ? left >= 0 : left == 0 else { return [:] }
+        let all = (withMe ? [(key: Self.me, cents: left)] : []) + theirs
+        return SplitCarry.values(all, to: m, me: withMe ? Self.me : nil)
     }
 
     @ViewBuilder private var how: some View {
         VStack(alignment: .leading, spacing: 14) {
             methodControl
-                .onChange(of: mode) { m in
-                    values = [:]
-                    answers = [:]
-                    // S-03u: the explainer is read once after the method changes.
-                    if m == "unknown" {
-                        UIAccessibility.post(notification: .announcement, argument: unsureWords)
-                    }
-                }
             if mode == "unknown" { unsureHow } else { amountsHow }
             if let onRemoveSplit = onRemoveSplit, t.splitting != nil, !settling, focus == nil {
                 // S-41j: Edit split › Remove the split.
