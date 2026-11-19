@@ -291,7 +291,7 @@ struct QuickSortView: View {
     /// TR-01 (1327:4974): what Pearl saw, as a question: "A flight, a
     /// hotel, 5 days in Montréal. A trip?" (TEXT-01).
     @ViewBuilder private func tripLines(_ trip: TripAsk) -> some View {
-        Text(trip.story + " A trip?")
+        Text(ChatWords.tripAway(trip) + " " + ChatWords.tripQuestion(trip))
             .font(Nacre.footnote).foregroundColor(Pearl.ink)
             .multilineTextAlignment(.center).padding(.horizontal, 32)
             .fixedSize(horizontal: false, vertical: true)
@@ -523,10 +523,10 @@ struct QuickSortView: View {
     }
 
     /// TR-01 (1327:4974): one card for the whole trip: the place, what it
-    /// came to (per currency, TR-02m), its dates and count, "A trip?".
+    /// came to (per currency, TR-02m), its dates and count, "Were you in Montréal?" (G7-TripAsk).
     private func tripCard(_ t: TripAsk) -> some View {
         VStack(spacing: 8) {
-            Text("A TRIP?")
+            Text("A TRIP")
                 .font(.custom("Figtree-SemiBold", size: 12, relativeTo: .caption)).tracking(1.2)
                 .foregroundColor(Pearl.action)
             CFRing(name: t.place ?? "Trip", size: 56,
@@ -540,10 +540,14 @@ struct QuickSortView: View {
                 .foregroundColor(Pearl.ink).lineLimit(1).minimumScaleFactor(0.5)
             Text(t.line).font(Nacre.footnote).foregroundColor(Pearl.muted)
                 .multilineTextAlignment(.center).lineLimit(2)
-            Text("A trip?")
+            // G7-TripAsk (approved 2026-11-18): "Were you in Montréal?",
+            // never "A trip?", and what Pearl saw under it.
+            Text(ChatWords.tripQuestion(t))
                 .font(Nacre.title).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.7)
                 .padding(.top, 8)
+            Text(ChatWords.tripAway(t)).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                .multilineTextAlignment(.center)
         }
         .modifier(CardFace())
         .overlay(alignment: .topLeading) { stamp(guessing: true) }

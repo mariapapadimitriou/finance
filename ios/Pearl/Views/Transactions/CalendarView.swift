@@ -266,7 +266,8 @@ struct CalendarCard: View {
             if let error = error {
                 Text(error).font(Nacre.footnote).foregroundColor(Pearl.danger)
             }
-            tripsCard
+            // G7-TripCal (chat and trips engBOT): the A+ Trips card.
+            if let card = data?.tripCard { TripsCard(trips: card.trips) }
             comingUp
             shownDayList
             sortedTogether
@@ -489,49 +490,6 @@ struct CalendarCard: View {
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-    }
-
-    /// TR-17 (`1362:8403` / `1362:8698`): one "Trips" card under the grid
-    /// and legend, always there once the month has loaded. It replaced
-    /// TR-10's "Trips this month". Up to three rows, this month's trips
-    /// first, then the most recent others, each "Mar 4–9   Trip to Montréal
-    /// $1,284.60" opening its page (TR-02); then "See all trips" (TR-18).
-    /// TR-17e (`1362:8993` / `1362:9337`): with no trips, one line on how
-    /// trips start, and no "See all trips".
-    @ViewBuilder private var tripsCard: some View {
-        if let card = data?.tripCard {
-            APCard {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Trips").font(Nacre.title2).foregroundColor(Pearl.ink)
-                        .accessibilityAddTraits(.isHeader)
-                        .padding(.bottom, 8)
-                    if card.trips.isEmpty {
-                        Text("No trips yet. Pearl asks when it spots one, or pick transactions in Cash flow and tap Make a trip.")
-                            .font(Nacre.textButton).foregroundColor(Pearl.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.bottom, 8)
-                    } else {
-                        ForEach(Array(card.trips.enumerated()), id: \.element.id) { i, trip in
-                            if i > 0 { Rectangle().fill(Pearl.border).frame(height: 1) }
-                            NavigationLink { TripPage(id: trip.id) } label: {
-                                TripCardRow(name: trip.name, start: trip.start, end: trip.end, totals: trip.totals)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityHint("Opens the trip")
-                        }
-                        NavigationLink { AllTripsPage() } label: {
-                            Text("See all trips").font(Nacre.textButton).foregroundColor(Pearl.link)
-                                .frame(minHeight: 44, alignment: .leading)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(.isButton)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 8)
-            }
-        }
     }
 
     /// TR-10b's day row "Trip   Trip to Lisbon · Oct 29 – Nov 2   $2,140.00".
