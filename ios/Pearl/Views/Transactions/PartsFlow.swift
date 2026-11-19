@@ -405,7 +405,7 @@ struct PartsSheet: View {
 
     private var sheet: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: title, short: shortTitle) {
+            APSheetTitleBar(title: title, short: shortTitle) {
                 // S-11k: Close goes back to S-11 v2 with nothing added.
                 if step == .otherKind { otherAmount = nil; step = .kind; return }
                 // OTHER PURCHASES: Close on its amount leaves it unticked, back on PB-30.
@@ -414,18 +414,19 @@ struct PartsSheet: View {
                 if heldSplit != nil { leaving = true } else { dismiss() }
             }
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 14) {
                     // S-11xm (THL-301): the whole deposit here, "The $30.00" in the title.
                     // PB-12 / PB-13: "$15.00 · Paid back · Sam Lee".
                     // PB-30: "e-Transfer from Sam Lee" over "+$86.65 · Fri, Nov 14" in money-in green.
                     if step == .whose {
                         // MP-01 / MP-02: "+$186.40 · Nov 14".
-                        QuestionHeader(name: deposit.name, amount: "+" + Format.amount(deposit.whole ?? deposit.amount),
+                        APQuestionWho(name: deposit.name, amount: "+" + Format.amount(deposit.whole ?? deposit.amount),
                                        tone: Pearl.moneyIn,
-                                       sub: manyKind == nil ? Format.weekdayDay(deposit.date) : Format.short(deposit.date))
+                                       sub: manyKind == nil ? Format.weekdayDay(deposit.date) : Format.short(deposit.date),
+                                       face: manyKind == nil ? sender : nil)
                     } else {
                         // UI audit: "+" and money-in green, as on every other deposit header.
-                        QuestionHeader(name: deposit.name, amount: "+" + Format.amount(deposit.whole ?? deposit.amount),
+                        APQuestionWho(name: deposit.name, amount: "+" + Format.amount(deposit.whole ?? deposit.amount),
                                        tone: Pearl.moneyIn,
                                        sub: paidBack ? (["Paid back", payer ?? sender].compactMap { $0 }.joined(separator: " · "))
                                            : Format.short(deposit.date))
@@ -441,7 +442,7 @@ struct PartsSheet: View {
             .scrollDismissesKeyboard(.interactively)
             buttons
         }
-        .background(SheetBackground())
+        .background(APSheetSurface())
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         // S-11x: every tile answers at once. Once nothing is left, it saves
@@ -608,9 +609,9 @@ struct PartsSheet: View {
     private var cashList: some View {
         VStack(alignment: .leading, spacing: 8) {
             label("Cash you marked as paid back")
-            GlassCard {
+            APCard {
                 ForEach(Array(cash.enumerated()), id: \.element.id) { i, c in
-                    if i > 0 { RowSeparator(inset: 64) }
+                    if i > 0 { APSeparator() }
                     let use = cashUse[c.id]
                     let partly = use.map { cents($0) < cents(c.amount) } ?? false
                     // S-13 v2: "$250.00 cash · Nov 1" when only part of it went in.
@@ -657,13 +658,8 @@ struct PartsSheet: View {
         VStack(alignment: .leading, spacing: 8) {
             // On top (2026-11-09): the people who owe her, and any other
             // purchase a search away, without scrolling past everyone first.
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundColor(Pearl.muted)
-                TextField("", text: $query, prompt: Text("Search other purchases").foregroundColor(Pearl.muted))
-                    .font(Nacre.body).autocorrectionDisabled().textInputAutocapitalization(.never)
-            }
-            .padding(.horizontal, 14).frame(height: 44)
-            .background(Capsule().fill(Pearl.ink.opacity(0.08)))
+            PearlField(placeholder: "Search other purchases", text: $query, kind: .search)
+                .autocorrectionDisabled().textInputAutocapitalization(.never)
             if asking && query.isEmpty {
                 askList
             } else if step == .owing && !owing.isEmpty && query.isEmpty {
@@ -674,18 +670,18 @@ struct PartsSheet: View {
                     label(theirs.allSatisfy { $0.pending == true } ? "Still pending"
                           : theirs.allSatisfy { $0.unknown == true } ? sender.map { "\($0) is on" } ?? "You split"
                           : sender.map { "\($0) owes you" } ?? "Owes you")
-                    GlassCard {
+                    APCard {
                         ForEach(Array(theirs.enumerated()), id: \.element.id) { i, o in
-                            if i > 0 { RowSeparator() }
+                            if i > 0 { APSeparator(afterFace: false) }
                             owingRow(o, false)
                         }
                     }
                 }
                 if !others.isEmpty {
                     label(theirs.isEmpty ? "Owes you" : "Others who owe you")
-                    GlassCard {
+                    APCard {
                         ForEach(Array(others.enumerated()), id: \.element.id) { i, o in
-                            if i > 0 { RowSeparator() }
+                            if i > 0 { APSeparator(afterFace: false) }
                             owingRow(o, true)
                         }
                     }
@@ -704,9 +700,9 @@ struct PartsSheet: View {
             }
             if !more.isEmpty {
                 if !query.isEmpty { label("Results for “\(query)”") }
-                GlassCard {
+                APCard {
                     ForEach(Array(more.enumerated()), id: \.element.id) { i, o in
-                        if i > 0 { RowSeparator() }
+                        if i > 0 { APSeparator(afterFace: false) }
                         owingRow(o, false)
                     }
                 }
@@ -949,13 +945,8 @@ struct PartsSheet: View {
             : theirShares.filter { $0.merchant.localizedCaseInsensitiveContains(typed) }.sorted { $0.date > $1.date }
         let first = firstName(sender ?? who)
         return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundColor(Pearl.muted)
-                TextField("", text: $query, prompt: Text("Search purchases").foregroundColor(Pearl.muted))
-                    .font(Nacre.body).autocorrectionDisabled().textInputAutocapitalization(.never)
-            }
-            .padding(.horizontal, 14).frame(height: 44)
-            .background(Capsule().fill(Pearl.ink.opacity(0.08)))
+            PearlField(placeholder: "Search purchases", text: $query, kind: .search)
+                .autocorrectionDisabled().textInputAutocapitalization(.never)
             if rows.isEmpty && typed.isEmpty, forPerson != nil, joint != nil {
                 // TP-03 for an owner who owes her nothing: who it is, and CHANGE.
                 jointLabel(first)
@@ -971,18 +962,18 @@ struct PartsSheet: View {
                 } else {
                     label("Results for “\(typed)”")
                 }
-                GlassCard {
+                APCard {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { i, o in
-                        if i > 0 { RowSeparator(inset: 50) }
+                        if i > 0 { APSeparator(afterFace: false).padding(.leading, 36) }
                         tickRow(o)
                     }
                 }
             }
             if !otherRows.isEmpty {
                 label("Other purchases")
-                GlassCard {
+                APCard {
                     ForEach(Array(otherRows.enumerated()), id: \.element.id) { i, u in
-                        if i > 0 { RowSeparator(inset: 50) }
+                        if i > 0 { APSeparator(afterFace: false).padding(.leading, 36) }
                         unsplitRow(u)
                     }
                 }
@@ -1026,7 +1017,8 @@ struct PartsSheet: View {
             // MP-04: "$119.47 of $100.00 · $19.47 over".
             : manyKind != nil ? ("\(head) · \(Format.amount(Double(tickedCents - leftCents) / 100)) over", Pearl.muted)
             : ("\(head) · \(Format.amount(Double(tickedCents - leftCents) / 100)) more than \(first) sent", Pearl.muted)
-        return Text(words).font(Nacre.footnote).foregroundColor(tone)
+        return Text(words).font(.custom("Figtree-SemiBold", size: 15, relativeTo: .subheadline)).monospacedDigit()
+            .foregroundColor(tone)
             .frame(maxWidth: .infinity).multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityLabel(tickedCents == leftCents ? "Ticked \(head), it all adds up" : "Ticked \(words)")
@@ -1042,23 +1034,17 @@ struct PartsSheet: View {
         let over = tickedCents > leftCents
         let part = partPaid?.id == o.id
         let got = Double(allocation[o.id] ?? 0) / 100
-        let sub = part ? "Part: \(Format.amount(got)) of \(Format.amount(o.owes)) · \(first) still owes \(Format.amount(o.owes - got))"
+        // G2-PB30 / G2-HowMuch: "Sam’s share · Nov 12"; "Oct 9 · all of it";
+        // "Part: $35.70 of $60.00", Change and the amount.
+        let sub = part ? "Part: \(Format.amount(got)) of \(Format.amount(o.owes))"
             : over && on ? "\(day) · all of it"
-            : [day, o.ways.map { "split \($0) ways" }].compactMap { $0 }.joined(separator: " · ")
+            : "\(possessive(first)) share · \(day)"
         return HStack(alignment: .center, spacing: 12) {
             Button { toggleTick(o) } label: {
                 HStack(spacing: 12) {
-                    ZStack {
-                        if on {
-                            Circle().fill(Pearl.action)
-                            Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundColor(Pearl.onAction)
-                        } else {
-                            Circle().strokeBorder(Pearl.borderStrong, lineWidth: 1.5)
-                        }
-                    }
-                    .frame(width: 22, height: 22)
+                    APTickBox(on: on)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("\(possessive(first)) share of \(o.merchant) · \(Format.amount(o.owes))")
+                        Text(o.merchant)
                             .font(Nacre.body).foregroundColor(Pearl.ink).fixedSize(horizontal: false, vertical: true)
                         Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                             .fixedSize(horizontal: false, vertical: true)
@@ -1069,16 +1055,20 @@ struct PartsSheet: View {
             }
             .buttonStyle(.plain)
             .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(possessive(first)) share of \(o.merchant), \(Format.amount(o.owes)), \(sub)"
+                                + (part ? ", \(first) still owes \(Format.amount(o.owes - got))" : ""))
             .accessibilityAddTraits(on ? .isSelected : [])
             if part {
                 // PB-30o: Change opens PB-13 for this one.
                 Button("Change") { changePart(o) }
-                    .font(Nacre.subheadline.weight(.semibold)).foregroundColor(Pearl.action)
+                    .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline)).foregroundColor(Pearl.link)
                     .frame(minHeight: 44).buttonStyle(.plain)
                     .accessibilityLabel("Change how much of \(possessive(first)) share of \(o.merchant)")
             }
+            Text(Format.amount(o.owes)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
+                .accessibilityHidden(true)
         }
-        .padding(.horizontal, 16).frame(minHeight: 52).padding(.vertical, 6)
+        .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 64)
     }
 
     private func toggleTick(_ o: Owing) {
@@ -1156,21 +1146,15 @@ struct PartsSheet: View {
         let on = paid != nil
         let name = "\(u.merchant) · " + (paid.map { "\(Format.amount(Double($0) / 100)) of it" } ?? Format.amount(u.amount))
         let day = u.pending == true ? "Pending" : Format.short(u.date)
+        // REDESIGN-09 (G2-PB30): "$26.65 of it · Nov 3" under the name.
+        let line = paid.map { "\(Format.amount(Double($0) / 100)) of it · \(day)" } ?? day
         return HStack(spacing: 12) {
             Button { toggleUnsplit(u) } label: {
                 HStack(spacing: 12) {
-                    ZStack {
-                        if on {
-                            Circle().fill(Pearl.action)
-                            Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundColor(Pearl.onAction)
-                        } else {
-                            Circle().strokeBorder(Pearl.borderStrong, lineWidth: 1.5)
-                        }
-                    }
-                    .frame(width: 22, height: 22)
+                    APTickBox(on: on)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(name).font(Nacre.body).foregroundColor(Pearl.ink).fixedSize(horizontal: false, vertical: true)
-                        Text(day).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                        Text(u.merchant).font(Nacre.body).foregroundColor(Pearl.ink).fixedSize(horizontal: false, vertical: true)
+                        Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     }
                     Spacer(minLength: 0)
                 }
@@ -1182,12 +1166,14 @@ struct PartsSheet: View {
             .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
             if on {
                 Button("Change") { askUnsplit(u) }
-                    .font(Nacre.subheadline.weight(.semibold)).foregroundColor(Pearl.action)
+                    .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline)).foregroundColor(Pearl.link)
                     .frame(minHeight: 44).buttonStyle(.plain)
                     .accessibilityLabel("Change how much of \(u.merchant)")
             }
+            Text(Format.amount(u.amount)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
+                .accessibilityHidden(true)
         }
-        .padding(.horizontal, 16).frame(minHeight: 52).padding(.vertical, 6)
+        .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 64)
     }
 
     private func toggleUnsplit(_ u: UnsplitRow) {
@@ -1319,14 +1305,8 @@ struct PartsSheet: View {
         let rows = typed.isEmpty ? likely
             : mineFound.compactMap { id in mineOwing.first { $0.charge == id } }
         return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundColor(Pearl.muted).accessibilityHidden(true)
-                TextField("", text: $query, prompt: Text("Search purchases").foregroundColor(Pearl.muted))
-                    .font(Nacre.body).autocorrectionDisabled().textInputAutocapitalization(.never)
-                    .accessibilityLabel("Search purchases")
-            }
-            .padding(.horizontal, 14).frame(height: 44)
-            .background(Capsule().fill(Pearl.ink.opacity(0.08)))
+            PearlField(placeholder: "Search purchases", text: $query, kind: .search)
+                .autocorrectionDisabled().textInputAutocapitalization(.never)
             if rows.isEmpty {
                 Text("No purchases match.").font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     .padding(.horizontal, 16)
@@ -1338,9 +1318,9 @@ struct PartsSheet: View {
                 } else {
                     label("Your work purchases")
                 }
-                GlassCard {
+                APCard {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { i, o in
-                        if i > 0 { RowSeparator(inset: 50) }
+                        if i > 0 { APSeparator(afterFace: false).padding(.leading, 36) }
                         mineRow(o)
                     }
                 }
@@ -1358,21 +1338,15 @@ struct PartsSheet: View {
         let got = Format.amount(Double(allocation[o.id] ?? 0) / 100)
         let day = Format.short(o.date)
         let name = "\(o.merchant) · " + (share ? "your " : "") + Format.amount(o.owes)
+        // G2-Many: "Your $60.00 · Nov 12" for her share, "$35.03 of it · Nov 7" part paid.
+        let line = part ? "\(got) of it · \(day)" : share ? "Your \(Format.amount(o.owes)) · \(day)" : day
         return HStack(spacing: 12) {
             Button { toggleTick(o) } label: {
                 HStack(spacing: 12) {
-                    ZStack {
-                        if on {
-                            Circle().fill(Pearl.action)
-                            Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundColor(Pearl.onAction)
-                        } else {
-                            Circle().strokeBorder(Pearl.borderStrong, lineWidth: 1.5)
-                        }
-                    }
-                    .frame(width: 22, height: 22)
+                    APTickBox(on: on)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(name).font(Nacre.body).foregroundColor(Pearl.ink).fixedSize(horizontal: false, vertical: true)
-                        Text(part ? "\(day) · \(got) of it ·" : day).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                        Text(o.merchant).font(Nacre.body).foregroundColor(Pearl.ink).fixedSize(horizontal: false, vertical: true)
+                        Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     }
                     Spacer(minLength: 0)
                 }
@@ -1385,12 +1359,14 @@ struct PartsSheet: View {
             if part {
                 // MP-04: Change opens PB-13 for this one.
                 Button("Change") { changePart(o) }
-                    .font(Nacre.subheadline.weight(.semibold)).foregroundColor(Pearl.action)
+                    .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline)).foregroundColor(Pearl.link)
                     .frame(minHeight: 44).buttonStyle(.plain)
                     .accessibilityLabel("Change how much of \(o.merchant)")
             }
+            Text(Format.amount(o.owes)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
+                .accessibilityHidden(true)
         }
-        .padding(.horizontal, 16).frame(minHeight: 52).padding(.vertical, 6)
+        .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 64)
     }
 
     // MARK: PB-13 How much of their share (Paid back, 1352:716)
@@ -1431,42 +1407,47 @@ struct PartsSheet: View {
             let mp = manyKind != nil || unsplitAsk != nil
             VStack(alignment: .leading, spacing: 8) {
                 label(mp ? "\(o.merchant) · \(Format.short(o.date))" : "\(o.merchant) · \(first) owes \(Format.amount(o.owes))")
-                GlassCard {
+                APCard {
                     if canPart(o) {
                         // MP-04's Change (MANY-01): no line under Part of it;
                         // the amount already looks editable (copy rule 4).
                         let owesAfter: Text? = mp ? nil
                             : Text("\(first) still owes \(Format.amount(max(0, o.owes - partValue)))")
                             .font(Nacre.subheadline).foregroundColor(Pearl.muted)
-                        if editingPart && !allOfIt {
-                            // Tapped again: the amount changes in place (no
-                            // frame draws a field; the row's words say so).
-                            choiceLine(on: true) {
-                                HStack(spacing: 0) {
-                                    Text("Part of it · ").font(Nacre.body).foregroundColor(Pearl.ink)
-                                    TextField("", text: $partText, prompt: Text(Format.amount(shareRoom)).foregroundColor(Pearl.ink))
-                                        .font(Nacre.body).monospacedDigit().keyboardType(.decimalPad)
-                                        .focused($partFocused)
-                                        .accessibilityLabel("Part of it")
-                                        .accessibilityHint("Up to \(Format.amount(shareRoom)), less than \(Format.amount(o.owes))")
-                                }
-                                if let owesAfter = owesAfter { owesAfter.fixedSize(horizontal: false, vertical: true) }
-                            }
-                        } else {
+                        // G2-HowMuch: Part of it with its amount well on the
+                        // right, the 2 pt rose outline while typing.
+                        HStack(spacing: 12) {
                             Button {
                                 if !allOfIt { editingPart = true; partFocused = true }
                                 allOfIt = false
                             } label: {
                                 choiceLine(on: !allOfIt) {
-                                    Text("Part of it · \(Format.amount(partValue))").font(Nacre.body).foregroundColor(Pearl.ink)
+                                    Text("Part of it").font(Nacre.body).foregroundColor(Pearl.ink)
                                     if let owesAfter = owesAfter { owesAfter.fixedSize(horizontal: false, vertical: true) }
                                 }
                             }
                             .buttonStyle(.plain)
                             .accessibilityElement(children: .combine)
+                            .accessibilityLabel("Part of it · \(Format.amount(partValue))")
                             .accessibilityAddTraits(!allOfIt ? .isSelected : [])
+                            if !allOfIt {
+                                HStack(spacing: 4) {
+                                    Text("$").foregroundColor(Pearl.muted).accessibilityHidden(true)
+                                    TextField("", text: $partText,
+                                              prompt: Text(String(format: "%.2f", shareRoom)).foregroundColor(Pearl.ink))
+                                        .multilineTextAlignment(.trailing).keyboardType(.decimalPad)
+                                        .focused($partFocused).tint(Pearl.action)
+                                        .accessibilityLabel("Part of it")
+                                        .accessibilityHint("Up to \(Format.amount(shareRoom)), less than \(Format.amount(o.owes))")
+                                }
+                                .font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
+                                .padding(.horizontal, 14).frame(width: 118, height: 44)
+                                .wellStyle(focused: partFocused)
+                                .contentShape(Rectangle()).onTapGesture { editingPart = true; partFocused = true }
+                                .padding(.trailing, 16)
+                            }
                         }
-                        if !mp || unsplitCovers(o) { RowSeparator() }
+                        if !mp || unsplitCovers(o) { APSeparator(afterFace: false) }
                     }
                     if !mp || !canPart(o) || unsplitCovers(o) {
                     Button {
@@ -1476,7 +1457,8 @@ struct PartsSheet: View {
                     } label: {
                         choiceLine(on: allOfIt) {
                             Text("All of it · \(Format.amount(o.owes))").font(Nacre.body).foregroundColor(Pearl.ink)
-                            Text((mp ? "" : "\(first)’s paid in full") + (other >= 0.005 ? (mp ? "Pearl asks what the other \(Format.amount(other)) is" : " · Pearl asks what the other \(Format.amount(other)) is") : ""))
+                            // G2-HowMuch: one short line, "Pearl asks what the other $45.00 is".
+                            Text(other >= 0.005 ? "Pearl asks what the other \(Format.amount(other)) is" : mp ? "" : "\(first)’s paid in full")
                                 .font(Nacre.subheadline).foregroundColor(Pearl.muted)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -1498,16 +1480,14 @@ struct PartsSheet: View {
         }
     }
 
-    /// A radio row: the words, then the checkmark when it's the one.
+    /// A radio row (G2-HowMuch): the `.radio`, then the words.
     private func choiceLine<Words: View>(on: Bool, @ViewBuilder _ words: () -> Words) -> some View {
         HStack(spacing: 12) {
+            APRadio(on: on)
             VStack(alignment: .leading, spacing: 2, content: words)
             Spacer(minLength: 8)
-            if on {
-                Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold)).foregroundColor(Pearl.action)
-            }
         }
-        .padding(.horizontal, 16).frame(minHeight: 52).padding(.vertical, 6)
+        .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 64)
         .contentShape(Rectangle())
     }
 
@@ -1633,9 +1613,9 @@ struct PartsSheet: View {
             // S-35u: everyone on a Not sure yet split could have sent it;
             // nothing ticked, and Pearl never guesses.
             label("Could be either")
-            GlassCard {
+            APCard {
                 ForEach(Array(unsure.enumerated()), id: \.element.id) { i, o in
-                    if i > 0 { RowSeparator() }
+                    if i > 0 { APSeparator(afterFace: false) }
                     askRow(o)
                 }
             }
@@ -1643,9 +1623,9 @@ struct PartsSheet: View {
             let rest = owing.filter { $0.unknown != true }
             if !rest.isEmpty {
                 label("Others who owe you")
-                GlassCard {
+                APCard {
                     ForEach(Array(rest.enumerated()), id: \.element.id) { i, o in
-                        if i > 0 { RowSeparator() }
+                        if i > 0 { APSeparator(afterFace: false) }
                         askRow(o)
                     }
                 }
@@ -1662,18 +1642,18 @@ struct PartsSheet: View {
         if either.count >= 2 {
             // S-35a: the shares it could be on top, nothing ticked.
             label("Could be either")
-            GlassCard {
+            APCard {
                 ForEach(Array(either.enumerated()), id: \.element.id) { i, o in
-                    if i > 0 { RowSeparator() }
+                    if i > 0 { APSeparator(afterFace: false) }
                     askRow(o)
                 }
             }
             askLine
             if !rest.isEmpty {
                 label("Others who owe you")
-                GlassCard {
+                APCard {
                     ForEach(Array(rest.enumerated()), id: \.element.id) { i, o in
-                        if i > 0 { RowSeparator() }
+                        if i > 0 { APSeparator(afterFace: false) }
                         askRow(o)
                     }
                 }
@@ -1681,9 +1661,9 @@ struct PartsSheet: View {
         } else {
             // S-35b: nothing fits; every open share, nothing ticked.
             label("Owes you")
-            GlassCard {
+            APCard {
                 ForEach(Array(owing.enumerated()), id: \.element.id) { i, o in
-                    if i > 0 { RowSeparator() }
+                    if i > 0 { APSeparator(afterFace: false) }
                     askRow(o)
                 }
             }
@@ -1863,9 +1843,9 @@ struct PartsSheet: View {
             } else {
                 bar(sorted: sortedDone, first: "Sorted", second: "Left to sort")
             }
-            GlassCard {
+            APCard {
                 ForEach(Array(parts.enumerated()), id: \.element.id) { i, p in
-                    if i > 0 { RowSeparator() }
+                    if i > 0 { APSeparator(afterFace: false) }
                     // REFRESH-03 (S-10e): the swipe hint under the list is gone;
                     // VoiceOver's "Remove …" action carries it.
                     SwipeToRemove(label: p.editTitle) { withAnimation { remove(p) } } content: {
@@ -1886,7 +1866,7 @@ struct PartsSheet: View {
                     .accessibilityHint("Its amount goes back to Left to sort.")
                 }
                 if leftCents > 0 {
-                    if !parts.isEmpty { RowSeparator() }
+                    if !parts.isEmpty { APSeparator(afterFace: false) }
                     HStack {
                         Text("Left to sort").font(Nacre.body).foregroundColor(Pearl.ink)
                         Spacer()
@@ -1899,31 +1879,33 @@ struct PartsSheet: View {
     }
 
     private var sortingView: some View {
+        // G2-Parts (S-10): each part with its icon, then what's left; no bar.
         VStack(alignment: .leading, spacing: 8) {
-            bar(sorted: sortedDone, first: parts.count == 1 ? parts[0].label : "Sorted",
-                second: extra ? "Extra" : "Left to sort")
-            GlassCard {
+            APCard {
                 ForEach(parts) { p in
                     partRow(p, removable: true)
-                    RowSeparator()
+                    APSeparator()
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack {
+                HStack(spacing: 12) {
+                    APIcon(symbol: "questionmark.circle")
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(extra ? "The extra" : "Left to sort").font(Nacre.body).foregroundColor(Pearl.ink)
-                        Spacer()
-                        Text(Format.amount(left)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.action)
+                        // S-36 (REFRESH-03): the title already names them.
+                        Text(extra ? "Paid more than owed" : "Pearl won’t guess this part")
+                            .font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     }
-                    // S-36 (REFRESH-03): the title already names them.
-                    Text(extra ? "Paid more than owed" : "Pearl won’t guess this part")
-                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    Spacer()
+                    Text(Format.amount(left)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
                 }
-                .padding(.horizontal, 16).padding(.vertical, 12)
+                .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 64)
+                .accessibilityElement(children: .combine)
             }
         }
     }
 
     private func partRow(_ p: Part, removable: Bool) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
+            if removable { APIcon(symbol: p.kind == "payback" ? "arrow.uturn.backward" : "sparkles") }
             Text(p.label).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
             Spacer(minLength: 8)
             Text((["gift", "income"].contains(p.kind) ? "+" : "") + Format.amount(p.amount))
@@ -1937,7 +1919,7 @@ struct PartsSheet: View {
                 .accessibilityLabel("Remove \(p.label)")
             }
         }
-        .padding(.horizontal, 16).frame(minHeight: 52)
+        .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: removable ? 64 : 52)
     }
 
     // MARK: S-11 v2 What's the other $x? (SPLIT-04, SPLIT-05 (b), SPLIT-12)
@@ -2073,7 +2055,7 @@ struct PartsSheet: View {
                 // later" (the whole amount) leaves the row in Needs a look.
                 let later = whole != nil && parts.isEmpty
                 label("Options").padding(.top, 4).accessibilityAddTraits(.isHeader)
-                GlassCard {
+                APCard {
                     Button { if later { dismiss() } else { Task { await save(later: true) } } } label: {
                         HStack(spacing: 12) {
                             IconBubble(symbol: "arrow.triangle.branch")
@@ -2157,13 +2139,13 @@ struct PartsSheet: View {
 
     private var reviewList: some View {
         VStack(alignment: .leading, spacing: 8) {
-            GlassCard {
+            APCard {
                 ForEach(Array(parts.enumerated()), id: \.element.id) { i, p in
-                    if i > 0 { RowSeparator() }
+                    if i > 0 { APSeparator(afterFace: false) }
                     partRow(p, removable: false)
                 }
                 if leftCents > 0 {
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     HStack {
                         Text("Left to sort").font(Nacre.body).foregroundColor(Pearl.ink)
                         Spacer()
@@ -2176,9 +2158,9 @@ struct PartsSheet: View {
                 // S-12 v2 WHAT CHANGES (SPLIT-09): Allowance in the deposit's
                 // month; a payback lowers its purchase's category in that purchase's month.
                 label("What changes")
-                GlassCard {
+                APCard {
                     ForEach(Array(changes.enumerated()), id: \.offset) { i, c in
-                        if i > 0 { RowSeparator() }
+                        if i > 0 { APSeparator(afterFace: false) }
                         HStack {
                             Text(c.label).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
                             Spacer(minLength: 8)
@@ -2228,7 +2210,7 @@ struct PartsSheet: View {
             if asking && query.isEmpty {
                 // S-35a/S-35b: Next stays off until she ticks one; Close saves nothing.
                 Button(n >= 2 ? "Link these \(n) purchases" : "Next") { takeOwing() }
-                    .buttonStyle(NacreButtonStyle()).disabled(picked.isEmpty)
+                    .buttonStyle(APPrimaryButtonStyle()).disabled(picked.isEmpty)
                     .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
             } else if sender == nil && !owing.isEmpty && query.isEmpty {
                 // S-35: who it was, or none of them.
@@ -2241,21 +2223,21 @@ struct PartsSheet: View {
             } else {
                 let pending = !owing.isEmpty && owing.filter { picked[$0.id] != nil }.allSatisfy { $0.pending == true } && n > 0
                 Button(n >= 2 ? "Link these \(n) purchases" : pending ? "Link it" : "Next") { takeOwing() }
-                    .buttonStyle(NacreButtonStyle())
+                    .buttonStyle(APPrimaryButtonStyle())
                     .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
             }
         case .whose:
             // PB-30: one tap marks them all; less than the deposit goes on to the rest.
             Button(tickedButton) { takeTicked() }
-                .buttonStyle(NacreButtonStyle(busy: busy)).disabled(!tickedReady || busy)
+                .buttonStyle(APPrimaryButtonStyle(busy: busy)).disabled(!tickedReady || busy)
                 .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
         case .howMuch:
             Button(shareQueue.isEmpty || howMuchFinishes ? "Save" : "Next") { takeHowMuch() }
-                .buttonStyle(NacreButtonStyle(busy: busy)).disabled(!howMuchReady || busy)
+                .buttonStyle(APPrimaryButtonStyle(busy: busy)).disabled(!howMuchReady || busy)
                 .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
         case .refund, .work:
             Button("Next") { takeRefund() }
-                .buttonStyle(NacreButtonStyle()).disabled(picked.isEmpty)
+                .buttonStyle(APPrimaryButtonStyle()).disabled(picked.isEmpty)
                 .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
         case .progress:
             if !editing.isEmpty && leftCents == 0 {
@@ -2272,15 +2254,13 @@ struct PartsSheet: View {
         }
     }
 
+    /// G2-Parts: the Primary over the Secondary, as every A+ sheet has them.
     private func pair(_ first: String, disabled: Bool, _ run: @escaping () -> Void,
                       _ second: String, _ other: @escaping () -> Void) -> some View {
-        HStack(spacing: 10) {
-            Button(first, action: run).buttonStyle(NacreButtonStyle(busy: busy)).disabled(disabled || busy)
+        VStack(spacing: 12) {
+            Button(first, action: run).buttonStyle(APPrimaryButtonStyle(busy: busy)).disabled(disabled || busy)
             Button(second, action: other)
-                .font(Nacre.headline).foregroundColor(Pearl.ink)
-                .frame(maxWidth: .infinity, minHeight: 52)
-                .background(Capsule().fill(Pearl.card))  // TEST-32: reads in dark
-                .buttonStyle(.plain).disabled(busy)
+                .buttonStyle(APSecondaryButtonStyle()).disabled(busy)
         }
         .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
     }
@@ -2593,9 +2573,9 @@ struct PartsSheet: View {
 
     private func cents(_ x: Double) -> Int { Int((x * 100).rounded()) }
 
+    /// A+ `.label`: caps outside the card, 13/500, tracked.
     private func label(_ text: String) -> some View {
-        Text(text.uppercased()).font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
-            .padding(.horizontal, 16)
+        APSectionLabel(text: text).fixedSize(horizontal: false, vertical: true).padding(.top, 8)
     }
 
     /// "● Linked $428.00   ● Not linked $172.00" under a filling bar.
@@ -2633,19 +2613,19 @@ struct PartsSheet: View {
     private func pickRow(name: String, sub: String, amount: Double, on: Bool, trait: Bool = true,
                          _ run: @escaping () -> Void) -> some View {
         Button(action: run) {
+            // G2-Settle: the tickbox, the name over its line, the amount.
             HStack(spacing: 12) {
+                APTickBox(on: on)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
                     // UI audit: the line under wraps to two lines rather than cut.
-                    Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(2)
+                    Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
                 Text(Format.amount(amount)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
-                Image(systemName: on ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 22)).foregroundColor(on ? Pearl.action : Pearl.muted)
             }
-            .padding(.horizontal, 16).frame(minHeight: 56).padding(.vertical, 2).contentShape(Rectangle())
+            .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 64).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(on && trait ? .isSelected : [])

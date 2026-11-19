@@ -262,7 +262,8 @@ class TestTilesBySource:
     def test_who_paid_you_back_and_how_much(self):
         s = self.src("ios/Pearl/Views/Transactions/PaidBackViews.swift")
         for words in ('"Who paid you back?"', '"A person"', '"The shop"', '"Work"',
-                      '"A refund · which purchase, all of it or your share"',
+                      # REDESIGN-09 (G2-WhoPaid): The shop's line is "A refund".
+                      '"A refund"',
                       '"Let it go"', '"Let the other \\(Format.amount(rest)) go?"'):
             assert words in s, words
         parts = self.src("ios/Pearl/Views/Transactions/PartsFlow.swift")
@@ -285,7 +286,7 @@ class TestTilesBySource:
         """PB-20 to PB-24's words, as Pearl sheets (note 1352:10319)."""
         menus = self.src("ios/Pearl/Views/Transactions/SplitMenus.swift")
         for words in ('"Find what paid it back"', '"Work, a refund, or someone paying you"',
-                      '"Your share \\(Format.amount(split.you)) · nothing paid it back yet"'):
+                      '"Not paid back yet"'):
             assert words in menus, words
         find = self.src("ios/Pearl/Views/Transactions/PaidBackFindViews.swift")
         for words in ('"What paid this back?"', '"Search deposits, or an amount"',

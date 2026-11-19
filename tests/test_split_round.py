@@ -859,7 +859,8 @@ class TestPearlAsksWhoItWas:
         assert "if sender == nil, fits.count == 1 { toggle(fits[0]) }" in flow
         assert "fits.count != 1" in flow
         # Next stays off until she ticks one; what's left goes to S-11 v2.
-        assert '.buttonStyle(NacreButtonStyle()).disabled(picked.isEmpty)' in flow
+        # A+ restyle (G2): the A+ Primary.
+        assert '.buttonStyle(APPrimaryButtonStyle()).disabled(picked.isEmpty)' in flow
         assert "parts.isEmpty || asked ? .kind : .progress" in flow
         # VoiceOver: "Sam, Pizza Nova, November 2, 30 dollars, not selected".
         assert '.accessibilityValue(on ? "selected" : "not selected")' in flow
@@ -1040,7 +1041,8 @@ class TestWhoSentThis:
     def test_the_app_asks_where_she_looks(self):
         sheet = (self.IOS / "Views/Transactions/WhoSentSheet.swift").read_text(encoding="utf-8")
         # S-35c: titled "Who sent this?", no search, Save off until a tick, a spinner while saving.
-        assert 'SheetTitle(title: "Who sent this?")' in sheet
+        # A+ restyle (G2): the A+ sheet title bar.
+        assert 'APSheetTitleBar(title: "Who sent this?")' in sheet
         assert "TextField" not in sheet
         assert ".disabled(picked.isEmpty || busy)" in sheet and "NacreButtonStyle(busy: busy)" in sheet
         assert 'Text("ON \\(Format.andList(shops).uppercased())")' in sheet

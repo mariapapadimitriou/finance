@@ -75,8 +75,8 @@ struct PeoplePicker: View {
     private var q: String { query.trimmingCharacters(in: .whitespaces) }
 
     var body: some View {
-        PearlSheet(dismissDisabled: busy) {
-            PearlSheetHeader(overline: overline, title: title,
+        APSheet(dismissDisabled: busy) {
+            APSheetHeader(overline: overline, title: title,
                              // One name (PP-01's Someone new) has no "most" to say.
                              sub: full && (limit ?? 0) > 1 ? "Six is the most." : sub,
                              close: onClose)
@@ -88,10 +88,10 @@ struct PeoplePicker: View {
             if let recent = recent {
                 let mine = recent.filter { r in matches(r.name) && !isRefused(r.name) }
                 if !mine.isEmpty {
-                    PearlSectionLabel(text: "People you’ve split with")
-                    PearlOptionCard {
+                    APSheetLabel(text: "People you’ve split with")
+                    APOptionCard {
                         ForEach(Array(mine.enumerated()), id: \.element.id) { i, r in
-                            if i > 0 { PearlDivider() }
+                            if i > 0 { APSeparator() }
                             row(r.name, sub: "Split \(r.merchant) · \(Format.short(r.date))")
                         }
                     }
@@ -144,14 +144,14 @@ struct PeoplePicker: View {
     @ViewBuilder private func contactsSection(_ recent: [RecentPerson]) -> some View {
         switch contactsState {
         case .asking:
-            PearlSectionLabel(text: "From your contacts")
+            APSheetLabel(text: "From your contacts")
             skeleton
         case .off:
-            PearlSectionLabel(text: "From your contacts")
+            APSheetLabel(text: "From your contacts")
             // AM-08p2: one element; Turn on in Settings is its action.
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top, spacing: 12) {
-                    PearlBubble(symbol: "info.circle")
+                    APIcon(symbol: "info.circle")
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Contacts are off for Pearl").font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
                         Text("Pick from your splits, or type a name.")
@@ -165,17 +165,17 @@ struct PeoplePicker: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .pearlCard(radius: Pearl.radiusTile)
+            .apCard()
             .accessibilityElement(children: .combine)
             .accessibilityAction(named: "Turn on in Settings", openSettings)
         case .on:
             // Anyone already in the first list shows once (same name match).
             let shown = contacts.filter { c in matches(c) && !isRefused(c) && !recent.contains { samePerson($0.name, c) } }
             if !shown.isEmpty {
-                PearlSectionLabel(text: "From your contacts")
-                PearlOptionCard {
+                APSheetLabel(text: "From your contacts")
+                APOptionCard {
                     ForEach(Array(shown.prefix(60).enumerated()), id: \.element) { i, name in
-                        if i > 0 { PearlDivider() }
+                        if i > 0 { APSeparator() }
                         row(name, sub: "In your contacts")
                     }
                 }
@@ -186,8 +186,8 @@ struct PeoplePicker: View {
     /// AM-08p3: "Add “Maya” as a new name", or Type a name, always last.
     private var typeRow: some View {
         let typed = !q.isEmpty && !picked.contains(q) && !already.contains { samePerson($0, q) } && !isRefused(q)
-        return PearlOptionCard {
-            PearlOptionRow(symbol: "person", title: typed ? "Add “\(q)” as a new name" : "Type a name",
+        return APOptionCard {
+            APOptionRow(symbol: "person", title: typed ? "Add “\(q)” as a new name" : "Type a name",
                            sub: typed ? "Only you can see it" : "For someone who isn’t here") {
                 if typed { pick(q); query = "" } else { searching = true }
             }
@@ -196,9 +196,9 @@ struct PeoplePicker: View {
     }
 
     private var skeleton: some View {
-        PearlOptionCard {
+        APOptionCard {
             ForEach(0..<3, id: \.self) { i in
-                if i > 0 { PearlDivider() }
+                if i > 0 { APSeparator() }
                 HStack(spacing: 12) {
                     Circle().fill(Pearl.track).frame(width: 40, height: 40)
                     VStack(alignment: .leading, spacing: 6) {
@@ -207,7 +207,7 @@ struct PeoplePicker: View {
                     }
                     Spacer()
                 }
-                .padding(.vertical, 10).frame(minHeight: 60)
+                .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 60)
             }
         }
         .accessibilityElement(children: .ignore)
@@ -221,7 +221,7 @@ struct PeoplePicker: View {
         let dim = isAlready || (!on && full)
         return Button { pick(name) } label: {
             HStack(alignment: .top, spacing: 12) {
-                PearlFace(name: name, size: 40)
+                APFace(name: name, size: 40)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
                     Text(isAlready ? "Already shared" : sub).font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
@@ -230,7 +230,7 @@ struct PeoplePicker: View {
                 Spacer(minLength: 8)
                 tick(on)
             }
-            .padding(.vertical, 10).frame(minHeight: 60).contentShape(Rectangle())
+            .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 60).contentShape(Rectangle())
             .opacity(dim ? 0.45 : 1)
         }
         .buttonStyle(.plain)
@@ -398,17 +398,17 @@ struct JointPartCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            PearlSectionLabel(text: "Joint with \(t.jointWho)" + (t.jointRatio.map { " · \($0)" } ?? ""))
+            APSheetLabel(text: "Joint with \(t.jointWho)" + (t.jointRatio.map { " · \($0)" } ?? ""))
                 .padding(.horizontal, 4).padding(.top, 12)
-            PearlOptionCard {
+            APOptionCard {
                 ForEach(Array(holders.enumerated()), id: \.offset) { i, h in
-                    if i > 0 { PearlDivider() }
+                    if i > 0 { APSeparator() }
                     line(face: h.name, title: h.name, sub: "On this account · their part", amount: h.amount)
                         .accessibilityLabel("\(h.name), on this account, their part, \(Format.amount(h.amount)), not owed to you")
                         // REFRESH-03 (S-04j): the footnote under the card is gone; this row says it.
                         .accessibilityHint("Only the people in your split owe you.")
                 }
-                PearlDivider()
+                APSeparator()
                 line(face: "Me", title: "Your part", sub: "Split below", amount: joint.part)
                     .accessibilityLabel("Your part, \(Format.amount(joint.part)), split below")
             }
@@ -427,7 +427,7 @@ struct JointPartCard: View {
 
     private func line(face: String, title: String, sub: String, amount: Double) -> some View {
         HStack(spacing: 12) {
-            PearlFace(name: face, size: 40)
+            APFace(name: face, size: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
                 Text(sub).font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
@@ -436,7 +436,7 @@ struct JointPartCard: View {
             Spacer(minLength: 8)
             Text(Format.amount(amount)).font(Pearl.text(.headline)).monospacedDigit().foregroundColor(Pearl.ink)
         }
-        .padding(.vertical, 10).frame(minHeight: 56)
+        .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 56)
         .accessibilityElement(children: .ignore)
     }
 }
@@ -454,17 +454,17 @@ struct RemoveSplitSheet: View {
     @State private var failed: String?
 
     var body: some View {
-        PearlSheet(dismissDisabled: busy) {
-            PearlSheetHeader(face: t.merchant, overline: "\(t.merchant) · \(Format.money(t))",
+        APSheet(dismissDisabled: busy) {
+            APSheetHeader(face: t.merchant, overline: "\(t.merchant) · \(Format.money(t))",
                              title: "Remove the split?",
                              sub: "Your part \(Format.amount(split.base ?? t.splitBase)) counts as yours again.",
                              close: onClose)
                 .disabled(busy)
             // REFRESH-03 (S-41j): only the people; the joint share row and the
             // divider under it are gone, since the joint share doesn't change.
-            PearlOptionCard {
+            APOptionCard {
                 ForEach(Array(split.people.enumerated()), id: \.element.id) { i, p in
-                    if i > 0 { PearlDivider() }
+                    if i > 0 { APSeparator() }
                     if p.paid >= 0.005 {
                         row(face: p.name, title: "\(possessive(p.name)) \(Format.amount(p.paid)) goes back to sort", sub: nil)
                     } else if split.unsure {
@@ -484,7 +484,7 @@ struct RemoveSplitSheet: View {
 
     private func row(symbol: String? = nil, face: String? = nil, title: String, sub: String?) -> some View {
         HStack(spacing: 12) {
-            if let symbol = symbol { PearlBubble(symbol: symbol) } else { PearlFace(name: face ?? "", size: 40) }
+            if let symbol = symbol { APIcon(symbol: symbol) } else { APFace(name: face ?? "", size: 40) }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
                 if let sub = sub { Text(sub).font(Pearl.text(.callout)).foregroundColor(Pearl.muted) }
@@ -492,7 +492,7 @@ struct RemoveSplitSheet: View {
             .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 10).frame(minHeight: 56)
+        .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 56)
         .accessibilityElement(children: .combine)
     }
 
@@ -590,8 +590,8 @@ struct JointChangeSheet: View {
     }
 
     var body: some View {
-        PearlSheet(dismissDisabled: busy) {
-            PearlSheetHeader(symbol: "person.2",
+        APSheet(dismissDisabled: busy) {
+            APSheetHeader(symbol: "person.2",
                              overline: purchase ? "\(accountName) · Whose was it?"
                                  : share == nil ? accountName : "\(accountName) · Your share",
                              title: title,
@@ -599,12 +599,12 @@ struct JointChangeSheet: View {
                                  : "Someone already paid you back on \(purchase ? "this split" : "a split purchase").",
                              close: onClose)
                 .disabled(busy)
-            PearlSectionLabel(text: share == nil ? "Split purchases" : "Split purchases that change")
-            PearlOptionCard {
+            APSheetLabel(text: share == nil ? "Split purchases" : "Split purchases that change")
+            APOptionCard {
                 ForEach(Array(changes.enumerated()), id: \.element.id) { i, c in
-                    if i > 0 { PearlDivider() }
+                    if i > 0 { APSeparator() }
                     HStack(alignment: .top, spacing: 12) {
-                        PearlFace(name: c.merchant, size: 40)
+                        APFace(name: c.merchant, size: 40)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("\(c.merchant) · \(Format.short(c.date))").font(Pearl.text(.headline, .medium))
                                 .foregroundColor(Pearl.ink)
@@ -613,7 +613,7 @@ struct JointChangeSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)
                     }
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
                     .accessibilityElement(children: .combine)
                 }
             }
@@ -681,15 +681,15 @@ struct RemoveJointPersonSheet: View {
     private var first: String { name.split(separator: " ").first.map(String.init) ?? name }
 
     var body: some View {
-        PearlSheet(dismissDisabled: busy) {
-            PearlSheetHeader(face: name, overline: "Shared with · \(accountName)", title: "Remove \(name)?",
+        APSheet(dismissDisabled: busy) {
+            APSheetHeader(face: name, overline: "Shared with · \(accountName)", title: "Remove \(name)?",
                              sub: "\(first) won’t be on this account any more.", close: onClose)
                 .disabled(busy)
             // REFRESH-03 (AM-08x): two facts, each once.
-            PearlOptionCard {
+            APOptionCard {
                 row("person.2", share.map { "Your share stays \(JointChangeSheet.pct($0))" } ?? "Your purchases count as they do now",
                     others.isEmpty ? "The account stays joint, with no one named" : nil)
-                PearlDivider()
+                APSeparator()
                 row("checkmark", "Earlier answers stay", nil)
             }
             Text("Nothing is sent to \(first).").font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
@@ -703,7 +703,7 @@ struct RemoveJointPersonSheet: View {
 
     private func row(_ symbol: String, _ title: String, _ sub: String?) -> some View {
         HStack(spacing: 12) {
-            PearlBubble(symbol: symbol)
+            APIcon(symbol: symbol)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
                 if let sub = sub { Text(sub).font(Pearl.text(.callout)).foregroundColor(Pearl.muted) }
@@ -711,7 +711,7 @@ struct RemoveJointPersonSheet: View {
             .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 10)
+        .padding(.horizontal, 16).padding(.vertical, 10)
         .accessibilityElement(children: .combine)
     }
 
@@ -748,7 +748,7 @@ struct SettleUpSheet: View {
     private var still: Double { split.still ?? split.you }
 
     var body: some View {
-        PearlSheet(dismissDisabled: busy) {
+        APSheet(dismissDisabled: busy) {
             if confirming { confirm } else { choose }
         } footer: {
             if confirming {
@@ -760,25 +760,25 @@ struct SettleUpSheet: View {
     }
 
     @ViewBuilder private var choose: some View {
-        PearlSheetHeader(face: t.merchant, overline: "Settle up · \(t.merchant)", title: "How to settle?",
+        APSheetHeader(face: t.merchant, overline: "Settle up · \(t.merchant)", title: "How to settle?",
                          close: onClose)
-        PearlSectionLabel(text: "Paid so far")
-        PearlOptionCard {
+        APSheetLabel(text: "Paid so far")
+        APOptionCard {
             ForEach(Array(split.people.enumerated()), id: \.element.id) { i, p in
-                if i > 0 { PearlDivider() }
+                if i > 0 { APSeparator() }
                 amountRow(p.name, sub: paidSub(p), amount: p.paid, tone: p.paid >= 0.005 ? Pearl.moneyIn : Pearl.muted)
             }
             if split.withMe {
-                PearlDivider()
+                APSeparator()
                 amountRow("You", sub: "What still counts as yours", amount: still, tone: Pearl.moneyOut)
             }
         }
         if let failed = failed, !confirming { CautionBanner(text: failed) }
-        PearlOptionCard {
+        APOptionCard {
             if let last = leftTo, let onLeftTo = onLeftTo {
                 // S-45a2 (TEST-18): "Alex owes what's left · $45.00 · the
                 // purchase less what's been paid back".
-                PearlOptionRow(symbol: "person", title: "\(last.name) owes what’s left",
+                APOptionRow(symbol: "person", title: "\(last.name) owes what’s left",
                                sub: "\(Format.amount(still)) · the purchase less what’s been paid back") {
                     Task {
                         busy = true
@@ -789,35 +789,35 @@ struct SettleUpSheet: View {
                     }
                 }
                 .disabled(busy)
-                PearlDivider()
+                APSeparator()
             }
             // REFRESH-03 (S-45a): the amounts are in Paid so far above.
-            PearlOptionRow(symbol: "checkmark", title: "Use what each paid",
+            APOptionRow(symbol: "checkmark", title: "Use what each paid",
                            sub: leftTo.map { "\($0.name) pays nothing; the \(Format.amount(still)) stays yours" }
                             ?? "Nobody owes after this.") {
                 confirming = true
             }
-            PearlDivider()
-            PearlOptionRow(symbol: "person.2", title: "Type amounts", sub: "Evenly, amounts, % or shares", action: onType)
+            APSeparator()
+            APOptionRow(symbol: "person.2", title: "Type amounts", sub: "Evenly, amounts, % or shares", action: onType)
         }
     }
 
     /// S-45b: WHAT CHANGES, and Allowance doesn't.
     @ViewBuilder private var confirm: some View {
-        PearlSheetHeader(face: t.merchant, overline: "Settle up · \(t.merchant)", title: "Use what each paid?",
+        APSheetHeader(face: t.merchant, overline: "Settle up · \(t.merchant)", title: "Use what each paid?",
                          close: onClose)
             .disabled(busy)
-        PearlSectionLabel(text: "What changes")
-        PearlOptionCard {
+        APSheetLabel(text: "What changes")
+        APOptionCard {
             ForEach(Array(split.people.enumerated()), id: \.element.id) { i, p in
-                if i > 0 { PearlDivider() }
+                if i > 0 { APSeparator() }
                 // Decision 3: someone who paid nothing stays, at $0.00.
                 amountRow("\(possessive(p.name)) share", sub: p.paid >= 0.005 ? "Paid in full" : "Nothing to pay",
                           amount: p.paid, tone: p.paid >= 0.005 ? Pearl.moneyIn : Pearl.muted)
             }
-            PearlDivider()
+            APSeparator()
             amountRow("Your share", sub: t.label, amount: still, tone: Pearl.moneyOut)
-            PearlDivider()
+            APSeparator()
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Allowance").font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
@@ -828,7 +828,7 @@ struct SettleUpSheet: View {
                 Spacer(minLength: 8)
                 Text("No change").font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.muted)
             }
-            .padding(.vertical, 10)
+            .padding(.horizontal, 16).padding(.vertical, 10)
             .accessibilityElement(children: .combine)
         }
         if let failed = failed { CautionBanner(text: failed) }
@@ -857,7 +857,7 @@ struct SettleUpSheet: View {
             Spacer(minLength: 8)
             Text(Format.amount(amount)).font(Pearl.text(.headline, .semibold)).monospacedDigit().foregroundColor(tone)
         }
-        .padding(.vertical, 10).frame(minHeight: 56)
+        .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 56)
         .accessibilityElement(children: .combine)
     }
 
@@ -890,31 +890,31 @@ struct ThatsEverythingSheet: View {
     var body: some View {
         let paid = split.people.filter { $0.paid >= 0.005 }
         let none = split.people.filter { $0.paid < 0.005 }
-        PearlSheet(dismissDisabled: busy) {
-            PearlSheetHeader(face: t.merchant, overline: "That’s everything · \(t.merchant)", title: "That’s everything?",
+        APSheet(dismissDisabled: busy) {
+            APSheetHeader(face: t.merchant, overline: "That’s everything · \(t.merchant)", title: "That’s everything?",
                              close: onClose)
                 .disabled(busy)
             Text(lead(paid)).font(Pearl.text(.headline)).foregroundColor(Pearl.ink)
                 .fixedSize(horizontal: false, vertical: true)
-            PearlSectionLabel(text: "What changes")
-            PearlOptionCard {
+            APSheetLabel(text: "What changes")
+            APOptionCard {
                 if split.withMe {
                     // S-46a3 (TEST-18): your own line, and who paid back.
                     row("You", "Your share · what’s left", Format.amount(still), Pearl.ink)
                     if !paid.isEmpty {
-                        PearlDivider()
+                        APSeparator()
                         row(Format.andList(paid.map(\.name)), "Paid back \(Format.amount(paid.reduce(0) { $0 + $1.paid }))",
                             "", Pearl.muted)
                     }
-                    PearlDivider()
+                    APSeparator()
                 }
                 row(t.label, "Stays your spending", Format.amount(still), Pearl.ink)
                 ForEach(none) { p in
-                    PearlDivider()
+                    APSeparator()
                     // S-46a v2 (TEST-11): nothing on the right; a status isn't an action.
                     row(p.name, "Won’t show as owing", nil, Pearl.muted)
                 }
-                PearlDivider()
+                APSeparator()
                 row("Allowance", "Already counts the \(Format.amount(still))", "No change", Pearl.muted)
             }
             if let failed = failed { CautionBanner(text: failed) }
@@ -945,7 +945,7 @@ struct ThatsEverythingSheet: View {
                 Text(value).font(Pearl.text(.headline, .medium)).monospacedDigit().foregroundColor(tone)
             }
         }
-        .padding(.vertical, 10)
+        .padding(.horizontal, 16).padding(.vertical, 10)
         .accessibilityElement(children: .combine)
     }
 
@@ -993,8 +993,8 @@ struct SettleExtraSheet: View {
     }
 
     var body: some View {
-        PearlSheet(dismissDisabled: busy) {
-            PearlSheetHeader(face: who, overline: "Settle up · \(merchant)",
+        APSheet(dismissDisabled: busy) {
+            APSheetHeader(face: who, overline: "Settle up · \(merchant)",
                              title: choosing ? "Which of \(possessive(who)) shares?" : "What’s the extra \(Format.amount(left))?",
                              sub: "\(who) already paid you more than their share.",
                              back: choosing ? { choosing = false } : nil, close: onClose)
@@ -1023,9 +1023,9 @@ struct SettleExtraSheet: View {
             if shares.isEmpty {
                 Text("\(who) doesn’t owe you on anything else.").font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
             } else {
-                PearlOptionCard {
+                APOptionCard {
                     ForEach(Array(shares.enumerated()), id: \.element.id) { i, s in
-                        if i > 0 { PearlDivider() }
+                        if i > 0 { APSeparator() }
                         let on = ticked[s.id] != nil
                         Button {
                             if on { ticked[s.id] = nil } else {
@@ -1131,11 +1131,11 @@ struct SplitMethodSheet: View {
     let onClose: () -> Void
 
     var body: some View {
-        PearlSheet {
-            PearlSheetHeader(overline: "How to split", title: "Pick a method", close: onClose)
-            PearlOptionCard {
+        APSheet {
+            APSheetHeader(overline: "How to split", title: "Pick a method", close: onClose)
+            APOptionCard {
                 ForEach(Array(modes.enumerated()), id: \.element.tag) { i, m in
-                    if i > 0 { PearlDivider() }
+                    if i > 0 { APSeparator() }
                     Button { onPick(m.tag) } label: {
                         HStack {
                             Text(m.label).font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)

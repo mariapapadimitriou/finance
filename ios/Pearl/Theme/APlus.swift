@@ -222,9 +222,11 @@ struct APFace: View {
             .accessibilityHidden(true)
     }
 
-    /// Up to two letters from the first two words ("Uber Eats" → "UE").
+    /// Up to two letters from the first two words ("Uber Eats" → "UE"); one
+    /// word gives its first two ("Sam" → "SA", G2 boards).
     static func initials(_ name: String) -> String {
         let words = name.split { !$0.isLetter && !$0.isNumber }.prefix(2)
+        if words.count == 1, let w = words.first { return String(w.prefix(2)).uppercased() }
         let out = words.compactMap { $0.first.map(String.init) }.joined().uppercased()
         return out.isEmpty ? "\u{00B7}" : out
     }

@@ -13,11 +13,11 @@ struct YouOptionsSheet: View {
     let onSetShare: () -> Void
 
     var body: some View {
-        PearlSheet {
-            PearlSheetHeader(face: "Me", overline: "\(t.merchant) · Not sure yet", title: "You",
+        APSheet {
+            APSheetHeader(face: "Me", overline: "\(t.merchant) · Not sure yet", title: "You",
                              sub: "Your share isn’t set", close: onClose)
-            PearlOptionCard {
-                PearlOptionRow(symbol: "banknote", title: "Set your share",
+            APOptionCard {
+                APOptionRow(symbol: "banknote", title: "Set your share",
                                sub: "Pearl gives what’s left to whoever hasn’t paid", prominent: true,
                                action: onSetShare)
             }
@@ -170,8 +170,8 @@ struct YourShareSheet: View {
     }
 
     private var sheet: some View {
-        PearlSheet(dismissDisabled: busy) {
-            PearlSheetHeader(face: "Me", overline: "Your share · \(t.merchant)", title: "What was your share?",
+        APSheet(dismissDisabled: busy) {
+            APSheetHeader(face: "Me", overline: "Your share · \(t.merchant)", title: "What was your share?",
                              close: onClose)
                 .disabled(busy)
             Text(unpaid.count == 1
@@ -180,13 +180,13 @@ struct YourShareSheet: View {
                 .font(Pearl.text(.headline)).foregroundColor(Pearl.ink)
                 .fixedSize(horizontal: false, vertical: true)
             field
-            PearlSectionLabel(text: "What’s left")
-            PearlOptionCard {
+            APSheetLabel(text: "What’s left")
+            APOptionCard {
                 line(t.merchant, "The whole purchase", Format.amount(base))
                 if !paidPeople.isEmpty && unpaid.count > 1 {
                     // S-47c / S-47f: each payer, locked; a tap says how to change it.
                     ForEach(paidPeople) { p in
-                        PearlDivider()
+                        APSeparator()
                         Button { showLock(p) } label: {
                             line(p.name, ["Paid back", p.paidOn.map { Format.short($0) }, "locked"]
                                     .compactMap { $0 }.joined(separator: " · "),
@@ -197,7 +197,7 @@ struct YourShareSheet: View {
                         .accessibilityHint("Says how to change it")
                     }
                 } else if !paidPeople.isEmpty {
-                    PearlDivider()
+                    APSeparator()
                     // S-47f with one payer; S-47g (section 20) with several.
                     Button { if paidPeople.count == 1 { showLock(paidPeople[0]) } else { whoPaid = true } } label: {
                         line("Paid back", "\(Format.andList(paidPeople.map(\.name))) · linked, locked",
@@ -207,7 +207,7 @@ struct YourShareSheet: View {
                     .buttonStyle(.plain)
                     .accessibilityHint(paidPeople.count == 1 ? "Says how to change it" : "Shows who paid you back")
                 }
-                PearlDivider()
+                APSeparator()
                 if tooMuch {
                     // S-47e (note 1238:25742): while the share is too big, only
                     // what she can have; no Your share or "owes you" rows.
@@ -218,7 +218,7 @@ struct YourShareSheet: View {
                      mineCents.map { "\u{2212}" + Format.amount(Double($0) / 100) } ?? "—")
                 }
                 if unpaid.count > 1 && !tooMuch {
-                    PearlDivider()
+                    APSeparator()
                     // S-47c: the method for what's left.
                     Picker("How to split what’s left", selection: $method) {
                         Text("Evenly").tag("even")
@@ -227,10 +227,10 @@ struct YourShareSheet: View {
                         Text("Shares").tag("shares")
                     }
                     .pickerStyle(.segmented)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, 16).padding(.vertical, 8)
                 }
                 ForEach(tooMuch ? [] : unpaid) { p in
-                    PearlDivider()
+                    APSeparator()
                     if unpaid.count == 1 {
                         line("\(p.name) owes you", "Hasn’t paid · gets what’s left",
                              Format.amount(Double(leftCents) / 100))
@@ -303,7 +303,7 @@ struct YourShareSheet: View {
             Spacer(minLength: 8)
             Text(value).font(Pearl.text(.headline, .medium)).monospacedDigit().foregroundColor(Pearl.ink)
         }
-        .padding(.vertical, 10)
+        .padding(.horizontal, 16).padding(.vertical, 10)
         .accessibilityElement(children: .combine)
     }
 
@@ -332,7 +332,7 @@ struct YourShareSheet: View {
                 .accessibilityLabel("\(p.name) \(method == "percent" ? "percent" : method == "shares" ? "shares" : "amount")")
             }
         }
-        .padding(.vertical, 8)
+        .padding(.horizontal, 16).padding(.vertical, 8)
         // TEST-27: on Evenly the row is one element, "Jo, Nothing paid yet,
         // $26.00", so the spoken words are the visible ones.
         .accessibilityElement(children: method == "even" ? .combine : .contain)
@@ -388,14 +388,14 @@ struct WhoPaidBackSheet: View {
     let onOpen: (String) -> Void
 
     var body: some View {
-        PearlSheet {
-            PearlSheetHeader(overline: "Paid back · \(merchant)", title: "Who paid you back", close: onClose)
+        APSheet {
+            APSheetHeader(overline: "Paid back · \(merchant)", title: "Who paid you back", close: onClose)
             Text("These payments are linked, so they’re locked. To change someone’s share, unlink their payback.")
                 .font(Pearl.text(.headline)).foregroundColor(Pearl.ink)
                 .fixedSize(horizontal: false, vertical: true)
-            PearlOptionCard {
+            APOptionCard {
                 ForEach(Array(payers.enumerated()), id: \.element.id) { i, p in
-                    if i > 0 { PearlDivider() }
+                    if i > 0 { APSeparator() }
                     row(p)
                 }
             }
@@ -411,7 +411,7 @@ struct WhoPaidBackSheet: View {
             .compactMap { $0 }.joined(separator: " · ")
         return Button { onOpen(p.name) } label: {
             HStack(spacing: 12) {
-                PearlFace(name: p.name, size: 40)
+                APFace(name: p.name, size: 40)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(p.name).font(Pearl.text(.headline, .semibold)).foregroundColor(Pearl.ink)
                     Text(sub).font(Pearl.text(.subheadline)).foregroundColor(Pearl.muted)
@@ -423,7 +423,7 @@ struct WhoPaidBackSheet: View {
                 Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
                     .accessibilityHidden(true)
             }
-            .padding(.vertical, 9).frame(minHeight: 44).contentShape(Rectangle())
+            .padding(.horizontal, 16).padding(.vertical, 9).frame(minHeight: 44).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)

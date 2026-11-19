@@ -405,6 +405,605 @@ struct PearlSheetButtons: View {
     }
 }
 
+// MARK: - A+ sheet kit (G2 · Splits and paybacks)
+
+// A+ restyle (REDESIGN-09/10, Claude Design "Pearl redesign" › Rollout ·
+// Group 2, kit.css): the parts every G2 sheet shares. The kit above stays
+// for screens other bots own; the split and payback flows use these.
+
+/// G2 `.sheet`: light, white 66% → 44% over rose → lilac → seaglass
+/// (114.76°); dark, #1C2F73 → #12163F.
+struct APSheetSurface: View {
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        if scheme == .dark {
+            LinearGradient(colors: [Color(hex: 0x1C2F73), Color(hex: 0x12163F)], startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea()
+        } else {
+            ZStack {
+                LinearGradient(colors: [Color(hex: 0xFFB6CC), Color(hex: 0xCDB9FF), Color(hex: 0xA8E9DF)],
+                               startPoint: UnitPoint(x: 0, y: 0.3), endPoint: UnitPoint(x: 1, y: 0.7))
+                LinearGradient(colors: [.white.opacity(0.66), .white.opacity(0.44)], startPoint: .top, endPoint: .bottom)
+            }
+            .ignoresSafeArea()
+        }
+    }
+}
+
+/// `.glassbtn`: the 44 pt round ✕ (or ‹) on `card`, with its line and shadow.
+struct APGlassButton: View {
+    var symbol = "xmark"
+    var label = "Close"
+    let action: () -> Void
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 16, weight: .semibold))
+                .foregroundColor(Pearl.ink)
+                .frame(width: 44, height: 44)
+                .background(Circle().fill(APlus.card))
+                .overlay(Circle().strokeBorder(APlus.cardLine, lineWidth: 1))
+                .shadow(color: scheme == .dark ? .black.opacity(0.22) : Pearl.cardShadow.opacity(0.10), radius: 14, y: 10)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+}
+
+/// `.ring.sm`: a 44 pt face inside the 1.2 pt nacre ring (the sheet's who).
+struct APRingFace: View {
+    let name: String
+    var size: CGFloat = 44
+
+    var body: some View {
+        Text(APFace.initials(name))
+            .font(.custom("Figtree-Medium", size: size * 0.34))
+            .lineLimit(1).minimumScaleFactor(0.5)
+            .foregroundColor(Pearl.ink)
+            .frame(width: size - 2.4, height: size - 2.4)
+            .background(Circle().fill(APlus.face))
+            .padding(1.2)
+            .background(Circle().fill(APlus.nacreRing))
+            .accessibilityHidden(true)
+    }
+}
+
+/// `.icon`: a 36 pt `action-wash` disc holding an 18 pt line icon.
+struct APIcon: View {
+    let symbol: String
+    var tone: Color = Pearl.action
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 16, weight: .regular))
+            .foregroundColor(tone)
+            .frame(width: 36, height: 36)
+            .background(Circle().fill(tone.opacity(0.10)))
+            .accessibilityHidden(true)
+    }
+}
+
+/// A sheet's top (`.shead` then `.who`): the centred title with ✕ (‹ on
+/// the left when there's a way back), then the ring face, the caps over the
+/// display name, and its line. Either half can be left out.
+struct APSheetHeader: View {
+    /// `.shead h2`: "Edit split", "How did Priya pay?".
+    var heading: String? = nil
+    /// The centred line under the heading ("e-Transfer from Jo Park · Nov 16").
+    var line: String? = nil
+    var face: String? = nil
+    var symbol: String? = nil
+    var overline: String? = nil
+    var title: String? = nil
+    var sub: String? = nil
+    var subTone: Color = Pearl.muted
+    var back: (() -> Void)? = nil
+    let close: () -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(spacing: 4) {
+                ZStack {
+                    if let heading = heading {
+                        Text(heading).font(Nacre.headline).foregroundColor(Pearl.ink)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 52)
+                            .accessibilityAddTraits(.isHeader)
+                    }
+                    HStack {
+                        if let back = back { APGlassButton(symbol: "chevron.left", label: "Back", action: back) }
+                        Spacer()
+                        APGlassButton(action: close)
+                    }
+                }
+                .frame(maxWidth: .infinity, minHeight: 44)
+                if let line = line {
+                    Text(line).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            if let title = title { who(title) }
+        }
+    }
+
+    private func who(_ title: String) -> some View {
+        // S-03ax (TEST-17): at accessibility sizes the face goes.
+        let big = typeSize.isAccessibilitySize
+        return HStack(spacing: 12) {
+            if !big {
+                if let symbol = symbol {
+                    APIcon(symbol: symbol).scaleEffect(44.0 / 36.0).frame(width: 44, height: 44)
+                } else if let face = face {
+                    APRingFace(name: face)
+                }
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                if let overline = overline {
+                    // TEST-14: the overline wraps, never clipped.
+                    Text(overline.uppercased())
+                        .font(.custom("Figtree-SemiBold", size: 12, relativeTo: .caption)).tracking(1.2)
+                        .foregroundColor(Pearl.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, 2)
+                }
+                Text(title).font(Pearl.heading(22, relativeTo: .title2)).foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+                if let sub = sub {
+                    Text(sub).font(Nacre.subheadline).foregroundColor(subTone)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// `.shead` on a full-height sheet: the centred title, the glass ✕, 16 at
+/// the sides. Was SheetTitle; `short` is said when `title` won't fit.
+struct APSheetTitleBar: View {
+    let title: String
+    var short: String? = nil
+    let close: () -> Void
+
+    var body: some View {
+        ZStack {
+            Group {
+                if let short = short {
+                    ViewThatFits(in: .horizontal) {
+                        Text(title).lineLimit(1)
+                        Text(title).fixedSize(horizontal: false, vertical: true)
+                        Text(short)
+                    }
+                } else {
+                    Text(title).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .font(Nacre.headline).foregroundColor(Pearl.ink).multilineTextAlignment(.center)
+            .padding(.horizontal, 52)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(title)
+            .accessibilityAddTraits(.isHeader)
+            HStack {
+                Spacer()
+                APGlassButton(action: close)
+            }
+        }
+        .frame(minHeight: 44)
+        .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 14)
+    }
+}
+
+/// `.who` for what a sheet is about: the ring face, the display name, and
+/// "−$84.12 · Wed, Nov 11" (the amount in its tone). Was QuestionHeader.
+struct APQuestionWho: View {
+    let name: String
+    let amount: String
+    let tone: Color
+    let sub: String?
+    /// The face's letters, when they aren't the name's ("SL" for an
+    /// e-Transfer from Sam Lee).
+    var face: String? = nil
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        let big = typeSize.isAccessibilitySize
+        HStack(spacing: 12) {
+            if !big { APRingFace(name: face ?? name) }
+            VStack(alignment: .leading, spacing: 0) {
+                // POLISH-01: the name and its line wrap rather than cut.
+                Text(name).font(Pearl.heading(22, relativeTo: .title2)).foregroundColor(Pearl.ink)
+                    .lineLimit(big ? 3 : 2)
+                    .fixedSize(horizontal: false, vertical: true)
+                (Text(amount).foregroundColor(tone)
+                 + Text(sub.map { $0.isEmpty ? "" : " · " + $0 } ?? "").foregroundColor(Pearl.muted))
+                    .font(Nacre.subheadline).lineLimit(big ? 3 : 2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .ignore)
+        // TEST-14: "Gusto, spent $127.50", not the unread U+2212 minus.
+        .accessibilityLabel([name, Format.spoken(amount), sub].compactMap { $0?.isEmpty == false ? $0 : nil }
+            .joined(separator: ", "))
+    }
+}
+
+/// A G2 sheet: the A+ surface, sized to what it holds, the grabber, the
+/// Primary and Secondary at the bottom. Never a stock dialog.
+struct APSheet<Content: View, Footer: View>: View {
+    var dismissDisabled = false
+    @ViewBuilder var content: () -> Content
+    @ViewBuilder var footer: () -> Footer
+    @State private var height: CGFloat = 360
+    @State private var footerHeight: CGFloat = 0
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14, content: content)
+                    .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 16)
+                    .background(GeometryReader { g in Color.clear.preference(key: APHeightKey.self, value: g.size.height) })
+            }
+            .scrollDismissesKeyboard(.interactively)
+            footer()
+                .background(GeometryReader { g in
+                    Color.clear
+                        .onAppear { footerHeight = g.size.height }
+                        .onChange(of: g.size.height) { footerHeight = $0 }
+                })
+        }
+        .background(APSheetSurface())
+        .onPreferenceChange(APHeightKey.self) { h in height = h }
+        .presentationDetents([.height(min(height + footerHeight + 16, UIScreen.main.bounds.height * 0.92)), .large])
+        .presentationDragIndicator(.visible)
+        .interactiveDismissDisabled(dismissDisabled)
+        .modifier(APSheetBackground())
+    }
+}
+
+extension APSheet where Footer == EmptyView {
+    init(dismissDisabled: Bool = false, @ViewBuilder content: @escaping () -> Content) {
+        self.dismissDisabled = dismissDisabled
+        self.content = content
+        self.footer = { EmptyView() }
+    }
+}
+
+private struct APHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/// The A+ surface behind the whole sheet, so nothing else shows past it.
+struct APSheetBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 16.4, *) {
+            content.presentationBackground { APSheetSurface() }
+                .presentationCornerRadius(38)
+        } else {
+            content
+        }
+    }
+}
+
+/// A sheet's `.label`: caps outside a card, 24 above it and 8 below (the
+/// sheet's 14 pt rhythm, evened out), with its quiet action.
+struct APSheetLabel: View {
+    let text: String
+    var action: String? = nil
+    var act: () -> Void = {}
+
+    var body: some View {
+        APSectionLabel(text: text, action: action, act: act)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.top, 10).padding(.bottom, -6)
+    }
+}
+
+/// `.row` with an `.icon`: the title over what happens, a chevron. At
+/// least 64 high; VoiceOver reads the title, then what happens.
+struct APOptionRow: View {
+    let symbol: String
+    let title: String
+    var sub: String? = nil
+    /// Kept so call sites read as before; A+ draws every lead option alike.
+    var prominent = false
+    /// PB-22 → PB-11: the answer Pearl picked, with a tick beside the chevron.
+    var checked = false
+    var tone: Color = Pearl.action
+    var titleTone: Color = Pearl.ink
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                APIcon(symbol: symbol, tone: tone)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(Nacre.body).foregroundColor(titleTone)
+                    if let sub = sub {
+                        Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                if checked {
+                    Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(Pearl.action)
+                        .accessibilityHidden(true)
+                }
+                APChevron()
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .frame(minHeight: 64)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel([title, sub].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityAddTraits(checked ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+/// `.chev`: the muted 8 × 14 chevron at a row's end.
+struct APChevron: View {
+    var body: some View {
+        Image(systemName: "chevron.right").font(.system(size: 14, weight: .semibold))
+            .foregroundColor(Pearl.muted)
+            .accessibilityHidden(true)
+    }
+}
+
+/// A card of rows on the A+ card; rows bring their own 16 pt sides and
+/// `APSeparator()` goes between them.
+struct APOptionCard<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0, content: content)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .apCard()
+    }
+}
+
+/// `.prow`: a 40 pt face, the name over its line, and what goes on the
+/// right. At least 60 high, 10 above and below, 16 at the sides.
+struct APPersonRow<Trailing: View>: View {
+    let face: String
+    let name: String
+    var line: String? = nil
+    var lineTone: Color = Pearl.muted
+    @ViewBuilder var trailing: () -> Trailing
+
+    var body: some View {
+        HStack(spacing: 12) {
+            APFace(name: face)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                if let line = line {
+                    Text(line).font(Nacre.subheadline).foregroundColor(lineTone)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            trailing()
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .frame(minHeight: 60)
+        .contentShape(Rectangle())
+    }
+}
+
+/// `.tickbox`: 24 pt, radius 7, a 1.5 pt muted edge; ticked, rose with ✓.
+struct APTickBox: View {
+    let on: Bool
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(on ? Pearl.action : Color.clear)
+            if !on {
+                RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Pearl.muted, lineWidth: 1.5)
+            } else {
+                Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)).foregroundColor(Pearl.onAction)
+            }
+        }
+        .frame(width: 24, height: 24)
+        .accessibilityHidden(true)
+    }
+}
+
+/// `.radio`: 24 pt, a 1.5 pt muted ring; on, a 7 pt rose ring.
+struct APRadio: View {
+    let on: Bool
+
+    var body: some View {
+        Circle().strokeBorder(on ? Pearl.action : Pearl.muted, lineWidth: on ? 7 : 1.5)
+            .frame(width: 24, height: 24)
+            .accessibilityHidden(true)
+    }
+}
+
+/// `.total`: the centred 15/600 line under a card. Green with ✓ when it
+/// adds up, muted while something's left over, red only when too much.
+struct APTotalLine: View {
+    enum Tone { case good, quiet, over }
+    let text: String
+    var tone: Tone = .good
+
+    var body: some View {
+        Text(text)
+            .font(.custom("Figtree-SemiBold", size: 15, relativeTo: .subheadline))
+            .monospacedDigit()
+            .foregroundColor(tone == .good ? Pearl.moneyIn : tone == .over ? Pearl.danger : Pearl.muted)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity)
+    }
+}
+
+/// The evenly sized five-part switch (REDESIGN-10): Evenly · Amounts · % ·
+/// Shares · Not sure, one row that fits 375 pt. `chip` track 38 high, the
+/// chosen part on `surface-card` with a soft shadow; 14/500 words.
+struct APSegments: View {
+    let options: [(tag: String, label: String)]
+    @Binding var selection: String
+    var spoken: (String) -> String = { $0 }
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(options, id: \.tag) { o in
+                let on = o.tag == selection
+                Button { selection = o.tag } label: {
+                    Text(o.label)
+                        .font(.custom("Figtree-Medium", size: 14, relativeTo: .subheadline))
+                        .foregroundColor(Pearl.ink)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                        .padding(.horizontal, 8)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background {
+                            if on {
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(scheme == .dark ? Color(hex: 0x151B44) : Color.white.opacity(0.72))
+                                    .shadow(color: Pearl.ink.opacity(0.12), radius: 1.5, y: 1)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(spoken(o.label))
+                .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
+            }
+        }
+        .padding(3)
+        .frame(height: 38)
+        .background(Capsule().fill(APlus.chip))
+    }
+}
+
+/// `.stepper`: − n + in a well, 36 high.
+struct APStepper: View {
+    let value: String
+    let label: String
+    let minus: () -> Void
+    let plus: () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button(action: minus) { Text("\u{2212}").frame(width: 36, height: 36).contentShape(Rectangle()) }
+                .accessibilityLabel("Fewer shares for \(label)")
+            Text(value).font(Nacre.headline).monospacedDigit().frame(minWidth: 24)
+                .accessibilityLabel("\(label), \(value) shares")
+            Button(action: plus) { Text("+").frame(width: 36, height: 36).contentShape(Rectangle()) }
+                .accessibilityLabel("More shares for \(label)")
+        }
+        .buttonStyle(.plain)
+        .font(.system(size: 18))
+        .foregroundColor(Pearl.ink)
+        .frame(height: 36)
+        .wellStyle(focused: false)
+    }
+}
+
+/// `.tile`: a kind to pick (A person · The shop · Work), 96 high.
+struct APTile: View {
+    let symbol: String
+    let title: String
+    var sub: String? = nil
+    var current = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 2) {
+                APIcon(symbol: symbol).padding(.bottom, 6)
+                Text(title).font(.custom("Figtree-Regular", size: 16, relativeTo: .callout)).foregroundColor(Pearl.ink)
+                if let sub = sub {
+                    Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
+            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(APlus.card))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(current ? Pearl.action : APlus.cardLine, lineWidth: current ? 2 : 1))
+            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel([title, sub].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityAddTraits(current ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+/// G2-Person "PAID SO FAR": the payment as a row ("e-Transfer · Nov 12",
+/// what it was, the amount in green), then View… and Unlink… as rows in
+/// the same card (they were pills).
+struct APPaymentCard: View {
+    let title: String
+    var line: String? = nil
+    let amount: Double
+    var viewLabel: String? = nil
+    var onView: () -> Void = {}
+    let unlinkTitle: String
+    var unlinkSub: String? = nil
+    let onUnlink: () -> Void
+
+    var body: some View {
+        APOptionCard {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
+                    if let line = line, !line.isEmpty {
+                        Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Text(Format.amount(amount)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.moneyIn)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 56)
+            .accessibilityElement(children: .combine)
+            if let viewLabel = viewLabel {
+                APSeparator(afterFace: false)
+                APOptionRow(symbol: "arrow.left.arrow.right", title: viewLabel, action: onView)
+                    .accessibilityHint("Opens it here in Pearl")
+            }
+            APSeparator(afterFace: false)
+            APOptionRow(symbol: "link", title: unlinkTitle, sub: unlinkSub, action: onUnlink)
+        }
+    }
+}
+
+/// `.bullet` rows in a card: WHAT CHANGES.
+struct APBullets: View {
+    let lines: [String]
+
+    var body: some View {
+        APOptionCard {
+            ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
+                if i > 0 { APSeparator(afterFace: false) }
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Circle().fill(Pearl.action).frame(width: 6, height: 6)
+                        .alignmentGuide(.firstTextBaseline) { d in d[.bottom] + 4 }
+                        .accessibilityHidden(true)
+                    Text(line).font(Nacre.subheadline).foregroundColor(Pearl.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 12)
+            }
+        }
+    }
+}
+
 // MARK: - S-44 Toasts
 
 /// "Pearl/Toast with Undo" (S-44a–i): ink, with a 44-high action. It stays
@@ -530,68 +1129,44 @@ struct MineOptionsSheet: View {
     private var ways: Int { split.people.count + 1 }
 
     private var sub: String {
-        guard let mine = mine else { return "Your share \(Format.amount(split.you)) · nothing paid it back yet" }
+        // REDESIGN-10: "Not paid back yet".
+        guard let mine = mine else { return "Not paid back yet" }
         return mine.full
             ? "✓ " + (mine.refunded ? "Refunded" : "Reimbursed by \(by)") + (mine.on.map { " · \(Format.short($0))" } ?? "")
             : "\(mine.refunded ? "Refunded" : "Reimbursed") \(Format.amount(mine.reimbursed)) of \(Format.amount(mine.amount)) · \(Format.amount(mine.stays)) stays yours"
     }
 
     var body: some View {
-        PearlSheet {
-            PearlSheetHeader(face: "Me", overline: "\(t.merchant) · split \(ways) ways", title: "You",
-                             sub: sub, subTone: mine.map { $0.full ? Pearl.moneyIn : Pearl.muted } ?? Pearl.moneyIn,
+        APSheet {
+            APSheetHeader(face: "Me", overline: "\(t.merchant) · split \(ways) ways", title: "You",
+                             sub: sub, subTone: mine.map { $0.full ? Pearl.moneyIn : Pearl.muted } ?? Pearl.muted,
                              close: onClose)
             if let mine = mine, let links = mine.links, !links.isEmpty {
-                PearlSectionLabel(text: mine.refunded ? "Refunded by" : "Reimbursed by")
+                APSheetLabel(text: mine.refunded ? "Refunded by" : "Reimbursed by")
                 ForEach(links) { link in card(link, only: links.count == 1) }
             }
-            PearlSectionLabel(text: mine == nil ? "Your share" : "Change the split")
-            PearlOptionCard {
+            // G2-FromPurchase: no label before anything is linked.
+            if mine != nil { APSheetLabel(text: "Change the split") }
+            APOptionCard {
                 // PB-20: first, also before anything is linked. The frame
                 // draws the title alone; what it finds is the VoiceOver hint.
-                PearlOptionRow(symbol: "person.2", title: "Find what paid it back") { onChoose(.findPaidBack) }
+                APOptionRow(symbol: "questionmark.circle", title: "Find what paid it back") { onChoose(.findPaidBack) }
                     .accessibilityHint("Work, a refund, or someone paying you")
                     .accessibilityIdentifier("find-paid-back")
-                PearlDivider()
-                PearlOptionRow(symbol: "person.2", title: "Change your share") { onChoose(.changeShare) }
+                APSeparator()
+                APOptionRow(symbol: "person.2", title: "Change your share") { onChoose(.changeShare) }
             }
         }
     }
 
     /// "Northwind Ltd · Nov 14" over "Paid back · work", $60.00.
     private func card(_ link: Transaction.LinkInfo, only: Bool) -> some View {
-        VStack(spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                PearlBubble(symbol: link.kind == "refund" ? "arrow.uturn.backward" : "briefcase")
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(link.sheet.face) · \(Format.short(link.date))")
-                        .font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                    // PAID-02: a link reads "Paid back · {who}".
-                    Text(link.kind == "refund" ? "Paid back · refund" : "Paid back · work")
-                        .font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 8)
-                Text(Format.amount(link.amount)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
-                    .foregroundColor(Pearl.moneyIn)
-            }
-            .accessibilityElement(children: .combine)
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) { pills(link, only: only) }
-                VStack(spacing: 8) { pills(link, only: only) }
-            }
-        }
-        .padding(16)
-        .pearlCard(radius: Pearl.radiusTile)
-    }
-
-    @ViewBuilder private func pills(_ link: Transaction.LinkInfo, only: Bool) -> some View {
-        if let view = link.view {
-            Button(view.label) { onChoose(.view(link)) }.buttonStyle(PearlPillButtonStyle())
-                .accessibilityHint("Opens it here in Pearl")
-        }
-        Button(only ? "Unlink…" : "Unlink \(Format.amount(link.amount))…") { onChoose(.unlink(link)) }
-            .buttonStyle(PearlPillButtonStyle())
+        // PAID-02: a link reads "Paid back · {who}".
+        APPaymentCard(title: "\(link.sheet.face) · \(Format.short(link.date))",
+                      line: link.kind == "refund" ? "Paid back · refund" : "Paid back · work",
+                      amount: link.amount, viewLabel: link.view?.label, onView: { onChoose(.view(link)) },
+                      unlinkTitle: only ? "Unlink…" : "Unlink \(Format.amount(link.amount))…",
+                      onUnlink: { onChoose(.unlink(link)) })
     }
 }
 
@@ -616,47 +1191,43 @@ struct PersonOptionsSheet: View {
     /// back (any amount), Remind (no amount), Remove. No Let it go and no
     /// Change share: nothing is owed. Closed (S-46): only the links.
     private var unsureBody: some View {
-        PearlSheet {
-            PearlSheetHeader(face: p.name, overline: "\(t.merchant) · Not sure yet", title: p.name,
+        APSheet {
+            APSheetHeader(face: p.name, overline: "\(t.merchant) · Not sure yet", title: p.name,
                              sub: p.paid >= 0.005 ? "Paid you \(Format.amount(p.paid)) so far" : "Nothing yet",
                              subTone: p.paid >= 0.005 ? Pearl.moneyIn : Pearl.muted, close: onClose)
             if !links.isEmpty {
-                PearlSectionLabel(text: "Paid so far")
+                APSheetLabel(text: "Paid so far")
                 ForEach(links) { link in paymentCard(link) }
             }
             if split.closedAt == nil {
                 // REFRESH-03: the rows alone; no subtitles, no footnote.
                 // The lead option is filled on S-40u and S-40u2, as on S-40a.
-                PearlOptionCard {
-                    PearlOptionRow(symbol: "banknote", title: "Mark paid back",
+                APOptionCard {
+                    APOptionRow(symbol: "banknote", title: "Mark paid back",
                                    prominent: true) { onChoose(.markPaid) }
-                    PearlDivider()
-                    PearlOptionRow(symbol: "envelope", title: "Remind \(p.name)") { onChoose(.remind) }
+                    APSeparator()
+                    APOptionRow(symbol: "pencil.line", title: "Remind \(p.name)") { onChoose(.remind) }
                 }
-                PearlSectionLabel(text: "Change the split")
-                PearlOptionCard {
-                    PearlOptionRow(symbol: "person", title: "Remove \(p.name)", sub: removeSub) {
-                        onChoose(.remove)
-                    }
+                APSheetLabel(text: "Change the split")
+                APOptionCard {
+                    APOptionRow(symbol: "person", title: "Remove \(p.name)") { onChoose(.remove) }
+                        .accessibilityHint(removeSub ?? "")
                 }
             }
         }
     }
 
     private var setBody: some View {
-        PearlSheet {
-            PearlSheetHeader(face: p.name, overline: "\(t.merchant) · split \(ways) ways", title: p.name,
+        APSheet {
+            APSheetHeader(face: p.name, overline: "\(t.merchant) · split \(ways) ways", title: p.name,
                              sub: headline, subTone: paidInFull ? Pearl.moneyIn : Pearl.muted, close: onClose)
-            if p.paid >= 0.005 && p.owes >= 0.005 {
-                PaidBar(paid: p.paid, of: p.amount).accessibilityHidden(true)
-            }
             if !links.isEmpty {
-                PearlSectionLabel(text: paidInFull ? "Paid with" : "Paid so far")
+                APSheetLabel(text: paidInFull ? "Paid with" : "Paid so far")
                 ForEach(links) { link in paymentCard(link) }
             }
             if p.letGo != nil {
-                PearlOptionCard {
-                    PearlOptionRow(symbol: "arrow.triangle.2.circlepath", title: "Undo let it go",
+                APOptionCard {
+                    APOptionRow(symbol: "arrow.triangle.2.circlepath", title: "Undo let it go",
                                    sub: "\(p.name) owes you \(Format.amount(letGoAmount)) again", prominent: true) {
                         onChoose(.undoLetGo)
                     }
@@ -666,23 +1237,24 @@ struct PersonOptionsSheet: View {
                 // REFRESH-03 (S-40a, S-40b): subtitles that only described the
                 // row are gone; VoiceOver keeps them as hints. The one that
                 // costs money ("becomes your spending") stays.
-                PearlOptionCard {
-                    PearlOptionRow(symbol: "arrow.uturn.backward", title: part ? "Mark the rest paid back" : "Mark paid back",
+                APOptionCard {
+                    APOptionRow(symbol: "arrow.uturn.backward", title: part ? "Mark the rest paid back" : "Mark paid back",
                                    prominent: true) { onChoose(.markPaid) }
                         .accessibilityHint("By bank, cash or another app")
-                    PearlDivider()
-                    PearlOptionRow(symbol: "envelope", title: "Remind \(p.name)") { onChoose(.remind) }
+                    APSeparator()
+                    APOptionRow(symbol: "pencil.line", title: "Remind \(p.name)") { onChoose(.remind) }
                         .accessibilityHint(part ? "Copies a message for the \(Format.amount(p.owes)) left"
                                                 : "Copies a message for you to send")
-                    PearlDivider()
-                    PearlOptionRow(symbol: "forward", title: part ? "Let the rest go" : "Let it go",
-                                   sub: "The \(Format.amount(p.owes)) becomes your spending") { onChoose(.letGo) }
+                    APSeparator()
+                    // G2-Person: the title alone; what it costs is the hint.
+                    APOptionRow(symbol: "chevron.right", title: part ? "Let the rest go" : "Let it go") { onChoose(.letGo) }
+                        .accessibilityHint("The \(Format.amount(p.owes)) becomes your spending")
                 }
             }
             if let extra = answerExtra {
                 // S-48e: "Change what the extra $6.67 is".
-                PearlOptionCard {
-                    PearlOptionRow(symbol: "arrow.triangle.2.circlepath", title: "Change what the extra \(Format.amount(extra)) is",
+                APOptionCard {
+                    APOptionRow(symbol: "arrow.triangle.2.circlepath", title: "Change what the extra \(Format.amount(extra)) is",
                                    sub: (p.gift ?? 0) >= 0.005 ? "Now: a gift · or you owe \(p.name), or \(possessive(p.name)) share"
                                        : "Now: you owe \(p.name) · or \(possessive(p.name)) share, or a gift") {
                         onChoose(.changeAnswer)
@@ -692,26 +1264,27 @@ struct PersonOptionsSheet: View {
             if paidInFull, links.count == 1, let link = links.first, TransactionDetailView.personPayback(link) {
                 // PB-42 note (1397:4698): S-40c keeps its own rows and adds How
                 // much and Which purchase, each opening PB-42 on that step.
-                PearlOptionCard {
-                    PearlOptionRow(symbol: "target", title: "How much", sub: "All of it · \(Format.amount(link.amount))") {
+                APOptionCard {
+                    APOptionRow(symbol: "target", title: "How much", sub: "All of it · \(Format.amount(link.amount))") {
                         onChoose(.howMuch(link))
                     }
-                    PearlDivider()
-                    PearlOptionRow(symbol: "cart", title: "Which purchase", sub: "\(t.merchant) · \(Format.weekdayDay(t.date))") {
+                    APSeparator()
+                    APOptionRow(symbol: "cart", title: "Which purchase", sub: "\(t.merchant) · \(Format.weekdayDay(t.date))") {
                         onChoose(.whichPurchase(link))
                     }
                 }
             }
-            PearlSectionLabel(text: "Change the split")
-            PearlOptionCard {
+            APSheetLabel(text: "Change the split")
+            APOptionCard {
                 if p.paid >= 0.005 && p.owes >= 0.005 && p.letGo == nil {
                     // S-48e: Sam paid less; his share reopens S-48a.
-                    PearlOptionRow(symbol: "person.2", title: "Change \(possessive(p.name)) share") { onChoose(.changeAnswer) }
+                    APOptionRow(symbol: "person.2", title: "Change \(possessive(p.name)) share") { onChoose(.changeAnswer) }
                 } else {
-                    PearlOptionRow(symbol: "person.2", title: "Change \(possessive(p.name)) share") { onChoose(.changeShare) }
+                    APOptionRow(symbol: "person.2", title: "Change \(possessive(p.name)) share") { onChoose(.changeShare) }
                 }
-                PearlDivider()
-                PearlOptionRow(symbol: "person", title: "Remove \(p.name)", sub: removeSub) { onChoose(.remove) }
+                APSeparator()
+                APOptionRow(symbol: "person", title: "Remove \(p.name)") { onChoose(.remove) }
+                    .accessibilityHint(removeSub ?? "")
             }
         }
     }
@@ -724,14 +1297,14 @@ struct PersonOptionsSheet: View {
         return extra >= 0.005 ? extra : nil
     }
 
-    /// "Owes you $30.00 of $30.00", "Paid $10.00 of $30.00 · owes $20.00",
+    /// REDESIGN-10: "Owes you $30.00", "Paid $10.00 · owes $20.00",
     /// "✓ Paid back in full · Nov 16", "You let $30.00 go · Nov 20".
     private var headline: String {
         if let gone = p.letGo { return "You let \(Format.amount(letGoAmount)) go · \(Format.short(gone.day))" }
         if p.owes >= 0.005 {
             return p.paid >= 0.005
-                ? "Paid \(Format.amount(p.paid)) of \(Format.amount(p.amount)) · owes \(Format.amount(p.owes))"
-                : "Owes you \(Format.amount(p.owes)) of \(Format.amount(p.amount))"
+                ? "Paid \(Format.amount(p.paid)) · owes \(Format.amount(p.owes))"
+                : "Owes you \(Format.amount(p.owes))"
         }
         return "✓ Paid back in full" + (p.paidOn.map { " · \(Format.short($0))" } ?? "")
     }
@@ -760,38 +1333,10 @@ struct PersonOptionsSheet: View {
     /// One payment: what it was, how much of it was theirs here, then View
     /// (bank or a deposit only) and its own Unlink.
     private func paymentCard(_ link: Transaction.LinkInfo) -> some View {
-        VStack(spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                PearlBubble(symbol: Self.symbol(link.kind), tone: Pearl.moneyIn)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(Self.word(link)) · \(Format.short(link.date))")
-                        .font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                    Text(detail(link)).font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 8)
-                Text(Format.amount(link.amount)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
-                    .foregroundColor(Pearl.moneyIn)
-            }
-            .accessibilityElement(children: .combine)
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) { pills(link) }
-                VStack(spacing: 8) { pills(link) }
-            }
-        }
-        .padding(16)
-        .pearlCard(radius: Pearl.radiusTile)
-    }
-
-    @ViewBuilder private func pills(_ link: Transaction.LinkInfo) -> some View {
-        if let view = link.view {
-            Button(view.label) { onChoose(.view(link)) }.buttonStyle(PearlPillButtonStyle())
-                .accessibilityHint("Opens it here in Pearl")
-        }
-        Button(links.count == 1 && link.view != nil ? "Unlink…" : "Unlink \(Format.amount(link.amount))…") {
-            onChoose(.unlink(link))
-        }
-        .buttonStyle(PearlPillButtonStyle())
+        APPaymentCard(title: "\(Self.word(link)) · \(Format.short(link.date))", line: detail(link),
+                      amount: link.amount, viewLabel: link.view?.label, onView: { onChoose(.view(link)) },
+                      unlinkTitle: links.count == 1 && link.view != nil ? "Unlink…" : "Unlink \(Format.amount(link.amount))…",
+                      onUnlink: { onChoose(.unlink(link)) })
     }
 
     /// "You marked this as cash", "Part of $60.00 · also paid back Pizza
@@ -864,6 +1409,7 @@ struct RemindSheet: View {
     let onClose: () -> Void
     let onCopied: () -> Void
     @State private var text: String
+    @FocusState private var editing: Bool
     private var unsure: Bool { t.splitting?.unsure == true }
 
     init(t: Transaction, p: Transaction.Splitting.Person, onClose: @escaping () -> Void,
@@ -892,24 +1438,30 @@ struct RemindSheet: View {
     }
 
     var body: some View {
-        PearlSheet {
-            PearlSheetHeader(face: p.name, overline: unsure ? "Remind \(p.name)" : "Remind",
-                             title: unsure ? "A friendly nudge" : "Remind \(p.name)",
-                             sub: unsure ? nil : p.paid >= 0.005 ? "Owes you \(Format.amount(p.owes)) of \(Format.amount(p.amount))"
-                                                  : "Owes you \(Format.amount(p.owes))",
-                             close: onClose)
-            TextField("", text: $text, axis: .vertical)
-                .font(Pearl.text(.headline))
-                .foregroundColor(Pearl.ink)
-                .lineLimit(2...8)
-                .padding(16)
-                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Pearl.bubble))
-                .accessibilityLabel("Message to \(p.name)")
-                .accessibilityHint("Tap to change the message.")
-            // REFRESH-03 (S-07ra, S-07rb, S-07u): one line under the message.
-            Text("Pearl doesn’t send it. You paste it.")
-                .font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
-                .fixedSize(horizontal: false, vertical: true)
+        APSheet {
+            // G2-CashRemind: "Remind Priya" centred, Priya and what's owed,
+            // then the message in a well under its label.
+            APSheetHeader(heading: "Remind \(p.name)", face: p.name, title: p.name,
+                          sub: unsure ? "A friendly nudge" : "Owes you \(Format.amount(p.owes))",
+                          close: onClose)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Message").font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 4)
+                    .accessibilityHidden(true)
+                TextField("", text: $text, axis: .vertical)
+                    .font(Nacre.body)
+                    .foregroundColor(Pearl.ink).tint(Pearl.action)
+                    .lineLimit(3...8)
+                    .focused($editing)
+                    .padding(.horizontal, 14).padding(.vertical, 12)
+                    .frame(minHeight: 96, alignment: .topLeading)
+                    .wellStyle(focused: editing)
+                    .accessibilityLabel("Message to \(p.name)")
+                    .accessibilityHint("Tap to change the message.")
+                // REFRESH-03 (S-07ra, S-07rb, S-07u): one line under the message.
+                Text("Pearl doesn’t send it. You paste it.")
+                    .font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         } footer: {
             PearlSheetButtons(primary: "Copy message") {
                 UIPasteboard.general.string = text
@@ -987,27 +1539,17 @@ struct RemovePersonSheet: View {
 
     var body: some View {
         let words = RemoveWords(p, merchant: merchant, countsAgain: countsAgain)
-        PearlSheet(dismissDisabled: busy) {
-            PearlSheetHeader(face: p.name, overline: "Remove from split", title: "Remove \(p.name) from the split?",
-                             close: onClose)
+        APSheet(dismissDisabled: busy) {
+            // G2-LetGo (Remove): the question centred, what they paid, then
+            // WHAT CHANGES as bullets.
+            APSheetHeader(heading: "Remove \(p.name) from the split?", close: onClose)
                 .disabled(busy)
             if !words.lead.isEmpty {
-                Text(words.lead).font(Pearl.text(.headline)).foregroundColor(Pearl.ink)
+                Text(words.lead).font(Nacre.body).foregroundColor(Pearl.ink)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            PearlSectionLabel(text: "What changes")
-            PearlOptionCard {
-                ForEach(Array(words.changes.enumerated()), id: \.offset) { i, line in
-                    if i > 0 { PearlDivider() }
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Circle().fill(Pearl.action).frame(width: 6, height: 6).accessibilityHidden(true)
-                        Text(line).font(Pearl.text(.callout)).foregroundColor(Pearl.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.vertical, 12)
-                }
-            }
+            APSheetLabel(text: "What changes")
+            APBullets(lines: words.changes)
             if let failed = failed { CautionBanner(text: failed) }
         } footer: {
             PearlSheetButtons(primary: failed != nil ? "Try again" : words.unlinks ? "Unlink and remove" : "Remove \(p.name)",

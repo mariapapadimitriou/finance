@@ -88,13 +88,20 @@ class TestLightIridescent:
         """The split sheets' white cards (S-03*, S-04*, S-40*, S-06r*, S-07r*,
         S-34*) and the Home cards go through one modifier, which keeps the
         dark look and blurs once per card."""
+        # A+ restyle (G2): the split and payback sheets moved to the A+ card
+        # (`.apCard()` / APCard), which also blurs once per card.
+        for path in ("ios/Pearl/Views/Transactions/SplitFlow.swift",
+                     "ios/Pearl/Views/Transactions/JointSplitViews.swift",
+                     "ios/Pearl/Views/Transactions/PaybackOptions.swift"):
+            assert ".apCard(" in code(src(path)), path
         for path in ("ios/Pearl/Views/Components/Components.swift",
                      "ios/Pearl/Views/Transactions/SplitMenus.swift",
                      "ios/Pearl/Views/Transactions/SplitFlow.swift",
                      "ios/Pearl/Views/Transactions/JointSplitViews.swift",
                      "ios/Pearl/Views/Transactions/PaybackOptions.swift"):
             text = code(src(path))
-            assert ".pearlCard(radius:" in text, path
+            if path.endswith("Components.swift") or path.endswith("SplitMenus.swift"):
+                assert ".pearlCard(radius:" in text, path
             # A card-sized solid fill followed by the 1 pt border on the next
             # line: the old card. (A field or an answer, radiusChoice, is not a card.)
             by_hand = re.search(r"cornerRadius: Pearl\.radius(?:Tile|Row|Card), style: \.continuous\)\.fill\(Pearl\.card\)\)\n"

@@ -131,30 +131,30 @@ struct PaybackLinkSheet: View {
     }
 
     private var options: some View {
-        PearlSheet(dismissDisabled: busy) {
+        APSheet(dismissDisabled: busy) {
             if let notice = notice {
                 // PP-02: what moved, with Undo.
                 PearlToast(model: notice, stays: true) {}
             }
-            PearlSheetHeader(overline: "Paid back", title: link.dialog, sub: headerSub, close: onClose)
-            PearlOptionCard {
-                PearlOptionRow(symbol: "target", title: "How much",
+            APSheetHeader(overline: "Paid back", title: link.dialog, sub: headerSub, close: onClose)
+            APOptionCard {
+                APOptionRow(symbol: "target", title: "How much",
                                sub: all ? "All of it · \(Format.amount(link.amount))" : "Part of it · \(Format.amount(link.amount))") {
                     step = .howMuch
                 }
-                PearlDivider()
-                PearlOptionRow(symbol: "person", title: "Who paid", sub: person) { whoPaid = true }
-                PearlDivider()
-                PearlOptionRow(symbol: "cart", title: "Which purchase", sub: "\(merchant) · \(Format.weekdayDay(date))") {
+                APSeparator()
+                APOptionRow(symbol: "person", title: "Who paid", sub: person) { whoPaid = true }
+                APSeparator()
+                APOptionRow(symbol: "cart", title: "Which purchase", sub: "\(merchant) · \(Format.weekdayDay(date))") {
                     step = .which
                 }
                 if !fromDeposit && link.view != nil {
-                    PearlDivider()
-                    PearlOptionRow(symbol: "eye", title: "View the \(word)", action: onView)
+                    APSeparator()
+                    APOptionRow(symbol: "eye", title: "View the \(word)", action: onView)
                         .accessibilityHint("Opens it here in Pearl")
                 }
-                PearlDivider()
-                PearlOptionRow(symbol: "xmark", title: "Unlink…", sub: unlinkSub, action: onUnlink)
+                APSeparator()
+                APOptionRow(symbol: "xmark", title: "Unlink…", sub: unlinkSub, action: onUnlink)
             }
             errorLine
         }
@@ -181,12 +181,12 @@ struct PaybackLinkSheet: View {
     }
 
     private var howMuch: some View {
-        PearlSheet(dismissDisabled: busy) {
-            PearlSheetHeader(overline: "\(merchant) · \(first) owes \(Format.amount(total))",
+        APSheet(dismissDisabled: busy) {
+            APSheetHeader(overline: "\(merchant) · \(first) owes \(Format.amount(total))",
                              title: "How much of \(possessive(first)) \(Format.amount(total))?",
                              back: { if start == .options { step = .options } else { onClose() } },
                              close: onClose)
-            GlassCard {
+            APCard {
                 // PB-13 for a person, UI audit: "Sam still owes $45.00", no
                 // hint to tap it (the amount already looks editable).
                 let owesAfter = Text("\(first) still owes \(Format.amount(max(0, total - partValue)))")
@@ -217,7 +217,7 @@ struct PaybackLinkSheet: View {
                     .accessibilityElement(children: .combine)
                     .accessibilityAddTraits(!allOfIt ? .isSelected : [])
                 }
-                RowSeparator()
+                APSeparator(afterFace: false)
                 Button {
                     allOfIt = true
                     editingPart = false
@@ -268,18 +268,18 @@ struct PaybackLinkSheet: View {
     // MARK: PB-12 Which of their shares (Paid back, 1351:9586)
 
     private var which: some View {
-        PearlSheet(dismissDisabled: busy) {
-            PearlSheetHeader(overline: "Paid back", title: "What did \(first) pay back?",
+        APSheet(dismissDisabled: busy) {
+            APSheetHeader(overline: "Paid back", title: "What did \(first) pay back?",
                              back: { if start == .options { step = .options } else { onClose() } },
                              close: onClose)
             if let rows = shares {
                 if rows.isEmpty {
                     Text("No purchases match.").font(Nacre.subheadline).foregroundColor(Pearl.muted)
                 } else {
-                    PearlSectionLabel(text: "Likely")
-                    GlassCard {
+                    APSheetLabel(text: "Likely")
+                    APCard {
                         ForEach(Array(rows.enumerated()), id: \.element.id) { i, o in
-                            if i > 0 { RowSeparator() }
+                            if i > 0 { APSeparator(afterFace: false) }
                             shareRow(o, on: pick == o.id)
                         }
                     }
