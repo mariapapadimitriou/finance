@@ -19,6 +19,12 @@ import SwiftUI
 // so nothing here adds anything up. A bill's tick saves at once once she has
 // confirmed her bills; before that the ticks wait for "Confirm n bills".
 
+/// Your plan is parked along with Save (product owner, 2026-11-18). The one
+/// switch for every way into it from Profile; turn it on when Save returns.
+enum YourPlanGate {
+    static let shown = false
+}
+
 @MainActor
 struct IncomeBillsView: View {
     @EnvironmentObject private var app: AppModel
@@ -141,17 +147,20 @@ struct IncomeBillsView: View {
             .padding(.top, 8)
         }
 
-        // YP-09: Your plan, its own card above Income (kept as built).
-        APCard {
-            NavigationLink { YourPlanView() } label: {
-                ProfileRow(symbol: "calendar", title: "Your plan") {
-                    Text(planValue(data.yourPlan)).font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
+        // YP-09: Your plan, its own card above Income. Parked with Save
+        // (product owner, 2026-11-18): hidden behind YourPlanGate.shown.
+        if YourPlanGate.shown {
+            APCard {
+                NavigationLink { YourPlanView() } label: {
+                    ProfileRow(symbol: "calendar", title: "Your plan") {
+                        Text(planValue(data.yourPlan)).font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
+                    }
                 }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("income-your-plan")
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("income-your-plan")
+            .padding(.top, 8)
         }
-        .padding(.top, 8)
 
         ProfileSection("Income", action: "Add") { sheet = .addPay }
         APCard {

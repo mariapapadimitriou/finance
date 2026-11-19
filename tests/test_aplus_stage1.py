@@ -205,6 +205,16 @@ class TestProfileCircleAndPhoto(unittest.TestCase):
         self.assertIn('"Not in your budget now"', a)
         self.assertIn("AddAccountSheet", a)
         i = code(read("Views", "Profile", "IncomeBillsView.swift"))
+        # Your plan is parked with Save (product owner, 2026-11-18): one flag, off,
+        # and the only way into it from Profile sits behind it.
+        self.assertIn("static let shown = false", i)
+        gate = i.index("if YourPlanGate.shown {")
+        self.assertGreater(i.index("YourPlanView()"), gate)
+        self.assertEqual(i.count("YourPlanView()"), 1)
+        for folder in (("Views", "Profile"), ("Views", "Onboarding")):
+            for f in os.listdir(os.path.join(APP, *folder)):
+                if f.endswith(".swift") and f not in ("IncomeBillsView.swift", "YourPlanView.swift"):
+                    self.assertNotIn("YourPlanView(", read(*folder, f), f)
         self.assertIn('"answer": yes ? "yes" : "no"', i)
         self.assertIn('body["answer"] = "no"', i)
 
