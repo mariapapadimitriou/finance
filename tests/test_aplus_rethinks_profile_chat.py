@@ -67,7 +67,8 @@ def test_rule_keeps_earlier_save_and_toast():
     assert 'APQuietButton(title: "Only new ones")' in page
     assert '"Now \\(category) · \\(n) moved"' in page
     assert "api/rules/earlier" in page
-    assert "undo: undo.map(undoCall)" in s
+    # TEST-47: Undo goes through undoCall, then the list shows the old category.
+    assert "let call = undoCall(payload)" in s and "try await call()" in s
 
 
 # G6-PayBills-r: 3 rows, then See all with the count and the month's total.

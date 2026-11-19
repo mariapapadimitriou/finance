@@ -24,6 +24,12 @@ struct CategoriesRulesView: View {
 
     @State private var tab = Tab.rules
     @State private var book: RulesBook?
+    /// TEST-47: a rule's category as just saved or undone, shown at once
+    /// until the next load brings the server's.
+    @State private var shown: [String: String] = [:]
+    /// TEST-47: only the latest load lands; an earlier one finishing late
+    /// can't put back what Undo changed.
+    @State private var loads = 0
     /// AI-05: rules Pearl learned from what she sorted, beside hers.
     @State private var learned: [LearnedRule] = []
     /// TR-09: her trips by name; a trip's tag has the trip's name.
@@ -79,9 +85,19 @@ struct CategoriesRulesView: View {
         if let rule = openRule {
             if rule.isSorting {
                 RuleEditView(rule: rule, categories: categories, hidden: Set(book?.hidden ?? []),
-                             onSaved: { text, undo in
+                             onSaved: { text, category, undo in
                                  openRule = nil
-                                 app.say(text, undo: undo.map(undoCall))
+                                 // TEST-47: the list says the new category at once,
+                                 // and the old one again after Undo.
+                                 let was = rule.category ?? "Other"
+                                 shown[rule.id] = category
+                                 app.say(text, undo: undo.map { payload in
+                                     let call = undoCall(payload)
+                                     return {
+                                         try await call()
+                                         await MainActor.run { shown[rule.id] = was }
+                                     }
+                                 })
                                  app.changed()
                              }, onDelete: {
                                  openRule = nil
@@ -183,7 +199,8 @@ struct CategoriesRulesView: View {
     private func list(_ book: RulesBook) -> some View {
         List {
             switch tab {
-            case .rules: CRRulesSection(rules: book.rules, learned: learned, open: { openRule = $0 },
+            case .rules: CRRulesSection(rules: book.rules.map { r in shown[r.id].map { r.with(category: $0) } ?? r },
+                                        learned: learned, open: { openRule = $0 },
                                         delete: delete)
             case .categories: kinds
             case .merchants: CRMerchantsSection(names: book.names ?? []) { renamingMerchant = $0 }
@@ -240,24 +257,30 @@ struct CategoriesRulesView: View {
     // MARK: Calls
 
     private func load() async {
+        loads += 1
+        let mine = loads
         do {
             let rules: RulesBook = try await app.api.get("api/rules")
             struct Learned: Decodable { let rules: [Lenient<LearnedRule>] }
             let got: Learned? = try? await app.api.get("api/pattern-sort/rules")
-            learned = got?.rules.compactMap { $0.value } ?? []
             struct Trips: Decodable { let trips: [Lenient<Trip>] }
             let gotTrips: Trips? = try? await app.api.get("api/trips")
+            // Together, so a row can't open before its categories are here.
+            let list: CategoryList? = try? await app.api.get("api/categories")
+            guard mine == loads else { return }
+            learned = got?.rules.compactMap { $0.value } ?? []
             trips = Dictionary((gotTrips?.trips.compactMap { $0.value } ?? []).map { ($0.name, $0) },
                                uniquingKeysWith: { a, _ in a })
-            // Together, so a row can't open before its categories are here.
-            if let list: CategoryList = try? await app.api.get("api/categories") {
+            if let list = list {
                 categories = list.categories
                 // She may have just hidden or added one: every other screen hears.
                 app.use(list)
             }
             book = rules
+            shown = [:]
             error = nil
         } catch {
+            guard mine == loads else { return }
             self.error = app.handle(error)
         }
     }
@@ -678,8 +701,8 @@ struct RuleEditView: View {
     let rule: RulesBook.Rule
     let categories: [CategoryList.Category]
     let hidden: Set<String>
-    /// The toast's words and its Undo payload.
-    let onSaved: (String, JSONValue?) -> Void
+    /// The toast's words, the category saved, and its Undo payload.
+    let onSaved: (String, String, JSONValue?) -> Void
     let onDelete: () -> Void
 
     @State private var picked: String?
@@ -804,7 +827,7 @@ struct RuleEditView: View {
             let id = rule.id  // plain: APIClient encodes it (TEST-33)
             let reply: RuleReply = try await app.api.put("api/rules/\(id)", ["category": category, "earlier": move])
             let n = reply.moved ?? 0
-            onSaved(n > 0 ? "Now \(category) · \(n) moved" : "Now \(category)", reply.undo)
+            onSaved(n > 0 ? "Now \(category) · \(n) moved" : "Now \(category)", category, reply.undo)
         } catch {
             self.error = app.handle(error)
         }
@@ -1048,5 +1071,12 @@ struct RenameSheet: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .onAppear { focused = true }
+    }
+}
+
+extension RulesBook.Rule {
+    /// The same rule under another category (TEST-47's shown-at-once list).
+    func with(category: String) -> Self {
+        Self(id: id, kind: kind, name: name, category: category, reason: reason, matched: matched)
     }
 }
