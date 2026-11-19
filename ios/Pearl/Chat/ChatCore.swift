@@ -610,7 +610,7 @@ struct ChatExecutor {
             return .sorted
         case .yes(.trip(let t)):
             struct Made: Decodable { let trip: Trip? }
-            let made: Made = try await writer.post("api/trips/asks/\(Self.path(t.id))/yes", [:])
+            let made: Made = try await writer.post("api/trips/asks/\(t.id)/yes", [:])
             let name = made.trip?.name ?? t.name ?? "Trip"
             let dates = made.trip.map { Format.span($0.start, $0.end) } ?? Format.span(t.start, t.end)
             return .trip(id: made.trip?.id ?? t.id, name: name.isEmpty ? "Trip" : name, dates: dates,
@@ -629,7 +629,7 @@ struct ChatExecutor {
             // PC-07: skipped ones stay in Needs a look; Not now changes nothing.
             return .skipped
         case .skip(.trip(let t)):
-            let _: ChatOK = try await writer.post("api/trips/asks/\(Self.path(t.id))/skip", [:])
+            let _: ChatOK = try await writer.post("api/trips/asks/\(t.id)/skip", [:])
             return .skipped
         case .skip(.pattern(let p)):
             let _: ChatOK = try await writer.post("api/pattern-sort/asks/\(p.id)/skip", [:])
@@ -645,13 +645,11 @@ struct ChatExecutor {
         case .plan(let category, nil):
             let _: ChatOK = try await writer.delete("api/your-plan/rows/\(category)", query: [:])
         case .trip(let id, _):
-            let _: ChatOK = try await writer.delete("api/trips/\(Self.path(id))", query: ["undo": "1"])
+            let _: ChatOK = try await writer.delete("api/trips/\(id)", query: ["undo": "1"])
         }
     }
 
-    private static func path(_ id: String) -> String {
-        id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
-    }
+    // Ids go in plain: APIClient encodes the path once (TEST-33).
 }
 
 // MARK: - The words (note 1340:8893; A+ G7 boards)

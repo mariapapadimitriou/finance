@@ -288,7 +288,7 @@ struct RecurringTransferPage: View {
     private func change(to new: String) {
         guard new != now, !busy else { return }
         busy = true
-        let id = transfer.ruleId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? transfer.ruleId
+        let id = transfer.ruleId  // plain: APIClient encodes it (TEST-33)
         let was = now
         let api = app.api
         Task {

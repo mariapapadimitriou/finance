@@ -828,9 +828,9 @@ struct QuickSortView: View {
     private func answerTrip(_ t: TripAsk, _ answer: String) async {
         busy = true
         defer { busy = false }
-        let id = t.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? t.id
         do {
-            let _: OK = try await app.api.post("api/trips/asks/\(id)/\(answer)", [:])
+            // The id goes in plain: APIClient encodes the path once (TEST-33).
+            let _: OK = try await app.api.post("api/trips/asks/\(t.id)/\(answer)", [:])
             error = nil
             withAnimation { toast = nil; undoPattern = nil }
             drag = .zero

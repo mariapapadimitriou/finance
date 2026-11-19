@@ -807,7 +807,7 @@ struct BillSheet: View {
         do {
             let reply: IncomeBills
             if let bill = bill {
-                let key = bill.key.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? bill.key
+                let key = bill.key  // plain: APIClient encodes it (TEST-33)
                 reply = try await app.api.put("api/income-bills/bills/\(key)", body)
             } else {
                 reply = try await app.api.post("api/income-bills/bills", body)
@@ -823,7 +823,7 @@ struct BillSheet: View {
         busy = true
         defer { busy = false }
         do {
-            let key = bill.key.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? bill.key
+            let key = bill.key  // plain: APIClient encodes it (TEST-33)
             let reply: IncomeBills = try await app.api.delete("api/income-bills/bills/\(key)")
             saved(reply)
             dismiss()

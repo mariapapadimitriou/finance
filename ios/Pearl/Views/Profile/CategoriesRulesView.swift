@@ -801,7 +801,7 @@ struct RuleEditView: View {
         busy = true
         defer { busy = false }
         do {
-            let id = rule.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? rule.id
+            let id = rule.id  // plain: APIClient encodes it (TEST-33)
             let reply: RuleReply = try await app.api.put("api/rules/\(id)", ["category": category, "earlier": move])
             let n = reply.moved ?? 0
             onSaved(n > 0 ? "Now \(category) · \(n) moved" : "Now \(category)", reply.undo)

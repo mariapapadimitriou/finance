@@ -2543,7 +2543,7 @@ struct TransactionDetailView: View {
 
     /// Off: it leaves her bills.
     private func removeBill() async {
-        guard let key = billKey?.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return }
+        guard let key = billKey else { return }  // plain: APIClient encodes it (TEST-33)
         struct Removed: Decodable {}
         await run {
             let _: Removed = try await app.api.delete("api/income-bills/bills/\(key)")
