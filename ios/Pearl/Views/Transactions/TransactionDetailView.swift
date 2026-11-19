@@ -1020,13 +1020,13 @@ struct TransactionDetailView: View {
     /// 44, and its lines in 15 muted.
     private var header: some View {
         VStack(spacing: 0) {
-            // TF-01: ⇄ in the ring for a transfer.
-            CFRing(name: t.merchant, size: 56, transfer: t.transfer != nil)
+            // TF-01: ⇄ in the ring for a transfer. TP-04: the payer's initials.
+            CFRing(name: t.jointPayback?.person ?? t.merchant, size: 56, transfer: t.transfer != nil)
                 .padding(.bottom, 8)
             if t.transfer == nil {
                 // T-80: tap the name to rename the merchant.
                 Button { renaming = true } label: {
-                    // TP-04 (Paybacks 2): "From Mom · Joint ··1123".
+                    // TP-04 (G2b-JointIn, rethought): "From Mom".
                     Text(heroName)
                         .font(Nacre.title2).foregroundColor(Pearl.ink)
                         .multilineTextAlignment(.center)
@@ -1058,7 +1058,7 @@ struct TransactionDetailView: View {
                 // RC-02 (1401:86515): the split's line, then the date and her share.
                 CostHeaderLines(line: line, back: t.cost?.back ?? 0, date: costDateLine)
             } else {
-                // TP-04: "Fri, Nov 14 · into Chequing ··4417".
+                // TP-04: "Joint ••1123 · Fri, Nov 14".
                 Text(heroDateLine)
                     .font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     .multilineTextAlignment(.center)
@@ -1122,20 +1122,21 @@ struct TransactionDetailView: View {
         return !q.named && t.asks && t.transfer == nil
     }
 
-    /// The hero's name: TP-04 (Paybacks 2) "From Mom · Joint ··1123" on
-    /// money a joint account's other owner paid her back with. Its own
-    /// small frame, out of the header's (stack check).
+    /// The hero's name: TP-04 (G2b-JointIn, rethought) "From Mom" on money
+    /// a joint account's other owner paid her back with; the account goes
+    /// on the line under the amount. Its own small frame, out of the
+    /// header's (stack check).
     @inline(never)
     private var heroName: String {
         guard let jp = t.jointPayback else { return t.merchant }
-        return "From \(jp.person) · \(jp.account)"
+        return "From \(jp.person)"
     }
 
-    /// TF-01's dates, TP-04's "Fri, Nov 14 · into Chequing ··4417", or the day.
+    /// TF-01's dates, TP-04's "Joint ••1123 · Fri, Nov 14", or the day.
     @inline(never)
     private var heroDateLine: String {
         if let transfer = t.transfer { return transferDates(transfer) }
-        if let jp = t.jointPayback { return "\(Format.weekdayDay(t.date)) · into \(jp.into)" }
+        if let jp = t.jointPayback { return "\(jp.account) · \(Format.weekdayDay(t.date))" }
         return dateLine
     }
 
@@ -1210,15 +1211,13 @@ struct TransactionDetailView: View {
                     .buttonStyle(APPrimaryButtonStyle(busy: busy))
                     .disabled(busy)
                     .accessibilityHint("Pick what it paid for")
-                    Button { unpairing = true } label: {
-                        Text("This isn’t a transfer")
-                            .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline)).foregroundColor(Pearl.link)
-                            .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(busy)
+                    notATransferLink
                 }
                 .padding(.horizontal, 16).padding(.bottom, 8)
+            } else if let transfer = t.transfer, guessing == nil, mineOnlyIn(transfer) {
+                // TP-05 (G2b-JointIn, rethought): the one quiet link.
+                notATransferLink
+                    .padding(.horizontal, 16).padding(.bottom, 8)
             } else if showsShareBar && canSplitJoint && t.splitBase >= 0.005 {
                 Button(t.splitsMyPart ? "Split my part" : "Split it with friends") { splitting = true }
                     .buttonStyle(APPrimaryButtonStyle(busy: busy))
@@ -1226,6 +1225,17 @@ struct TransactionDetailView: View {
                     .padding(.horizontal, 16).padding(.bottom, 8)
             }
         }
+    }
+
+    /// TP-01 / TP-05: "This isn’t a transfer", quiet, asks first (TF-01c).
+    private var notATransferLink: some View {
+        Button { unpairing = true } label: {
+            Text("This isn’t a transfer")
+                .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline)).foregroundColor(Pearl.link)
+                .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
     }
 
     /// T-41w / T-41m: money in that paid back (or refunded) her own share.
@@ -2064,7 +2074,9 @@ struct TransactionDetailView: View {
     /// ticks), Unlink both (asks first, as T-41b).
     @ViewBuilder private var paidBackParts: some View {
         let n = t.parts.count
-        section("Paid back · \(n) purchase\(n == 1 ? "" : "s")")
+        // TP-04 (G2b-JointIn): "Paid back 3 of Mom’s shares".
+        section(t.jointPayback.map { "Paid back \(n) of \(possessive($0.person)) share\(n == 1 ? "" : "s")" }
+                ?? "Paid back · \(n) purchase\(n == 1 ? "" : "s")")
         SolidCard {
             ForEach(Array(t.parts.enumerated()), id: \.element.id) { index, p in
                 if index > 0 { APSeparator() }
@@ -2105,7 +2117,9 @@ struct TransactionDetailView: View {
             Initials(name: merchant)
             VStack(alignment: .leading, spacing: 2) {
                 Text(merchant).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
-                Text("\(possessive(name)) share · \(all ? "all of it" : "part of it") · \(Format.short(p.charge?.date ?? t.date))")
+                // TP-04: the label already says whose; the row keeps the day.
+                Text(t.jointPayback != nil ? Format.short(p.charge?.date ?? t.date)
+                     : "\(possessive(name)) share · \(all ? "all of it" : "part of it") · \(Format.short(p.charge?.date ?? t.date))")
                     .font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(1)
             }
             Spacer(minLength: 8)
@@ -2631,6 +2645,8 @@ struct TransactionDetailView: View {
     @ViewBuilder private func transferLegs(_ transfer: Transaction.Transfer) -> some View {
         if t.inflow, transfer.joint != nil, transfer.otherId != nil {
             OwnBody { jointLegs(transfer) }
+        } else if mineOnlyIn(transfer) {
+            OwnBody { mineLegs(transfer) }
         } else {
             OwnBody { plainLegs(transfer) }
         }
@@ -2641,8 +2657,33 @@ struct TransactionDetailView: View {
     /// paid me back" is the page's Primary and This isn't a transfer the
     /// quiet link under it (pagePrimary).
     @ViewBuilder private func jointLegs(_ transfer: Transaction.Transfer) -> some View {
+        legsLine(transfer)
+            .padding(.top, 8)
+            .sheet(isPresented: $unpairing) { unpairSheet(transfer) }
+    }
+
+    /// TP-05: the money in of a transfer between two accounts only hers.
+    private func mineOnlyIn(_ transfer: Transaction.Transfer) -> Bool {
+        t.inflow && transfer.mineOnly == true
+    }
+
+    /// TP-05 (G2b-JointIn, rethought, approved): no options list. The legs
+    /// on one line, "Both accounts are only yours." under them, and This
+    /// isn't a transfer as the one quiet link at the foot (pagePrimary).
+    @ViewBuilder private func mineLegs(_ transfer: Transaction.Transfer) -> some View {
+        VStack(spacing: 0) {
+            legsLine(transfer)
+            NoPaidBackCallout().padding(.top, 10)
+        }
+        .padding(.top, 8)
+        .sheet(isPresented: $unpairing) { unpairSheet(transfer) }
+    }
+
+    /// "Joint ••1123 → Chequing ••4417" over "Same day", ⇄ on its disc, on
+    /// one card (TP-01, TP-05).
+    private func legsLine(_ transfer: Transaction.Transfer) -> some View {
         let (outDate, inDate) = legDates(transfer)
-        APCard {
+        return APCard {
             HStack(spacing: 12) {
                 CFIcon(symbol: "arrow.left.arrow.right")
                 VStack(alignment: .leading, spacing: 2) {
@@ -2656,8 +2697,6 @@ struct TransactionDetailView: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel("From \(transfer.from) to \(transfer.to), \(apartWords(outDate, inDate))")
         }
-        .padding(.top, 8)
-        .sheet(isPresented: $unpairing) { unpairSheet(transfer) }
     }
 
     @ViewBuilder private func plainLegs(_ transfer: Transaction.Transfer) -> some View {
@@ -2697,10 +2736,6 @@ struct TransactionDetailView: View {
             .accessibilityElement(children: .combine)
         }
         .sheet(isPresented: $unpairing) { unpairSheet(transfer) }
-        if t.inflow && transfer.mineOnly == true {
-            // TP-05 (Paybacks 2): both accounts are only hers, so no Paid back.
-            NoPaidBackCallout()
-        }
     }
 
     /// TF-01c (1390:2451 / 1390:2586): a Pearl sheet, not an alert.
