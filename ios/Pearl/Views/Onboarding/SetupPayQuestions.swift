@@ -21,37 +21,42 @@ struct WhosePaySheet: View {
     @State private var error: String?
 
     var body: some View {
+        // G6-PayBills O-10f: who, then each answer as a radio row that
+        // answers at once, and one short note. No Save.
         VStack(spacing: 0) {
-            SheetTitle(title: "Whose pay is this?") { dismiss() }.sheetPart()
+            APSheetTitle(title: "Whose pay is this?") { dismiss() }
+                .padding(.horizontal, 16).padding(.top, 14)
+                .sheetPart()
             ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    QuestionHeader(name: ask.name, amount: "+" + Format.amount(ask.amount), tone: Pearl.moneyIn,
-                                   sub: "Joint")
-                    QuestionCaption(text: "Why Pearl is asking")
-                    WhyCard(sentence: sentence, dates: deposits?.dates ?? [], amount: ask.amount,
-                            footer: "It’s a joint account, so Pearl needs to know whose it is.")
-                    QuestionCaption(text: "It’s…")
-                    AnswerGrid(columns: 3) {
-                        AnswerTile(title: "Me", line: "Counts as your pay", symbol: "briefcase") { answer("me") }
+                VStack(alignment: .leading, spacing: 8) {
+                    APWho(face: ask.name, name: ask.name,
+                          line: "+" + Format.amount(ask.amount) + " " + every + " \u{00B7} joint", lineTone: Pearl.moneyIn)
+                        .padding(.top, 8)
+                    ProfileSection("It\u{2019}s\u{2026}")
+                    APCard {
+                        APChoiceRow(title: "Me", sub: "Counts as your pay", selected: false) { answer("me") }
                         if people.isEmpty {
-                            AnswerTile(title: "Someone else", line: "Not in your numbers",
-                                       symbol: "person.crop.circle.badge.xmark") { answer("them") }
+                            APSeparator(afterFace: false)
+                            APChoiceRow(title: "Someone else", sub: "Not in your numbers", selected: false) { answer("them") }
                         } else {
                             ForEach(people, id: \.self) { person in
-                                AnswerTile(title: person, line: "Not in your numbers",
-                                           symbol: "person.crop.circle.badge.xmark") { answer("them", person: person) }
+                                APSeparator(afterFace: false)
+                                APChoiceRow(title: person, sub: "Not in your numbers", selected: false) {
+                                    answer("them", person: person)
+                                }
                             }
                         }
-                        AnswerTile(title: "Both of us", line: "Your \(share)% counts", symbol: "person.2") { answer("both") }
+                        APSeparator(afterFace: false)
+                        APChoiceRow(title: "Both of us", sub: "Your \(share)% counts", selected: false) { answer("both") }
+                        APSeparator(afterFace: false)
+                        APChoiceRow(title: "This isn\u{2019}t regular pay", sub: "Ask me about each deposit",
+                                    selected: false) { Task { await notPay() } }
                     }
                     .disabled(busy)
-                    AnswerRow(symbol: "person.crop.circle.badge.xmark", title: "This isn’t regular pay",
-                              line: "Ask me about each deposit") { Task { await notPay() } }
-                        .disabled(busy)
-                    if let error = error { Hint(text: error) }
-                    QuestionFooter(text: "Pearl remembers this for every deposit from \(ask.name).")
+                    if let error = error { APErrorLine(text: error) }
+                    ProfileNote("Pearl remembers this for \(ask.name).")
                 }
-                .padding(.horizontal, 16).padding(.bottom, 12)
+                .padding(.horizontal, 16).padding(.bottom, 16)
                 .sheetPart()
             }
         }
@@ -60,16 +65,13 @@ struct WhosePaySheet: View {
         .task { deposits = try? await app.api.get("api/transactions/\(ask.txn)/paydays") }
     }
 
+    /// "every 2 weeks".
+    private var every: String {
+        AnswerSheet.every(deposits?.cadence) ?? cadence(ask.cadence).lowercased()
+    }
+
     private var people: [String] { ask.people ?? [] }
     private var share: Int { Int((ask.share ?? 50).rounded()) }
-
-    /// "Maple Co has paid $1,980.00 into your joint account every 2 weeks since September."
-    private var sentence: String {
-        let money = Format.amount(ask.amount)
-        let since = deposits?.first.map { " since \(AnswerSheet.sinceMonth($0))" } ?? ""
-        let every = AnswerSheet.every(deposits?.cadence) ?? cadence(ask.cadence).lowercased()
-        return "\(ask.name) has paid \(money) into your joint account \(every)\(since)."
-    }
 
     /// A tile answers for every deposit from them, then the toast with Undo.
     private func answer(_ who: String, person: String? = nil) {
@@ -125,7 +127,9 @@ struct WhatIsItSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: "What is it?") { dismiss() }.sheetPart()
+            APSheetTitle(title: "What is it?") { dismiss() }
+                .padding(.horizontal, 16).padding(.top, 14)
+                .sheetPart()
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     QuestionHeader(name: ask.name, amount: Format.whole(ask.amount), tone: Pearl.ink,
@@ -140,7 +144,7 @@ struct WhatIsItSheet: View {
                     }
                     .disabled(busy)
                     if choice == "share" {
-                        Text("WHICH BILL?").font(Nacre.caption2).tracking(0.6).padding(.leading, 16).padding(.top, 4)
+                        ProfileSection("Which bill?")
                         if bills.isEmpty {
                             Text("Add the bill first, then come back to this.")
                                 .font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 16)
@@ -155,7 +159,7 @@ struct WhatIsItSheet: View {
                             .disabled(busy)
                         }
                     }
-                    if let error = error { Hint(text: error) }
+                    if let error = error { APErrorLine(text: error) }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 12)
                 .sheetPart()
@@ -210,7 +214,7 @@ private func choiceRow(_ label: String, detail: String?, on: Bool, _ tap: @escap
                 Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold)).foregroundColor(Pearl.action)
             }
         }
-        .padding(.horizontal, 16).frame(minHeight: 52).padding(.vertical, 4)
+        .padding(.horizontal, 16).frame(minHeight: 64).padding(.vertical, 4)
         .contentShape(Rectangle())
     }
     .buttonStyle(.plain)

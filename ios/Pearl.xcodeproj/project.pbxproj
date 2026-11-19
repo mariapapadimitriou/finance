@@ -35,6 +35,7 @@
 		3E714132CCE10921CFECCE51 /* AuthFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBE32207A5401B96AA021225 /* AuthFlow.swift */; };
 		1737B01420B21E146BFB197B /* DeviceCheckViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A966825B8DAB6D808EE38B1 /* DeviceCheckViews.swift */; };
 		36B2ADE3D4D2AADFAF7450C6 /* FaceIDViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D792DA47AD008651315BC81E /* FaceIDViews.swift */; };
+		F858E1426916ABD30319BAD7 /* OnboardingKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CB84FBF0FC946F7A275868D /* OnboardingKit.swift */; };
 		EDF62B098CA2F256BB968358 /* PayAndBillsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE95C0A1931E5F1ECCCF4A48 /* PayAndBillsView.swift */; };
 		B012721D7224087DA976961B /* PlaidLinker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD7C3D77C81C6D11AB4C9F67 /* PlaidLinker.swift */; };
 		8B70E2BC087883619C71FE27 /* SavingShareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E21457AD97EA4FA1E18A4A44 /* SavingShareView.swift */; };
@@ -152,6 +153,7 @@
 		DBE32207A5401B96AA021225 /* AuthFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthFlow.swift; sourceTree = "<group>"; };
 		8A966825B8DAB6D808EE38B1 /* DeviceCheckViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceCheckViews.swift; sourceTree = "<group>"; };
 		D792DA47AD008651315BC81E /* FaceIDViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceIDViews.swift; sourceTree = "<group>"; };
+		8CB84FBF0FC946F7A275868D /* OnboardingKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingKit.swift; sourceTree = "<group>"; };
 		FE95C0A1931E5F1ECCCF4A48 /* PayAndBillsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayAndBillsView.swift; sourceTree = "<group>"; };
 		AD7C3D77C81C6D11AB4C9F67 /* PlaidLinker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaidLinker.swift; sourceTree = "<group>"; };
 		E21457AD97EA4FA1E18A4A44 /* SavingShareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavingShareView.swift; sourceTree = "<group>"; };
@@ -379,6 +381,7 @@
 				DBE32207A5401B96AA021225 /* AuthFlow.swift */,
 				8A966825B8DAB6D808EE38B1 /* DeviceCheckViews.swift */,
 				D792DA47AD008651315BC81E /* FaceIDViews.swift */,
+				8CB84FBF0FC946F7A275868D /* OnboardingKit.swift */,
 				FE95C0A1931E5F1ECCCF4A48 /* PayAndBillsView.swift */,
 				AD7C3D77C81C6D11AB4C9F67 /* PlaidLinker.swift */,
 				E21457AD97EA4FA1E18A4A44 /* SavingShareView.swift */,
@@ -587,6 +590,7 @@
 				3E714132CCE10921CFECCE51 /* AuthFlow.swift in Sources */,
 				1737B01420B21E146BFB197B /* DeviceCheckViews.swift in Sources */,
 				36B2ADE3D4D2AADFAF7450C6 /* FaceIDViews.swift in Sources */,
+				F858E1426916ABD30319BAD7 /* OnboardingKit.swift in Sources */,
 				EDF62B098CA2F256BB968358 /* PayAndBillsView.swift in Sources */,
 				B012721D7224087DA976961B /* PlaidLinker.swift in Sources */,
 				8B70E2BC087883619C71FE27 /* SavingShareView.swift in Sources */,

@@ -9,67 +9,49 @@ struct AllowanceView: View {
     @Binding var path: [SetupRoute]
     let skipped: Bool
     @State private var home: AllowanceHome?
-    @State private var tip = false
     @State private var busy = false
     @State private var error: String?
 
     var body: some View {
-        NacreScreen {
-            VStack(spacing: 6) {
-                Text(skipped ? "ALMOST THERE" : "YOU’RE ALL SET").font(Nacre.caption2).tracking(1.4)
-                Text("Your Allowance").font(Nacre.largeTitle).tracking(0.4)
-                    .accessibilityAddTraits(.isHeader)
-            }
-            .frame(maxWidth: .infinity)
-            // REFRESH-05: the shared Allowance orb, with O-11b's own words
-            // (the month, or "12 DAYS LEFT", over the amount).
-            AllowanceOrb(progress: progress, label: ringOverline, amount: ringAmount)
+        // G6-Allowance O-11 / O-11b / O-11d / O-12: the overline, the
+        // Allowance on its card, then the first steps. "Build your safety
+        // net" is hidden while Save is parked (approved 2026-11-18).
+        OnbScreen(back: false) {
+            Text(skipped ? "Almost there" : "You\u{2019}re all set")
+                .textCase(.uppercase)
+                .font(Nacre.label).tracking(0.78).foregroundColor(Pearl.muted)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-            Text(caption).font(Nacre.subheadline).multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
+                .padding(.top, 10)
+            AllowanceCard(month: cardMonth, amount: ringAmount, line: caption)
+            ProfileSection("Your first steps")
             APCard {
-                Text("Your first steps").font(Nacre.headline)
-                    .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 6)
-                step(1, "Link your bank accounts", done: !skipped, current: skipped)
-                step(2, "Sort this month’s spending", done: false, current: !skipped)
-                HStack(alignment: .top) {
-                    step(3, "Build your safety net for the unexpected", done: false, current: false)
-                    Button { tip.toggle() } label: {
-                        Image(systemName: "info.circle").font(.system(size: 15))
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.trailing, 20).padding(.top, 14)
-                    .accessibilityLabel("What’s a safety net?")
-                    .popover(isPresented: $tip) {
-                        if #available(iOS 16.4, *) {
-                            SafetyNetTip().presentationCompactAdaptation(.popover)
-                        } else {
-                            SafetyNetTip()
+                Button { if skipped { linkBank() } } label: {
+                    ProfileRow(symbol: "building.columns", title: "Link your bank accounts", chevron: skipped) {
+                        if !skipped {
+                            Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(Pearl.moneyIn)
+                                .accessibilityLabel("Done")
                         }
                     }
                 }
-                .padding(.bottom, 10)
+                .buttonStyle(.plain)
+                .disabled(!skipped)
+                APSeparator()
+                // The first sort: Home offers Quick sort as soon as she's there.
+                Button { if skipped { linkBank() } else { Task { await finish() } } } label: {
+                    ProfileRow(symbol: "cart", title: "Sort this month\u{2019}s spending", sub: "Opens Quick sort")
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
             }
-            if let error = error { Hint(text: error) }
+            if let error = error { APErrorLine(text: error) }
         } actions: {
-            BottomActions {
-                if skipped {
-                    Button("Link your bank") {
-                        if let i = path.firstIndex(of: .linkBank) {
-                            path = Array(path.prefix(i + 1))
-                        } else {
-                            path = [.linkBank]
-                        }
-                    }
-                    .buttonStyle(NacreButtonStyle())
-                } else {
-                    Button("Go to Home") { Task { await finish() } }
-                        .buttonStyle(NacreButtonStyle(busy: busy))
-                }
+            if skipped {
+                OnbPrimary(title: "Link your bank") { linkBank() }
+            } else {
+                OnbPrimary(title: "Go to Home", busy: busy) { Task { await finish() } }
             }
         }
-        .navigationBarBackButtonHidden(!skipped)
         .task {
             guard !skipped else { return }
             do {
@@ -80,12 +62,25 @@ struct AllowanceView: View {
         }
     }
 
+    private func linkBank() {
+        if let i = path.firstIndex(of: .linkBank) {
+            path = Array(path.prefix(i + 1))
+        } else {
+            path = [.linkBank]
+        }
+    }
+
+    /// "November", "Nov 20–30", "12 days left".
+    private var cardMonth: String {
+        let words = allowance?.ringOverline(month: month) ?? Format.monthName(month)
+        return words.contains("DAYS LEFT") ? words.lowercased() : words.capitalized
+    }
+
     private var allowance: Allowance? { home?.safeToSpend }
     private var month: String { home?.month ?? Allowance.thisMonth }
 
     private var ringOverline: String { allowance?.ringOverline(month: month) ?? Format.monthName(month).uppercased() }
     private var ringAmount: String { skipped ? "—" : allowance?.ringAmount ?? "—" }
-    private var progress: Double { skipped ? 0 : allowance?.ringProgress ?? 0 }
 
     private var caption: String {
         if skipped { return "Link a bank to see your Allowance." }
@@ -93,30 +88,6 @@ struct AllowanceView: View {
     }
 
 
-
-    private func step(_ n: Int, _ title: String, done: Bool, current: Bool) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            ZStack {
-                if done {
-                    Circle().fill(Pearl.action)
-                    Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)).foregroundColor(.white)
-                } else {
-                    Circle().fill(Nacre.glass).opacity(current ? 1 : 0.6)
-                    Circle().strokeBorder(current ? Nacre.lilac : Color.clear, lineWidth: 1.5)
-                    Text("\(n)").font(.custom("Figtree-Medium", size: 15))
-                }
-            }
-            .frame(width: 30, height: 30)
-            Text(title)
-                .font(current ? Nacre.headline : Nacre.body)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 4)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 20).padding(.vertical, 8)
-        .accessibilityElement(children: .combine)
-        .accessibilityValue(done ? "Done" : current ? "Next" : "")
-    }
 
     private func finish() async {
         busy = true
@@ -223,5 +194,33 @@ struct SafetyNetTip: View {
         .padding(16)
         .frame(width: 290)
         .foregroundColor(Pearl.ink)
+    }
+}
+
+/// G6-Allowance's card: "Your Allowance · November", the amount in 56 pt
+/// Fraunces, and its line.
+struct AllowanceCard: View {
+    let month: String
+    let amount: String
+    let line: String
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Text("Your Allowance \u{00B7} \(month)").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+            Text(amount).font(.custom("Fraunces-SemiBold", size: 56, relativeTo: .largeTitle))
+                .tracking(-1).monospacedDigit().foregroundColor(Pearl.ink)
+                .pearlAmountFit()
+            if !line.isEmpty {
+                Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 2)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 16).padding(.vertical, 22)
+        .apCard()
+        .padding(.top, 2)
+        .accessibilityElement(children: .combine)
     }
 }

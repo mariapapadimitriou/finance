@@ -113,32 +113,22 @@ struct FaceIDOfferView: View {
     @State private var busy = false
 
     var body: some View {
-        NacreScreen(scrolls: false) {
-            if mode == .onboarding {
-                ShellProgress(part: 1, name: "Your account")
+        // G6-FaceID, G5-Lock: the strip in set-up, the 120 pt orb, the title and its line.
+        OnbScreen(back: false, part: mode == .onboarding ? 1 : nil, partName: "Your account", scrolls: false) {
+            OnbMessage(title: off ? "Face ID is off for Pearl" : "Use Face ID", line: line,
+                       top: mode == .onboarding ? 98 : 138) {
+                OnbOrb(symbol: "faceid")
             }
-            MessageBlock(title: off ? "Face ID is off for Pearl" : "Use Face ID", line: line) {
-                IconOrb(symbol: "faceid", size: 120)
-            }
-            .padding(.top, mode == .onboarding ? 0 : 40)
         } actions: {
-            BottomActions {
-                if off {
-                    Button("Open Settings") {
-                        if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
-                    }
-                    .buttonStyle(NacreButtonStyle())
-                } else {
-                    Button("Turn on Face ID") { Task { await turnOn() } }
-                        .buttonStyle(NacreButtonStyle(busy: busy))
+            if off {
+                OnbPrimary(title: "Open Settings") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                 }
-            } secondary: {
-                Button("Not now") { done() }
-                    .buttonStyle(NacreTextButtonStyle())
+            } else {
+                OnbPrimary(title: "Turn on Face ID", busy: busy) { Task { await turnOn() } }
             }
+            APQuietButton(title: "Not now") { done() }
         }
-        // Once the account exists there's no going back to the code (THL-119).
-        .navigationBarBackButtonHidden(mode == .onboarding)
         .onAppear { off = AppLock.turnedOff }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
             // Back from Settings with Face ID turned on: offer it again.
@@ -148,11 +138,11 @@ struct FaceIDOfferView: View {
 
     private var line: String {
         if off {
-            return "Turn it on in iPhone Settings › Face ID & Passcode. Or use your password for now."
+            return "Turn it on in iPhone Settings › Face ID & Passcode."
         }
         return mode == .onboarding
             ? "Sign in quickly and securely, without your password."
-            : "Turn on Face ID for this iPhone so you won’t need your password next time."
+            : "Turn it on for this iPhone, and you won’t need your password next time."
     }
 
     private func turnOn() async {
@@ -179,26 +169,21 @@ struct AppLockView: View {
     @State private var trying = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            Wordmark().padding(.top, 16)
-            HeroShell(width: 220).padding(.top, 100)
-            Text("Pearl is locked").font(Nacre.largeTitle).tracking(0.4)
-                .accessibilityAddTraits(.isHeader)
-                .padding(.top, 48)
-            Spacer(minLength: 24)
-            BottomActions {
-                Button("Unlock with Face ID") { Task { await unlock(passcode: false) } }
-                    .buttonStyle(NacreButtonStyle())
-            } secondary: {
-                Button("Use iPhone passcode") { Task { await unlock(passcode: true) } }
-                    .buttonStyle(NacreTextButtonStyle())
-                Button("Can’t unlock? Sign in with password") {
-                    Task { await app.signOut() }
-                }
-                .buttonStyle(NacreTextButtonStyle())
+        // G5-Lock A-08: nothing of hers shows; it fails closed.
+        OnbScreen(back: false, scrolls: false) {
+            VStack(spacing: 0) {
+                APMark(width: 200)
+                Text("Pearl is locked").font(Nacre.largeTitle).foregroundColor(Pearl.ink)
+                    .accessibilityAddTraits(.isHeader)
+                    .padding(.top, 40)
             }
+            .frame(maxWidth: .infinity)
+            .padding(.top, 118)
+        } actions: {
+            OnbPrimary(title: "Unlock with Face ID") { Task { await unlock(passcode: false) } }
+            APQuietButton(title: "Use iPhone passcode") { Task { await unlock(passcode: true) } }
+            APQuietButton(title: "Sign in with password") { Task { await app.signOut() } }
         }
-        .nacreScreen()
         .task { await unlock(passcode: false) }
     }
 

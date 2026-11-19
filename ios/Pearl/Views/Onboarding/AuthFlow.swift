@@ -18,7 +18,6 @@ struct AuthFlow: View {
                         VerifyEmailView(path: $path, email: email, password: password, resendIn: resendIn)
                     case .signIn(let email): SignInView(path: $path, email: email)
                     case .loginCode(let email, let resendIn): LoginCodeView(path: $path, email: email, resendIn: resendIn)
-                    case .cantGetCode: CantGetCodeView(path: $path)
                     case .pause(let seconds): ShortPauseView(path: $path, seconds: seconds)
                     case .forgot(let email): ForgotPasswordView(path: $path, email: email)
                     case .resetSent: ResetSentView(path: $path)
@@ -54,7 +53,6 @@ enum AuthRoute: Hashable {
     case verify(email: String, password: String, resendIn: Int)
     case signIn(email: String)
     case loginCode(email: String, resendIn: Int)
-    case cantGetCode
     case pause(seconds: Int)
     case forgot(email: String)
     case resetSent
@@ -70,7 +68,7 @@ extension PearlUser: Hashable {
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
 
-// MARK: - O-01 Welcome
+// MARK: - O-01 Welcome (G6-Welcome)
 
 @MainActor
 struct WelcomeView: View {
@@ -82,47 +80,58 @@ struct WelcomeView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Wordmark()
-                .padding(.top, 16)
+            OnbWordmark()
+                .padding(.top, 8)
                 .onLongPressGesture { showServer = true }
-            HeroShell(width: 256).padding(.top, 58)
-            VStack(spacing: 12) {
-                (Text("Budgeting that lets\nyou ") + Text("shine.").foregroundColor(Color(hex: 0xC42F6A)))
-                    .font(Nacre.largeTitle).tracking(0.4)
-                    .multilineTextAlignment(.center)
-                    .accessibilityAddTraits(.isHeader)
-                Text("Assess, plan ahead, and start investing.")
-                    .font(Nacre.body).multilineTextAlignment(.center)
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 42)
-            Spacer(minLength: 24)
-            BottomActions {
-                Button("Get started") { path.append(.create(email: "")) }
-                    .buttonStyle(NacreButtonStyle())
-            } secondary: {
-                Button("I already have an account") { path.append(.signIn(email: "")) }
-                    .buttonStyle(NacreTextButtonStyle())
-                // UI audit: each link is tapped across 44 × 44 pt. They grow
-                // outward and down, away from "I already have an account".
-                HStack(spacing: 4) {
-                    Button { doc = .privacy } label: {
-                        Text("Privacy").tapTarget(top: 6, leading: 8, bottom: 24, trailing: 2)
-                    }
-                    Text("·")
-                    Button { doc = .terms } label: {
-                        Text("Terms").tapTarget(top: 6, leading: 2, bottom: 24, trailing: 14)
+            APMark(width: 230).padding(.top, 70)
+            VStack(spacing: 10) {
+                VStack(spacing: 0) {
+                    Text("Budgeting that lets")
+                    HStack(spacing: 0) {
+                        Text("you ")
+                        ShineWord()
                     }
                 }
-                .buttonStyle(.plain)
-                .font(Nacre.caption2)
-                .foregroundColor(Pearl.ink)
+                .font(Nacre.largeTitle).foregroundColor(Pearl.ink)
+                .multilineTextAlignment(.center)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Budgeting that lets you shine.")
+                .accessibilityAddTraits(.isHeader)
+                // Approved 2026-11-18: what Pearl is for, in one line.
+                Text("See what\u{2019}s yours to spend, and plan ahead.")
+                    .font(Nacre.body).foregroundColor(Pearl.muted).multilineTextAlignment(.center)
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 52)
+            Spacer(minLength: 24)
+            VStack(spacing: 12) {
+                OnbPrimary(title: "Get started") { path.append(.create(email: "")) }
+                Button("I already have an account") { path.append(.signIn(email: "")) }
+                    .buttonStyle(APSecondaryButtonStyle())
+                HStack(spacing: 18) {
+                    APQuietButton(title: "Privacy", tone: Pearl.muted) { doc = .privacy }
+                    APQuietButton(title: "Terms", tone: Pearl.muted) { doc = .terms }
+                }
+                .font(Nacre.footnote)
+            }
+            .padding(.horizontal, 16).padding(.bottom, 4)
         }
         .nacreScreen()
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showServer) { ServerSheet() }
         .docSheet($doc)
+    }
+}
+
+/// "shine." in the welcome's lilac-to-rose (g6.py `welcome`).
+struct ShineWord: View {
+    var body: some View {
+        Text("shine.")
+            .foregroundColor(.clear)
+            .overlay(
+                LinearGradient(colors: [Color(hex: 0x9B6FD9), Pearl.action], startPoint: .leading, endPoint: .trailing)
+                    .mask(Text("shine."))
+            )
     }
 }
 
@@ -168,7 +177,7 @@ struct ServerSheet: View {
     }
 }
 
-// MARK: - O-02 Create your account (O-02a, O-02b)
+// MARK: - O-02 Create your account (O-02a, O-02b; G6-Create)
 
 @MainActor
 struct CreateAccountView: View {
@@ -177,6 +186,8 @@ struct CreateAccountView: View {
     @State var email: String
     @State private var password = ""
     @State private var rules = PasswordRules.local("", email: "")
+    /// The password the server last judged "common or leaked" for.
+    @State private var checkedFor = ""
     @State private var taken = false
     @State private var error: String?
     @State private var busy = false
@@ -187,32 +198,25 @@ struct CreateAccountView: View {
     }
 
     var body: some View {
-        NacreScreen {
-            ShellProgress(part: 1, name: "Your account")
-            Text("Create your account").font(Nacre.title).tracking(0.4)
-                .accessibilityAddTraits(.isHeader)
-            APCard {
-                FieldRow(label: "Email", text: $email, prompt: "you@example.com", kind: .email,
-                         content: .username)
-                APSeparator(afterFace: false)
-                FieldRow(label: "Password", text: $password, prompt: "Create a password", kind: .secure,
-                         content: .newPassword) { Task { await next() } }
+        OnbScreen(part: 1, partName: "Your account") {
+            OnbTitle(title: "Create your account")
+            OnbField(label: "Email", text: $email, prompt: "you@example.com", kind: .email, content: .username,
+                     error: taken ? "There\u{2019}s already a Pearl account with this email." : nil,
+                     focusOnAppear: email.isEmpty)
+                .padding(.top, 8)
+            OnbField(label: "Password", text: $password, prompt: "Create a password", kind: .secure,
+                     content: .newPassword) { Task { await next() } }
+            if !taken && !password.isEmpty {
+                PasswordChecks(rules: rules, commonChecked: password.count < 12 || checkedFor == password)
             }
-            if taken {
-                Hint(text: "There’s already a Pearl account with this email.")
-            } else if !password.isEmpty {
-                PasswordMeter(rules: rules)
-            }
-            if let error = error { Hint(text: error) }
+            if let error = error { APErrorLine(text: error) }
         } actions: {
-            BottomActions {
-                if taken {
-                    Button("Sign in instead") { path.append(.signIn(email: email)) }
-                        .buttonStyle(NacreButtonStyle())
-                } else {
-                    Button("Continue") { Task { await next() } }
-                        .buttonStyle(NacreButtonStyle(busy: busy))
-                        .disabled(!rules.ok || !looksLikeEmail || busy)
+            if taken {
+                OnbPrimary(title: "Sign in instead") { path.append(.signIn(email: email)) }
+                APQuietButton(title: "Use a different email") { email = ""; taken = false }
+            } else {
+                OnbPrimary(title: "Continue", busy: busy, enabled: rules.ok && looksLikeEmail) {
+                    Task { await next() }
                 }
             }
         }
@@ -225,6 +229,7 @@ struct CreateAccountView: View {
             if let checked: PasswordRules = try? await app.api.post("api/auth/password/check",
                                                                    ["password": password, "email": email]) {
                 rules = checked
+                checkedFor = password
             }
         }
     }
@@ -255,6 +260,7 @@ struct CreateAccountView: View {
                 if error.serverProblem?.weak == true {
                     rules = PasswordRules(length: rules.length, common: false, email: rules.email,
                                           more: rules.more, ok: false, segments: 1, label: "Weak")
+                    checkedFor = password
                 }
                 self.error = app.handle(error)
             }
@@ -262,7 +268,7 @@ struct CreateAccountView: View {
     }
 }
 
-// MARK: - O-03 Check your email (O-03a)
+// MARK: - O-03 Check your email (O-03a; G6-Code)
 
 @MainActor
 struct VerifyEmailView: View {
@@ -279,29 +285,17 @@ struct VerifyEmailView: View {
     @State private var wait = 0
 
     var body: some View {
-        NacreScreen {
-            ShellProgress(part: 1, name: "Your account")
-            IconOrb(symbol: "envelope")
-            Text("Check your email").font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
-            Text("Enter the code we sent to \(email).").font(Nacre.body)
-            CodeBoxes(code: $code, failed: failed) { Task { await verify() } }
-                .padding(.top, 4)
-            if failed {
-                Hint(text: error ?? "That code didn’t match. Try again.")
-            } else if let error = error {
-                Hint(text: error)
-            } else {
-                ResendLine(wait: $wait) { Task { await resend() } }
-            }
+        OnbScreen(part: 1, partName: "Your account") {
+            OnbTitle(title: "Check your email", line: "Enter the code we sent to \(email).")
+            CodeWells(code: $code, failed: failed) { Task { await verify() } }
+                .padding(.top, 6)
+            CodeFoot(failed: failed, error: error, wait: $wait) { Task { await resend() } }
         } actions: {
-            BottomActions {
-                Button("Continue") { Task { await verify() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
-                    .disabled(code.count < 6 || busy)
-            } secondary: {
-                Button("Change email") { path.removeLast() }
-                    .buttonStyle(NacreTextButtonStyle())
+            OnbPrimary(title: "Continue", busy: busy, enabled: code.count == 6) { Task { await verify() } }
+            if failed || error != nil {
+                APQuietButton(title: "Resend code") { Task { await resend() } }
             }
+            APQuietButton(title: "Change email") { path.removeLast() }
         }
         .onAppear { wait = resendIn }
         .onChange(of: code) { value in if !value.isEmpty && value.count < 6 { failed = false; error = nil } }
@@ -326,7 +320,7 @@ struct VerifyEmailView: View {
                 path.append(.pause(seconds: problem?.retryIn ?? 300))
             } else if problem?.wrong == true {
                 failed = true
-                self.error = "That code didn’t match. Try again."
+                self.error = "That code didn\u{2019}t match. Try again."
                 code = ""
             } else {
                 failed = problem?.expired == true
@@ -352,33 +346,26 @@ struct VerifyEmailView: View {
     }
 }
 
-/// "Resend code in 0:38", then "Resend code".
-struct ResendLine: View {
+/// Under the code wells: the reason in `danger` (`.ferr`), or the resend note.
+struct CodeFoot: View {
+    let failed: Bool
+    let error: String?
     @Binding var wait: Int
     let resend: () -> Void
 
     var body: some View {
-        Group {
-            if wait > 0 {
-                Hint(text: String(format: "Resend code in %d:%02d", wait / 60, wait % 60), symbol: "clock")
-            } else {
-                Button(action: resend) {
-                    Label("Resend code", systemImage: "arrow.clockwise").font(Nacre.subheadline)
-                }
-                .foregroundColor(Pearl.ink)
-            }
-        }
-        .task(id: wait > 0) {
-            while wait > 0 {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                if Task.isCancelled { return }
-                wait -= 1
-            }
+        if failed || error != nil {
+            Text(error ?? "That code didn\u{2019}t match. Try again.")
+                .font(Nacre.footnote).foregroundColor(Pearl.danger)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+        } else {
+            ResendLine(wait: $wait, resend: resend)
         }
     }
 }
 
-// MARK: - A-01 Sign in
+// MARK: - A-01 Sign in (G6-SignIn)
 
 @MainActor
 struct SignInView: View {
@@ -390,47 +377,53 @@ struct SignInView: View {
     @State private var busy = false
     /// Face ID can sign her in with the password saved on this iPhone.
     @State private var faceID = false
+    /// "Use my password" on the Face ID return screen.
+    @State private var usePassword = false
+    @State private var changed = false
 
     init(path: Binding<[AuthRoute]>, email: String) {
         _path = path
         _email = State(initialValue: email)
     }
 
+    private var faceReturn: Bool { faceID && !usePassword }
+
     var body: some View {
-        NacreScreen {
-            VStack(spacing: 12) {
-                HeroShell(width: 140).padding(.bottom, 20)
-                Text("Welcome back").font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
-                Text("Sign in to see your Allowance.").font(Nacre.body)
+        OnbScreen {
+            if faceReturn {
+                APMark(width: 150).frame(maxWidth: .infinity).padding(.top, 40)
+                OnbTitle(title: "Welcome back", line: email, centred: true)
+            } else if changed {
+                OnbTitle(title: "Welcome back")
+                APBanner(symbol: "key", text: "Your password has changed. Sign in with the new one.")
+            } else {
+                OnbTitle(title: "Welcome back", line: "Sign in to see your Allowance.")
             }
-            .frame(maxWidth: .infinity)
-            APCard {
-                FieldRow(label: "Email", text: $email, prompt: "you@example.com", kind: .email, content: .username)
-                APSeparator(afterFace: false)
-                FieldRow(label: "Password", text: $password, prompt: "Your password", kind: .secure,
-                         content: .password) { Task { await signIn() } }
-            }
-            if let error = error { Hint(text: error) }
-            Button("Forgot password?") { path.append(.forgot(email: email)) }
-                .buttonStyle(NacreTextButtonStyle())
+            if !faceReturn { fields }
+            if let error = error { APErrorLine(text: error) }
         } actions: {
-            BottomActions {
-                if faceID && password.isEmpty {
-                    Button {
-                        Task { await signInWithFaceID() }
-                    } label: {
-                        Label("Sign in with Face ID", systemImage: "faceid")
-                    }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
-                    .disabled(busy)
-                } else {
-                    Button("Sign in") { Task { await signIn() } }
-                        .buttonStyle(NacreButtonStyle(busy: busy))
-                        .disabled(email.isEmpty || password.isEmpty || busy)
+            if faceReturn {
+                Button {
+                    Task { await signInWithFaceID() }
+                } label: {
+                    Label("Sign in with Face ID", systemImage: "faceid")
                 }
-            } secondary: {
-                Button("New to Pearl? Create an account") { path.append(.create(email: email)) }
-                    .buttonStyle(NacreTextButtonStyle())
+                .buttonStyle(APPrimaryButtonStyle(busy: busy))
+                .disabled(busy)
+                APQuietButton(title: "Use my password") { usePassword = true }
+                // Approved 2026-11-18: someone else on this iPhone signs in as themselves.
+                APQuietButton(title: "Not you? Use a different email", identifier: "not-you") {
+                    usePassword = true
+                    faceID = false
+                    email = ""
+                    password = ""
+                    error = nil
+                }
+            } else {
+                OnbPrimary(title: "Sign in", busy: busy, enabled: !email.isEmpty && !password.isEmpty) {
+                    Task { await signIn() }
+                }
+                APQuietButton(title: "New to Pearl? Create an account") { path.append(.create(email: email)) }
             }
         }
         .onChange(of: email) { value in
@@ -442,6 +435,20 @@ struct SignInView: View {
             faceID = canUseFaceID(for: email)
             if faceID { await signInWithFaceID() }
         }
+    }
+
+    private var fields: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            OnbField(label: "Email", text: $email, prompt: "you@example.com", kind: .email, content: .username,
+                     focusOnAppear: email.isEmpty)
+            OnbField(label: "Password", text: $password, prompt: "Your password", kind: .secure,
+                     content: .password, focusOnAppear: !email.isEmpty) { Task { await signIn() } }
+            HStack {
+                Spacer()
+                APQuietButton(title: "Forgot password?") { path.append(.forgot(email: email)) }
+            }
+        }
+        .padding(.top, 8)
     }
 
     private func canUseFaceID(for email: String) -> Bool {
@@ -485,7 +492,7 @@ struct SignInView: View {
                 // The saved password stopped working (changed somewhere else).
                 SavedSignIn.clear()
                 faceID = false
-                self.error = "Your password has changed. Sign in with the new one."
+                changed = true
             } else {
                 self.error = app.handle(error)
             }
@@ -501,7 +508,7 @@ struct SignInView: View {
     }
 }
 
-// MARK: - A-02 Check your email (new iPhone), A-03 Code didn't match
+// MARK: - A-02 Check your email (new iPhone), A-03 Code didn't match (G6-Code)
 
 @MainActor
 struct LoginCodeView: View {
@@ -515,31 +522,32 @@ struct LoginCodeView: View {
     @State private var error: String?
     @State private var busy = false
     @State private var wait = 0
+    /// A-10 Can't get the code? (a Pearl sheet over this page).
+    @State private var cantGet = false
 
     var body: some View {
-        NacreScreen {
-            IconOrb(symbol: "envelope")
-            Text("Check your email").font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
-            Text("New iPhone? Enter the code we sent to \(email).").font(Nacre.body)
-            CodeBoxes(code: $code, failed: failed) { Task { await verify() } }
-                .padding(.top, 4)
-            if failed || error != nil {
-                Hint(text: error ?? "That code didn’t match. Try again.")
-            } else {
-                ResendLine(wait: $wait) { Task { await resend() } }
-            }
+        OnbScreen {
+            OnbTitle(title: "Check your email", line: "New iPhone? Enter the code we sent to \(email).")
+            CodeWells(code: $code, failed: failed) { Task { await verify() } }
+                .padding(.top, 6)
+            CodeFoot(failed: failed, error: error, wait: $wait) { Task { await resend() } }
         } actions: {
-            BottomActions {
-                Button("Continue") { Task { await verify() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
-                    .disabled(code.count < 6 || busy)
-            } secondary: {
-                Button("Can’t get the code?") { path.append(.cantGetCode) }
-                    .buttonStyle(NacreTextButtonStyle())
+            OnbPrimary(title: "Continue", busy: busy, enabled: code.count == 6) { Task { await verify() } }
+            if failed || error != nil {
+                APQuietButton(title: "Resend code") { Task { await resend() } }
             }
+            APQuietButton(title: "Can\u{2019}t get the code?") { cantGet = true }
         }
         .onAppear { wait = resendIn }
         .onChange(of: code) { value in if !value.isEmpty && value.count < 6 { failed = false; error = nil } }
+        .sheet(isPresented: $cantGet) {
+            CantGetCodeSheet(path: $path, onSent: { seconds in
+                cantGet = false
+                wait = seconds
+                failed = false
+                error = nil
+            }, onClose: { cantGet = false })
+        }
     }
 
     private func verify() async {
@@ -565,7 +573,7 @@ struct LoginCodeView: View {
                 path.append(.pause(seconds: problem?.retryIn ?? 300))
             } else if problem?.wrong == true {
                 failed = true
-                self.error = "That code didn’t match. Try again."
+                self.error = "That code didn\u{2019}t match. Try again."
             } else if problem?.expired == true {
                 failed = true
                 self.error = "That code has expired. Send a new one."
@@ -592,32 +600,32 @@ struct LoginCodeView: View {
     }
 }
 
-// MARK: - A-10 Can't get the code?
+// MARK: - A-10 Can't get the code? (G6-Code, a Pearl sheet)
 
 @MainActor
-struct CantGetCodeView: View {
+struct CantGetCodeSheet: View {
     @EnvironmentObject private var app: AppModel
     @Binding var path: [AuthRoute]
+    let onSent: (Int) -> Void
+    let onClose: () -> Void
     @State private var error: String?
     @State private var busy = false
 
     var body: some View {
-        NacreScreen(scrolls: false) {
-            MessageBlock(title: "Can’t get the code?",
-                         line: "Check your spam folder, or send a new code. Still stuck? We’ll help you get back in.") {
-                IconOrb(symbol: "envelope", size: 120)
-            }
-            if let error = error { Hint(text: error) }
-        } actions: {
-            BottomActions {
-                Button("Send a new code") { Task { await resend() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
-            } secondary: {
+        PearlSheet {
+            APSheetTitle(title: "Can\u{2019}t get the code?", close: onClose)
+            Text("Check your spam folder, or send a new code. Still stuck? We\u{2019}ll help you get back in.")
+                .font(Nacre.body).foregroundColor(Pearl.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            if let error = error { APErrorLine(text: error) }
+        } footer: {
+            VStack(spacing: 12) {
+                OnbPrimary(title: "Send a new code", busy: busy) { Task { await resend() } }
                 if let contact = app.contact, let url = URL(string: "mailto:\(contact)") {
-                    Link("Contact support", destination: url)
-                        .buttonStyle(NacreTextButtonStyle())
+                    Link("Contact support", destination: url).buttonStyle(APSecondaryButtonStyle())
                 }
             }
+            .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 12)
         }
     }
 
@@ -626,24 +634,24 @@ struct CantGetCodeView: View {
         defer { busy = false }
         do {
             let sent: CodeSent = try await app.api.post("api/auth/login/resend")
-            path.removeLast()
-            if case .loginCode(let email, _) = path.last {
-                path[path.count - 1] = .loginCode(email: email, resendIn: sent.resendIn ?? 30)
-            }
+            onSent(sent.resendIn ?? 30)
         } catch {
             if let seconds = error.serverProblem?.retryIn, error.serverProblem?.paused == true {
+                onClose()
                 path.append(.pause(seconds: seconds))
             } else if error.serverProblem?.expired == true {
                 // The sign-in waited too long: start again from the password.
+                onClose()
                 path = [.signIn(email: "")]
             } else {
-                self.error = app.handle(error)
+                self.error = "Couldn\u{2019}t send a new code. Try again in a minute."
+                _ = app.handle(error)
             }
         }
     }
 }
 
-// MARK: - A-04 Take a short pause
+// MARK: - A-04 Take a short pause (G6-Code)
 
 @MainActor
 struct ShortPauseView: View {
@@ -651,25 +659,20 @@ struct ShortPauseView: View {
     let seconds: Int
 
     var body: some View {
-        NacreScreen(scrolls: false) {
-            MessageBlock(title: "Take a short pause", line: line) {
-                Image("ShellClosed").resizable().frame(width: 140, height: 116.7).accessibilityHidden(true)
-            }
+        OnbScreen(back: false, scrolls: false) {
+            OnbMessage(title: "Take a short pause", line: line, top: 118) { APMark(width: 170) }
         } actions: {
-            BottomActions {
-                Button("OK") {
-                    // Back to where she typed her email.
-                    if let i = path.lastIndex(where: {
-                        if case .signIn = $0 { return true }
-                        if case .create = $0 { return true }
-                        return false
-                    }) {
-                        path = Array(path.prefix(i + 1))
-                    } else {
-                        path.removeLast()
-                    }
+            OnbPrimary(title: "OK") {
+                // Back to where she typed her email.
+                if let i = path.lastIndex(where: {
+                    if case .signIn = $0 { return true }
+                    if case .create = $0 { return true }
+                    return false
+                }) {
+                    path = Array(path.prefix(i + 1))
+                } else {
+                    path.removeLast()
                 }
-                .buttonStyle(NacreButtonStyle())
             }
         }
     }
@@ -680,7 +683,7 @@ struct ShortPauseView: View {
     }
 }
 
-// MARK: - A-05 Reset your password, A-06 Reset link sent
+// MARK: - A-05 Reset your password, A-06 Reset link sent (G6-Forgot)
 
 @MainActor
 struct ForgotPasswordView: View {
@@ -696,26 +699,14 @@ struct ForgotPasswordView: View {
     }
 
     var body: some View {
-        NacreScreen {
-            VStack(spacing: 12) {
-                IconOrb(symbol: "key", size: 96).padding(.bottom, 8)
-                Text("Reset your password").font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
-                Text("We’ll email you a link to reset it.").font(Nacre.body)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 8)
-            APCard {
-                FieldRow(label: "Email", text: $email, prompt: "you@example.com", kind: .email, content: .username) {
-                    Task { await send() }
-                }
-            }
-            if let error = error { Hint(text: error) }
+        OnbScreen {
+            OnbTitle(title: "Reset your password", line: "We\u{2019}ll email you a link to reset it.")
+            OnbField(label: "Email", text: $email, prompt: "you@example.com", kind: .email, content: .username,
+                     focusOnAppear: true) { Task { await send() } }
+                .padding(.top, 8)
+            if let error = error { APErrorLine(text: error) }
         } actions: {
-            BottomActions {
-                Button("Send link") { Task { await send() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
-                    .disabled(!email.contains("@") || busy)
-            }
+            OnbPrimary(title: "Send link", busy: busy, enabled: email.contains("@")) { Task { await send() } }
         }
     }
 
@@ -738,29 +729,24 @@ struct ResetSentView: View {
     @Environment(\.openURL) private var openURL
 
     var body: some View {
-        NacreScreen(scrolls: false) {
-            MessageBlock(title: "Check your email", line: "We sent a reset link. It expires in 15 minutes.") {
-                IconOrb(symbol: "envelope", size: 120)
+        OnbScreen(back: false, scrolls: false) {
+            OnbMessage(title: "Check your email", line: "We sent a reset link. It expires in 15 minutes.", top: 98) {
+                OnbOrb(symbol: "envelope")
             }
         } actions: {
-            BottomActions {
-                Button("Open Mail") { openURL(URL(string: "message://")!) }
-                    .buttonStyle(NacreButtonStyle())
-            } secondary: {
-                Button("Back to sign in") {
-                    if let i = path.lastIndex(where: { if case .signIn = $0 { return true }; return false }) {
-                        path = Array(path.prefix(i + 1))
-                    } else {
-                        path = [.signIn(email: "")]
-                    }
+            OnbPrimary(title: "Open Mail") { openURL(URL(string: "message://")!) }
+            APQuietButton(title: "Back to sign in") {
+                if let i = path.lastIndex(where: { if case .signIn = $0 { return true }; return false }) {
+                    path = Array(path.prefix(i + 1))
+                } else {
+                    path = [.signIn(email: "")]
                 }
-                .buttonStyle(NacreTextButtonStyle())
             }
         }
     }
 }
 
-// MARK: - A-07 Choose a new password
+// MARK: - A-07 Choose a new password (G6-Forgot)
 
 @MainActor
 struct NewPasswordView: View {
@@ -770,30 +756,29 @@ struct NewPasswordView: View {
     @State private var password = ""
     @State private var confirm = ""
     @State private var rules = PasswordRules.local("", email: "")
+    @State private var checkedFor = ""
     @State private var error: String?
     @State private var busy = false
 
+    private var mismatch: Bool { !confirm.isEmpty && confirm != password && confirm.count >= password.count }
+
     var body: some View {
-        NacreScreen {
-            Text("Choose a new password").font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
-            APCard {
-                FieldRow(label: "New password", text: $password, prompt: "At least 12 characters", kind: .secure,
-                         content: .newPassword)
-                APSeparator(afterFace: false)
-                FieldRow(label: "Confirm", text: $confirm, prompt: "Type it again", kind: .secure,
-                         content: .newPassword) { Task { await save() } }
+        OnbScreen(back: false) {
+            OnbTitle(title: "Choose a new password")
+            OnbField(label: "New password", text: $password, prompt: "At least 12 characters", kind: .secure,
+                     content: .newPassword, focusOnAppear: true)
+                .padding(.top, 8)
+            if !password.isEmpty {
+                PasswordChecks(rules: rules, commonChecked: password.count < 12 || checkedFor == password)
             }
-            if !password.isEmpty { PasswordMeter(rules: rules) }
-            if !confirm.isEmpty && confirm != password {
-                Hint(text: "The two passwords don’t match yet.")
-            }
-            Text("You’ll be signed out on your other devices.").font(Nacre.footnote).padding(.horizontal, 4)
-            if let error = error { Hint(text: error) }
+            OnbField(label: "Type it again", text: $confirm, prompt: "Type it again", kind: .secure,
+                     content: .newPassword,
+                     error: mismatch ? "The two passwords don\u{2019}t match yet." : nil) { Task { await save() } }
+            ProfileNote("You\u{2019}ll be signed out on your other devices.")
+            if let error = error { APErrorLine(text: error) }
         } actions: {
-            BottomActions {
-                Button("Save password") { Task { await save() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
-                    .disabled(!rules.ok || confirm != password || busy)
+            OnbPrimary(title: "Save password", busy: busy, enabled: rules.ok && confirm == password) {
+                Task { await save() }
             }
         }
         .onChange(of: password) { value in rules = PasswordRules.local(value, email: ""); error = nil }
@@ -802,6 +787,7 @@ struct NewPasswordView: View {
             try? await Task.sleep(nanoseconds: 400_000_000)
             if let checked: PasswordRules = try? await app.api.post("api/auth/password/check", ["password": password]) {
                 rules = checked
+                checkedFor = password
             }
         }
     }

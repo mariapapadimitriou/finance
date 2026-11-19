@@ -41,48 +41,20 @@ struct PayAndBillsView: View {
     }
 
     var body: some View {
-        NacreScreen {
-            if onDone == nil { ShellProgress(part: 3, name: "Your money") }
-            Text("Your pay and bills").font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
-            Text(noPay ? "We couldn’t find a regular paycheque. Add your income so your Allowance is right."
-                       : "Check these look right. Tap any to change it.")
-                .font(Nacre.body)
+        // G6-PayBills O-10: part 3, Money in (found pay answers Yes / No on
+        // the row, approved 2026-11-18), Bills with their ticks.
+        OnbScreen(part: onDone == nil ? 3 : nil, partName: "Your money") {
+            OnbTitle(title: "Your pay and bills", line: "Check these look right.")
             if let data = data {
-                section("Money in") {
-                    if noPay {
-                        HStack(alignment: .top, spacing: 12) {
-                            TrendBadge()
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("No regular pay found").font(Nacre.body)
-                                Text("Freelance or gig work? Add what you usually earn.")
-                                    .font(Nacre.subheadline).foregroundColor(Pearl.muted)
-                            }
-                        }
-                        .padding(.horizontal, 16).padding(.vertical, 12)
-                    }
-                    ForEach(data.pays) { pay in
-                        incomeRow(pay.name, cadence(pay.cadence), pay.amount) { sheet = .pay(pay) }
-                        APSeparator()
-                    }
-                    ForEach(candidates) { c in
-                        incomeRow(c.name, cadence(c.cadence), c.amount) { sheet = .candidate(c) }
-                        APSeparator()
-                    }
-                    ForEach(data.asks ?? []) { a in
-                        askRow(a)
-                        APSeparator()
-                    }
-                    addRow(noPay ? "Add your income" : "Add other income") { sheet = .addPay }
-                }
-                section("Bills") {
-                    ForEach(bills) { bill in
+                moneyIn(data)
+                section("Bills", action: "Add", act: { sheet = .addBill }) {
+                    ForEach(Array(bills.enumerated()), id: \.element.id) { i, bill in
+                        if i > 0 { APSeparator() }
                         billRow(bill)
-                        APSeparator()
                     }
-                    addRow("Add a bill") { sheet = .addBill }
                 }
                 if !subscriptions.isEmpty {
-                    section("Subscriptions", note: "Untick any you don’t want set aside.") {
+                    section("Subscriptions") {
                         ForEach(Array(subscriptions.enumerated()), id: \.element.id) { i, bill in
                             if i > 0 { APSeparator() }
                             billRow(bill)
@@ -90,15 +62,12 @@ struct PayAndBillsView: View {
                     }
                 }
             } else if error == nil {
-                ProgressView().frame(maxWidth: .infinity, minHeight: 200)
+                section("Money in") { APSkeletonRow(); APSeparator(); APSkeletonRow() }
+                section("Bills") { APSkeletonRow(); APSeparator(); APSkeletonRow(); APSeparator(); APSkeletonRow() }
             }
-            if let error = error { Hint(text: error) }
+            if let error = error { APErrorLine(text: error) }
         } actions: {
-            BottomActions {
-                Button("Looks good") { Task { await confirm() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
-                    .disabled(data == nil || noPay || busy)
-            }
+            OnbPrimary(title: "Looks good", busy: busy, enabled: data != nil && !noPay) { Task { await confirm() } }
         }
         .task { await load() }
         .sheet(item: $sheet) { which in
@@ -139,6 +108,60 @@ struct PayAndBillsView: View {
         }
     }
 
+    /// MONEY IN: confirmed pay, found pay (Yes / No), questions, or "No
+    /// regular pay found" with Add.
+    @ViewBuilder
+    private func moneyIn(_ data: IncomeBills) -> some View {
+        if noPay {
+            section("Money in") {
+                HStack(spacing: 12) {
+                    IconBubble(symbol: "dollarsign.square")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("No regular pay found").font(Nacre.body).foregroundColor(Pearl.ink)
+                        Text("Add what you usually earn").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    APPillButton(title: "Add", identifier: "add-income") { sheet = .addPay }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 12)
+                .frame(minHeight: 64)
+            }
+        } else {
+            section("Money in", action: "Add", act: { sheet = .addPay }) {
+                ForEach(Array(data.pays.enumerated()), id: \.element.id) { i, pay in
+                    if i > 0 { APSeparator() }
+                    incomeRow(pay.name, cadence(pay.cadence), pay.amount) { sheet = .pay(pay) }
+                }
+                ForEach(candidates) { c in
+                    if !data.pays.isEmpty || c.id != candidates.first?.id { APSeparator() }
+                    FoundPayRow(name: c.name, sub: "Your pay?", tap: { sheet = .candidate(c) },
+                                yes: { Task { await answer(c.payer, "yes") } },
+                                no: { Task { await answer(c.payer, "no") } })
+                        .disabled(busy)
+                }
+                ForEach(data.asks ?? []) { a in
+                    if !data.pays.isEmpty || !candidates.isEmpty || a.id != data.asks?.first?.id { APSeparator() }
+                    askRow(a)
+                }
+            }
+        }
+    }
+
+    /// Found pay, answered on the row: Yes keeps it as her pay, No says it isn't.
+    private func answer(_ payer: String, _ answer: String) async {
+        busy = true
+        defer { busy = false }
+        do {
+            let reply: IncomeBills = try await app.api.post("api/income-bills/pay/answer",
+                                                            ["payer": payer, "answer": answer])
+            if answer == "no" { notPay.insert(payer) }
+            data = reply
+            error = nil
+        } catch {
+            self.error = app.handle(error)
+        }
+    }
+
     // MARK: Rows
 
     private var noPay: Bool {
@@ -157,9 +180,10 @@ struct PayAndBillsView: View {
         (data?.bills ?? []).filter { subscriptionCategories.contains($0.category ?? "") }
     }
 
-    private func section<Content: View>(_ title: String, note: String? = nil,
+    private func section<Content: View>(_ title: String, note: String? = nil, action: String? = nil,
+                                        act: @escaping () -> Void = {},
                                         @ViewBuilder content: @escaping () -> Content) -> some View {
-        MoneySection(title: title, note: note, content: content)
+        MoneySection(title: title, note: note, action: action, act: act, content: content)
     }
 
     private func incomeRow(_ name: String, _ sub: String, _ amount: Double,
@@ -167,8 +191,16 @@ struct PayAndBillsView: View {
         IncomeLine(name: name, sub: sub, amount: amount, tap: tap)
     }
 
+    @ViewBuilder
     private func askRow(_ a: IncomeBills.Ask) -> some View {
-        AskLine(ask: a) { sheet = .ask(a) }
+        if a.kind == "joint" {
+            // A joint deposit: Yes asks whose it is (O-10f); No, it isn't regular pay.
+            FoundPayRow(name: a.name, sub: "Your pay? \u{00B7} joint", tap: { sheet = .ask(a) },
+                        yes: { sheet = .ask(a) }, no: { Task { await answer(a.payer, "no") } })
+                .disabled(busy)
+        } else {
+            AskLine(ask: a) { sheet = .ask(a) }
+        }
     }
 
     private func billRow(_ bill: IncomeBills.Bill) -> some View {
@@ -221,16 +253,18 @@ struct PayAndBillsView: View {
 
 // MARK: - Rows (O-10 and Profile › Income and bills, IB-01)
 
-/// "MONEY IN": the caption and its card, with an optional note in it.
+/// "MONEY IN": the A+ caps label (with its quiet Add) and its card, with an
+/// optional note in it.
 struct MoneySection<Content: View>: View {
     let title: String
     var note: String? = nil
+    var action: String? = nil
+    var act: () -> Void = {}
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title.uppercased()).font(Nacre.caption2).tracking(0.6).padding(.leading, 16)
-                .accessibilityAddTraits(.isHeader)
+        VStack(alignment: .leading, spacing: 8) {
+            APSectionLabel(text: title, action: action, act: act)
             APCard {
                 content()
                 if let note = note {
@@ -239,10 +273,12 @@ struct MoneySection<Content: View>: View {
                 }
             }
         }
+        .padding(.top, 12)
     }
 }
 
-/// "↗  Northwind Ltd · Every 2 weeks   +$2,150 ›".
+/// "NW  Northwind Ltd · Every 2 weeks   +$2,150" (G6-PayBills): the face,
+/// the name over its line, the amount in money-in on the right edge. A tap changes it.
 struct IncomeLine: View {
     let name: String
     let sub: String
@@ -252,16 +288,17 @@ struct IncomeLine: View {
     var body: some View {
         Button(action: tap) {
             HStack(spacing: 12) {
-                TrendBadge()
+                RowAvatar(name: name)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(name).font(Nacre.body)
+                    Text(name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
                     Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                 }
-                Spacer(minLength: 8)
-                Text("+" + Format.whole(amount)).font(Nacre.headline).foregroundColor(Pearl.moneyIn)
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Text("+" + Format.whole(amount)).font(Nacre.headline).monospacedDigit()
+                    .foregroundColor(Pearl.moneyIn).pearlAmountFit().fixedSize()
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
+            .frame(minHeight: 64)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -269,8 +306,43 @@ struct IncomeLine: View {
     }
 }
 
+/// Found pay answered on the row (G6-PayBills, G5-Income; approved
+/// 2026-11-18): the face, the name over "Your pay?", then Yes (action wash)
+/// and No (quiet). A tap on the name opens it.
+struct FoundPayRow: View {
+    let name: String
+    let sub: String
+    let tap: () -> Void
+    let yes: () -> Void
+    let no: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: tap) {
+                HStack(spacing: 12) {
+                    RowAvatar(name: name)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                        Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(name), \(sub)")
+            APPillButton(title: "Yes", identifier: "found-yes-\(name)", action: yes)
+                .accessibilityLabel("Yes, \(name) is my pay")
+            APPillButton(title: "No", quiet: true, identifier: "found-no-\(name)", action: no)
+                .accessibilityLabel("No, \(name) isn\u{2019}t my pay")
+        }
+        .padding(.horizontal, 16).padding(.vertical, 6)
+        .frame(minHeight: 64)
+    }
+}
+
 /// An income row that's a question: "Brightside Co · Found · every 2 weeks
-/// · Your pay? ›" (IB-02), "Maple Co · Joint account · Whose pay? ›" (O-10f).
+/// · Your pay? ›" (IB-02), "Sam · $725 · what is it? ›" (O-10g).
 struct QuestionLine: View {
     let name: String
     let sub: String
@@ -280,19 +352,22 @@ struct QuestionLine: View {
     var body: some View {
         Button(action: tap) {
             HStack(spacing: 12) {
-                TrendBadge()
+                RowAvatar(name: name)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(name).font(Nacre.body)
-                    Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    Text(name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                    Text(question.isEmpty ? sub : "\(sub) \u{00B7} \(question.lowercased())")
+                        .font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: 8)
-                Text(question).font(Nacre.headline).foregroundColor(Pearl.action)
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                APChevron()
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
+            .frame(minHeight: 64)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -303,12 +378,13 @@ struct AskLine: View {
 
     var body: some View {
         QuestionLine(name: ask.name,
-                     sub: ask.kind == "joint" ? "Joint account" : "\(Format.whole(ask.amount)) · \(cadence(ask.cadence).lowercased())",
+                     sub: ask.kind == "joint" ? "Joint account" : Format.whole(ask.amount),
                      question: ask.kind == "joint" ? "Whose pay?" : "What is it?", tap: tap)
     }
 }
 
-/// "✓  Rent · Monthly · around the 1st   $1,450.00  Edit".
+/// "☑  RE  Rent · Around the 1st   $1,450.00" (G6-PayBills): the tick
+/// counts it, the rest of the row changes it; spending in plum.
 struct BillLine: View {
     let bill: IncomeBills.Bill
     let on: Bool
@@ -317,29 +393,42 @@ struct BillLine: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Button(action: toggle) {
-                Image(systemName: on ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 22))
-                    .foregroundColor(on ? Pearl.action : Pearl.ink)
+            Button(action: toggle) { APTickBox(on: on).frame(width: 44, height: 44) }
+                .buttonStyle(.plain)
+                .padding(.horizontal, -10)
+                .accessibilityLabel(on ? "Counted, \(bill.name)" : "Not counted, \(bill.name)")
+            Button(action: edit) {
+                HStack(spacing: 12) {
+                    RowAvatar(name: bill.name)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(bill.name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                        Text(billShort(bill)).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Text((bill.varies == true ? "~" : "") + Format.amount(bill.amount))
+                        .font(Nacre.headline).monospacedDigit()
+                        .foregroundColor(Pearl.moneyOut).pearlAmountFit().fixedSize()
+                }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(on ? "Counted, \(bill.name)" : "Not counted, \(bill.name)")
-            VStack(alignment: .leading, spacing: 2) {
-                Text(bill.name).font(Nacre.body)
-                Text(billWhen(bill)).font(Nacre.subheadline).foregroundColor(Pearl.muted)
-            }
-            Spacer(minLength: 8)
-            Text((bill.varies == true ? "~" : "") + Format.amount(bill.amount)).font(Nacre.body)
-            Button("Edit", action: edit)
-                .font(Nacre.subheadline).foregroundColor(Pearl.action)
-                .buttonStyle(.plain)
+            .accessibilityHint("Change it")
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
-        .opacity(on ? 1 : 0.6)
+        .frame(minHeight: 64)
     }
 }
 
-/// "⊕  Add other income".
+/// "Around the 1st", "Varies", "Monthly · Sam pays $725": a bill's short line.
+func billShort(_ bill: IncomeBills.Bill) -> String {
+    let shared = bill.shared.map { " · \($0.person ?? "They") pay\($0.person == nil ? "" : "s") \(Format.whole($0.amount))" } ?? ""
+    if bill.varies == true { return "Varies" + shared }
+    guard let day = bill.day else { return cadence(bill.cadence) + shared }
+    return "Around the \(ordinal(day))" + shared
+}
+
+/// "+  Add other income".
 struct AddLine: View {
     let title: String
     let tap: () -> Void
@@ -347,11 +436,12 @@ struct AddLine: View {
     var body: some View {
         Button(action: tap) {
             HStack(spacing: 12) {
-                Image(systemName: "plus.circle.fill").font(.system(size: 22)).foregroundColor(Pearl.action)
-                Text(title).font(Nacre.body).foregroundColor(Pearl.action)
+                IconBubble(symbol: "plus")
+                Text(title).font(Nacre.body).foregroundColor(Pearl.link)
                 Spacer()
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
+            .frame(minHeight: 64)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -373,11 +463,7 @@ let subscriptionCategories: Set<String> = ["Streaming", "Software", "Subscriptio
 /// The small "↗" badge on an income row.
 struct TrendBadge: View {
     var body: some View {
-        Image(systemName: "chart.line.uptrend.xyaxis")
-            .font(.system(size: 13, weight: .semibold))
-            .frame(width: 36, height: 36)
-            .background(Circle().fill(Nacre.glass))
-            .accessibilityHidden(true)
+        IconBubble(symbol: "chart.line.uptrend.xyaxis")
     }
 }
 
@@ -472,15 +558,15 @@ struct PaySheet: View {
                 .font(Nacre.body).tint(Pearl.action)
                 .padding(.horizontal, 16).frame(minHeight: 52)
                 .sheetCard()
-            if let error = error { Hint(text: error) }
+            if let error = error { APErrorLine(text: error) }
         } actions: {
             Button(adding ? "Add income" : "Save") { Task { await save() } }
-                .buttonStyle(NacreButtonStyle(busy: busy))
+                .buttonStyle(APPrimaryButtonStyle(busy: busy))
             if adding {
-                Button("Cancel") { dismiss() }.buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                Button("Cancel") { dismiss() }.buttonStyle(APSecondaryButtonStyle())
             } else {
                 Button("This isn’t my pay") { Task { await notMine() } }
-                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                    .buttonStyle(APSecondaryButtonStyle())
             }
         }
         .task {
@@ -588,14 +674,14 @@ struct BillSheet: View {
                 }
             }
             .sheetCard()
-            if let error = error { Hint(text: error) }
+            if let error = error { APErrorLine(text: error) }
         } actions: {
             Button(bill == nil ? "Add bill" : "Save") { Task { await save() } }
-                .buttonStyle(NacreButtonStyle(busy: busy))
+                .buttonStyle(APPrimaryButtonStyle(busy: busy))
             if let bill = bill {
                 // O-10a: any bill can come off, found or added.
                 Button("Remove bill") { Task { await remove(bill) } }
-                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                    .buttonStyle(APSecondaryButtonStyle())
             }
         }
         .task {
@@ -669,40 +755,34 @@ struct SheetFrame<Content: View, Actions: View>: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     if let heading = heading {
-                        HStack {
-                            Spacer()
-                            Text(heading).font(Nacre.headline).accessibilityAddTraits(.isHeader)
-                            Spacer()
-                        }
-                        .overlay(alignment: .trailing) { CloseButton(action: close) }
-                        .padding(.top, 4)
+                        APSheetTitle(title: heading, close: close).padding(.top, 6)
                     }
-                    HStack(alignment: .top, spacing: 12) {
-                        IconOrb(symbol: symbol, size: 44)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(title).font(Nacre.title2)
-                            Text(subtitle).font(Nacre.subheadline)
+                    HStack(alignment: .center, spacing: 12) {
+                        IconBubble(symbol: symbol, size: 44)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(title).font(Nacre.title2).foregroundColor(Pearl.ink)
+                            Text(subtitle).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                         }
                         Spacer(minLength: 8)
-                        if heading == nil { CloseButton(action: close) }
+                        if heading == nil { PearlCloseButton(action: close) }
                     }
                     content()
                 }
                 .padding(16)
                 .sheetPart()
             }
-            VStack(spacing: 6, content: actions).padding(.horizontal, 16).padding(.bottom, 8)
+            VStack(spacing: 12, content: actions).padding(.horizontal, 16).padding(.bottom, 8)
                 .sheetPart()
         }
         .foregroundColor(Pearl.ink)
-        .background(SheetBackground())  // REFRESH-05: the sheet surface is the page's
+        .background(SheetBackground())
     }
 }
 
 extension View {
     /// The white rounded card fields sit in, inside a sheet.
     func sheetCard() -> some View {
-        background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Pearl.card))
+        apCard()
     }
 }
 

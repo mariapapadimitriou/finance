@@ -96,27 +96,14 @@ struct FinishSetupView: View {
     let next: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            Wordmark().padding(.top, 16)
-            HeroShell(width: 256).padding(.top, 58)
-            VStack(spacing: 12) {
-                Text("Let’s finish setting up").font(Nacre.title).tracking(0.4)
-                    .accessibilityAddTraits(.isHeader)
-                Text("Next: link your bank. It takes about a minute.").font(Nacre.body)
-            }
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, 24)
-            .padding(.top, 42)
-            Spacer(minLength: 24)
-            BottomActions {
-                Button("Continue", action: next).buttonStyle(NacreButtonStyle())
-            } secondary: {
-                Button("Sign out") { Task { await app.signOut() } }
-                    .buttonStyle(NacreTextButtonStyle())
-            }
+        // G6-Welcome O-00: the mark, the title and the next step.
+        OnbScreen(back: false, scrolls: false) {
+            OnbMessage(title: "Let\u{2019}s finish setting up", line: "Next: link your bank. It takes about a minute.",
+                       top: 118) { APMark(width: 180) }
+        } actions: {
+            OnbPrimary(title: "Continue", action: next)
+            APQuietButton(title: "Sign out") { Task { await app.signOut() } }
         }
-        .nacreScreen()
-        .toolbar(.hidden, for: .navigationBar)
     }
 }
 
@@ -134,64 +121,51 @@ struct LinkBankView: View {
     @State private var error: String?
 
     var body: some View {
-        NacreScreen {
-            ShellProgress(part: 2, name: "Link your bank")
-            HStack(spacing: 10) {
-                Image("LogoMark").resizable().frame(width: 34, height: 28.3)
-                    .frame(width: 52, height: 52)
-                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Nacre.glass))
-                Text("···").font(.system(size: 20, weight: .bold))
-                IconOrb(symbol: "lock", size: 44)
-            }
-            .frame(maxWidth: .infinity)
-            .accessibilityHidden(true)
-            Text("Pearl uses Plaid to link your bank").font(Nacre.title).tracking(0.4)
-                .multilineTextAlignment(.center).frame(maxWidth: .infinity)
-                .accessibilityAddTraits(.isHeader)
+        // G6-Plaid O-06: part 2, what Plaid can and can't do, the agreement.
+        OnbScreen(back: false, part: 2, partName: "Link your bank") {
+            OnbTitle(title: "Pearl uses Plaid to link your bank")
             APCard {
-                point("lock", "Bank-level encryption", "Encrypted and stored in Canada.")
-                point("eye", "Read-only access", "Pearl can’t move your money.")
-                point("checkmark", "Your data is never sold", "No ads. Delete your data anytime.")
-                point("xmark", "Disconnect anytime", "In Settings, or at my.plaid.com.")
+                ProfileRow(symbol: "lock", title: "Bank-level encryption", sub: "Stored in Canada", chevron: false)
+                APSeparator()
+                ProfileRow(symbol: "eye", title: "Read-only", sub: "Pearl can\u{2019}t move your money", chevron: false)
+                APSeparator()
+                ProfileRow(symbol: "checkmark.shield", title: "Never sold", sub: "No ads. Delete your data anytime.",
+                           chevron: false)
+                APSeparator()
+                // Approved 2026-11-18: where to disconnect, in the app; no web hand-off.
+                ProfileRow(symbol: "personalhotspot", title: "Disconnect anytime", sub: "In Profile \u{203A} Accounts",
+                           chevron: false)
             }
-            // The links sit outside the button, so tapping Terms opens it
-            // rather than ticking the box.
-            HStack(alignment: .top, spacing: 12) {
-                Button { agreed.toggle() } label: {
-                    Image(systemName: agreed ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 22))
-                        .foregroundColor(agreed ? Pearl.action : Pearl.ink)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("I’m 19 or older and agree")
-                VStack(alignment: .leading, spacing: 2) {
-                    Button { agreed.toggle() } label: {
-                        Text("I’m 19 or older and agree to:").font(Nacre.body)
-                    }
-                    .buttonStyle(.plain)
-                    consentLine.font(Nacre.subheadline)
-                        .environment(\.openURL, OpenURLAction { url in
-                            guard let d = PearlDoc(url: url) else { return .systemAction }
-                            doc = d
-                            return .handled
-                        })
-                }
-                Spacer(minLength: 0)
-            }
-            .accessibilityAddTraits(agreed ? .isSelected : [])
-            .padding(.horizontal, 8)
-            if let error = error { Hint(text: error) }
+            .padding(.top, 6)
+            agreement
+            if let error = error { APErrorLine(text: error) }
         } actions: {
-            BottomActions {
-                Button("Continue") { Task { await link() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
-                    .disabled(!agreed || busy)
-            } secondary: {
-                Button("Link later") { path.append(.skipped) }
-                    .buttonStyle(NacreTextButtonStyle())
+            OnbPrimary(title: "Continue", busy: busy, busyLabel: "Opening Plaid\u{2026}", enabled: agreed) {
+                Task { await link() }
             }
+            APQuietButton(title: "Link later") { path.append(.skipped) }
         }
         .docSheet($doc)
+    }
+
+    /// The tick box and the consent line; its links open the pages, so a tap
+    /// on Terms reads it rather than ticking the box.
+    private var agreement: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Button { agreed.toggle() } label: { APTickBox(on: agreed) }
+                .buttonStyle(.plain)
+                .accessibilityLabel("I\u{2019}m 19 or older and agree")
+                .accessibilityAddTraits(agreed ? .isSelected : [])
+            consentLine.font(Nacre.subheadline).foregroundColor(Pearl.ink).tint(Pearl.link)
+                .fixedSize(horizontal: false, vertical: true)
+                .environment(\.openURL, OpenURLAction { url in
+                    guard let d = PearlDoc(url: url) else { return .systemAction }
+                    doc = d
+                    return .handled
+                })
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 4).padding(.top, 2)
     }
 
     private var consentLine: Text {
@@ -204,24 +178,8 @@ struct LinkBankView: View {
         var plaid = AttributedString("End User Privacy Policy")
         plaid.link = URL(string: "https://plaid.com/legal/#end-user-privacy-policy")
         plaid.underlineStyle = .single
-        return Text("Pearl’s ") + Text(terms) + Text(" and ") + Text(privacy)
+        return Text("I’m 19 or older and agree to Pearl’s ") + Text(terms) + Text(" and ") + Text(privacy)
             + Text(", and Plaid’s ") + Text(plaid) + Text(".")
-    }
-
-    private func point(_ symbol: String, _ title: String, _ line: String) -> some View {
-        HStack(alignment: .top, spacing: 14) {
-            Image(systemName: symbol)
-                .font(.system(size: 15, weight: .medium))
-                .frame(width: 40, height: 40)
-                .background(Circle().fill(Nacre.glass))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(Pearl.heading(18, relativeTo: .headline))
-                Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 16).padding(.vertical, 10)
-        .accessibilityElement(children: .combine)
     }
 
     private func link() async {
@@ -253,58 +211,34 @@ struct ReadingAccountsView: View {
     @State private var spin = false
 
     var body: some View {
+        // G6-Reading O-08: the ring round the mark, then each account's state.
         // Scrolls: a bank can bring a dozen accounts or more.
-        NacreScreen(scrolls: true) {
-            VStack(spacing: 12) {
-                ZStack {
-                    Circle().stroke(Color.white.opacity(0.5), lineWidth: 4)
-                    Circle().trim(from: 0, to: 0.7)
-                        .stroke(AngularGradient(colors: [Nacre.seaglass, Nacre.lilac, Nacre.rose], center: .center),
-                                style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                        .rotationEffect(.degrees(spin ? 360 : 0))
-                        .animation(.linear(duration: 2.4).repeatForever(autoreverses: false), value: spin)
-                    Image("LogoMark").resizable().frame(width: 104, height: 86.7)
-                }
-                .frame(width: 200, height: 200)
-                .padding(.bottom, 12)
-                .accessibilityHidden(true)
-                Text(longer ? "This is taking a little longer" : "Pearl is reading your accounts")
-                    .font(Nacre.title).tracking(0.4).multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityAddTraits(.isHeader)
-                Text(longer ? "Some banks need a few minutes. We can let you know when it’s ready." : "About a minute.")
-                    .font(Nacre.body).multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 24)
+        OnbScreen(back: false) {
+            ReadingRing(spin: spin, longer: longer)
             APCard {
                 ForEach(Array(link.accounts.enumerated()), id: \.offset) { i, account in
                     if i > 0 { APSeparator() }
                     HStack(spacing: 12) {
-                        BankBadge(text: initials(link.institution))
+                        RowAvatar(name: initials(link.institution))
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(account.name).font(Nacre.body)
-                            Text("••\(account.mask) · \(status(i))").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                            Text(account.name).font(Nacre.body).foregroundColor(Pearl.ink)
+                            Text(status(i)).font(Nacre.subheadline)
+                                .foregroundColor(!done && i == 0 ? Pearl.action : Pearl.muted)
                         }
                         Spacer(minLength: 8)
-                        if done || i == 0 && longer { DonePill(text: "Done") }
                     }
                     .padding(.horizontal, 16).padding(.vertical, 12)
+                    .frame(minHeight: 64)
+                    .accessibilityElement(children: .combine)
                 }
             }
+            .padding(.top, 12)
         } actions: {
             if longer && !done {
-                BottomActions {
-                    Button("Notify me") { Task { await askToNotify() } }
-                        .buttonStyle(NacreButtonStyle())
-                        .disabled(notify)
-                } secondary: {
-                    Button("Keep waiting") { longer = false }
-                        .buttonStyle(NacreTextButtonStyle())
-                }
+                OnbPrimary(title: "Notify me", enabled: !notify) { Task { await askToNotify() } }
+                APQuietButton(title: "Keep waiting") { longer = false }
             }
         }
-        .navigationBarBackButtonHidden(true)
         .onAppear { spin = true }
         .task { await exchange() }
         .task {
@@ -347,6 +281,39 @@ struct ReadingAccountsView: View {
     }
 }
 
+/// G6-Reading: the 150 pt ring (action over track) round the mark on a card
+/// disc, the title and its line.
+struct ReadingRing: View {
+    let spin: Bool
+    let longer: Bool
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ZStack {
+                Circle().stroke(APlus.trackSoft, lineWidth: 6)
+                Circle().trim(from: 0, to: 0.38)
+                    .stroke(Pearl.action, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                    .rotationEffect(.degrees(spin ? 270 : -90))
+                    .animation(.linear(duration: 2.4).repeatForever(autoreverses: false), value: spin)
+                Circle().fill(APlus.card).padding(6)
+                APMark(width: 90)
+            }
+            .frame(width: 150, height: 150)
+            .padding(.bottom, 18)
+            .accessibilityHidden(true)
+            Text(longer ? "This is taking a little longer" : "Pearl is reading your accounts")
+                .font(Nacre.largeTitle).foregroundColor(Pearl.ink).multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            Text(longer ? "Some banks need a few minutes. We can let you know when it\u{2019}s ready." : "About a minute.")
+                .font(Nacre.body).foregroundColor(Pearl.muted).multilineTextAlignment(.center)
+                .padding(.horizontal, 20)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 28)
+    }
+}
+
 func initials(_ name: String) -> String {
     let words = name.split(separator: " ").filter { $0.first?.isLetter == true }
     if words.count == 1, let w = words.first { return String(w.prefix(2)).uppercased() }
@@ -364,48 +331,30 @@ struct BankLinkedView: View {
     @State private var error: String?
 
     var body: some View {
-        NacreScreen {
-            MessageBlock(title: cardOnly ? "Your card is linked" : "Your bank is linked", line: line) {
-                Image("LogoMark").resizable().frame(width: 140, height: 116.7)
-                    .overlay(alignment: .bottomTrailing) {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 13, weight: .semibold))
-                            .frame(width: 32, height: 32)
-                            .background(Circle().fill(Nacre.glass))
-                            .offset(x: 12, y: 6)
-                    }
-                    .accessibilityHidden(true)
-            }
-            .padding(.top, 0)
+        // G6-Linked O-09 / O-09d: part 2, the green tick, the accounts.
+        OnbScreen(back: false, part: 2, partName: "Link your bank") {
+            LinkedHead(title: cardOnly ? "Your card is linked" : "Your bank is linked", line: line)
             if !accounts.isEmpty {
                 APCard {
                     ForEach(Array(accounts.enumerated()), id: \.element.id) { i, account in
                         if i > 0 { APSeparator() }
-                        AccountLine(account: account, trailing: AnyView(DonePill(text: "Synced")))
+                        AccountLine(account: account)
                     }
                 }
+                .padding(.top, 10)
             }
-            if let error = error { Hint(text: error) }
+            if let error = error { APErrorLine(text: error) }
         } actions: {
-            BottomActions {
-                if cardOnly {
-                    Button("Link chequing") { Task { error = await openPlaid(plaid, api: app.api, path: $path) } }
-                        .buttonStyle(NacreButtonStyle())
-                } else {
-                    Button("Continue") { path.append(.accounts) }
-                        .buttonStyle(NacreButtonStyle())
-                }
-            } secondary: {
-                if cardOnly {
-                    Button("Continue with just my card") { path.append(.accounts) }
-                        .buttonStyle(NacreTextButtonStyle())
-                } else {
-                    Button("Link another bank") { Task { error = await openPlaid(plaid, api: app.api, path: $path) } }
-                        .buttonStyle(NacreTextButtonStyle())
+            if cardOnly {
+                OnbPrimary(title: "Link chequing") { Task { error = await openPlaid(plaid, api: app.api, path: $path) } }
+                APQuietButton(title: "Continue with just my card") { path.append(.accounts) }
+            } else {
+                OnbPrimary(title: "Continue") { path.append(.accounts) }
+                APQuietButton(title: "Link another bank") {
+                    Task { error = await openPlaid(plaid, api: app.api, path: $path) }
                 }
             }
         }
-        .navigationBarBackButtonHidden(true)
         .task {
             do {
                 let overview: AccountsOverview = try await app.api.get("api/accounts/overview")
@@ -419,13 +368,39 @@ struct BankLinkedView: View {
     private var cardOnly: Bool { !accounts.isEmpty && accounts.allSatisfy(\.isCard) }
 
     private var line: String {
-        if cardOnly { return "Link your chequing too, so we can see your pay and bills." }
+        if cardOnly { return "Link your chequing too, so Pearl sees your pay and bills." }
         guard !accounts.isEmpty else { return "" }
         let count = "\(accounts.count) account\(accounts.count == 1 ? "" : "s")"
         let first = accounts.compactMap { $0.historyFrom.flatMap(Format.date) }.min()
         guard let first = first else { return count }
         let months = max(1, Calendar(identifier: .gregorian).dateComponents([.month], from: first, to: Date()).month ?? 1)
         return "\(count) · \(months) month\(months == 1 ? "" : "s") of history"
+    }
+}
+
+/// G6-Linked's top: the 96 pt green tick, the title and its line.
+struct LinkedHead: View {
+    let title: String
+    let line: String
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "checkmark").font(.system(size: 40, weight: .semibold))
+                .foregroundColor(Pearl.moneyIn)
+                .frame(width: 96, height: 96)
+                .background(Circle().fill(ProfileTone.goodWash))
+                .accessibilityHidden(true)
+            Text(title).font(Nacre.largeTitle).foregroundColor(Pearl.ink).multilineTextAlignment(.center)
+                .accessibilityAddTraits(.isHeader)
+                .padding(.top, 16)
+            if !line.isEmpty {
+                Text(line).font(Nacre.body).foregroundColor(Pearl.muted).multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 20)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 58)
     }
 }
 
@@ -436,17 +411,24 @@ struct AccountLine: View {
     var trailing: AnyView? = nil
 
     var body: some View {
+        // G6-Linked: the face, the name over "••4417", the balance on the right edge.
         HStack(spacing: 12) {
-            BankBadge(text: initials(account.institution ?? account.name))
+            RowAvatar(name: initials(account.institution ?? account.name))
             VStack(alignment: .leading, spacing: 2) {
-                Text(account.name).font(Nacre.body)
+                Text(account.name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
                 Text(sub ?? detail).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 8)
-            if let trailing = trailing { trailing }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if let trailing = trailing {
+                trailing
+            } else if let balance = account.balance {
+                Text(Format.amount(abs(balance))).font(Nacre.headline).monospacedDigit()
+                    .foregroundColor(Pearl.ink).pearlAmountFit().fixedSize()
+            }
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(minHeight: 64)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
@@ -454,9 +436,7 @@ struct AccountLine: View {
     private var detail: String {
         var parts: [String] = []
         if let mask = account.mask, !mask.isEmpty { parts.append("••\(mask)") }
-        if let balance = account.balance {
-            parts.append(Format.amount(balance) + (account.owing == true ? " owing" : ""))
-        }
+        if account.owing == true { parts.append("owing") }
         return parts.joined(separator: " · ")
     }
 }
@@ -474,23 +454,16 @@ struct LinkProblemView: View {
     @State private var error: String?
 
     var body: some View {
-        NacreScreen(scrolls: false) {
-            MessageBlock(title: title, line: line) {
-                Image("ShellClosed").resizable().frame(width: 140, height: 116.7).accessibilityHidden(true)
-            }
-            if let error = error { Hint(text: error) }
+        // G6-Linked O-09a / O-09f.
+        OnbScreen(back: false, scrolls: false) {
+            OnbMessage(title: title, line: line, top: 118) { APMark(width: 170) }
+            if let error = error { APErrorLine(text: error).padding(.top, 12) }
         } actions: {
-            BottomActions {
-                Button(primary) { Task { await again() } }
-                    .buttonStyle(NacreButtonStyle())
-            } secondary: {
-                if case .notSupported = problem {
-                    Button("Skip for now") { path.append(.skipped) }
-                        .buttonStyle(NacreTextButtonStyle())
-                } else {
-                    Button("Choose another bank") { Task { await again() } }
-                        .buttonStyle(NacreTextButtonStyle())
-                }
+            OnbPrimary(title: primary) { Task { await again() } }
+            if case .notSupported = problem {
+                APQuietButton(title: "Skip for now") { path.append(.skipped) }
+            } else {
+                APQuietButton(title: "Choose another bank") { Task { await again() } }
             }
         }
     }
@@ -505,7 +478,7 @@ struct LinkProblemView: View {
     private var line: String {
         switch problem {
         case .failed: return "Nothing was saved."
-        case .notSupported: return "Choose another bank, or skip for now and link later."
+        case .notSupported: return "Choose another bank, or link later."
         }
     }
 
@@ -533,7 +506,7 @@ struct CloseButton: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(Pearl.ink)
                 .frame(width: 44, height: 44)
-                .background(Circle().fill(Nacre.glass))
+                .background(Circle().fill(Pearl.control))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Close")

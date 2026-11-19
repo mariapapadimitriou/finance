@@ -55,7 +55,7 @@ enum AccountSetupWords {
         if a.joint == true {
             out.append(StatusPill(text: a.jointShare.map { "Joint · \(Int($0.rounded()))%" } ?? "Joint", tone: .joint))
         }
-        if a.anchor == true { out.append(StatusPill(text: "Anchor", tone: .info)) }
+        if a.anchor == true { out.append(StatusPill(text: "Anchor", tone: .anchor)) }
         return out
     }
 
@@ -137,22 +137,20 @@ struct AccountSetupView: View {
     private var leftOut: [AccountsOverview.Account] { accounts.filter { !AccountSetupWords.counts($0) } }
 
     var body: some View {
-        NacreScreen {
-            if onDone == nil { ShellProgress(part: 3, name: "Your money", opened: opened) }
-            Text("Your accounts").font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
-            Text("Check what counts and what you share.")
-                .font(Nacre.body).fixedSize(horizontal: false, vertical: true)
+        // G5-Setup AS-04: part 3 (the one strip), the title and its lead,
+        // Everyday, Savings and borrowing, Not in your budget, then "These
+        // look right" at the end of the list.
+        OnbScreen(part: onDone == nil ? 3 : nil, partName: "Your money") {
+            OnbTitle(title: "Your accounts", line: "Check what counts and what you share.")
             if !accounts.isEmpty {
-                Text(AccountSetupWords.summary(accounts)).font(Nacre.footnote).foregroundColor(Pearl.muted)
                 group("Everyday", everyday)
-                group("Savings & borrowing", savings)
+                group("Savings and borrowing", savings)
                 leftOutGroup
             }
-            if let error = error { Hint(text: error) }
+            if let error = error { APErrorLine(text: error) }
             // At the end of the list, scrolling with it: it never covers a row.
-            Button("These look right") { Task { await finish() } }
-                .buttonStyle(NacreButtonStyle(busy: busy))
-                .disabled(busy)
+            OnbPrimary(title: "These look right", busy: busy) { Task { await finish() } }
+                .padding(.top, 12)
         } actions: {
             EmptyView()
         }
@@ -274,28 +272,27 @@ struct AccountKindRow: View {
     var chevronTurned = false
 
     var body: some View {
+        // G5-Setup `kindrow`: the kind's 36 pt icon, the name, its tags under it.
         HStack(spacing: 12) {
             KindAvatar(symbol: symbol)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 if let sub = sub {
-                    Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if !tags.isEmpty {
                     HStack(spacing: 6) { ForEach(Array(tags.enumerated()), id: \.offset) { $0.element } }
+                        .padding(.top, 4)
                 }
             }
-            Spacer(minLength: 8)
-            Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(Pearl.muted)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            APChevron()
                 .rotationEffect(.degrees(chevronTurned ? 90 : 0))
-                .accessibilityHidden(true)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, sub == nil && tags.isEmpty ? 14 : 10)
+        .padding(.vertical, 12)
         .frame(minHeight: 64)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
@@ -309,13 +306,7 @@ struct KindAvatar: View {
     var size: CGFloat = 36
 
     var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: size * 0.5))
-            .foregroundColor(Pearl.action)
-            .frame(width: size, height: size)
-            .background(Circle().fill(Nacre.glass))
-            .overlay(Circle().strokeBorder(Nacre.edge, lineWidth: 1.5))
-            .accessibilityHidden(true)
+        IconBubble(symbol: symbol, size: size)
     }
 }
 
@@ -373,70 +364,25 @@ struct AccountSetupPage: View {
     }
 
     var body: some View {
+        // G5-Setup AS-02: the kind and name, the switches with their lines,
+        // who it's shared with, how purchases split, the Nickname, Save.
         ProfilePage {
             hero
+            settings
+            if shared && !isInvestment { splitPart }
             APCard {
-                toggleRow(title: "Include in my budget",
-                          hint: isInvestment ? "Spending doesn’t happen from an investment account."
-                              : "Its spending, bills and balance count toward Allowance and your totals on Home.",
-                          on: $counted, disabled: isInvestment)
-                if !isInvestment {
-                    APSeparator(afterFace: false)
-                    toggleRow(title: "Shared with someone", hint: "Only your share counts.",
-                              on: Binding(get: { shared }, set: { v in withAnimation { shared = v } }))
-                }
-                if account.canAnchor == true {
-                    APSeparator(afterFace: false)
-                    toggleRow(title: "Part of my Anchor", hint: "Savings accounts only", on: $anchor)
-                }
-                APSeparator(afterFace: false)
                 Button { nameDraft = nickname; naming = true } label: {
-                    ProfileRow(title: "Nickname", sub: nil) {
-                        Text(nickname.isEmpty ? "Add" : nickname)
-                            .font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
-                    }
+                    APKeyValueRow(key: "Nickname", value: nickname.isEmpty ? "Add" : nickname, link: nickname.isEmpty)
                 }
                 .buttonStyle(.plain)
                 .disabled(busy)
             }
-            if shared {
-                APCard {
-                    // O-09cr: who, picked, not typed.
-                    Button { picking = true } label: {
-                        ProfileRow(title: "Shared with") {
-                            Text(people.isEmpty ? "Add" : people.joined(separator: " and "))
-                                .font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(busy)
-                    .accessibilityHint("Opens the people you’ve split with and your contacts")
-                }
-                .padding(.top, 4)
-                ProfileSection("How purchases split")
-                APCard {
-                    PickRow(title: "Half each (50/50)", selected: split == .half) { split = .half }
-                    APSeparator(afterFace: false)
-                    PickRow(title: "A different share", selected: split == .share) {
-                        if split != .share && shareText.isEmpty { shareText = "50" }
-                        split = .share
-                    }
-                    APSeparator(afterFace: false)
-                    PickRow(title: "Each purchase: mine unless I say", selected: split == .mine) { split = .mine }
-                }
-                if split == .share {
-                    APCard {
-                        InlineField(label: "Your share", text: $shareText, prompt: "50",
-                                    keyboard: .decimalPad, suffix: "%")
-                    }
-                    .padding(.top, 4)
-                }
-            }
-            if let error = error { Hint(text: error).padding(.top, 4) }
+            .padding(.top, 4)
+            if let error = error { APErrorLine(text: error).padding(.top, 4) }
         } bottom: {
-            Button("Save") { Task { await save() } }
-                .buttonStyle(NacreButtonStyle(busy: busy))
-                .disabled(busy || (shared && split == .share && !shareIsValid))
+            OnbPrimary(title: "Save", busy: busy, enabled: !(shared && split == .share && !shareIsValid)) {
+                Task { await save() }
+            }
         }
         .onAppear {
             // Once: coming back from the picker or the nickname sheet keeps
@@ -485,35 +431,74 @@ struct AccountSetupPage: View {
     /// row (note 1415:88764), then the balance and the account's pill, as
     /// on AM-08.
     private var hero: some View {
-        VStack(spacing: 10) {
-            KindAvatar(symbol: AccountSetupWords.symbol(account), size: 56)
-            Text(AccountSetupWords.name(account)).font(Nacre.title2).foregroundColor(Pearl.ink)
-                .multilineTextAlignment(.center)
-            Text(account.balance.map { Format.amount(abs($0)) } ?? "—")
-                .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
-                .tracking(-0.88)
-                .foregroundColor(Pearl.ink)
-                .lineLimit(1).minimumScaleFactor(0.6)
-            Text([account.owing == true ? "Owing" : account.kindWord, (account.mask ?? "").isEmpty ? nil : "••\(account.mask!)"]
-                .compactMap { $0 }.joined(separator: " · "))
-                .font(Nacre.footnote).foregroundColor(Pearl.ink)
-            let pill = AccountWords.pill(account)
-            StatusPill(text: pill.text, tone: pill.tone)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 12) {
+                KindAvatar(symbol: AccountSetupWords.symbol(account))
+                Text(AccountSetupWords.name(account)).font(Pearl.heading(26, relativeTo: .title))
+                    .foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            Text([account.balance.map { Format.amount(abs($0)) }, (account.mask ?? "").isEmpty ? nil : "••\(account.mask!)"]
+                .compactMap { $0 }.joined(separator: " \u{00B7} "))
+                .font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                .padding(.leading, 48)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 4)
         .accessibilityElement(children: .combine)
     }
 
-    /// A setting and its switch; what it does is VoiceOver's hint.
-    private func toggleRow(title: String, hint: String, on: Binding<Bool>, disabled: Bool = false) -> some View {
-        Toggle(isOn: on) {
-            Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
+    /// Include in my budget, Shared with someone (and who), Part of my Anchor.
+    private var settings: some View {
+        APCard {
+            APToggleRow(title: "Include in my budget",
+                        sub: isInvestment ? "Spending doesn\u{2019}t happen from an investment account."
+                            : "Counts toward your Allowance",
+                        isOn: $counted)
+                .disabled(isInvestment || busy)
+            if !isInvestment {
+                APSeparator(afterFace: false)
+                APToggleRow(title: "Shared with someone", sub: "Only your share counts",
+                            isOn: Binding(get: { shared }, set: { v in withAnimation { shared = v } }))
+                    .disabled(busy)
+                if shared {
+                    APSeparator(afterFace: false)
+                    // O-09cr: who, picked, not typed.
+                    Button { picking = true } label: {
+                        APKeyValueRow(key: "Shared with", value: people.isEmpty ? "Add" : people.joined(separator: " and "),
+                                      link: people.isEmpty, chevron: true)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                    .accessibilityHint("Opens the people you\u{2019}ve split with and your contacts")
+                }
+            }
+            if account.canAnchor == true {
+                APSeparator(afterFace: false)
+                APToggleRow(title: "Part of my Anchor", sub: "Savings accounts only", isOn: $anchor)
+                    .disabled(busy)
+            }
         }
-        .tint(Pearl.action)
-        .disabled(disabled || busy)
-        .accessibilityHint(hint)
-        .padding(.horizontal, 16).frame(minHeight: 50)
+        .padding(.top, 12)
+    }
+
+    /// HOW PURCHASES SPLIT, and her share in a well when it's her own.
+    @ViewBuilder
+    private var splitPart: some View {
+        ProfileSection("How purchases split")
+        APCard {
+            APChoiceRow(title: "Half each", sub: "50/50", selected: split == .half) { split = .half }
+            APSeparator(afterFace: false)
+            APChoiceRow(title: "A different share", selected: split == .share) {
+                if split != .share && shareText.isEmpty { shareText = "50" }
+                split = .share
+            }
+            APSeparator(afterFace: false)
+            APChoiceRow(title: "Each purchase", sub: "Mine unless I say", selected: split == .mine) { split = .mine }
+        }
+        if split == .share {
+            ShareWell(text: $shareText).padding(.top, 6)
+        }
     }
 
     private func fill() {
@@ -604,6 +589,31 @@ struct AccountSetupPage: View {
         } catch let e as APIError {
             if case .server = e { throw SplitMenuError(words: e.localizedDescription) }
             throw e
+        }
+    }
+}
+
+/// "Your share  60 %" as a visible well (G5-Setup), the decimal pad.
+struct ShareWell: View {
+    @Binding var text: String
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Your share").font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 4)
+            HStack {
+                TextField("", text: $text, prompt: Text("50").foregroundColor(Pearl.muted))
+                    .keyboardType(.decimalPad)
+                    .font(Nacre.body).foregroundColor(Pearl.ink).tint(Pearl.action)
+                    .focused($focused)
+                    .accessibilityLabel("Your share, percent")
+                Text("%").font(Nacre.body).foregroundColor(Pearl.muted).accessibilityHidden(true)
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 44)
+            .wellStyle(focused: focused)
+            .contentShape(Rectangle())
+            .onTapGesture { focused = true }
         }
     }
 }
