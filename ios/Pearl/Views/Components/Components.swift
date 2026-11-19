@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// A card with padding: glass with the nacre edge in light (REFRESH-05,
-/// the as-built H-00 card), a solid card with Pearl's soft border in dark.
+/// A card with padding: the one A+ card, light and dark.
 struct PearlCard<Content: View>: View {
     var padding: CGFloat = 20
     var spacing: CGFloat = 12
@@ -30,8 +29,9 @@ struct PageHeader: View {
                     .font(Pearl.text(.footnote, .medium))
                     .foregroundColor(overlineTone)
             }
+            // A+ `.hdr h1`: Fraunces 34 regular.
             Text(title)
-                .font(Pearl.display(.title)).tracking(-0.28)
+                .font(Pearl.heading(34, relativeTo: .largeTitle))
                 .foregroundColor(Pearl.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
@@ -55,11 +55,11 @@ struct LinkLabel: View {
             if chevron { Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)) }
         }
         .font(Pearl.text(.subheadline, .medium))
-        .foregroundColor(Pearl.action)
+        .foregroundColor(Pearl.link)
     }
 }
 
-/// "CATEGORY": a small caps label over a card's content.
+/// "CATEGORY": a small caps label, A+ `.label` (13/500, tracked 0.78).
 struct Overline: View {
     let text: String
     var tone: Color = Pearl.muted
@@ -71,35 +71,28 @@ struct Overline: View {
 
     var body: some View {
         Text(text.uppercased())
-            .font(Pearl.text(.caption, .semibold)).tracking(1.44)
+            .font(Nacre.label).tracking(0.78)
             .foregroundColor(tone)
     }
 }
 
-/// The one main action on a screen.
+/// The one main action on a screen: A+ `.btn`.
 struct PrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(Pearl.text(.body, .semibold))
-            .frame(maxWidth: .infinity, minHeight: 50)
-            .foregroundColor(Pearl.onAction)
-            .background(Pearl.action.opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.4))
-            .clipShape(Capsule())
+            .modifier(APPrimaryLook(enabled: isEnabled, pressed: configuration.isPressed))
     }
 }
 
-/// A quieter action beside the main one.
+/// A quieter action beside the main one: A+ `.btn2`, the `control` capsule.
 struct SecondaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(Pearl.text(.body, .semibold))
-            .frame(maxWidth: .infinity, minHeight: 50)
-            .foregroundColor(Pearl.ink)
-            .background(Pearl.card.opacity(configuration.isPressed ? 0.7 : 1))
-            .clipShape(Capsule())
-            .overlay(Capsule().stroke(Pearl.border, lineWidth: 1))
+            .modifier(APSecondaryLook(enabled: isEnabled, pressed: configuration.isPressed))
     }
 }
 
@@ -125,10 +118,10 @@ struct ChoiceRow: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Pearl.card)
-            .clipShape(RoundedRectangle(cornerRadius: Pearl.radiusChoice, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Pearl.radiusChoice, style: .continuous)
-                .stroke(selected ? Pearl.action : Pearl.border, lineWidth: selected ? 1.5 : 1))
+            // A+ `.tile`: `card` with its 1 pt line, radius 18; picked, 2 pt action.
+            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(APlus.card))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(selected ? Pearl.action : APlus.cardLine, lineWidth: selected ? 2 : 1))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -136,17 +129,14 @@ struct ChoiceRow: View {
     }
 }
 
-/// A 20-point radio: an empty ring, or Pearl's pink with a dot.
+/// A+ `.radio`: 24 pt, a 1.5 pt `muted` ring; on, a 7 pt `action` ring.
 struct Radio: View {
     let on: Bool
 
     var body: some View {
-        ZStack {
-            Circle().strokeBorder(on ? Pearl.action : Pearl.muted, lineWidth: 1.5)
-            if on { Circle().fill(Pearl.action).padding(5) }
-        }
-        .frame(width: 20, height: 20)
-        .accessibilityHidden(true)
+        Circle().strokeBorder(on ? Pearl.action : Pearl.muted, lineWidth: on ? 7 : 1.5)
+            .frame(width: 24, height: 24)
+            .accessibilityHidden(true)
     }
 }
 
@@ -165,7 +155,7 @@ struct Notice: View {
         .font(Pearl.text(.subheadline))
         .foregroundColor(tone == .caution ? Pearl.caution : Pearl.ink)
         .padding(14)
-        .background(tone == .caution ? Pearl.cautionBackground : Pearl.blush.opacity(0.6))
+        .background(tone == .caution ? Pearl.cautionBackground : APlus.chip)
         .clipShape(RoundedRectangle(cornerRadius: Pearl.radiusRow, style: .continuous))
     }
 }
@@ -192,8 +182,7 @@ struct TransactionHeader: View {
                 .lineLimit(1).minimumScaleFactor(0.7)
         }
         .padding(16)
-        .background(Pearl.track)
-        .clipShape(RoundedRectangle(cornerRadius: Pearl.radiusTile, style: .continuous))
+        .apCard(radius: Pearl.radiusTile)
     }
 }
 

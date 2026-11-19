@@ -7,17 +7,14 @@ import UIKit
 enum Nacre {
     // MARK: Colours
 
-    /// Frosted glass: white at 72% in light, ocean at 66% in dark.
-    static let glass = Color(UIColor { $0.userInterfaceStyle == .dark
-        ? UIColor(red: 21 / 255, green: 27 / 255, blue: 68 / 255, alpha: 0.66)
-        : UIColor(white: 1, alpha: 0.72) })
-    static let glassEdge = Color(UIColor { $0.userInterfaceStyle == .dark
-        ? UIColor(white: 1, alpha: 0.14) : UIColor(white: 1, alpha: 0.8) })
-    /// The pink hairline round a glass card (dark mode; light uses `horizontal`).
+    /// A+ `card`: white glass @80% in light, ocean @72% in dark.
+    static let glass = APlus.card
+    /// A+ `card-line`: the 1 pt line inside a card or a glass circle.
+    static let glassEdge = APlus.cardLine
+    /// The pink hairline round a glass card (pre-A+; nothing draws it now).
     static let edge = Color(hex: 0xFFC2D4)
-    /// The line between rows in a card: glass/edge-light in light (REFRESH-05,
-    /// color/border/subtle), unchanged in dark.
-    static let separator = Pearl.border
+    /// A+ `separator`: the 0.5 pt line between rows in a card.
+    static let separator = APlus.separator
     /// The strength meter and "Synced": seaglass teal.
     static let teal = Pearl.dynamic(light: 0x1F7A72, dark: 0x8FE3D6)
     static let mint = Color(UIColor { $0.userInterfaceStyle == .dark
@@ -64,55 +61,22 @@ enum Nacre {
 
 // MARK: - Background
 
-/// The iridescent background, its auras and its bubbles, behind a whole
-/// screen. In light it is Iridescent/Light with the Pearl dust on top
-/// (REFRESH-05: every light screen and sheet, as H-00 had it). Dark is
-/// "Moonlit sea" with its own auras and bubbles, unchanged.
+/// The page behind a whole screen. A+ (REDESIGN-08, dirA.css `--ground`):
+/// the nacre softened with a white veil in light, the night with a lilac
+/// glow in dark (APGround). The Pearl dust, auras and bubbles are gone.
 struct NacreBackground: View {
-    @Environment(\.colorScheme) private var scheme
-
     var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            ZStack(alignment: .topLeading) {
-                if scheme == .dark {
-                    // "Moonlit sea": an indigo night fading into moonlit blue.
-                    LinearGradient(colors: [Color(hex: 0x12163F), Color(hex: 0x1C2F73), Color(hex: 0x245B8F)],
-                                   startPoint: .top, endPoint: .bottom)
-                    aura(size: 0.92 * w).offset(x: -0.15 * w, y: 0.05 * geo.size.height)
-                    aura(size: 0.71 * w).offset(x: 0.41 * w, y: 0.49 * geo.size.height)
-                    Image("Bubbles")
-                        .resizable()
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .allowsHitTesting(false)
-                } else {
-                    // Iridescent/Light: rose → lilac → seaglass, at 114.76°
-                    // (the as-built Home gradient, unchanged).
-                    LinearGradient(colors: [Nacre.rose, Nacre.lilac, Nacre.seaglass],
-                                   startPoint: UnitPoint(x: -0.325, y: 0.324),
-                                   endPoint: UnitPoint(x: 1.325, y: 0.676))
-                    PearlDust(width: w)
-                }
-            }
-        }
-        .ignoresSafeArea()
-        .accessibilityHidden(true)
-    }
-
-    private func aura(size: CGFloat) -> some View {
-        Circle()
-            .fill(Color(hex: 0xD9C6FF).opacity(0.22))
-            .frame(width: size, height: size)
-            .blur(radius: size / 8)
+        APGround()
     }
 }
 
 extension View {
-    /// A screen on the iridescent background.
+    /// A screen on the A+ ground; its switches are the A+ switch.
     func nacreScreen() -> some View {
         background(NacreBackground())
             .foregroundColor(Pearl.ink)
             .tint(Pearl.ink)
+            .toggleStyle(APToggleStyle())
     }
 }
 
@@ -213,35 +177,21 @@ struct IconOrb: View {
 
 // MARK: - Cards and rows
 
-/// The glass a card is made of (REFRESH-05, C‴; the as-built H-00 card):
-/// color/surface/card (white @72%) over one background blur, the
-/// Nacre/Horizontal 1.2 pt edge and a #664D99 @10% shadow (y 8, blur 20).
-/// Dark keeps what GlassCard drew before: ocean glass, the pink edge and the
-/// softer shadow. One material per card; rows inside it never blur again.
+/// The glass a card is made of: since A+ (REDESIGN-08) the one A+ card,
+/// `card` over one blur, radius 24, its 1 pt `card-line` and
+/// `shadow-card-a`. No nacre edge. Rows inside it never blur again.
 struct GlassSurface: View {
-    var radius: CGFloat = 26
-    @Environment(\.colorScheme) private var scheme
+    var radius: CGFloat = Pearl.radiusCard
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        shape.fill(Nacre.glass)
-            .background(.ultraThinMaterial, in: shape)
-            .overlay {
-                if scheme == .dark {
-                    shape.strokeBorder(Nacre.edge, lineWidth: 1.2)
-                } else {
-                    shape.strokeBorder(Nacre.horizontal, lineWidth: 1.2)
-                }
-            }
-            .shadow(color: Pearl.cardShadow.opacity(scheme == .dark ? 0.12 : 0.10),
-                    radius: scheme == .dark ? 12 : 20, y: 8)
+        APCardSurface(radius: radius)
     }
 }
 
-/// A frosted-glass card with the nacre edge (the "List section").
+/// A grouped list on the A+ card (the "List section").
 struct GlassCard<Content: View>: View {
     var spacing: CGFloat = 0
-    var radius: CGFloat = 26
+    var radius: CGFloat = Pearl.radiusCard
     @ViewBuilder var content: () -> Content
 
     var body: some View {
@@ -254,42 +204,25 @@ struct GlassCard<Content: View>: View {
 extension View {
     /// Puts this content on a glass card: clipped to the card's shape, the
     /// glass (with its edge and shadow) behind it.
-    func glassCard(radius: CGFloat = 26) -> some View {
-        clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .background(GlassSurface(radius: radius))
+    func glassCard(radius: CGFloat = Pearl.radiusCard) -> some View {
+        apCard(radius: radius)
     }
 
-    /// A card that was solid white with a 1 pt border before REFRESH-05: in
-    /// light it is now a glass card (S-03*, S-04*, S-40*, S-06r*, S-07r*,
-    /// S-34*, H-00 and the rest); in dark it stays as it was.
+    /// The card every screen used before A+ (white with a border, then the
+    /// REFRESH-05 glass): now the one A+ card, light and dark.
     func pearlCard(radius: CGFloat = Pearl.radiusCard) -> some View {
-        modifier(PearlCardStyle(radius: radius))
+        apCard(radius: radius)
     }
 }
 
-private struct PearlCardStyle: ViewModifier {
-    let radius: CGFloat
-    @Environment(\.colorScheme) private var scheme
-
-    func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        if scheme == .dark {
-            content
-                .background(shape.fill(Pearl.card))
-                .clipShape(shape)
-                .overlay(shape.stroke(Pearl.border, lineWidth: 1))
-        } else {
-            content.glassCard(radius: radius)
-        }
-    }
-}
-
-/// The 0.5pt line between rows, inset like an iOS list.
+/// The 0.5 pt A+ `separator` between rows, inset like an iOS list (68
+/// after a face, 16 without).
 struct RowSeparator: View {
     var inset: CGFloat = 16
 
     var body: some View {
         Rectangle().fill(Nacre.separator).frame(height: 0.5).padding(.leading, inset)
+            .accessibilityHidden(true)
     }
 }
 
@@ -306,10 +239,27 @@ struct FieldRow: View {
     enum Kind { case text, email, secure }
 
     @State private var shown = false
+    @FocusState private var focused: Bool
 
+    /// A+ (REDESIGN-09, G6-SignIn): the label in `muted` 13 over a visible
+    /// well, 44 high; focus draws the 2 pt action outline.
     var body: some View {
-        HStack(spacing: 12) {
-            Text(label).font(Nacre.body).foregroundColor(Pearl.ink)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label).font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 4)
+                .accessibilityHidden(true)
+            well
+                .padding(.horizontal, 14)
+                .frame(minHeight: 44)
+                .wellStyle(focused: focused)
+                .contentShape(Rectangle())
+                .onTapGesture { focused = true }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+
+    private var well: some View {
+        HStack(spacing: 8) {
             Group {
                 if kind == .secure && !shown {
                     SecureField("", text: $text, prompt: Text(prompt).foregroundColor(Pearl.muted))
@@ -318,8 +268,9 @@ struct FieldRow: View {
                 }
             }
             .font(Nacre.body)
-            .foregroundColor(tone)
-            .multilineTextAlignment(.trailing)
+            .foregroundColor(tone == Pearl.muted ? Pearl.ink : tone)
+            .tint(Pearl.action)
+            .focused($focused)
             .textContentType(content)
             .keyboardType(kind == .email ? .emailAddress : .default)
             .textInputAutocapitalization(.never)
@@ -330,14 +281,13 @@ struct FieldRow: View {
             if kind == .secure {
                 Button { shown.toggle() } label: {
                     Image(systemName: shown ? "eye.slash" : "eye")
-                        .font(.system(size: 16)).foregroundColor(Pearl.ink)
+                        .font(.system(size: 16)).foregroundColor(Pearl.muted)
+                        .tapTarget(vertical: 12, horizontal: 8)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(shown ? "Hide password" : "Show password")
             }
         }
-        .padding(.horizontal, 16)
-        .frame(minHeight: 52)
     }
 }
 
@@ -386,41 +336,30 @@ struct DonePill: View {
 
 // MARK: - Buttons
 
-/// The primary capsule: rose in light; nacre with ink text in dark.
+/// The primary capsule, A+ `.btn` (APPrimaryLook): `action` with
+/// `on-action` words in both modes (rose / white in light, pink / ink in
+/// dark), 50 high; while busy, a spinner in place of the words.
 struct NacreButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.colorScheme) private var scheme
     var busy = false
 
     func makeBody(configuration: Configuration) -> some View {
         ZStack {
             configuration.label.opacity(busy ? 0 : 1)
-            if busy { ProgressView().tint(scheme == .dark ? Nacre.onNacre : .white) }
+            if busy { ProgressView().tint(Pearl.onAction) }
         }
-        .font(Nacre.headline)
-        .foregroundColor(scheme == .dark ? Nacre.onNacre : .white)
-        .frame(maxWidth: .infinity, minHeight: 52)
-        .background {
-            if scheme == .dark {
-                Capsule().fill(Nacre.horizontal)
-            } else {
-                Capsule().fill(Pearl.action)
-            }
-        }
-        .opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.5)
-        .shadow(color: scheme == .dark ? Color(hex: 0xE3D4FF).opacity(0.35) : Pearl.action.opacity(0.28),
-                radius: 6, y: 6)
-        .contentShape(Capsule())
+        .modifier(APPrimaryLook(enabled: isEnabled || busy, pressed: configuration.isPressed))
     }
 }
 
-/// A secondary action under the primary one: text only.
+/// A quiet action under the primary one, A+ `.quiet`: words only, `link`
+/// 15/500, 44 tall to tap.
 struct NacreTextButtonStyle: ButtonStyle {
-    var tone: Color = Pearl.ink
+    var tone: Color = Pearl.link
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(Nacre.textButton)
+            .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
             .foregroundColor(tone)
             .frame(maxWidth: .infinity, minHeight: 44)
             .opacity(configuration.isPressed ? 0.6 : 1)
@@ -493,25 +432,28 @@ struct CodeBoxes: View {
                     if digits != value { code = digits }
                     if digits.count == 6 { onComplete() }
                 }
-            HStack(spacing: 12) {
+            // A+ `.code` (G6-Code): six wells 46 × 56, radius 12, the digit
+            // in Fraunces 28/600; the current one has the 2 pt action outline
+            // and caret; a wrong code outlines them all in danger.
+            HStack(spacing: 8) {
                 ForEach(0..<6, id: \.self) { i in
                     let chars = Array(code)
                     let current = i == min(chars.count, 5) && focused
+                    let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
                     ZStack {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Nacre.glass)
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(failed && current ? Pearl.action : Nacre.glassEdge,
-                                          lineWidth: failed && current ? 1.5 : 1)
+                        shape.fill(APlus.well)
+                        shape.strokeBorder(failed ? Pearl.danger : (current ? Pearl.action : APlus.wellLine),
+                                           lineWidth: failed || current ? 2 : 1)
                         if i < chars.count {
-                            Text(String(chars[i])).font(Pearl.heading(26, relativeTo: .title2))
+                            Text(String(chars[i])).font(.custom("Fraunces-SemiBold", size: 28, relativeTo: .title2))
                         } else if current {
-                            Rectangle().fill(Pearl.action).frame(width: 1.5, height: 26)
+                            Rectangle().fill(Pearl.action).frame(width: 2, height: 28)
                         }
                     }
-                    .frame(width: 44, height: 52)
+                    .frame(width: 46, height: 56)
                 }
             }
+            .frame(maxWidth: .infinity)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
@@ -629,10 +571,13 @@ struct MessageBlock<Art: View>: View {
     var body: some View {
         VStack(spacing: 12) {
             art().padding(.bottom, 12)
-            Text(title).font(Nacre.title).tracking(0.4).multilineTextAlignment(.center)
+            // A+ `.ptitle` (G6-Offline, G6-Linked): Fraunces 34 regular, the
+            // line in `muted` 17.
+            Text(title).font(Nacre.largeTitle).multilineTextAlignment(.center)
                 .accessibilityAddTraits(.isHeader)
             if let line = line {
-                Text(line).font(Nacre.body).multilineTextAlignment(.center)
+                Text(line).font(Nacre.body).foregroundColor(Pearl.muted).multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
             }
         }
         .frame(maxWidth: .infinity)

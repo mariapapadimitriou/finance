@@ -28,6 +28,10 @@ enum APlus {
     /// `well` / `well-line` (REDESIGN-09): every place she can type.
     static let well = rgba(light: (46, 37, 71, 0.05), dark: (0, 0, 0, 0.24))
     static let wellLine = rgba(light: (46, 37, 71, 0.18), dark: (255, 255, 255, 0.18))
+    /// `action-wash`: the circle behind an A+ line icon (`.icon`), the inline Yes.
+    static let actionWash = rgba(light: (178, 39, 87, 0.10), dark: (255, 143, 177, 0.10))
+    /// `money-in` @14%: a good-news icon's circle (`.icon.good`).
+    static let goodWash = rgba(light: (22, 122, 64, 0.14), dark: (110, 219, 148, 0.14))
     /// The profile circle's disc in dark (ProfileCircle README).
     static let circleDisc = rgba(light: (255, 255, 255, 0.80), dark: (28, 36, 89, 1))
 
@@ -56,16 +60,197 @@ enum APlus {
 /// @10%; dark: 0 10 28 black @22%). No nacre edge. Rows never blur again.
 struct APCardSurface: View {
     var radius: CGFloat = Pearl.radiusCard
-    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         shape.fill(APlus.card)
             .background(.ultraThinMaterial, in: shape)
             .overlay(shape.strokeBorder(APlus.cardLine, lineWidth: 1))
-            .shadow(color: scheme == .dark ? .black.opacity(0.22) : Pearl.cardShadow.opacity(0.10),
-                    radius: 14, y: 10)
+            .modifier(APCardShadow())
+    }
+}
+
+/// `shadow-card-a`: light 0 1 2 ink @4% + 0 10 28 #664D99 @10%; dark 0 10 28 black @22%.
+struct APCardShadow: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        content
+            .shadow(color: scheme == .dark ? .black.opacity(0.22) : Pearl.cardShadow.opacity(0.10), radius: 14, y: 10)
             .shadow(color: scheme == .dark ? .clear : Pearl.ink.opacity(0.04), radius: 1, y: 1)
+    }
+}
+
+// MARK: - Ground
+
+/// A+ `--ground` (dirA.css): the page. Light: the nacre (rose, lilac,
+/// seaglass at 114.76°) softened by a white veil (50% → 22% at 45% → 34%).
+/// Dark: the night (#12163F → #172566 at 55% → #1D4A7D) with a lilac glow
+/// at the top right. No dust and no bubbles in A+.
+struct APGround: View {
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        ZStack {
+            if scheme == .dark {
+                LinearGradient(stops: [.init(color: Color(hex: 0x12163F), location: 0),
+                                       .init(color: Color(hex: 0x172566), location: 0.55),
+                                       .init(color: Color(hex: 0x1D4A7D), location: 1)],
+                               startPoint: .top, endPoint: .bottom)
+                GeometryReader { g in
+                    RadialGradient(colors: [Color(hex: 0xD9C6FF).opacity(0.16), .clear],
+                                   center: UnitPoint(x: 0.8, y: 0), startRadius: 0,
+                                   endRadius: max(g.size.width * 0.72, g.size.height * 0.36))
+                }
+            } else {
+                APGround.nacre
+                LinearGradient(stops: [.init(color: .white.opacity(0.50), location: 0),
+                                       .init(color: .white.opacity(0.22), location: 0.45),
+                                       .init(color: .white.opacity(0.34), location: 1)],
+                               startPoint: .top, endPoint: .bottom)
+            }
+        }
+        .ignoresSafeArea()
+        .accessibilityHidden(true)
+    }
+
+    /// The nacre at 114.76°, as the boards draw it.
+    static let nacre = LinearGradient(colors: [Color(hex: 0xFFB6CC), Color(hex: 0xCDB9FF), Color(hex: 0xA8E9DF)],
+                                      startPoint: UnitPoint(x: -0.325, y: 0.324),
+                                      endPoint: UnitPoint(x: 1.325, y: 0.676))
+}
+
+/// A+ `.sheet` (kit.css): a Pearl sheet's surface. Light: the nacre under a
+/// white veil (66% → 44%); dark: #1C2F73 → #12163F.
+struct APSheetGround: View {
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        ZStack {
+            if scheme == .dark {
+                LinearGradient(colors: [Color(hex: 0x1C2F73), Color(hex: 0x12163F)], startPoint: .top, endPoint: .bottom)
+            } else {
+                APGround.nacre
+                LinearGradient(colors: [.white.opacity(0.66), .white.opacity(0.44)], startPoint: .top, endPoint: .bottom)
+            }
+        }
+        .ignoresSafeArea()
+        .accessibilityHidden(true)
+    }
+}
+
+/// A+ `.glassbtn`: the 44 pt glass circle under Close, Back and •••: `card`
+/// fill, its 1 pt line and the card's shadow.
+struct APGlassCircle: View {
+    var size: CGFloat = 44
+
+    var body: some View {
+        Circle().fill(APlus.card)
+            .overlay(Circle().strokeBorder(APlus.cardLine, lineWidth: 1))
+            .modifier(APCardShadow())
+            .frame(width: size, height: size)
+    }
+}
+
+/// A+ Back on a pushed page: the chevron in the 44 pt glass circle.
+struct APBackButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
+                .foregroundColor(Pearl.ink)
+                .frame(width: 44, height: 44)
+                .background(APGlassCircle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Back")
+    }
+}
+
+/// A+ `.icon`: a 36 pt circle holding an 18 pt line icon. Rose on
+/// `action-wash`; `.warn` caution on its background; `.good` money-in @14%.
+struct APIcon: View {
+    enum Tone { case rose, warn, good }
+    let symbol: String
+    var tone: Tone = .rose
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 15, weight: .medium))
+            .foregroundColor(tone == .warn ? Pearl.caution : tone == .good ? Pearl.moneyIn : Pearl.action)
+            .frame(width: 36, height: 36)
+            .background(Circle().fill(tone == .warn ? Pearl.cautionBackground
+                                      : tone == .good ? APlus.goodWash : APlus.actionWash))
+            .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Button looks
+
+/// A+ `.btn`: the one primary capsule. `action` with `on-action` words,
+/// 50 high, 17/600; light casts 0 6 14 action @22%, dark none. Disabled 40%.
+struct APPrimaryLook: ViewModifier {
+    var enabled = true
+    var pressed = false
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        content
+            .font(.custom("Figtree-SemiBold", size: 17, relativeTo: .headline))
+            .foregroundColor(Pearl.onAction)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 24)
+            .frame(maxWidth: .infinity, minHeight: 50)
+            .background(Capsule().fill(Pearl.action))
+            .shadow(color: scheme == .dark || !enabled ? .clear : Pearl.action.opacity(0.22), radius: 7, y: 6)
+            .opacity(enabled ? (pressed ? 0.85 : 1) : 0.4)
+            .contentShape(Capsule())
+    }
+}
+
+/// A+ `.btn2`: the secondary capsule, `control` fill with ink words.
+struct APSecondaryLook: ViewModifier {
+    var enabled = true
+    var pressed = false
+
+    func body(content: Content) -> some View {
+        content
+            .font(.custom("Figtree-SemiBold", size: 17, relativeTo: .headline))
+            .foregroundColor(Pearl.ink)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 24)
+            .frame(maxWidth: .infinity, minHeight: 50)
+            .background(Capsule().fill(Pearl.control))
+            .opacity(enabled ? (pressed ? 0.7 : 1) : 0.5)
+            .contentShape(Capsule())
+    }
+}
+
+// MARK: - Switch
+
+/// A+ `.sw`: the switch, 51 × 31, `action` when on, `control` when off.
+/// Every Toggle on a Pearl screen draws it (`nacreScreen()` sets it).
+struct APToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button { configuration.isOn.toggle() } label: {
+            HStack(spacing: 12) {
+                configuration.label
+                Spacer(minLength: 8)
+                ZStack(alignment: configuration.isOn ? .trailing : .leading) {
+                    Capsule().fill(configuration.isOn ? Pearl.action : Pearl.control)
+                        .frame(width: 51, height: 31)
+                    Circle().fill(Color.white)
+                        .shadow(color: .black.opacity(0.15), radius: 4, y: 3)
+                        .frame(width: 27, height: 27)
+                        .padding(2)
+                }
+                .animation(.easeOut(duration: 0.15), value: configuration.isOn)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityRepresentation { Toggle(isOn: configuration.$isOn) { configuration.label } }
     }
 }
 
