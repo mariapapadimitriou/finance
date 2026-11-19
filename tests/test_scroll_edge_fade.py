@@ -20,10 +20,39 @@ def test_nacre_screen_adds_the_fade():
     assert "scrollEdgeFade()" in body and "NacreBackground()" in body
 
 
-def test_the_fade_covers_the_top_safe_area_only():
+def _reader(src: str) -> tuple[str, str]:
+    """The GeometryReader that reads the inset: its closure, and the
+    modifiers chained on the reader itself (up to the end of `body`)."""
+    start = src.index("GeometryReader {")
+    i = src.index("{", start)
+    depth = 0
+    for j in range(i, len(src)):
+        depth += {"{": 1, "}": -1}.get(src[j], 0)
+        if depth == 0:
+            break
+    closure = src[i:j + 1]
+    after = src[j + 1:]
+    chain = after[:after.index("\n    }\n")]    # the rest of ScrollEdgeFade.body
+    return closure, chain
+
+
+def test_the_inset_is_read_outside_the_ignored_area():
+    """Round 5 re-test: a reader with .ignoresSafeArea() sees an inset of 0,
+    so the fade never drew. The reader keeps to the safe area; only the band
+    it draws ignores it."""
     src = (PEARL / "Views/Components/ScrollEdgeFade.swift").read_text()
-    assert "g.safeAreaInsets.top" in src and ".frame(height: top)" in src
-    assert ".allowsHitTesting(false)" in src and ".accessibilityHidden(true)" in src
+    body = src[src.index("struct ScrollEdgeFade: View"):src.index("struct ScrollEdgeFadeBand")]
+    closure, chain = _reader(body)
+    assert "g.safeAreaInsets.top" in closure
+    assert ".ignoresSafeArea()" not in chain, "the reader itself must not ignore the safe area"
+    assert ".ignoresSafeArea()" in closure, "the band it draws reaches up under the clock"
+    assert ".allowsHitTesting(false)" in chain and ".accessibilityHidden(true)" in chain
+
+
+def test_the_band_covers_the_top_inset_only():
+    src = (PEARL / "Views/Components/ScrollEdgeFade.swift").read_text()
+    band = src[src.index("struct ScrollEdgeFadeBand"):]
+    assert "if top > 0" in band and ".frame(height: top)" in band and "APGround()" in band
 
 
 def test_every_screen_named_in_test_38_is_on_the_a_plus_ground():
