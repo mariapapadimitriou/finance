@@ -42,7 +42,10 @@ class TestFollowUps(unittest.TestCase):
         self.assertNotIn("review?.asks", qs)
         self.assertNotIn("review.asks", qs)
         tv = read(*TX, "TransactionsView.swift")
-        self.assertIn("review.parkedPlanQuestions", tv)
+        # TEST-35: the count is the rows Needs a look lists (shownAsks), so
+        # parked plan questions, trips and patterns stay out of it.
+        self.assertIn("reviewCount = review.listedOpen", tv)
+        self.assertIn("var listedOpen: Int { shownAsks.filter { !$0.skipped }.count }", rv)
 
     def test_cash_flow_opens_filtered_to_a_category(self):
         tv = read(*TX, "TransactionsView.swift")

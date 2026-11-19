@@ -133,7 +133,8 @@ struct SplitSheet: View {
                 _mode = State(initialValue: "amount")
                 // S-03rg (TEST-21): her share isn't filled in, so it gives way
                 // (what's left, which is what she saved) until she types it.
-                for p in s.people { v[p.name] = Self.plain(p.share) }
+                // TEST-48: amounts in the wells always have cents, "60.00".
+                for p in s.people { v[p.name] = Self.plainCents(Int((p.share * 100).rounded())) }
             }
             _values = State(initialValue: v)
         }
@@ -152,49 +153,55 @@ struct SplitSheet: View {
         if settling { return "Settle up" }
         if let title = title { return title }
         if let focus = focus { return "Change \(possessive(focus)) share" }
+        // TEST-42 (G2-Amounts S-03e): a split that's already made is edited.
+        if t.splitting != nil { return "Edit split" }
         return t.splitsMyPart ? "Split my part" : "How to split"
     }
 
     var body: some View {
-        // The keyboard's Done bar (TEST-16) needs a navigation stack to
-        // live in; its own bar stays hidden.
+        // A navigation stack with its bar hidden (it held the stock keyboard
+        // bar until TEST-37; the footer has Done now).
         NavigationStack {
         VStack(spacing: 0) {
             APSheetTitleBar(title: sheetTitle) { dismiss() }
                 // TEST-16: a tap off the fields puts the number pad away.
                 .contentShape(Rectangle()).onTapGesture { focused = nil }
+            if pinned {
+                // TEST-48: with the number pad up, the purchase and the
+                // method switch stay put above the rows.
+                VStack(alignment: .leading, spacing: 14) {
+                    head
+                    methodControl
+                }
+                .padding(.horizontal, 16).padding(.bottom, 8)
+            }
             ScrollViewReader { scroller in
             ScrollView {
                 column
                     .padding(.horizontal, 16).padding(.bottom, 12)
             }
             .scrollDismissesKeyboard(.interactively)
-            // TEST-16 (S-03re): with the number pad up, the status line and
-            // "Split the rest evenly" stay in view right above Save.
+            // TEST-16 / TEST-48: with the number pad up, the status line and
+            // "Split the rest evenly" sit in the footer right above Save, and
+            // the row she's typing in is scrolled into view (not cut off
+            // under the title).
             .onChange(of: focused) { now in
                 guard now != nil else { return }
                 // Once the pad and its Done bar are up, and again as she types.
                 for wait in [0.35, 0.8] {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
-                        withAnimation { scroller.scrollTo(Self.statusID, anchor: .bottom) }
-                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + wait) { showFocused(scroller) }
                 }
             }
-            // TEST-16 (round 2): typing changes the status line and what's
-            // under it ("Split the rest evenly"), which pushed it below the
-            // view; keep it in sight while she types.
+            // Typing changes the captions under the names, and their height.
             .onChange(of: values) { _ in
                 guard focused != nil else { return }
                 for wait in [0.1, 0.5] {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
-                        withAnimation { scroller.scrollTo(Self.statusID, anchor: .bottom) }
-                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + wait) { showFocused(scroller) }
                 }
             }
             // Once the pad has finished coming up, and the sheet has made room.
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
-                guard focused != nil else { return }
-                withAnimation { scroller.scrollTo(Self.statusID, anchor: .bottom) }
+                showFocused(scroller)
             }
             }
             // TEST-16 / TEST-22 (round 2): Save is the scroll view's sibling,
@@ -203,6 +210,8 @@ struct SplitSheet: View {
             // "I had some too" and the meter. Here the scroll view ends where
             // Save begins, and the meter and status line scroll above it.
             footer
+                // TEST-37: Done above the keyboard, Next and Save above both.
+                .keyboardDoneFooter { focused = nil; searching = false }
         }
         .background(APSheetSurface())
         // S-47f (TEST-18): "Priya’s $25.00 is linked…", with Options.
@@ -211,14 +220,8 @@ struct SplitSheet: View {
                 PearlToast(model: m) { withAnimation { lockToast = nil } }.padding(.top, 52)
             }
         }
-        // TEST-16 (designBOT's answer): Done over every number pad here; a
-        // tap on the title closes it too.
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") { focused = nil }.tint(Pearl.action).foregroundColor(Pearl.action)
-            }
-        }
+        // TEST-16 (designBOT's answer): Done over every number pad here,
+        // now the footer's own (TEST-37); a tap on the title closes it too.
         .toolbar(.hidden, for: .navigationBar)
         }
         .presentationDetents([.large])
@@ -255,7 +258,7 @@ struct SplitSheet: View {
             }
         }
         .sheet(isPresented: $choosingMethod) {
-            SplitMethodSheet(modes: modes, chosen: mode, onPick: { m in mode = m; choosingMethod = false },
+            SplitMethodSheet(modes: modes, chosen: mode, onPick: { m in switchMode(to: m); choosingMethod = false },
                              onClose: { choosingMethod = false })
         }
         .sheet(isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } })) {
@@ -285,16 +288,29 @@ struct SplitSheet: View {
         }
     }
 
+    /// TEST-48: How to split with a well focused. The purchase and the
+    /// method switch are pinned above the scroll view, and the status line
+    /// moves to the footer, so the number pad can't push them out of view.
+    private var pinned: Bool { step == 1 && focused != nil }
+
+    private func showFocused(_ scroller: ScrollViewProxy) {
+        guard let key = focused else { return }
+        withAnimation { scroller.scrollTo(key, anchor: .center) }
+    }
+
+    /// S-45c (TEST-02): settling shows the whole purchase, not the part
+    /// still counting as hers. G2-WhoWith: "−$84.12 · Wed, Nov 11".
+    private var head: some View {
+        APQuestionWho(name: t.merchant, amount: headAmount, tone: t.tone, sub: headSub)
+            .accessibilityElement(children: .combine)
+            .contentShape(Rectangle()).onTapGesture { focused = nil }
+    }
+
     /// The scroll view's column, its own view so `body` stays a small frame
     /// (check_stack).
     private var column: some View {
         VStack(alignment: .leading, spacing: 14) {
-            // S-45c (TEST-02): settling shows the whole purchase, not
-            // the part still counting as hers. G2-WhoWith: "−$84.12 ·
-            // Wed, Nov 11".
-            APQuestionWho(name: t.merchant, amount: headAmount, tone: t.tone, sub: headSub)
-                .accessibilityElement(children: .combine)
-                .contentShape(Rectangle()).onTapGesture { focused = nil }
+            if !pinned { head }
             stepView
             if let error = error {
                 // G2-BNotSure S-03ue: the error is a red line with ⓘ.
@@ -510,22 +526,40 @@ struct SplitSheet: View {
             .buttonStyle(.plain)
         } else {
             // REDESIGN-10: the evenly sized five-part switch, one row at 375 pt.
-            APSegments(options: modes, selection: $mode,
+            APSegments(options: modes, selection: Binding(get: { mode }, set: { switchMode(to: $0) }),
                        spoken: { $0 == "Not sure" ? "Not sure yet, split method" : $0 })
         }
     }
 
+    /// TEST-36: a new method starts from the split as it stands (worked out
+    /// on the method she's leaving), not from nothing.
+    private func switchMode(to m: String) {
+        guard m != mode else { return }
+        let carried = carried(to: m)
+        mode = m
+        values = carried
+        answers = [:]
+        // S-03u: the explainer is read once after the method changes.
+        if m == "unknown" {
+            UIAccessibility.post(notification: .announcement, argument: unsureWords)
+        }
+    }
+
+    /// Each row's share now, in cents; her row keeps whatever nobody has
+    /// (as Save would). Nothing to carry from Not sure, or with a locked
+    /// payer on Settle up, or when the split doesn't add up.
+    private func carried(to m: String) -> [String: String] {
+        guard mode != "unknown", !anyLocked else { return [:] }
+        let theirs = people.map { (key: $0, cents: shareCents($0)) }
+        let left = totalCents - theirs.map(\.cents).reduce(0, +)
+        guard withMe ? left >= 0 : left == 0 else { return [:] }
+        let all = (withMe ? [(key: Self.me, cents: left)] : []) + theirs
+        return SplitCarry.values(all, to: m, me: withMe ? Self.me : nil)
+    }
+
     @ViewBuilder private var how: some View {
         VStack(alignment: .leading, spacing: 14) {
-            methodControl
-                .onChange(of: mode) { m in
-                    values = [:]
-                    answers = [:]
-                    // S-03u: the explainer is read once after the method changes.
-                    if m == "unknown" {
-                        UIAccessibility.post(notification: .announcement, argument: unsureWords)
-                    }
-                }
+            if !pinned { methodControl }
             if mode == "unknown" { unsureHow } else { amountsHow }
             if let onRemoveSplit = onRemoveSplit, t.splitting != nil, !settling, focus == nil {
                 // S-41j: Edit split › Remove the split.
@@ -586,6 +620,7 @@ struct SplitSheet: View {
                     SwipeToRemove(enabled: key != Self.me, label: label(key)) { askRemove(key) } content: {
                         shareRow(key)
                     }
+                    .id(key)
                 }
             }
             // S-03r2 / S-03r2b / S-03j v2 (TEST-08): "I had some too" under
@@ -598,8 +633,10 @@ struct SplitSheet: View {
                 APSeparator()
                 withMeRow()
             }
-            status
-                .id(Self.statusID)
+            if !pinned {
+                status
+                    .id(Self.statusID)
+            }
             if let key = lockNote, onPersonOptions == nil {
                 // Where there's no S-40u to open, the note says why.
                 InfoNote(text: lockWords(key))
@@ -1092,7 +1129,8 @@ struct SplitSheet: View {
         let odd = spread(gapCents - each * targets.count, over: targets)
         for k in targets {
             let c = Int((number(k) * 100).rounded()) + each + (odd[k] ?? 0)
-            values[k] = Self.plain(Double(c) / 100)
+            // TEST-48: an amount well says "60.00", like her share's.
+            values[k] = mode == "amount" ? Self.plainCents(c) : Self.plain(Double(c) / 100)
         }
     }
 
@@ -1114,17 +1152,24 @@ struct SplitSheet: View {
         return saveTitle
     }
 
-    @ViewBuilder private var footer: some View {
-        Button(primaryTitle) {
-            if step == 0 { addTyped(); step = 1 }
-            else if settling, let first = toCheck.first { asking = first }
-            else { Task { await save() } }
+    /// One stack, so the keyboard footer wraps it whole (TEST-37).
+    private var footer: some View {
+        VStack(spacing: 0) {
+            if pinned && mode != "unknown" {
+                // TEST-48: while typing, the status line rides above Save.
+                status.padding(.horizontal, 16).padding(.top, 8)
+            }
+            Button(primaryTitle) {
+                if step == 0 { addTyped(); step = 1 }
+                else if settling, let first = toCheck.first { asking = first }
+                else { Task { await save() } }
+            }
+            .buttonStyle(APPrimaryButtonStyle(busy: busy))
+            .disabled(step == 0 ? people.isEmpty && typed.trimmingCharacters(in: .whitespaces).isEmpty
+                      : mode == "unknown" ? (people.isEmpty || busy)
+                      : (gapCents < 0 || blocksShort || busy))
+            .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
         }
-        .buttonStyle(APPrimaryButtonStyle(busy: busy))
-        .disabled(step == 0 ? people.isEmpty && typed.trimmingCharacters(in: .whitespaces).isEmpty
-                  : mode == "unknown" ? (people.isEmpty || busy)
-                  : (gapCents < 0 || blocksShort || busy))
-        .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
     }
 
     private func save() async {
@@ -1418,19 +1463,15 @@ struct SplitPeople: View {
         return .none
     }
 
-    /// PaidBackBar: one segment per row, in the rows' order. Her share
-    /// plum (or, reimbursed, green / rose to the part); paid in full green;
-    /// part paid rose to the part; owes empty; let go muted.
+    /// PaidBackBar: what others have paid back, one segment per person in
+    /// the rows' order (TEST-46: her own share isn't a payback, so with
+    /// nobody paid back the bar is empty). Her part reimbursed (`mine`)
+    /// green / rose to the part; paid in full green; part paid rose to the
+    /// part; owes empty; let go muted.
     private var barSegments: [PaidBackBar.Segment] {
         var out: [PaidBackBar.Segment] = []
-        switch youKind {
-        case .mine:
-            if let mine = split.mine {
-                out.append(mine.full ? .paid : mine.reimbursed >= 0.005
-                           ? .part(mine.reimbursed / max(mine.amount, 0.01)) : .yours)
-            }
-        case .share: out.append(.yours)
-        case .unsure, .none: break
+        if youKind == .mine, let mine = split.mine, mine.reimbursed >= 0.005 || mine.full {
+            out.append(mine.full ? .paid : .part(mine.reimbursed / max(mine.amount, 0.01)))
         }
         for p in split.people {
             if p.letGo != nil { out.append(.letGo) }
@@ -1750,6 +1791,10 @@ struct MarkPaidSheet: View {
     }
     @State private var amount: String
     @State private var when = Date()
+    /// G0-DateSheet DP-03: When opens the Pearl date sheet.
+    @State private var pickingWhen = false
+    /// "Today", "Yesterday" or "Tue, Nov 17".
+    private var whenLabel: String { Format.dayHeader(Format.isoDay(when)) }
     /// G2-CashRemind: the amount well's focus outline.
     @FocusState private var typingAmount: Bool
     @State private var finding = false
@@ -2012,15 +2057,23 @@ struct MarkPaidSheet: View {
                      : "\(person.name) owes \(Format.amount(person.owes))").font(Nacre.footnote).foregroundColor(Pearl.muted)
                     .multilineTextAlignment(.center)
             }
-            HStack {
-                // G2-BMarkPaid: "When", the day on the right.
-                Text("When").font(Nacre.body).foregroundColor(Pearl.ink)
-                Spacer()
-                DatePicker("When", selection: $when, in: ...Date(), displayedComponents: .date)
-                    .labelsHidden().tint(Pearl.action)
+            // G2-BMarkPaid: "When", the day on the right in `link`; it opens
+            // the Pearl date sheet (G0-DateSheet DP-03), not the stock picker.
+            Button { pickingWhen = true } label: {
+                HStack(spacing: 8) {
+                    Text("When").font(Nacre.body).foregroundColor(Pearl.ink)
+                    Spacer()
+                    Text(whenLabel).font(Nacre.body).foregroundColor(Pearl.link).lineLimit(1)
+                    APChevron()
+                }
+                .padding(.horizontal, 16).frame(minHeight: 52)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 16).frame(minHeight: 52)
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
             .apCard()
+            .pearlDateSheet(isPresented: $pickingWhen, title: "When did \(person.name) pay you?",
+                            selection: $when, range: .pastOnly, quickPicks: true)
             if let line = countsLine {
                 // G2-BMarkPaid S-06uc: "Pizza Nova counts as $80.00 for you from now."
                 Text(line).font(Nacre.footnote).foregroundColor(Pearl.muted)

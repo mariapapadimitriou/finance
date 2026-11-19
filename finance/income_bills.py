@@ -36,6 +36,7 @@ from datetime import date, timedelta
 
 from .analytics import _mine, is_others
 from .income import is_income, kind_of
+from .tidy_names import tidy
 from .models import Transaction
 
 KEY = "income_bills"
@@ -321,7 +322,8 @@ def pay_candidates(transactions: list[Transaction], today: date,
             continue
         days, cadence, usual = regular
         out.append({
-            "payer": payer, "name": payer, "amount": round(usual, 2), "cadence": cadence,
+            # TEST-46: the tidy name ("Acme", not "Direct Deposit Payroll Acme").
+            "payer": payer, "name": tidy(payer) or payer, "amount": round(usual, 2), "cadence": cadence,
             "last": days[-1].isoformat(), "next": predict_next(days, cadence, today).isoformat(),
             "count": len(days), "salary": salary[payer],
         })
@@ -407,7 +409,7 @@ def bills(transactions: list[Transaction], today: date, state: dict | None) -> l
         full = round(float(amount), 2)
         share = a.get("share")
         return {
-            "key": key, "name": a.get("name") or name, "merchant": rec["merchant"],
+            "key": key, "name": a.get("name") or tidy(name) or name, "merchant": rec["merchant"],
             # O-10a (2026-11-04): her share of it is what counts; `full` is the bill.
             "amount": _part(full, share), "full": full, "share": share,
             "varies": bool(varies), "cadence": cadence,

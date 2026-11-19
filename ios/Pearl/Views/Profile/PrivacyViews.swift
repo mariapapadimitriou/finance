@@ -78,10 +78,15 @@ struct SwitchRow: View {
 
     var body: some View {
         PrivacyRow(symbol: symbol, title: title, sub: sub) {
-            Toggle(title, isOn: Binding(get: { isOn }, set: changed))
-                .labelsHidden()
+            // TEST-39 (G5-Notifications, N-02): the row says the title once.
+            // The A+ switch (APToggleStyle) draws its label whatever
+            // .labelsHidden() says, so the switch has none on screen; the
+            // title is its VoiceOver label.
+            Toggle(isOn: Binding(get: { isOn }, set: changed)) { EmptyView() }
+                .fixedSize()
                 .tint(Pearl.action)
                 .disabled(disabled)
+                .accessibilityLabel(title)
                 .accessibilityHint(hint ?? sub ?? "")
         }
         .opacity(disabled ? 0.45 : 1)

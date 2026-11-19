@@ -319,6 +319,25 @@ def _needs_a_look(st):
     return looking, mark
 
 
+@bp.get("/transactions/months")
+def transactions_months():
+    """T-47 Choose a month (G1-Months, TEST-41): each month's result in one
+    call, the same numbers as the month card: Came in, Spent and Saved, and
+    Leftover = came in - spent - saved (negative is Over)."""
+    from . import txlist
+    st = store()
+    rows = _txlist_rows(st)
+    every = st.all_transactions()
+    months = sorted({t.date[:7] for t, _ in rows}, reverse=True)[:24]
+    out = []
+    for m in months:
+        tot = txlist.totals(txlist.select(rows, month=m))
+        saved = round(_invested_in(every, m), 2)
+        out.append({"month": m, "income": tot["income"], "spent": tot["spent"], "saved": saved,
+                    "left": round(tot["income"] - tot["spent"] - saved, 2)})
+    return jsonify({"months": out})
+
+
 @bp.get("/transactions/list")
 def transactions_list():
     """The transactions list (THL-122): one page of rows and the totals above.
@@ -3044,7 +3063,11 @@ def home():
         "today": today.isoformat(),
         "safe_to_spend": sts,
         "data_state": state,
-        "review_count": review.get("count", 0),
+        # TEST-35: one number on every screen. Needs a look lists rows; the
+        # trip and pattern questions are Quick sort's own cards (G7-TripAsk),
+        # so Home's "to sort" leaves them out, as the tab badge does.
+        "review_count": max(0, review.get("count", 0) - len(review.get("trip_asks") or [])
+                            - len(review.get("pattern_asks") or [])),
         "pearl_sorted": review.get("pearl_sorted", 0),
         # REDESIGN-18: the streak's "sorted": her answers plus what Pearl
         # sorted itself, over the same window as the count to sort.

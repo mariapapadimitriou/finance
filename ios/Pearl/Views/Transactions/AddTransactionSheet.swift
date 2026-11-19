@@ -48,13 +48,8 @@ struct AddTransactionSheet: View {
                     PearlField(label: "Name", placeholder: "Where was it?", text: $name)
                         .textInputAutocapitalization(.words)
                     APCard {
-                        row("Date", value: dayLabel) { pickingDay.toggle() }
-                        if pickingDay {
-                            DatePicker("", selection: $day, in: ...Date(), displayedComponents: .date)
-                                .datePickerStyle(.graphical).tint(Pearl.action)
-                                .padding(.horizontal, 8)
-                                .onChange(of: day) { _ in pickingDay = false }
-                        }
+                        // G0-DateSheet DP-01: the Pearl date sheet, not the stock picker.
+                        row("Date", value: dayLabel) { pickingDay = true }
                         APSeparator(afterFace: false)
                         row("Category", value: categoryLabel, placeholder: categoryLabel == nil) {
                             pickingCategory = true
@@ -93,6 +88,8 @@ struct AddTransactionSheet: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .task { await loadAccounts() }
+        .pearlDateSheet(isPresented: $pickingDay, title: "When was it?", selection: $day,
+                        range: .pastOnly, quickPicks: true)
         .sheet(isPresented: $pickingAccount) {
             PaidWithSheet(title: moneyIn ? "Goes into" : "Paid with", accounts: accounts, chosen: account) { id in
                 account = id
@@ -316,7 +313,8 @@ struct PaidWithSheet: View {
                 option(id: "cash", face: "$", name: "Cash", line: "Not in a bank")
                 ForEach(accounts) { a in
                     APSeparator()
-                    option(id: a.id, face: APFace.initials(a.institution ?? a.name), name: a.name,
+                    // TEST-43: an empty institution falls back to the name, never "·".
+                    option(id: a.id, face: APFace.initials(AccountWords.bank(a)), name: a.name,
                            line: Self.line(a))
                 }
             }
@@ -325,7 +323,9 @@ struct PaidWithSheet: View {
 
     /// "••4417", "••0931 · joint".
     static func line(_ a: AccountsOverview.Account) -> String? {
-        let parts = [a.mask.map { "\u{2022}\u{2022}" + $0 }, a.joint == true ? "joint" : nil].compactMap { $0 }
+        // TEST-43: no digits, no stray "••".
+        let digits = (a.mask ?? "").trimmingCharacters(in: .whitespaces)
+        let parts = [digits.isEmpty ? nil : "\u{2022}\u{2022}" + digits, a.joint == true ? "joint" : nil].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " \u{00B7} ")
     }
 

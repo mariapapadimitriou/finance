@@ -90,7 +90,9 @@ def _name(t: Transaction | None, ctx: "Context") -> str:
     """What to call a row's merchant: her name for it, else the bank's."""
     if t is None:
         return ""
-    return ctx.names.get(_key(t.merchant)) or t.merchant or t.description
+    # TEST-46: her name for it, else the tidy name (finance/tidy_names.py).
+    from .tidy_names import of as tidy_of
+    return ctx.names.get(_key(t.merchant)) or tidy_of(t) or t.merchant or t.description
 
 
 def _paid_for(t: Transaction, ctx) -> str:
@@ -403,7 +405,7 @@ def describe(t: Transaction, ctx: Context) -> dict:
         "id": t.fingerprint,
         "date": t.date[:10],
         "merchant": _name(t, ctx) if t.fingerprint in ctx.names_for
-        else ((who or {}).get("name") or t.merchant or t.description),
+        else ((who or {}).get("name") or _name(t, ctx)),
         "bank_merchant": t.merchant,
         "bank_id": t.bank_id,
         "etransfer": who,

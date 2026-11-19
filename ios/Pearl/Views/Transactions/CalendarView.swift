@@ -940,10 +940,14 @@ struct SortDaysSheet: View {
                         .font(Nacre.footnote).foregroundColor(Pearl.ink).padding(.horizontal, 4)
                     heading("Dates")
                     APCard {
-                        dateRow("From", selection: $from)
+                        // TEST-50: nothing after today has anything to sort.
+                        PearlDateRow(label: "From", title: "First day", date: $from, range: .pastOnly)
                         APSeparator(afterFace: false)
-                        dateRow("To", selection: $to)
+                        // G0-DateSheet: the last day can't be before the first.
+                        PearlDateRow(label: "To", title: "Last day", date: $to,
+                                     range: PearlDateRange(earliest: from, latest: Date()))
                     }
+                    .onChange(of: from) { f in if f > to { to = f } }
                     heading("Sort as")
                     APCard {
                         Button { picking = true } label: {
@@ -1000,14 +1004,6 @@ struct SortDaysSheet: View {
     private func heading(_ text: String) -> some View {
         Text(text.uppercased()).font(Nacre.label).tracking(0.78).foregroundColor(Pearl.muted)
             .padding(.horizontal, 16).padding(.top, 10)
-    }
-
-    private func dateRow(_ label: String, selection: Binding<Date>) -> some View {
-        DatePicker(selection: selection, displayedComponents: .date) {
-            Text(label).font(Nacre.body).foregroundColor(Pearl.ink)
-        }
-        .tint(Pearl.action)
-        .padding(.horizontal, 16).frame(minHeight: 52)
     }
 
     private var body_: [String: Any] {

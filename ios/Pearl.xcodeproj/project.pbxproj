@@ -10,6 +10,7 @@
 		AEEA3ED321BEA8B167EC2950 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B9447FB87C39BED247C466A /* APIClient.swift */; };
 		20C346BE1C39DB7E6555AFD8 /* Boxed.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6C3358EC82EA6FE19393BFD /* Boxed.swift */; };
 		B83A9DA9B4B837A8966C5B1C /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEC593419BBFC2C02400C055 /* Models.swift */; };
+		02EC269BDD5517098201BC45 /* RequestURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FAE5AA895154E1A5EE6C74C /* RequestURL.swift */; };
 		447CDE89543B103ACD878613 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C5660576F12049C54E11ECA /* AppModel.swift */; };
 		320A0024BC90E91C1C716012 /* Format.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95910E98ECA767C288B13D6F /* Format.swift */; };
 		D10AA7E5417A8A26C680693D /* PearlApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 955CF69FC7C7C7429408F5FF /* PearlApp.swift */; };
@@ -24,8 +25,11 @@
 		B4F50BD8435DEB237F51EFD7 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97809C6135186A3BD204F423 /* Theme.swift */; };
 		5C5C23B160087A9704B706BB /* AllowanceOrb.swift in Sources */ = {isa = PBXBuildFile; fileRef = E21AE2F637B8AF4630212950 /* AllowanceOrb.swift */; };
 		D02B27EB92A7DFD6D51C0DA8 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = C497270FF4823ED50730E0BC /* Components.swift */; };
+		145A5EED9E6F3AFA2DB624F1 /* KeyboardDone.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46975E38D86085BDDA245313 /* KeyboardDone.swift */; };
 		E220B67B8BD59918DBDF7B25 /* PearlConfirmSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE07E1F41699A26A45FCC30C /* PearlConfirmSheet.swift */; };
+		707FBD763449C287EBDFB546 /* PearlDateSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDFD30C3406BA7F7401B8A63 /* PearlDateSheet.swift */; };
 		250306FBB27C72F914D01FC6 /* ProfileCircle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90DA648E32FCE29C0E1C4DA2 /* ProfileCircle.swift */; };
+		83F7E0678334F0E527E1D836 /* ScrollEdgeFade.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BBF304DAA75230F843ED06A /* ScrollEdgeFade.swift */; };
 		2F4C0C7609E5463A942F8A95 /* CantReachPearl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A63598F9E77CC8D06E677A1 /* CantReachPearl.swift */; };
 		F2D60DB16AD29DE5F442BC38 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F7C177E913CEBE0B53FA5 /* HomeView.swift */; };
 		11991F064129B8D80C6CB502 /* OwedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C93CED67E803BE21967A343B /* OwedViews.swift */; };
@@ -78,6 +82,7 @@
 		8AF9A0C07760B9758CC9F76D /* PartsFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96396C8A0D0A1C86E81686D9 /* PartsFlow.swift */; };
 		3812F0CFE8572BDDD0FF614B /* PaybackLinkViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE06D62AFA3444FB6874B030 /* PaybackLinkViews.swift */; };
 		2196B0F0FEDADFDC6ADD6BF2 /* PaybackOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21096CABE6FEE63719E2FBE5 /* PaybackOptions.swift */; };
+		6DD0DA75E6CDC179E04AA850 /* SplitCarry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B2013BE75B8D7223F305AA5 /* SplitCarry.swift */; };
 		00E8B2945E5B9C6B0391813A /* SplitFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53A5D39D9874E14925943286 /* SplitFlow.swift */; };
 		4872AAE25E28798D24E870B2 /* SplitMenus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 558170EF44F3D7B55B10E732 /* SplitMenus.swift */; };
 		014ED45326E8880E7B9F694D /* TransactionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63873676D9EA2C177703422C /* TransactionDetailView.swift */; };
@@ -128,6 +133,7 @@
 		9B9447FB87C39BED247C466A /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		E6C3358EC82EA6FE19393BFD /* Boxed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Boxed.swift; sourceTree = "<group>"; };
 		CEC593419BBFC2C02400C055 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		3FAE5AA895154E1A5EE6C74C /* RequestURL.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RequestURL.swift; sourceTree = "<group>"; };
 		9C5660576F12049C54E11ECA /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		95910E98ECA767C288B13D6F /* Format.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Format.swift; sourceTree = "<group>"; };
 		955CF69FC7C7C7429408F5FF /* PearlApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlApp.swift; sourceTree = "<group>"; };
@@ -142,8 +148,11 @@
 		97809C6135186A3BD204F423 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		E21AE2F637B8AF4630212950 /* AllowanceOrb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllowanceOrb.swift; sourceTree = "<group>"; };
 		C497270FF4823ED50730E0BC /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		46975E38D86085BDDA245313 /* KeyboardDone.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardDone.swift; sourceTree = "<group>"; };
 		EE07E1F41699A26A45FCC30C /* PearlConfirmSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlConfirmSheet.swift; sourceTree = "<group>"; };
+		DDFD30C3406BA7F7401B8A63 /* PearlDateSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlDateSheet.swift; sourceTree = "<group>"; };
 		90DA648E32FCE29C0E1C4DA2 /* ProfileCircle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileCircle.swift; sourceTree = "<group>"; };
+		1BBF304DAA75230F843ED06A /* ScrollEdgeFade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollEdgeFade.swift; sourceTree = "<group>"; };
 		1A63598F9E77CC8D06E677A1 /* CantReachPearl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CantReachPearl.swift; sourceTree = "<group>"; };
 		663F7C177E913CEBE0B53FA5 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		C93CED67E803BE21967A343B /* OwedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwedViews.swift; sourceTree = "<group>"; };
@@ -196,6 +205,7 @@
 		96396C8A0D0A1C86E81686D9 /* PartsFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PartsFlow.swift; sourceTree = "<group>"; };
 		FE06D62AFA3444FB6874B030 /* PaybackLinkViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaybackLinkViews.swift; sourceTree = "<group>"; };
 		21096CABE6FEE63719E2FBE5 /* PaybackOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaybackOptions.swift; sourceTree = "<group>"; };
+		9B2013BE75B8D7223F305AA5 /* SplitCarry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitCarry.swift; sourceTree = "<group>"; };
 		53A5D39D9874E14925943286 /* SplitFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitFlow.swift; sourceTree = "<group>"; };
 		558170EF44F3D7B55B10E732 /* SplitMenus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitMenus.swift; sourceTree = "<group>"; };
 		63873676D9EA2C177703422C /* TransactionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionDetailView.swift; sourceTree = "<group>"; };
@@ -288,6 +298,7 @@
 				9B9447FB87C39BED247C466A /* APIClient.swift */,
 				E6C3358EC82EA6FE19393BFD /* Boxed.swift */,
 				CEC593419BBFC2C02400C055 /* Models.swift */,
+				3FAE5AA895154E1A5EE6C74C /* RequestURL.swift */,
 			);
 			path = API;
 			sourceTree = "<group>";
@@ -356,8 +367,11 @@
 			children = (
 				E21AE2F637B8AF4630212950 /* AllowanceOrb.swift */,
 				C497270FF4823ED50730E0BC /* Components.swift */,
+				46975E38D86085BDDA245313 /* KeyboardDone.swift */,
 				EE07E1F41699A26A45FCC30C /* PearlConfirmSheet.swift */,
+				DDFD30C3406BA7F7401B8A63 /* PearlDateSheet.swift */,
 				90DA648E32FCE29C0E1C4DA2 /* ProfileCircle.swift */,
+				1BBF304DAA75230F843ED06A /* ScrollEdgeFade.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -445,6 +459,7 @@
 				96396C8A0D0A1C86E81686D9 /* PartsFlow.swift */,
 				FE06D62AFA3444FB6874B030 /* PaybackLinkViews.swift */,
 				21096CABE6FEE63719E2FBE5 /* PaybackOptions.swift */,
+				9B2013BE75B8D7223F305AA5 /* SplitCarry.swift */,
 				53A5D39D9874E14925943286 /* SplitFlow.swift */,
 				558170EF44F3D7B55B10E732 /* SplitMenus.swift */,
 				63873676D9EA2C177703422C /* TransactionDetailView.swift */,
@@ -565,6 +580,7 @@
 				AEEA3ED321BEA8B167EC2950 /* APIClient.swift in Sources */,
 				20C346BE1C39DB7E6555AFD8 /* Boxed.swift in Sources */,
 				B83A9DA9B4B837A8966C5B1C /* Models.swift in Sources */,
+				02EC269BDD5517098201BC45 /* RequestURL.swift in Sources */,
 				447CDE89543B103ACD878613 /* AppModel.swift in Sources */,
 				320A0024BC90E91C1C716012 /* Format.swift in Sources */,
 				D10AA7E5417A8A26C680693D /* PearlApp.swift in Sources */,
@@ -579,8 +595,11 @@
 				B4F50BD8435DEB237F51EFD7 /* Theme.swift in Sources */,
 				5C5C23B160087A9704B706BB /* AllowanceOrb.swift in Sources */,
 				D02B27EB92A7DFD6D51C0DA8 /* Components.swift in Sources */,
+				145A5EED9E6F3AFA2DB624F1 /* KeyboardDone.swift in Sources */,
 				E220B67B8BD59918DBDF7B25 /* PearlConfirmSheet.swift in Sources */,
+				707FBD763449C287EBDFB546 /* PearlDateSheet.swift in Sources */,
 				250306FBB27C72F914D01FC6 /* ProfileCircle.swift in Sources */,
+				83F7E0678334F0E527E1D836 /* ScrollEdgeFade.swift in Sources */,
 				2F4C0C7609E5463A942F8A95 /* CantReachPearl.swift in Sources */,
 				F2D60DB16AD29DE5F442BC38 /* HomeView.swift in Sources */,
 				11991F064129B8D80C6CB502 /* OwedViews.swift in Sources */,
@@ -633,6 +652,7 @@
 				8AF9A0C07760B9758CC9F76D /* PartsFlow.swift in Sources */,
 				3812F0CFE8572BDDD0FF614B /* PaybackLinkViews.swift in Sources */,
 				2196B0F0FEDADFDC6ADD6BF2 /* PaybackOptions.swift in Sources */,
+				6DD0DA75E6CDC179E04AA850 /* SplitCarry.swift in Sources */,
 				00E8B2945E5B9C6B0391813A /* SplitFlow.swift in Sources */,
 				4872AAE25E28798D24E870B2 /* SplitMenus.swift in Sources */,
 				014ED45326E8880E7B9F694D /* TransactionDetailView.swift in Sources */,

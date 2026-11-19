@@ -248,7 +248,11 @@ struct ReviewView: View {
             if !showingSkipped && !showingSorted
                 && !(quick.isEmpty && (review?.patternAsks ?? []).isEmpty && (review?.tripAsks ?? []).isEmpty) {
                 // T-10; REFRESH-03's P1 took "Tap one to sort it." out. AI-18 and TR-01 count too.
-                QuickSortCard(count: quick.count + (review?.patternAsks.count ?? 0) + (review?.tripAsks.count ?? 0),
+                // TEST-35: the same number as All, Home and the badge (the rows
+                // listed); Quick sort's own "left" still counts its trip and
+                // pattern cards. With only those left, they are the count.
+                QuickSortCard(count: quick.isEmpty
+                              ? (review?.patternAsks.count ?? 0) + (review?.tripAsks.count ?? 0) : quick.count,
                               sorted: (review?.youSorted ?? 0) + (review?.pearlSorted ?? 0)) {
                     sorting = true
                 }
@@ -809,6 +813,13 @@ extension Review {
     var shownAsks: [Ask] {
         YourPlanGate.shown ? asks : asks.filter { $0.kind != .check }
     }
+
+    /// TEST-35: what Needs a look lists and its "All" chip counts, the one
+    /// number on the tab badge and the month card too. The trip and pattern
+    /// questions are Quick sort's own cards (G7-TripAsk), not rows.
+    var listedOpen: Int { shownAsks.filter { !$0.skipped }.count }
+    /// The same, skipped ones included (the streak's "to sort", as Home's).
+    var listedAll: Int { shownAsks.count }
 
     /// The open Your plan questions the server counted but the app parks;
     /// taken off Cash flow's "need a look" count.

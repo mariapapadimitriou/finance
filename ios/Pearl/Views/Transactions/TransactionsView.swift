@@ -149,13 +149,9 @@ struct TransactionsView: View {
                         // T-01r: under Newest the first day's header carries
                         // Select, so the plain list has no header of its own.
                         if !selectOnFirstDay { listHeader.padding(.top, 24) }
+                        // TEST-46: Add a transaction is the + by Filters, not
+                        // under the month's last row.
                         list.padding(.top, selectOnFirstDay ? 24 : 8)
-                        if !inSearch && !selecting && loadedOnce {
-                            Button("Add a transaction") { adding = true }
-                                .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
-                                .foregroundColor(Pearl.link)
-                                .frame(maxWidth: .infinity, minHeight: 44).padding(.top, 8)
-                        }
                     }
                 }
             }
@@ -398,6 +394,11 @@ struct TransactionsView: View {
                             .accessibilityHidden(true)
                     }
                 }
+                // TEST-46: Add a transaction (T-23) in reach from the top.
+                CFGlassButton(label: "Add a transaction", action: { adding = true }) {
+                    Image(systemName: "plus").font(.system(size: 17, weight: .semibold))
+                }
+                .accessibilityIdentifier("add-transaction")
             }
         }
         .animation(.easeOut(duration: 0.2), value: inSearch)
@@ -426,22 +427,21 @@ struct TransactionsView: View {
     /// bar of Spent (plum) / Saved (green) / Leftover (track), its legend,
     /// and "8 need a look" with the mini streak and Sort. Red only for over.
     private var summaryCard: some View {
-        // T-45, T-53: a search or a filter shows its own totals.
-        let narrowed = inSearch || filters.isActive
-        let spent = narrowed ? shown.filter { !$0.inflow && $0.counts == "spending" }.reduce(0) { $0 + $1.amount }
-            : (monthTotals?.spent ?? 0)
-        let income = narrowed ? shown.filter { $0.inflow && $0.counts == "income" }.reduce(0) { $0 + $1.amount }
-            : (monthTotals?.income ?? 0)
-        let saved = narrowed ? 0 : (monthTotals?.saved ?? 0)
+        // T-67 (TEST-34): a filter or a search never changes the month
+        // card; it is always the month's own Came in, Leftover and legend.
+        // (Narrowed totals gave "Came in $0", Leftover "—" and "Leftover $0".)
+        let spent = monthTotals?.spent ?? 0
+        let income = monthTotals?.income ?? 0
+        let saved = monthTotals?.saved ?? 0
         // T-01r3 (TEST-05, section 20): before this month's pay is in, the
         // headline is "Spent so far" in ink and the pay still to come shows,
         // not a red Over measured against money that hasn't come yet.
-        let pay = narrowed ? nil : monthTotals?.pay
+        let pay = monthTotals?.pay
         return APCard {
             OwnBody {
                 MonthSummary(month: month.map { Format.monthName($0) } ?? "This month",
                              monthSpoken: month.map { Format.month($0) } ?? "",
-                             canPick: !months.isEmpty, narrowed: narrowed,
+                             canPick: !months.isEmpty,
                              spent: spent, income: income, saved: saved, pay: pay, counts: $counts,
                              pickMonth: { showMonths = true })
             }
@@ -1258,14 +1258,17 @@ struct TransactionsView: View {
             self.error = app.handle(error)
         }
         if let review = await reviewReply { took(review) }
+        // TEST-50: Choose a month opens with each month's result already here.
+        Task { await MonthSheet.prefetch(app.api) }
     }
 
     /// "8 need a look" and its mini streak (REDESIGN-18): lit = sorted ÷
     /// (sorted + to sort), where sorted is her answers plus Pearl's over the
     /// same window as the count to sort, exactly as Home's streak.
     private func took(_ review: Review) {
-        reviewCount = max(0, (review.open ?? review.count) - review.parkedPlanQuestions)
-        reviewToSort = max(0, review.count - review.parkedPlanQuestions)
+        // TEST-35: the rows Needs a look lists, as its "All" chip.
+        reviewCount = review.listedOpen
+        reviewToSort = review.listedAll
         reviewSorted = review.youSorted + review.pearlSorted
     }
 
@@ -1516,6 +1519,9 @@ struct GuessChip: View {
         .padding(.horizontal, 10).frame(height: 24)
         // kit `.guess`: a 1 pt dashed line in ink at 60%.
         .overlay(Capsule().strokeBorder(Pearl.ink.opacity(0.6), style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
+        // TEST-45: one element, so the words are said once, not by the icon
+        // and the text each.
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Pearl’s guess: \(label)")
     }
 }
@@ -2103,21 +2109,36 @@ struct MonthSheet: View {
         return running ? words + " so far" : words
     }
 
+    /// TEST-41: every month's result in one call (GET /api/transactions/months),
+    /// remembered between opens so the lines show at once the next time.
+    /// TEST-50: Cash flow fetches them as it loads (`prefetch`), so the
+    /// sheet opens with them; this only refreshes.
     private func loadTotals() async {
-        let api = app.api
-        await withTaskGroup(of: (String, Double?).self) { group in
-            for m in months.suffix(12) {
-                group.addTask {
-                    let list: TransactionList? = try? await api.get("api/transactions/list",
-                                                                    query: ["month": m, "limit": "1"])
-                    guard let t = list?.monthTotals else { return (m, nil) }
-                    return (m, (t.income ?? 0) - (t.spent ?? 0))
-                }
-            }
-            for await (m, value) in group {
-                if let value = value { left[m] = value }
-            }
-        }
+        if left.isEmpty { left = Self.remembered }
+        await Self.prefetch(app.api)
+        if !Self.remembered.isEmpty { left = Self.remembered }
+    }
+
+    private static var remembered: [String: Double] = [:]
+
+    /// Every month's Leftover (negative: Over), kept for the next open.
+    @MainActor static func prefetch(_ api: APIClient) async {
+        guard let reply: MonthResults = try? await api.get("api/transactions/months") else { return }
+        var out: [String: Double] = [:]
+        for m in reply.months { out[m.month] = m.left }
+        remembered = out
+    }
+
+    init(months: [String], current: String?, onDone: @escaping (String?) -> Void) {
+        self.months = months
+        self.current = current
+        self.onDone = onDone
+        _left = State(initialValue: Self.remembered)
+    }
+
+    private struct MonthResults: Decodable {
+        struct Month: Decodable { let month: String; let left: Double }
+        let months: [Month]
     }
 }
 
@@ -2269,7 +2290,6 @@ struct MonthSummary: View {
     let month: String
     let monthSpoken: String
     let canPick: Bool
-    let narrowed: Bool
     let spent: Double
     let income: Double
     let saved: Double
@@ -2278,7 +2298,7 @@ struct MonthSummary: View {
     let pickMonth: () -> Void
 
     private var left: Double { income - spent - saved }
-    private var over: Bool { left < -0.5 && !narrowed && pay == nil }
+    private var over: Bool { left < -0.5 && pay == nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -2313,7 +2333,7 @@ struct MonthSummary: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(pay != nil ? "Spent so far" : over ? "Over" : "Leftover")
                     .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                Text(narrowed ? "\u{2014}" : Format.whole(pay != nil ? spent : abs(left)))
+                Text(Format.whole(pay != nil ? spent : abs(left)))
                     .font(.cfBig).tracking(-0.88)
                     .foregroundColor(over ? Pearl.danger : Pearl.ink)
                     .lineLimit(1).minimumScaleFactor(0.6)

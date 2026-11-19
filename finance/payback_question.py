@@ -86,8 +86,14 @@ def _card(c: Transaction, cards: dict[str, str]) -> str:
     return short_name(label) if label.strip() else ""
 
 
+def _shown(c: Transaction) -> str:
+    """TEST-46: the tidy name ("Bar Isabel", not "Bar Isabel Toronto")."""
+    from .tidy_names import of
+    return of(c) or c.merchant
+
+
 def _tile(c: Transaction, cards: dict[str, str], **extra) -> dict:
-    return {"charge": c.fingerprint, "merchant": c.merchant, "amount": round(c.amount, 2),
+    return {"charge": c.fingerprint, "merchant": _shown(c), "amount": round(c.amount, 2),
             "date": c.date[:10], "category": c.category or "Other", "card": _card(c, cards), **extra}
 
 
@@ -141,8 +147,8 @@ def build(t: Transaction, transactions: list[Transaction], splits: dict | None =
             if rest >= 0.005:
                 compare += f" · {_money(rest)} still to come"
             tiles.append(_tile(c, cards, kind="split", person=name, owes=r["owes"],
-                               title=f"{c.merchant} · {_whose(name)} share",
-                               compare=compare, toast=f"{who} paid back {_money(got)} for {c.merchant}"))
+                               title=f"{_shown(c)} · {_whose(name)} share",
+                               compare=compare, toast=f"{who} paid back {_money(got)} for {_shown(c)}"))
 
     # 2. The purchase the sender's message names.
     said = memo_match(t, transactions)
@@ -152,9 +158,9 @@ def build(t: Transaction, transactions: list[Transaction], splits: dict | None =
         n = share_of(got, c.amount)
         said_words = memo(t)
         tiles.append(_tile(c, cards, kind="memo", ways=n, memo=said_words,
-                           title=f"{c.merchant} · {_money(c.amount)}",
+                           title=f"{_shown(c)} · {_money(c.amount)}",
                            compare=f"“{said_words}”" if said_words else (f"about {_FRACTION[n]}" if n else ""),
-                           toast=f"{who} paid back {_money(got)} for {c.merchant}"))
+                           toast=f"{who} paid back {_money(got)} for {_shown(c)}"))
 
     # 3. An even share of a purchase, best first (review.charge_candidates).
     for cand in candidates if candidates is not None else charge_candidates(t, transactions):
@@ -166,9 +172,9 @@ def build(t: Transaction, transactions: list[Transaction], splits: dict | None =
         reason = [f"about {_FRACTION[n]}"] if n in _FRACTION else []
         reason.append(_before(_gap(t, c.date)))
         tiles.append(_tile(c, cards, kind="share", ways=n,
-                           title=f"{c.merchant} · {_money(c.amount)}",
+                           title=f"{_shown(c)} · {_money(c.amount)}",
                            compare=" · ".join(reason),
-                           toast=f"{who} paid back {_money(got)} for {c.merchant}"))
+                           toast=f"{who} paid back {_money(got)} for {_shown(c)}"))
 
     tiles = tiles[:MAX_TILES]
     if not tiles:

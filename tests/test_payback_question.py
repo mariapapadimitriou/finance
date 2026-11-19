@@ -93,6 +93,14 @@ class TestNotOnASplit:
         assert c.post("/api/transactions/undo", json=r.get_json()["undo"]).status_code == 200
         assert question(c)["payback"]["tiles"][0]["title"] == "Añejo · $61.57"
 
+    def test_what_it_offers_is_likely_on_what_did_they_pay_back(self, c):
+        """TEST-46: every purchase PQ-03 offers is LIKELY on PB-30 too, not
+        only behind its search."""
+        q = question(c)["payback"]
+        out = c.get(f"/api/transactions/{ids(c)['deposit']}/owing").get_json()
+        likely = {u["id"] for u in out["unsplit"] if u.get("likely")}
+        assert {t["charge"] for t in q["tiles"]} <= likely
+
     def test_the_deposit_page_asks_it_as_a_question_card(self, c):
         out = c.get(f"/api/transactions/{ids(c)['deposit']}/payback-question").get_json()
         assert out["question"]["card"] == {

@@ -58,16 +58,11 @@ struct AddToBillsSheet: View {
                         Button { picking = .share } label: { rowLabel("Your share", "\(share)%") }
                             .buttonStyle(.plain)
                         APSeparator(afterFace: false)
-                        Button { pickingDay.toggle() } label: {
-                            rowLabel("Next payment", "Around \(Format.short(Format.isoDay(next)))", chevron: false)
+                        // G0-DateSheet DP-02: the Pearl date sheet, today onward.
+                        Button { pickingDay = true } label: {
+                            rowLabel("Next payment", "Around \(Format.short(Format.isoDay(next)))")
                         }
                         .buttonStyle(.plain)
-                        if pickingDay {
-                            DatePicker("", selection: $next, in: Date()..., displayedComponents: .date)
-                                .datePickerStyle(.graphical).tint(Pearl.action)
-                                .padding(.horizontal, 8)
-                                .onChange(of: next) { _ in pickingDay = false }
-                        }
                         APSeparator(afterFace: false)
                         Button { pickingCategory = true } label: {
                             rowLabel("Category", chosenCategory.isEmpty ? "Choose" : chosenCategory,
@@ -93,6 +88,8 @@ struct AddToBillsSheet: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .task { await load() }
+        .pearlDateSheet(isPresented: $pickingDay, title: "When is it due next?", selection: $next,
+                        range: .todayOnward)
         .sheet(item: $picking) { which in
             switch which {
             case .cadence:

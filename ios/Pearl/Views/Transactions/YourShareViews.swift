@@ -141,15 +141,9 @@ struct YourShareSheet: View {
     private var ready: Bool { mineCents != nil && !tooMuch && gapCents == 0 && !busy }
 
     var body: some View {
-        // TEST-16: the number pad's Done bar needs a navigation stack.
+        // TEST-16: the number pad's Done is the footer's own (TEST-37).
         NavigationStack {
             sheet
-                .toolbar {
-                    ToolbarItemGroup(placement: .keyboard) {
-                        Spacer()
-                        Button("Done") { typing = nil }.tint(Pearl.action).foregroundColor(Pearl.action)
-                    }
-                }
                 .toolbar(.hidden, for: .navigationBar)
                 // S-47f: "Priya’s $25.00 is linked…", with Options.
                 .overlay(alignment: .top) {
@@ -193,6 +187,8 @@ struct YourShareSheet: View {
                               busy: busy, busyLabel: "Saving…", secondary: "Cancel",
                               onPrimary: { Task { await save() } }, onSecondary: onClose)
                 .disabled(!ready)
+                // TEST-37: Done above the number pad, Save above both.
+                .keyboardDoneFooter { typing = nil }
         }
         .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { typing = Self.me } }
         .sheet(isPresented: $whoPaid) {

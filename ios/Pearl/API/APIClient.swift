@@ -81,16 +81,10 @@ final class APIClient {
 
     private func fetch(_ method: String, _ path: String, query: [String: String],
                        body: [String: Any]?) async throws -> Data {
-        guard var parts = URLComponents(url: baseURL.appendingPathComponent(path),
-                                        resolvingAgainstBaseURL: false) else {
+        // Paths come in plain; RequestURL encodes them once (TEST-33).
+        guard let url = RequestURL.make(base: baseURL, path: path, query: query) else {
             throw APIError.message("That server address doesn't look right.")
         }
-        if !query.isEmpty {
-            parts.queryItems = query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
-            // The server reads "+" as a space; a search for "+5850" keeps it.
-            parts.percentEncodedQuery = parts.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
-        }
-        guard let url = parts.url else { throw APIError.message("That server address doesn't look right.") }
         var request = URLRequest(url: url)
         request.httpMethod = method
         if let body = body {

@@ -191,6 +191,11 @@ struct AnswerSheet: View {
     }
 
     private var t: BriefTransaction { ask.t }
+    /// T-93o / T-04n (TEST-46): Pearl's best guess is Other, so the page's
+    /// guess card opens What was this? (G1-WhatWasThis-r), not the category list.
+    private var otherGuess: Bool {
+        ask.kind == .category && pageCategory == nil && (ask.item.guess?.text ?? t.category) == "Other"
+    }
     private var who: String { t.name }
 
     var body: some View {
@@ -201,7 +206,7 @@ struct AnswerSheet: View {
                               current: pageCategory ?? t.category ?? ask.item.guess?.text ?? "Other",
                               merchant: learnable ? who : nil,
                               onRegularBill: fromPage ? nil : { regularBill = $0 },
-                              title: fromPage && ask.kind == .category ? "Category" : "What was this?",
+                              title: fromPage && ask.kind == .category && !otherGuess ? "Category" : "What was this?",
                               preview: learnable ? CategorySheet.preview(api: api, id: t.id, merchant: who) : nil,
                               notSpending: CaseTile.notSpending, startNotSpending: ask.kind != .category,
                               onCase: { outCase($0, remember: $1) },
@@ -214,8 +219,12 @@ struct AnswerSheet: View {
                               showsAlways: pageAlways == nil,
                               // G1-WhatWasThis-r (T-04n): Pearl's guess leads, then her
                               // four likeliest; every other answer under Something else….
-                              leadsWithLikely: !(fromPage && ask.kind == .category),
-                              guess: ask.kind == .category && pageCategory == nil ? ask.item.guess?.text : nil) { name, remember in
+                              // TEST-46: an "Other?" guess opens What was this? from the page too.
+                              leadsWithLikely: !(fromPage && ask.kind == .category) || otherGuess,
+                              // TEST-46: the page's own ask carries no guess, so an
+                              // "Other?" guess is said here, with its Yes on top.
+                              guess: ask.kind == .category && pageCategory == nil
+                                  ? (ask.item.guess?.text ?? (otherGuess ? "Other" : nil)) : nil) { name, remember in
                     saveSpending(name, remember)
                 }
             } else if step == .into {
