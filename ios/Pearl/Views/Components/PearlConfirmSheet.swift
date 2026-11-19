@@ -50,6 +50,18 @@ struct PearlConfirmSheet: View {
         }
     }
 
+    /// G1-TxSheets (T-41b, TF-01c): what the question is about, under the
+    /// title: the ring face (or an icon), the name in Fraunces 22, and
+    /// "+$68.00 · Nov 13" with the amount in its tone.
+    struct Who {
+        let name: String
+        let amount: String
+        var tone: Color = Pearl.ink
+        var sub: String? = nil
+        /// An icon instead of the face (⇄ for a transfer).
+        var symbol: String? = nil
+    }
+
     /// A row in WHAT GOES / WHAT STAYS (SO-06).
     struct Line: Hashable {
         let title: String
@@ -60,6 +72,7 @@ struct PearlConfirmSheet: View {
     let overline: String
     let title: String
     var sub: String? = nil
+    var who: Who? = nil
     var message: String? = nil
     var field: Field? = nil
     @Binding var text: String
@@ -80,7 +93,8 @@ struct PearlConfirmSheet: View {
     @State private var revealed = false
     @FocusState private var typing: Bool
 
-    init(face: String? = nil, overline: String, title: String, sub: String? = nil, message: String? = nil,
+    init(face: String? = nil, overline: String, title: String, sub: String? = nil, who: Who? = nil,
+         message: String? = nil,
          field: Field? = nil, text: Binding<String> = .constant(""), goes: [Line] = [], stays: [Line] = [],
          primary: String, busyLabel: String? = nil, secondary: String = "Cancel",
          failure: String = "Something went wrong. Nothing changed. Try again.",
@@ -89,6 +103,7 @@ struct PearlConfirmSheet: View {
         self.overline = overline
         self.title = title
         self.sub = sub
+        self.who = who
         self.message = message
         self.field = field
         self._text = text
@@ -120,6 +135,7 @@ struct PearlConfirmSheet: View {
                     .multilineTextAlignment(.center).frame(maxWidth: .infinity)
                     .padding(.top, -10)
             }
+            if let who = who { whoView(who) }
             if let message = message {
                 Text(message).font(Nacre.body).foregroundColor(Pearl.ink)
                     .fixedSize(horizontal: false, vertical: true)
@@ -151,6 +167,25 @@ struct PearlConfirmSheet: View {
             if field != nil && showsField {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { typing = true }
             }
+        }
+    }
+
+    @ViewBuilder private func whoView(_ who: Who) -> some View {
+        if let symbol = who.symbol {
+            HStack(spacing: 12) {
+                APIcon(symbol: symbol, tone: Pearl.muted, wash: APlus.face).scaleEffect(44.0 / 36.0)
+                    .frame(width: 44, height: 44)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(who.name).font(Pearl.heading(22, relativeTo: .title2)).foregroundColor(Pearl.ink)
+                    (Text(who.amount).foregroundColor(who.tone)
+                     + Text(who.sub.map { " \u{00B7} " + $0 } ?? "").foregroundColor(Pearl.muted))
+                        .font(Nacre.subheadline).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .accessibilityElement(children: .combine)
+        } else {
+            APQuestionWho(name: who.name, amount: who.amount, tone: who.tone, sub: who.sub)
         }
     }
 

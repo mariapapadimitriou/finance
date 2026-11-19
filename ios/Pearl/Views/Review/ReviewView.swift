@@ -153,8 +153,9 @@ struct ReviewView: View {
             if let review = review {
                 let rows = review.asks.filter { $0.skipped == showingSkipped && (["all", "skipped"].contains(filter) || Self.kindName($0.kind) == filter) }
                 if showingSkipped && !rows.isEmpty {
-                    Text("Guesses count for now. Swipe left to put one back.")
-                        .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    // T-11 (G1-NeedsMore): one line; swiping is the list's own.
+                    Text("Guesses count for now.")
+                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
                         .listRowBackground(Color.clear).listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 4, trailing: 16))
                 }
@@ -183,8 +184,16 @@ struct ReviewView: View {
                     }
                 }
             } else {
-                LoadState(error: error) { Task { await load() } }
+                if error != nil {
+                    // T-83e (G1-NeedsMore): the caution icon, the title, a Secondary Try again.
+                    CFState(title: "Couldn’t load Needs a look", line: "", action: "Try again", warn: true) {
+                        Task { await load() }
+                    }
                     .listRowBackground(Color.clear).listRowSeparator(.hidden)
+                } else {
+                    LoadState(error: error) { Task { await load() } }
+                        .listRowBackground(Color.clear).listRowSeparator(.hidden)
+                }
             }
         }
         .listStyle(.insetGrouped)
@@ -332,17 +341,23 @@ struct ReviewView: View {
     @ViewBuilder private var sortedList: some View {
         if let rows = sortedRows {
             if rows.isEmpty {
-                Text(filter == "today" ? "Nothing sorted today." : "Pearl hasn’t sorted anything by itself.")
-                    .font(Nacre.body).foregroundColor(Pearl.muted)
-                    .frame(maxWidth: .infinity).padding(.vertical, 32)
-                    .listRowBackground(Color.clear).listRowSeparator(.hidden)
+                // T-110 (G1-PearlSorted): the nacre sparkle, Nothing yet, one line.
+                VStack(spacing: 6) {
+                    Image(systemName: "sparkle").font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(Pearl.action)
+                        .frame(width: 36, height: 36).background(Circle().fill(APlus.chip))
+                        .padding(.bottom, 8).accessibilityHidden(true)
+                    Text("Nothing yet").font(Nacre.title2).foregroundColor(Pearl.ink)
+                    Text(filter == "today" ? "Nothing sorted today." : "Pearl hasn’t sorted anything by itself.")
+                        .font(Nacre.subheadline).foregroundColor(Pearl.muted).multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity).padding(.top, 60).padding(.bottom, 32)
+                .accessibilityElement(children: .combine)
+                .listRowBackground(Color.clear).listRowSeparator(.hidden)
             }
             if filter == "pearl" && rows.contains(where: { $0.record != nil }) {
-                // AI-02: what these are, and that each can be taken back (TEXT-01).
-                Text("Sorted for you · tap to undo")
-                    .font(Nacre.footnote).foregroundColor(Pearl.ink)
-                    .listRowBackground(Color.clear).listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 4, trailing: 16))
+                // AI-02, T-107 (G1-PearlSorted): the section label, in caps.
+                sectionHeading("Sorted for you · tap to undo")
             }
             if filter == "pearl" {
                 // AI-02 (1313:3611, AI-03c): Pearl's sorts, the ways she said
@@ -426,7 +441,8 @@ struct ReviewView: View {
         guard let body = payload.any as? [String: Any] else { return }
         do {
             let _: OK = try await app.api.post("api/transactions/undo", body)
-            withAnimation { toast = Toast(title: "Undone.", undo: nil) }
+            // T-107u (G1-PearlSorted): where it went.
+            withAnimation { toast = Toast(title: "Undone. Back in Needs a look", undo: nil) }
             await load()
             await loadSorted()
             app.changed()
@@ -451,14 +467,10 @@ struct ReviewView: View {
             Text("Nothing skipped.").font(Nacre.body).foregroundColor(Pearl.muted)
                 .frame(maxWidth: .infinity).padding(.vertical, 32)
         } else if skipped > 0 {
-            VStack(spacing: 12) {
-                Text("You skipped \(skipped). Pearl uses its guess until you sort them.")
-                    .font(Nacre.body).foregroundColor(Pearl.muted).multilineTextAlignment(.center)
-                Button("See skipped") { filter = "skipped" }
-                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.link))
-
-            }
-            .frame(maxWidth: .infinity).padding(.vertical, 32)
+            // T-83k (G1-NeedsMore): kit `.state`, See skipped as its quiet action.
+            CFState(title: "Only skipped ones left", line: "Pearl uses its guess until you sort them.",
+                    action: "See skipped") { filter = "skipped" }
+                .padding(.top, 40)
         } else {
             // T-16, A+ (G1-NeedsALook): the check on a quiet disc, All sorted
             // in Fraunces 22, one line (less text), and Done.

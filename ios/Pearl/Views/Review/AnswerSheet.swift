@@ -1130,18 +1130,16 @@ struct AnswerSheet: View {
     /// tile un-highlights and "Couldn’t save that. Try again." shows under
     /// the grid, here and not on the screen behind.
     private var otherKindTiles: some View {
+        // T-71b (G1-MoneyIn): "Which kind?" is the sheet's title; the error
+        // is kit `.errline` (ⓘ in danger) under the tiles.
         VStack(alignment: .leading, spacing: 12) {
-            APSectionLabel(text: "Which kind?")
             CaseGrid(cases: CaseTile.otherIncome, chosen: Binding(get: { savingKind }, set: { key in
                 guard let key = key else { return }
                 choice = key
                 saveOtherKind(key)
             }), role: "income kind")
             .disabled(savingKind != nil)
-            if let kindError = kindError {
-                Text(kindError).font(Nacre.footnote).foregroundColor(Pearl.caution)
-                    .padding(.horizontal, 16).fixedSize(horizontal: false, vertical: true)
-            }
+            if let kindError = kindError { APErrorLine(text: kindError) }
         }
     }
 
@@ -1170,8 +1168,7 @@ struct AnswerSheet: View {
             } catch {
                 savingKind = nil
                 choice = nil
-                kindError = "Couldn’t save that. Try again."
-                UIAccessibility.post(notification: .announcement, argument: "Couldn’t save that. Try again.")
+                kindError = "Couldn’t save that. Try again."   // APErrorLine announces it.
             }
         }
     }
@@ -1191,7 +1188,8 @@ struct AnswerSheet: View {
         // PB-15: "What did Sam pay back?" (The shop and Work are MP-02 / MP-01.)
         case .charges:
             return payerName.map { "What did \(firstName($0)) pay back?" } ?? "What did this pay back?"
-        case .kinds, .otherKinds: return "What kind of income?"
+        case .kinds: return "What kind of income?"
+        case .otherKinds: return "Which kind?"
         case .cadence: return "How often is this pay?"
         case .joint: return "Whose pay is this?"
         case .sender: return "Who sent this?"

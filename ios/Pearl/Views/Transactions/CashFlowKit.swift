@@ -553,7 +553,9 @@ struct CFState: View {
             if warn { APIcon.warn("exclamationmark.triangle") }
             Text(title).font(Nacre.title2).foregroundColor(Pearl.ink).multilineTextAlignment(.center)
                 .padding(.top, warn ? 6 : 0)
-            Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted).multilineTextAlignment(.center)
+            if !line.isEmpty {
+                Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted).multilineTextAlignment(.center)
+            }
             if let action = action {
                 if warn {
                     Button(action, action: run)
