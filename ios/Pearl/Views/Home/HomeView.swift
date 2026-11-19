@@ -401,6 +401,7 @@ private struct HomeCards: View {
                 APSectionLabel(text: "Needs a look", action: "See the list", act: actions.seeList)
                     .padding(.top, 18).padding(.bottom, 8)
                 NeedsALookCard(count: home.reviewCount, pearlSorted: home.pearlSorted ?? 0,
+                               sorted: home.sorted ?? home.pearlSorted ?? 0,
                                busy: sorting, onSort: actions.sortNow)
             }
             if let owed = owed {
@@ -419,6 +420,8 @@ private struct HomeCards: View {
 struct NeedsALookCard: View {
     let count: Int
     var pearlSorted = 0
+    /// REDESIGN-18: her answers plus Pearl's, over the same window as `count`.
+    var sorted = 0
     var busy = false
     let onSort: () -> Void
 
@@ -444,8 +447,10 @@ struct NeedsALookCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .accessibilityElement(children: .combine)
-            if pearlSorted > 0 {
-                SortStreak(sorted: pearlSorted, toSort: count)
+            // REDESIGN-18: lit = sorted ÷ (sorted + to sort), in twelfths;
+            // VoiceOver "N of M sorted". The words still say Pearl sorted N.
+            if sorted > 0 {
+                SortStreak(sorted: sorted, toSort: count)
             }
             Button("Sort now", action: onSort)
                 .buttonStyle(PearlPrimaryButtonStyle(busy: busy, busyLabel: "Opening…"))

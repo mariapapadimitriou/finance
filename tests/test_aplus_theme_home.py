@@ -68,8 +68,9 @@ class TestHome:
         for gone in ("MonthCard", "PearlSortedCard", "so far\")", "patternWeek"):
             assert gone not in self.home, gone
         assert 'APSectionLabel(text: "Needs a look", action: "See the list"' in self.home
-        assert "SortStreak(sorted: pearlSorted, toSort: count)" in self.home
+        assert "SortStreak(sorted: sorted, toSort: count)" in self.home
         assert '"Sort now"' in self.home
+        assert "sorted: home.sorted ?? home.pearlSorted ?? 0" in self.home, "REDESIGN-18"
         assert "people owe you" in self.home and "OwedCard(" in self.home
         assert "BankAlertCard(" in self.home, "a bank to reconnect keeps its own card"
         assert "ProfileCircle()" in self.home
@@ -120,5 +121,5 @@ class TestOwed:
         assert "struct OwedView" not in read("Views", "Transactions", "PartsFlow.swift")
 
     def test_see_who_else_owes_you(self):
-        flow = read("Views", "Transactions", "SplitFlow.swift")
+        flow = code(read("Views", "Transactions", "SplitFlow.swift"))
         assert "See who else owes you" in flow and "See everyone who owes you" not in flow

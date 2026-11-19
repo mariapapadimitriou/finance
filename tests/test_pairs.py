@@ -194,6 +194,16 @@ class TestSortedLists:
                         account_id="chq", account_name="chq", category="Shopping", category_source=None)
         assert reason(t) == "Shopping · not checked by you" and not from_her_rule(t)
 
+    def test_home_sorted_counts_her_answers_and_pearls(self, client):
+        # REDESIGN-18: the streak's "sorted" is her answers plus Pearl's.
+        ledger(client, [tx("2026-10-09", "Loblaws", 40.00, "Groceries", category_source="issuer"),
+                        tx("2026-10-07", "Corner Gym", 55.00, "Fitness", category_source="user")])
+        r = review(client)
+        assert r["you_sorted"] >= 1
+        home = client.get("/api/home").get_json()
+        assert home["sorted"] == r["pearl_sorted"] + r["you_sorted"]
+        assert home["sorted"] > home["pearl_sorted"]
+
     def test_a_row_she_was_asked_about_is_not_in_pearl_sorted(self, client):
         ledger(client, [unsure("2026-10-08", "Bistro Nine", 30.00, "Dining")])
         rows = client.get("/api/review/sorted?view=pearl").get_json()["rows"]

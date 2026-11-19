@@ -3040,6 +3040,9 @@ def home():
         "data_state": state,
         "review_count": review.get("count", 0),
         "pearl_sorted": review.get("pearl_sorted", 0),
+        # REDESIGN-18: the streak's "sorted": her answers plus what Pearl
+        # sorted itself, over the same window as the count to sort.
+        "sorted": review.get("pearl_sorted", 0) + review.get("you_sorted", 0),
         # AI-01 (Pearl sorts for you, P1a): how many it sorted in the last 7 days.
         "pattern_week": __import__("finance.pattern_sort", fromlist=["this_week"]).this_week(st, today.isoformat()),
         # A note on Home, not a question (the redesign, decision 8).

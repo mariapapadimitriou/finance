@@ -137,6 +137,18 @@ def pearl_rows(st, review: dict, today: str, ids_in) -> list[dict]:
             for t in mine + rest]
 
 
+def her_count(st, review: dict, today: str, ids_in) -> int:
+    """REDESIGN-18: what she sorted herself (her answers) over the same 60
+    days as pearl_rows, leaving out anything still open."""
+    since = (date.fromisoformat(today) - timedelta(days=60)).isoformat()
+    asked = ids_in(review)
+    confirmed = st.confirmed_categories()
+    return sum(1 for t in st.all_transactions()
+               if t.date[:10] >= since and t.fingerprint not in asked
+               and (t.fingerprint in confirmed or t.category_source == "user")
+               and not (is_others(t) and not t.excluded))
+
+
 # What she set: a merchant rule, her pay, where these go, dates she sorted.
 HER_RULES = ("merchant_override", "pay_rule", "destination", "range")
 
