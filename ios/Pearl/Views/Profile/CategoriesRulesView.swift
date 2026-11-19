@@ -1,18 +1,17 @@
 import SwiftUI
 
-/// Profile › Categories and rules (CR-00 to CR-03; THL-123, THL-225, THL-226,
-/// THL-234): her saved rules, Fixed or Variable for each category, her names
-/// for merchants, and her tags. The same calls as the web's RulesPanel.
-///
-/// The design draws the four lists and says what a swipe does. What opens from
-/// a row isn't drawn, so those sheets are built from the same parts and carry
-/// the web's words.
+/// Profile › Categories and rules (CR-00 to CR-10; THL-123, THL-225, THL-226,
+/// THL-234), A+ (REDESIGN-12; boards G5b-Rules, G5b-Rule, G5b-Categories,
+/// G5b-Merchants, G5b-Tags): her rules and the ones learned with her, Fixed
+/// or Variable for each category, her names for merchants, and her tags,
+/// under one four-way segmented control. A List keeps the swipes (Delete a
+/// rule; Rename or Remove a tag; Hide a category), drawn as A+ cards.
 @MainActor
 struct CategoriesRulesView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
 
-    private enum Tab: String, CaseIterable, Identifiable {
+    enum Tab: String, CaseIterable, Identifiable {
         case rules = "Rules", categories = "Categories", merchants = "Merchants", tags = "Tags"
         var id: String { rawValue }
     }
@@ -33,18 +32,19 @@ struct CategoriesRulesView: View {
     @State private var error: String?
     @State private var toast: Toast?
 
-    @State private var editing: RulesBook.Rule?
-    @State private var explaining: RulesBook.Rule?
+    /// CR-04: a sorting rule's page; CR-05: a pay or leave-out rule's page.
+    @State private var openRule: RulesBook.Rule?
+    @State private var openCategory: CategoryList.Category?
     @State private var removingRule: RulesBook.Rule?
-    @State private var choosing: CategoryList.Category?
     @State private var renamingMerchant: RulesBook.MerchantName?
     @State private var renamingTag: RulesBook.TagTotal?
     @State private var removingTag: RulesBook.TagTotal?
     @State private var removingTagNext: RulesBook.TagTotal?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            header.padding(.horizontal, Pearl.gutter)
+        VStack(alignment: .leading, spacing: 0) {
+            CRHeader(tab: $tab, tags: Features.tags) { dismiss() }
+                .padding(.horizontal, Pearl.gutter)
             if let book = book {
                 list(book)
             } else {
@@ -53,315 +53,164 @@ struct CategoriesRulesView: View {
             }
         }
         .nacreScreen()
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button { dismiss() } label: {
-                    Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(Pearl.ink)
-                }
-                .accessibilityLabel("Back")
-            }
-        }
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarHidden(true)
         .overlay(alignment: .bottom) { toastView }
         .reloads { await load() }
-        .sheet(item: $editing) { rule in
-            CategorySheet(name: rule.name, amount: rule.words, tone: Pearl.muted, categories: categories,
-                          current: rule.category ?? "Other", title: "Rule",
-                          onDelete: {
-                              editing = nil
-                              delete(rule)
-                          }, onSave: { category, _ in
-                              editing = nil
-                              run("\(rule.name) is always \(category) now.") {
-                                  let _: OK = try await app.api.put("api/rules/\(rule.id)", ["category": category])
-                              }
-                          })
-        }
-        .sheet(item: $explaining) { rule in
-            // The sheet has already said what removing it does.
-            RuleInfoSheet(rule: rule) {
-                explaining = nil
-                remove(rule)
-            }
-        }
-        .sheet(item: $choosing) { category in
-            CategoryKindSheet(category: category, kind: book?.kinds?[category.name],
-                              pearl: pearlKind(category.name),
-                              hidden: isHidden(category.name), canHide: canHide(category.name),
-                              onKind: { kind in
-                                  choosing = nil
-                                  setKind(category.name, kind)
-                              }, onHide: { hide in
-                                  choosing = nil
-                                  setHidden(category.name, hide)
-                              })
-        }
-        .sheet(item: $renamingMerchant) { merchant in
-            RenameSheet(title: "Rename merchant", label: "Call it", initial: merchant.name,
-                        hint: "Bank: \(merchant.merchant)", other: "Use the bank’s name",
-                        onSave: { name in
-                            renamingMerchant = nil
-                            run("\(merchant.merchant) is \(name) now.") {
-                                let _: OK = try await app.api.put("api/merchants/name",
-                                                                  ["merchant": merchant.merchant, "name": name])
-                            }
-                        }, onOther: {
-                            renamingMerchant = nil
-                            run("\(merchant.merchant) uses the bank’s name again.") {
-                                let _: OK = try await app.api.delete("api/rules/name:\(merchant.key)")
-                            }
-                        })
-        }
-        // Asked once the sheet has gone: a dialog raised while one is closing
+        .navigationDestination(isPresented: present($openRule)) { rulePage }
+        .navigationDestination(isPresented: present($openCategory)) { categoryPage }
+        .sheet(item: $renamingMerchant) { merchantSheet($0) }
+        // Asked once the sheet has gone: a sheet raised while one is closing
         // doesn't appear.
         .sheet(item: $renamingTag, onDismiss: {
             removingTag = removingTagNext
             removingTagNext = nil
-        }) { tag in
-            RenameSheet(title: "Rename tag", label: "Call it", initial: tag.tag, hint: transactions(tag.count),
-                        other: "Remove this tag",
-                        onSave: { name in
-                            renamingTag = nil
-                            run("\(tag.tag) is \(name) now.") {
-                                let _: OK = try await app.api.put("api/tags/\(tag.tag)", ["name": name])
-                            }
-                        }, onOther: {
-                            removingTagNext = tag
-                            renamingTag = nil
-                        })
-        }
-        .sheet(item: $removingRule) { rule in
-            // CR-00x (TEST-06): a Pearl sheet, not an action sheet.
-            PearlConfirmSheet(overline: "Rules", title: "Remove the rule for \(rule.name)?", message: rule.removing,
-                              primary: "Remove the rule", busyLabel: "Removing…", secondary: "Keep it",
-                              failure: "Couldn’t remove the rule. Nothing changed. Try again.",
-                              onClose: { removingRule = nil }) {
-                let _: OK = try await app.api.delete("api/rules/\(rule.id)")
-                removingRule = nil
-                withAnimation { toast = Toast(text: "Rule deleted.") }
-                app.changed()
-                await load()
-            }
-        }
-        .sheet(item: $removingTag) { tag in
-            if let trip = trips[tag.tag] {
-                // TR-09 (1331:6604): a trip's tag; removing it ends the trip, so it asks first.
-                PearlConfirmSheet(overline: "Tags · A trip", title: "Remove \(tag.tag)?",
-                                  message: "This tag belongs to a trip, so the trip ends too. \(Trip.stayLine(trip.count)), in \(trip.months).",
-                                  primary: "Remove the trip and tag", busyLabel: "Removing…", secondary: "Keep it",
-                                  failure: "Couldn’t remove the tag. Nothing changed. Try again.",
-                                  onClose: { removingTag = nil }) {
-                    let _: OK = try await app.api.put("api/tags/\(tag.tag)", ["name": NSNull()])
-                    removingTag = nil
-                    withAnimation { toast = Toast(text: "\(tag.tag) removed.") }
-                    app.changed()
-                    await load()
-                }
-            } else {
-            // CR-10x (TEST-06).
-            PearlConfirmSheet(overline: "Tags", title: "Take \(tag.tag) off \(transactions(tag.count))?",
-                              message: "The transactions stay as they are. Only the tag comes off.",
-                              primary: "Remove the tag", busyLabel: "Removing…", secondary: "Keep it",
-                              failure: "Couldn’t remove the tag. Nothing changed. Try again.",
-                              onClose: { removingTag = nil }) {
-                let _: OK = try await app.api.put("api/tags/\(tag.tag)", ["name": NSNull()])
-                removingTag = nil
-                withAnimation { toast = Toast(text: "\(tag.tag) removed.") }
-                app.changed()
-                await load()
-            }
-            }
-        }
+        }) { tagSheet($0) }
+        .sheet(item: $removingRule) { removeRuleSheet($0) }
+        .sheet(item: $removingTag) { removeTagSheet($0) }
     }
 
     private func present<T>(_ item: Binding<T?>) -> Binding<Bool> {
         Binding(get: { item.wrappedValue != nil }, set: { if !$0 { item.wrappedValue = nil } })
     }
 
-    // MARK: Parts
+    // MARK: Pages and sheets
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Categories and rules").font(Nacre.title).tracking(0.4).foregroundColor(Pearl.ink)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityAddTraits(.isHeader)
-            Chips {
-                ForEach(Tab.allCases.filter { Features.tags || $0 != .tags }) { t in
-                    FilterChip(label: t.rawValue, on: tab == t, solid: true) { tab = t }
-                }
+    @ViewBuilder private var rulePage: some View {
+        if let rule = openRule {
+            if rule.isSorting {
+                RuleEditView(rule: rule, categories: categories, hidden: Set(book?.hidden ?? []),
+                             onSaved: { text, undo in
+                                 openRule = nil
+                                 app.say(text, undo: undo.map(undoCall))
+                                 app.changed()
+                             }, onDelete: {
+                                 openRule = nil
+                                 delete(rule)
+                             })
+            } else {
+                RuleInfoPage(rule: rule) { removingRule = rule }
             }
-            .padding(.horizontal, -2)
         }
     }
+
+    @ViewBuilder private var categoryPage: some View {
+        if let category = openCategory {
+            CategoryKindPage(category: category, kind: book?.kinds?[category.name],
+                             pearl: pearlKind(category.name),
+                             hidden: isHidden(category.name), canHide: canHide(category.name),
+                             onKind: { setKind(category.name, $0) },
+                             onHide: { hide in
+                                 openCategory = nil
+                                 setHidden(category.name, hide)
+                             })
+        }
+    }
+
+    private func merchantSheet(_ merchant: RulesBook.MerchantName) -> some View {
+        RenameSheet(title: "Rename merchant", label: "Call it", initial: merchant.name,
+                    hint: "Bank: \(merchant.merchant)", other: "Use the bank’s name",
+                    onSave: { name in
+                        renamingMerchant = nil
+                        run("Now \(name)") {
+                            let _: OK = try await app.api.put("api/merchants/name",
+                                                              ["merchant": merchant.merchant, "name": name])
+                        }
+                    }, onOther: {
+                        renamingMerchant = nil
+                        run("Now \(merchant.merchant)") {
+                            let _: OK = try await app.api.delete("api/rules/name:\(merchant.key)")
+                        }
+                    })
+    }
+
+    private func tagSheet(_ tag: RulesBook.TagTotal) -> some View {
+        RenameSheet(title: "Rename tag", label: "Call it", initial: tag.tag, hint: transactions(tag.count),
+                    other: "Remove this tag",
+                    onSave: { name in
+                        renamingTag = nil
+                        run("Now \(name)") {
+                            let _: OK = try await app.api.put("api/tags/\(tag.tag)", ["name": name])
+                        }
+                    }, onOther: {
+                        removingTagNext = tag
+                        renamingTag = nil
+                    })
+    }
+
+    /// CR-00x (TEST-06): a Pearl sheet. Red is only on the row that opened it.
+    private func removeRuleSheet(_ rule: RulesBook.Rule) -> some View {
+        PearlConfirmSheet(overline: "Rules", title: "Remove the rule for \(rule.name)?", message: rule.removing,
+                          primary: "Remove the rule", busyLabel: "Removing…", secondary: "Keep it",
+                          failure: "Couldn’t remove the rule. Nothing changed. Try again.",
+                          onClose: { removingRule = nil }) {
+            let reply: RuleReply = try await app.api.delete("api/rules/\(rule.id)")
+            removingRule = nil
+            openRule = nil
+            app.say("Rule deleted", undo: reply.undo.map(undoCall))
+            app.changed()
+            await load()
+        }
+    }
+
+    @ViewBuilder private func removeTagSheet(_ tag: RulesBook.TagTotal) -> some View {
+        if let trip = trips[tag.tag] {
+            // TR-09 (1331:6604): a trip's tag; removing it ends the trip, so it asks first.
+            PearlConfirmSheet(overline: "Tags · A trip", title: "Remove \(tag.tag)?",
+                              message: "This tag belongs to a trip, so the trip ends too. \(Trip.stayLine(trip.count)), in \(trip.months).",
+                              primary: "Remove the trip and tag", busyLabel: "Removing…", secondary: "Keep it",
+                              failure: "Couldn’t remove the tag. Nothing changed. Try again.",
+                              onClose: { removingTag = nil }) { try await takeOff(tag) }
+        } else {
+            // CR-10x (TEST-06).
+            PearlConfirmSheet(overline: "Tags", title: "Take \(tag.tag) off \(transactions(tag.count))?",
+                              message: "The transactions stay as they are. Only the tag comes off.",
+                              primary: "Remove the tag", busyLabel: "Removing…", secondary: "Keep it",
+                              failure: "Couldn’t remove the tag. Nothing changed. Try again.",
+                              onClose: { removingTag = nil }) { try await takeOff(tag) }
+        }
+    }
+
+    private func takeOff(_ tag: RulesBook.TagTotal) async throws {
+        let _: OK = try await app.api.put("api/tags/\(tag.tag)", ["name": NSNull()])
+        removingTag = nil
+        app.say("\(tag.tag) removed")
+        app.changed()
+        await load()
+    }
+
+    // MARK: The list
 
     private func list(_ book: RulesBook) -> some View {
         List {
             switch tab {
-            case .rules: rules(book.rules)
+            case .rules: CRRulesSection(rules: book.rules, learned: learned, open: { openRule = $0 },
+                                        delete: delete)
             case .categories: kinds
-            case .merchants: merchants(book.names ?? [])
-            case .tags: tags(book.tags ?? [])
+            case .merchants: CRMerchantsSection(names: book.names ?? []) { renamingMerchant = $0 }
+            case .tags: CRTagsSection(tags: book.tags ?? [], trips: Set(trips.keys),
+                                      rename: { renamingTag = $0 }, remove: { removingTag = $0 })
             }
+            Color.clear.frame(height: 96).listRowBackground(Color.clear).listRowSeparator(.hidden)
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .environment(\.defaultMinListHeaderHeight, 0)
-        .modifier(TightTop())
+        .modifier(CRTightTop())
         .refreshable { await load() }
-    }
-
-    /// The grouped list's own top gap trimmed, and its sides on the page's
-    /// 16pt gutter, where iOS lets us.
-    private struct TightTop: ViewModifier {
-        func body(content: Content) -> some View {
-            if #available(iOS 17.0, *) {
-                content
-                    .contentMargins(.top, 0, for: .scrollContent)
-                    .contentMargins(.horizontal, Pearl.gutter, for: .scrollContent)
-            } else {
-                content
-            }
-        }
-    }
-
-    /// CR-00: every rule she saved.
-    @ViewBuilder private func rules(_ rules: [RulesBook.Rule]) -> some View {
-        if rules.isEmpty && learned.isEmpty {
-            empty("No saved rules yet",
-                  "Change a transaction’s category and choose “Do the same for every…”, and the rule shows up here.")
-        } else {
-            Section {
-                ForEach(Array(rules.enumerated()), id: \.element.id) { i, rule in
-                    Button { open(rule) } label: {
-                        CardRow(title: rule.name, sub: rule.words) {
-                            if rule.kind == "recurring" {
-                                TintedIcon(symbol: "arrow.triangle.2.circlepath")
-                            } else {
-                                RingInitials(name: rule.name)
-                            }
-                        }
-                    }
-                    .cardRow(first: i == 0, last: i == rules.count + learned.count - 1)
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button("Delete") { delete(rule) }.tint(Pearl.danger)
-                    }
-                }
-                // AI-05 (1313:4400, AI-03c): rules she said yes to, each opening AI-06.
-                ForEach(Array(learned.enumerated()), id: \.element.id) { i, rule in
-                    NavigationLink { LearnedRuleView(id: rule.id) } label: {
-                        CardRow(title: rule.name, sub: rule.words) { RingInitials(name: rule.name) }
-                    }
-                    .cardRow(first: rules.isEmpty && i == 0, last: i == learned.count - 1)
-                }
-            } footer: {
-                CardNote(learned.isEmpty ? "Swipe left on a rule to delete it."
-                         : "“You said yes” rules came from a pattern Pearl spotted and you confirmed. Tap one to see it or turn it off.")
-            }
-        }
     }
 
     /// CR-01: Essentials and Lifestyle, each Fixed or Variable, or hidden.
     @ViewBuilder private var kinds: some View {
         let spending = categories.filter { $0.name != "Unsorted transfers" }
-        let essentials = spending.filter { $0.group == "essentials" }
-        let lifestyle = spending.filter { $0.group == "lifestyle" }
-        kindSection("Essentials", essentials, note: lifestyle.isEmpty)
-        kindSection("Lifestyle", lifestyle, note: true)
+        CRKindSection(title: "Essentials", items: spending.filter { $0.group == "essentials" },
+                      value: kindValue, canHide: canHide, isHidden: isHidden,
+                      open: { openCategory = $0 }, hide: setHidden)
+        CRKindSection(title: "Lifestyle", items: spending.filter { $0.group == "lifestyle" },
+                      value: kindValue, canHide: canHide, isHidden: isHidden,
+                      open: { openCategory = $0 }, hide: setHidden)
     }
 
-    @ViewBuilder private func kindSection(_ title: String, _ items: [CategoryList.Category],
-                                          note: Bool) -> some View {
-        if !items.isEmpty {
-            Section {
-                ForEach(Array(items.enumerated()), id: \.element.id) { i, category in
-                    let hidden = isHidden(category.name)
-                    Button { choosing = category } label: {
-                        CardRow(title: category.name, pill: hidden ? "Hidden" : nil,
-                                value: hidden ? nil : kindWord(category.name)) {
-                            TintedIcon(symbol: CategorySheet.symbol(for: category.name))
-                        }
-                    }
-                    .cardRow(first: i == 0, last: i == items.count - 1)
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        if canHide(category.name) {
-                            Button(hidden ? "Show" : "Hide") { setHidden(category.name, !hidden) }
-                                .tint(hidden ? Pearl.action : Pearl.muted)
-                        }
-                    }
-                }
-            } header: {
-                Text(title.uppercased()).font(Nacre.caption1).foregroundColor(Pearl.ink)
-                    .textCase(nil)
-                    .accessibilityAddTraits(.isHeader)
-            } footer: {
-                if note { CardNote("Swipe left on a category to hide it.") }
-            }
-        }
-    }
-
-    /// CR-02: her names for merchants, and the bank's.
-    @ViewBuilder private func merchants(_ names: [RulesBook.MerchantName]) -> some View {
-        if names.isEmpty {
-            empty("No merchants renamed yet", "Give a merchant a name you’ll recognise. It shows everywhere and in search.")
-        } else {
-            Section {
-                ForEach(Array(names.enumerated()), id: \.element.id) { i, merchant in
-                    Button { renamingMerchant = merchant } label: {
-                        CardRow(title: merchant.name, sub: "Bank: \(merchant.merchant)") {
-                            RingInitials(name: merchant.name)
-                        }
-                    }
-                    .cardRow(first: i == 0, last: i == names.count - 1)
-                }
-            } footer: {
-                CardNote("Tap a merchant to rename it.")
-            }
-        }
-    }
-
-    /// CR-03: her tags, how many rows wear each and what they come to.
-    @ViewBuilder private func tags(_ tags: [RulesBook.TagTotal]) -> some View {
-        if tags.isEmpty {
-            empty("No tags yet", "Tag a transaction, or several at once, from Cash flow.")
-        } else {
-            Section {
-                ForEach(Array(tags.enumerated()), id: \.element.id) { i, tag in
-                    Button { renamingTag = tag } label: {
-                        CardRow(title: tag.tag, sub: transactions(tag.count), amount: Format.amount(tag.spent)) {
-                            TintedIcon(symbol: "tag")
-                        }
-                    }
-                    .cardRow(first: i == 0, last: i == tags.count - 1)
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button("Remove") { removingTag = tag }.tint(Pearl.danger)
-                        Button("Rename") { renamingTag = tag }.tint(Pearl.muted)
-                    }
-                }
-            } footer: {
-                CardNote("Swipe left on a tag to rename or remove it.")
-            }
-        }
-    }
-
-    private func empty(_ title: String, _ line: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(Nacre.headline).foregroundColor(Pearl.ink)
-            Text(line).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-        .listRowInsets(EdgeInsets())
-        .listRowBackground(CardRowBackground(first: true, last: true))
-        .listRowSeparator(.hidden)
-    }
-
-    /// UN-01: the one toast look (PearlToast's ink); the info icon when it failed.
+    /// UN-01: the one toast look; this one is only for what failed.
     @ViewBuilder private var toastView: some View {
         if let toast = toast {
             UndoToast(text: toast.text, failed: toast.failed) {
@@ -380,8 +229,10 @@ struct CategoriesRulesView: View {
 
     private func pearlKind(_ category: String) -> String { book?.pearlKinds?[category] ?? "variable" }
 
-    private func kindWord(_ category: String) -> String {
-        (book?.kinds?[category] ?? pearlKind(category)) == "fixed" ? "Fixed" : "Variable"
+    /// "Variable", "Fixed" or "Hidden" at the end of a category's row.
+    private func kindValue(_ category: String) -> String {
+        if isHidden(category) { return "Hidden" }
+        return (book?.kinds?[category] ?? pearlKind(category)) == "fixed" ? "Fixed" : "Variable"
     }
 
     private func transactions(_ n: Int) -> String { "\(n) transaction\(n == 1 ? "" : "s")" }
@@ -411,59 +262,318 @@ struct CategoriesRulesView: View {
         }
     }
 
-    /// A sorting rule opens its categories; pay and leave-out rules only say
-    /// what they do, since the server won't change what they file things under.
-    private func open(_ rule: RulesBook.Rule) {
-        if rule.isSorting { editing = rule } else { explaining = rule }
-    }
-
-    private func remove(_ rule: RulesBook.Rule) {
-        run("Rule deleted.") {
-            let _: OK = try await app.api.delete("api/rules/\(rule.id)")
+    /// Undo through POST /api/transactions/undo with what the server sent.
+    private func undoCall(_ payload: JSONValue) -> () async throws -> Void {
+        let api = app.api
+        return {
+            guard let body = payload.any as? [String: Any] else { return }
+            let _: OK = try await api.post("api/transactions/undo", body)
         }
     }
 
-    /// Removing pay or leave-out rule changes what's counted, so it asks first.
+    /// A sorting rule goes at once, "Rule deleted" with Undo; a pay or
+    /// leave-out rule changes what's counted, so it asks first.
     private func delete(_ rule: RulesBook.Rule) {
-        if rule.isSorting { remove(rule) } else { removingRule = rule }
+        guard rule.isSorting else {
+            removingRule = rule
+            return
+        }
+        Task {
+            do {
+                let reply: RuleReply = try await app.api.delete("api/rules/\(rule.id)")
+                app.say("Rule deleted", undo: reply.undo.map(undoCall))
+                app.changed()
+            } catch {
+                fail(error)
+            }
+        }
     }
 
+    /// CR-07 answers at once; Undo puts back what it was.
     private func setKind(_ category: String, _ kind: String?) {
-        let done = kind.map { "\(category) is always \($0 == "fixed" ? "Fixed" : "Variable") now." }
-            ?? "Pearl decides \(category) again."
-        run(done) {
-            let _: OK = try await app.api.put("api/rules/kinds",
-                                              ["category": category, "kind": kind.map { $0 as Any } ?? NSNull()])
+        let was = book?.kinds?[category]
+        let word = kind.map { $0 == "fixed" ? "Fixed" : "Variable" } ?? "Pearl decides"
+        let api = app.api
+        run("\(category) · \(word)", undo: {
+            let _: OK = try await api.put("api/rules/kinds",
+                                          ["category": category, "kind": was.map { $0 as Any } ?? NSNull()])
+        }) {
+            let _: OK = try await api.put("api/rules/kinds",
+                                          ["category": category, "kind": kind.map { $0 as Any } ?? NSNull()])
         }
     }
 
+    /// "Fitness hidden" with Undo, which shows it again.
     private func setHidden(_ category: String, _ hidden: Bool) {
-        run(hidden ? "\(category) is out of the pickers." : "\(category) is back.") {
-            let _: OK = try await app.api.put("api/rules/categories", ["category": category, "hidden": hidden])
+        let api = app.api
+        run(hidden ? "\(category) hidden" : "\(category) shown", undo: {
+            let _: OK = try await api.put("api/rules/categories", ["category": category, "hidden": !hidden])
+        }) {
+            let _: OK = try await api.put("api/rules/categories", ["category": category, "hidden": hidden])
         }
     }
 
-    /// Make a change, say so, and have every page reload.
-    private func run(_ done: String, _ call: @escaping () async throws -> Void) {
+    /// Make a change, say so (with Undo when there is one), and have every page reload.
+    private func run(_ done: String, undo: (() async throws -> Void)? = nil,
+                     _ call: @escaping () async throws -> Void) {
         Task {
             do {
                 try await call()
-                withAnimation { toast = Toast(text: done) }
+                app.say(done, undo: undo)
                 app.changed()
             } catch {
-                if let text = app.handle(error) {
-                    withAnimation { toast = Toast(text: text, failed: true) }
+                fail(error)
+            }
+        }
+    }
+
+    private func fail(_ error: Error) {
+        if let text = app.handle(error) {
+            withAnimation { toast = Toast(text: text, failed: true) }
+        }
+    }
+}
+
+/// What a rule's change or delete answers: how many moved, and its Undo.
+struct RuleReply: Decodable {
+    var moved: Int? = nil
+    var undo: JSONValue? = nil
+}
+
+// MARK: - The header (G5b `cr_top`)
+
+/// Back, "Categories and rules" in 34 pt Fraunces, and the four-way control.
+private struct CRHeader: View {
+    @Binding var tab: CategoriesRulesView.Tab
+    let tags: Bool
+    let back: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack { APBackButton(action: back); Spacer() }.frame(height: 52)
+            ProfileHeading(title: "Categories and rules")
+            CRSegmented(options: CategoriesRulesView.Tab.allCases.filter { tags || $0 != .tags }.map(\.rawValue),
+                        selected: tab.rawValue) { tab = CategoriesRulesView.Tab(rawValue: $0) ?? .rules }
+                .padding(.top, 6)
+        }
+    }
+}
+
+/// A+ `.seg`: 38 high on `chip`, the chosen one on the card with a soft shadow.
+private struct CRSegmented: View {
+    let options: [String]
+    let selected: String
+    let pick: (String) -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(options, id: \.self) { o in
+                Button { pick(o) } label: {
+                    Text(o).font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+                        .foregroundColor(Pearl.ink).lineLimit(1).minimumScaleFactor(0.8)
+                        .frame(maxWidth: .infinity, minHeight: 32)
+                        .background {
+                            if o == selected {
+                                Capsule().fill(Pearl.bar).shadow(color: Pearl.ink.opacity(0.12), radius: 1.5, y: 1)
+                            }
+                        }
+                        .contentShape(Capsule())
                 }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(o == selected ? [.isButton, .isSelected] : .isButton)
+            }
+        }
+        .padding(3)
+        .frame(minHeight: 38)
+        .background(Capsule().fill(APlus.chip))
+    }
+}
+
+/// The grouped list's own top gap trimmed, and its sides on the page's
+/// 16 pt gutter, where iOS lets us.
+private struct CRTightTop: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 17.0, *) {
+            content
+                .contentMargins(.top, 4, for: .scrollContent)
+                .contentMargins(.horizontal, Pearl.gutter, for: .scrollContent)
+        } else {
+            content
+        }
+    }
+}
+
+// MARK: - The four lists
+
+/// CR-00: YOURS, then LEARNED WITH YOU ("You said yes").
+private struct CRRulesSection: View {
+    let rules: [RulesBook.Rule]
+    let learned: [LearnedRule]
+    let open: (RulesBook.Rule) -> Void
+    let delete: (RulesBook.Rule) -> Void
+
+    var body: some View {
+        if rules.isEmpty && learned.isEmpty {
+            CREmpty(symbol: "square.on.circle", title: "No rules yet",
+                    line: "Change a category and pick “Do the same for every…”. The rule shows up here.")
+        } else {
+            if !rules.isEmpty {
+                Section {
+                    ForEach(Array(rules.enumerated()), id: \.element.id) { i, rule in
+                        Button { open(rule) } label: {
+                            CRRow(title: rule.name, sub: rule.words) { CRLead(name: rule.name, recurring: rule.kind == "recurring") }
+                        }
+                        .crRow(first: i == 0, last: i == rules.count - 1)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button("Delete") { delete(rule) }.tint(Pearl.danger)
+                        }
+                    }
+                } header: { CRLabel(text: "Yours") }
+            }
+            if !learned.isEmpty {
+                Section {
+                    // AI-05 (1313:4400, AI-03c): rules she said yes to, each opening AI-06.
+                    ForEach(Array(learned.enumerated()), id: \.element.id) { i, rule in
+                        NavigationLink { LearnedRuleView(id: rule.id) } label: {
+                            CRRow(title: rule.name, sub: rule.words, pill: "You said yes") { CRLead(name: rule.name) }
+                        }
+                        .crRow(first: i == 0, last: i == learned.count - 1)
+                    }
+                } header: { CRLabel(text: "Learned with you") }
             }
         }
     }
 }
 
+private struct CRKindSection: View {
+    let title: String
+    let items: [CategoryList.Category]
+    let value: (String) -> String
+    let canHide: (String) -> Bool
+    let isHidden: (String) -> Bool
+    let open: (CategoryList.Category) -> Void
+    let hide: (String, Bool) -> Void
+
+    var body: some View {
+        if !items.isEmpty {
+            Section {
+                ForEach(Array(items.enumerated()), id: \.element.id) { i, category in
+                    let hidden = isHidden(category.name)
+                    Button { open(category) } label: {
+                        CRRow(title: category.name, value: value(category.name)) {
+                            IconBubble(symbol: CategorySheet.symbol(for: category.name))
+                        }
+                    }
+                    .crRow(first: i == 0, last: i == items.count - 1)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        if canHide(category.name) {
+                            Button(hidden ? "Show" : "Hide") { hide(category.name, !hidden) }
+                                .tint(hidden ? Pearl.action : Pearl.muted)
+                        }
+                    }
+                }
+            } header: { CRLabel(text: title) }
+        }
+    }
+}
+
+/// CR-02: her names for merchants, and the bank's.
+private struct CRMerchantsSection: View {
+    let names: [RulesBook.MerchantName]
+    let rename: (RulesBook.MerchantName) -> Void
+
+    var body: some View {
+        if names.isEmpty {
+            CREmpty(symbol: "bag", title: "No merchants renamed yet",
+                    line: "Give one a name you’ll recognise. It shows everywhere, and in search.")
+        } else {
+            Section {
+                ForEach(Array(names.enumerated()), id: \.element.id) { i, merchant in
+                    Button { rename(merchant) } label: {
+                        CRRow(title: merchant.name, sub: "Bank: \(merchant.merchant)") { CRLead(name: merchant.name) }
+                    }
+                    .crRow(first: i == 0, last: i == names.count - 1)
+                }
+            } header: { CRLabel(text: "", gap: 12) }
+        }
+    }
+}
+
+/// CR-03: her tags, how many rows wear each and what they come to.
+private struct CRTagsSection: View {
+    let tags: [RulesBook.TagTotal]
+    let trips: Set<String>
+    let rename: (RulesBook.TagTotal) -> Void
+    let remove: (RulesBook.TagTotal) -> Void
+
+    var body: some View {
+        if tags.isEmpty {
+            CREmpty(symbol: "tag", title: "No tags yet", line: "Tag a transaction, or several at once, from Cash flow.")
+        } else {
+            Section {
+                ForEach(Array(tags.enumerated()), id: \.element.id) { i, tag in
+                    Button { rename(tag) } label: {
+                        CRRow(title: tag.tag, sub: line(tag), amount: Format.amount(tag.spent)) { CRLead(name: tag.tag) }
+                    }
+                    .crRow(first: i == 0, last: i == tags.count - 1)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button("Remove") { remove(tag) }.tint(Pearl.danger)
+                        Button("Rename") { rename(tag) }.tint(Pearl.muted)
+                    }
+                }
+            } header: { CRLabel(text: "", gap: 12) }
+        }
+    }
+
+    /// "12 transactions", "9 transactions · a trip".
+    private func line(_ tag: RulesBook.TagTotal) -> String {
+        "\(tag.count) transaction\(tag.count == 1 ? "" : "s")" + (trips.contains(tag.tag) ? " · a trip" : "")
+    }
+}
+
 // MARK: - Rows
 
-/// One row of a card: what leads it, a name, a line or a pill under it, and an
-/// amount or a word at the end.
-private struct CardRow<Leading: View>: View {
+/// A+ caps label over a list section (24 above, 8 below); empty is just the gap.
+private struct CRLabel: View {
+    let text: String
+    var gap: CGFloat = 20
+
+    var body: some View {
+        Text(text.uppercased())
+            .font(Nacre.label).tracking(0.78).foregroundColor(Pearl.muted)
+            .textCase(nil)
+            .padding(.leading, 4).padding(.top, gap).padding(.bottom, 0)
+            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 8, trailing: 0))
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// What leads a row: the 40 pt face, or ⇄ for a recurring transfer's rule.
+private struct CRLead: View {
+    let name: String
+    var recurring = false
+
+    var body: some View {
+        if recurring {
+            IconBubble(symbol: "arrow.triangle.2.circlepath", size: 40)
+        } else {
+            RowAvatar(name: CRLead.letters(name))
+        }
+    }
+
+    /// A transfer is known by who it went to: "e-Transfer to M. Papas" is "M. Papas".
+    static func letters(_ name: String) -> String {
+        var text = name
+        for prefix in ["e-transfer to ", "transfers to "] where text.lowercased().hasPrefix(prefix) {
+            text = String(text.dropFirst(prefix.count))
+        }
+        return text
+    }
+}
+
+/// A+ `.row` in a list: what leads it, a name over a line, a pill, an amount
+/// or a value, and the chevron. 64 high.
+private struct CRRow<Leading: View>: View {
     let title: String
     var sub: String? = nil
     var pill: String? = nil
@@ -475,46 +585,56 @@ private struct CardRow<Leading: View>: View {
         HStack(spacing: 12) {
             leading()
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text(title).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(2)
                 if let sub = sub {
-                    Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(2)
                 }
-                if let pill = pill { StatusPill(text: pill, tone: .neutral) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            if let pill = pill { StatusPill(text: pill, tone: .anchor, small: true) }
             if let amount = amount {
-                Text(amount).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                Text(amount).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
+                    .pearlAmountFit().fixedSize()
             }
             if let value = value {
-                Text(value).font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
+                Text(value).font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1).fixedSize()
             }
-            Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-                .foregroundColor(Pearl.muted)
+            APChevron()
         }
-        .padding(.horizontal, 16).padding(.vertical, 10)
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(minHeight: 64)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
 }
 
-/// A row of the list drawn as part of one glass card, whose ends are rounded
-/// and whose nacre edge runs unbroken from row to row. (A List is what gives a
-/// row its swipe, and it can only draw a background per row.)
-private struct CardRowBackground: View {
+/// `.state` inside the list: an icon, the title and its line.
+private struct CREmpty: View {
+    let symbol: String
+    let title: String
+    let line: String
+
+    var body: some View {
+        APEmptyState(title: title, line: line, top: 90) { IconBubble(symbol: symbol) }
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+    }
+}
+
+/// A row of the list drawn as part of one A+ card (`card` with its 1 pt
+/// `card-line`, radius 24): only the card's real ends are rounded.
+private struct CRRowBackground: View {
     let first: Bool
     let last: Bool
 
     var body: some View {
         GeometryReader { geo in
-            // Past the row's own edge on the sides that join another row, so
-            // only the card's real ends show their corners.
-            let reach: CGFloat = 44
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Nacre.glass)
-                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .strokeBorder(Nacre.horizontal, lineWidth: 1.2))
+            let reach: CGFloat = 48
+            let shape = RoundedRectangle(cornerRadius: Pearl.radiusCard, style: .continuous)
+            shape.fill(APlus.card)
+                .background(.ultraThinMaterial, in: shape)
+                .overlay(shape.strokeBorder(APlus.cardLine, lineWidth: 1))
                 .frame(width: geo.size.width,
                        height: geo.size.height + (first ? 0 : reach) + (last ? 0 : reach))
                 .offset(y: first ? 0 : -reach)
@@ -524,116 +644,218 @@ private struct CardRowBackground: View {
 }
 
 private extension View {
-    func cardRow(first: Bool, last: Bool) -> some View {
+    func crRow(first: Bool, last: Bool) -> some View {
         buttonStyle(.plain)
             .listRowInsets(EdgeInsets())
-            .listRowBackground(CardRowBackground(first: first, last: last))
-            .listRowSeparatorTint(Nacre.separator)
-            .alignmentGuide(.listRowSeparatorLeading) { _ in 16 }
-            // Stops at the nacre edge rather than crossing it.
-            .alignmentGuide(.listRowSeparatorTrailing) { $0.width - 1.2 }
+            .listRowBackground(CRRowBackground(first: first, last: last))
+            .listRowSeparatorTint(APlus.separator)
+            .alignmentGuide(.listRowSeparatorLeading) { _ in 68 }
             .listRowSeparator(last ? .hidden : .visible, edges: .bottom)
     }
 }
 
-/// "LO" in a frosted disc with a nacre ring.
-private struct RingInitials: View {
-    let name: String
+// MARK: - CR-04 A sorting rule (G5b-Rule)
 
-    var body: some View {
-        Text(Self.letters(name))
-            .font(Nacre.footnote).foregroundColor(Pearl.ink)
-            .frame(width: 36, height: 36)
-            .background(Circle().fill(Nacre.glass))
-            .overlay(Circle().strokeBorder(Nacre.horizontal, lineWidth: 1.5))
-            .accessibilityHidden(true)
-    }
-
-    /// Two words give "NL", one gives its first two letters, "LO". A transfer
-    /// is known by who it went to: "e-Transfer to M. Papas" is "MP".
-    static func letters(_ name: String) -> String {
-        var text = name
-        for prefix in ["e-transfer to ", "transfers to "] where text.lowercased().hasPrefix(prefix) {
-            text = String(text.dropFirst(prefix.count))
-        }
-        let words = text.split { !$0.isLetter && !$0.isNumber }
-        let out = words.count > 1 ? words.prefix(2).compactMap { $0.first.map(String.init) }.joined()
-            : String(words.first?.prefix(2) ?? "")
-        return out.isEmpty ? "·" : out.uppercased()
-    }
-}
-
-/// A category's or a tag's line icon, rose on a faint rose disc.
-private struct TintedIcon: View {
-    let symbol: String
-
-    var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: 15))
-            .foregroundColor(Pearl.action)
-            .frame(width: 34, height: 34)
-            .background(Circle().fill(Self.disc))
-            .accessibilityHidden(true)
-    }
-
-    private static let disc = Color(UIColor { $0.userInterfaceStyle == .dark
-        ? UIColor(red: 1, green: 143 / 255, blue: 177 / 255, alpha: 0.22)
-        : UIColor(red: 178 / 255, green: 39 / 255, blue: 87 / 255, alpha: 0.1) })
-}
-
-/// The short line under a card, inset to the card's text.
-private struct CardNote: View {
-    let text: String
-
-    init(_ text: String) { self.text = text }
-
-    var body: some View {
-        Text(text).font(Nacre.footnote).foregroundColor(Pearl.ink)
-            .textCase(nil)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
-// MARK: - What opens from a row
-
-/// A rule that doesn't file things under a category: her regular pay, or
-/// "leave out every transaction like this". What it does, and removing it.
-private struct RuleInfoSheet: View {
+/// The rule's page: its face and "Always Groceries", Spending / Not
+/// spending, and its category as chips. Save is greyed until it changes;
+/// then "Also moves the 14 earlier ones." with Save (moves them too) and
+/// "Only new ones" (A+, approved 2026-11-18). "Delete this rule" is the
+/// one red row.
+@MainActor
+struct RuleEditView: View {
+    @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
+    let rule: RulesBook.Rule
+    let categories: [CategoryList.Category]
+    let hidden: Set<String>
+    /// The toast's words and its Undo payload.
+    let onSaved: (String, JSONValue?) -> Void
+    let onDelete: () -> Void
+
+    @State private var picked: String?
+    @State private var spending = true
+    @State private var earlier: Int?
+    @State private var busy = false
+    @State private var error: String?
+
+    private var current: String { rule.category ?? "Other" }
+    private var chosen: String { picked ?? current }
+    private var changed: Bool { picked != nil && picked != current }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack { APBackButton { dismiss() }; Spacer() }.frame(height: 52)
+                APHero(face: CRLead.letters(rule.name), name: rule.name, lines: ["Always \(chosen)"])
+                CRSegmented(options: ["Spending", "Not spending"], selected: spending ? "Spending" : "Not spending") {
+                    spending = $0 == "Spending"
+                }
+                .padding(.top, 8)
+                RuleChips(groups: groups, chosen: chosen) { pick($0) }
+                if !changed {
+                    APCard {
+                        Button(action: onDelete) {
+                            ProfileRow(symbol: "trash", title: "Delete this rule", tone: Pearl.danger, chevron: false)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.top, 16)
+                }
+                if let error = error { APErrorLine(text: error).padding(.top, 8) }
+            }
+            .padding(.horizontal, Pearl.gutter)
+            .padding(.bottom, 32)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) { actions }
+        .nacreScreen()
+        .navigationBarHidden(true)
+        .onAppear { spending = !Self.notSpending(current) }
+    }
+
+    @ViewBuilder private var actions: some View {
+        VStack(spacing: 12) {
+            if changed, let n = earlier, n > 0 {
+                Text("Also moves the \(n == 1 ? "1 earlier one" : "\(n) earlier ones").")
+                    .font(Nacre.subheadline).foregroundColor(Pearl.ink)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16).padding(.vertical, 12)
+                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(ProfileTone.bannerFill))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Pearl.champagne, lineWidth: 1))
+            }
+            Button("Save") { Task { await save(earlier: true) } }
+                .buttonStyle(APPrimaryButtonStyle(busy: busy))
+                .disabled(!changed || busy || (changed && earlier == nil))
+                .accessibilityIdentifier("rule-save")
+            if changed, let n = earlier, n > 0 {
+                APQuietButton(title: "Only new ones") { Task { await save(earlier: false) } }
+                    .disabled(busy)
+            }
+        }
+        .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 4)
+    }
+
+    /// Spending: Essentials and Lifestyle. Not spending: savings and transfers.
+    private var groups: [(String, [String])] {
+        let usable = categories.filter { !hidden.contains($0.name) || $0.name == current }
+        if spending {
+            return [("Essentials", usable.filter { $0.group == "essentials" }.map(\.name)),
+                    ("Lifestyle", usable.filter { $0.group == "lifestyle" }.map(\.name))]
+        }
+        return [("Not spending", usable.filter { Self.notSpending($0.name, group: $0.group) }.map(\.name))]
+    }
+
+    static func notSpending(_ name: String, group: String? = nil) -> Bool {
+        if name == "Unsorted transfers" || name == "Income" { return false }
+        if let group = group { return group == "savings" || group == "transfer" }
+        return ["Saved", "Transfers", "Lent", "Borrowed"].contains(name)
+    }
+
+    private func pick(_ category: String) {
+        picked = category == current ? nil : category
+        earlier = nil
+        error = nil
+        guard category != current else { return }
+        Task {
+            struct Count: Decodable { let count: Int }
+            let got: Count? = try? await app.api.get("api/rules/earlier", query: ["id": rule.id, "category": category])
+            if picked == category { earlier = got?.count ?? 0 }
+        }
+    }
+
+    private func save(earlier move: Bool) async {
+        guard let category = picked else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            let id = rule.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? rule.id
+            let reply: RuleReply = try await app.api.put("api/rules/\(id)", ["category": category, "earlier": move])
+            let n = reply.moved ?? 0
+            onSaved(n > 0 ? "Now \(category) · \(n) moved" : "Now \(category)", reply.undo)
+        } catch {
+            self.error = app.handle(error)
+        }
+    }
+}
+
+/// G5b `chips` on a card under each group's label; the chosen one is rose.
+private struct RuleChips: View {
+    let groups: [(String, [String])]
+    let chosen: String
+    let pick: (String) -> Void
+
+    var body: some View {
+        ForEach(groups, id: \.0) { title, names in
+            if !names.isEmpty {
+                ProfileSection(title)
+                APCard {
+                    FlowLayout(spacing: 8) {
+                        ForEach(names, id: \.self) { name in
+                            CRChip(title: name, on: name == chosen) { pick(name) }
+                        }
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 14)
+                }
+            }
+        }
+    }
+}
+
+/// A+ `.chip`: 34 high on `chip`; on, `action` with `on-action` words.
+private struct CRChip: View {
+    let title: String
+    let on: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title).font(Nacre.subheadline)
+                .foregroundColor(on ? Pearl.onAction : Pearl.ink)
+                .padding(.horizontal, 14).frame(height: 34)
+                .background(Capsule().fill(on ? Pearl.action : APlus.chip))
+                .padding(.vertical, 5)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+// MARK: - CR-05 A pay or leave-out rule
+
+/// "Gusto · Always your pay": what it does, and "Remove this rule" (red,
+/// the entry row), which asks on a Pearl sheet.
+private struct RuleInfoPage: View {
     let rule: RulesBook.Rule
     let onRemove: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            SheetTitle(title: "Rule") { dismiss() }
-            VStack(alignment: .leading, spacing: 8) {
-                Text(rule.name).font(Nacre.title2).foregroundColor(Pearl.ink)
+        ProfilePage {
+            APHero(face: CRLead.letters(rule.name), name: rule.name, lines: [rule.words])
+            APCard {
+                Text(rule.does).font(Nacre.body).lineSpacing(2).foregroundColor(Pearl.ink)
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityAddTraits(.isHeader)
-                Text(rule.does).font(Nacre.body).foregroundColor(Pearl.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(rule.removing).font(Nacre.body).foregroundColor(Pearl.muted)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 16).padding(.vertical, 14)
             }
-            .padding(.horizontal, 16)
-            Spacer(minLength: 16)
-            Button("Remove this rule", action: onRemove)
-                .buttonStyle(NacreButtonStyle())
-                .padding(.horizontal, 16).padding(.bottom, 8)
+            .padding(.top, 10)
+            APCard {
+                Button(action: onRemove) {
+                    ProfileRow(symbol: "trash", title: "Remove this rule", tone: Pearl.danger, chevron: false)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.top, 16)
         }
-        .background(SheetBackground())
-        .presentationDetents([.medium])
-        .presentationDragIndicator(.visible)
     }
 }
 
-/// Pearl decides, Always Fixed or Always Variable, and Hide or Show.
-private struct CategoryKindSheet: View {
-    @Environment(\.dismiss) private var dismiss
+// MARK: - CR-07, CR-08 A category
+
+/// Groceries: Fixed or Variable, answered at once, and Hide from pickers.
+/// Hidden: one line, and Show in pickers.
+private struct CategoryKindPage: View {
     let category: CategoryList.Category
     /// What she set: "fixed", "variable", or nil when Pearl decides.
     let kind: String?
-    /// What Pearl would say, for "Pearl decides · Variable".
     let pearl: String
     let hidden: Bool
     let canHide: Bool
@@ -641,58 +863,51 @@ private struct CategoryKindSheet: View {
     let onHide: (Bool) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SheetTitle(title: category.name) { dismiss() }
+        ProfilePage {
+            APHero(face: "", name: category.name, symbol: CategorySheet.symbol(for: category.name))
             if hidden {
-                ProfileNote("\(category.name) is hidden, so it doesn’t show in pickers. It stays on anything already in it.")
-                Spacer(minLength: 16)
-                Button("Show in pickers") { onHide(false) }
-                    .buttonStyle(NacreButtonStyle())
-                    .padding(.horizontal, 16).padding(.bottom, 8)
-            } else {
                 APCard {
-                    choice("Pearl decides · \(pearl == "fixed" ? "Fixed" : "Variable")", nil)
-                    APSeparator(afterFace: false)
-                    choice("Always Fixed", "fixed")
-                    APSeparator(afterFace: false)
-                    choice("Always Variable", "variable")
+                    Text("Hidden from pickers. It stays on anything already in it.")
+                        .font(Nacre.body).lineSpacing(2).foregroundColor(Pearl.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 16).padding(.vertical, 14)
                 }
-                .padding(.horizontal, 16)
-                ProfileNote("Fixed is for bills that come regularly. Everything else is Variable.")
-                Spacer(minLength: 16)
+                .padding(.top, 10)
+                Button("Show in pickers") { onHide(false) }
+                    .buttonStyle(APPrimaryButtonStyle())
+                    .padding(.top, 10)
+            } else {
+                ProfileSection("Fixed or Variable")
+                APCard {
+                    APChoiceRow(title: "Pearl decides", sub: "\(pearl == "fixed" ? "Fixed" : "Variable") for now",
+                                selected: kind == nil) { if kind != nil { onKind(nil) } }
+                    APSeparator(afterFace: false)
+                    APChoiceRow(title: "Always Fixed", sub: "Bills that come regularly",
+                                selected: kind == "fixed") { if kind != "fixed" { onKind("fixed") } }
+                    APSeparator(afterFace: false)
+                    APChoiceRow(title: "Always Variable", selected: kind == "variable") {
+                        if kind != "variable" { onKind("variable") }
+                    }
+                }
                 if canHide {
-                    Button("Hide from pickers") { onHide(true) }
-                        .buttonStyle(NacreTextButtonStyle())
-                        .padding(.horizontal, 16).padding(.bottom, 8)
+                    APCard {
+                        Button { onHide(true) } label: {
+                            ProfileRow(symbol: "eye.slash", title: "Hide from pickers", chevron: false)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.top, 16)
                 }
             }
         }
-        .background(SheetBackground())
-        .presentationDetents([.medium])
-        .presentationDragIndicator(.visible)
-    }
-
-    private func choice(_ label: String, _ value: String?) -> some View {
-        let on = kind == value
-        return Button { if !on { onKind(value) } else { dismiss() } } label: {
-            HStack {
-                Text(label).font(Nacre.body).foregroundColor(Pearl.ink)
-                Spacer(minLength: 8)
-                if on {
-                    Image(systemName: "checkmark").font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(Pearl.action)
-                }
-            }
-            .padding(.horizontal, 16)
-            .frame(minHeight: 52)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 
-/// A new name for a merchant or a tag, and the other thing she can do with it.
+// MARK: - CR-09, CR-10 Rename
+
+/// A new name for a merchant or a tag (G5b-Merchants, G5b-Tags): the
+/// centred title with ✕, the "Call it" well in focus, its line, and the other
+/// thing she can do with it; Save greyed until the name changes.
 struct RenameSheet: View {
     @Environment(\.dismiss) private var dismiss
     let title: String
@@ -723,36 +938,34 @@ struct RenameSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SheetTitle(title: title) { dismiss() }
-            VStack(alignment: .leading, spacing: 6) {
-                Text(label).font(Nacre.footnote).foregroundColor(Pearl.ink)
-                TextField("", text: $name)
-                    .font(Nacre.body).foregroundColor(Pearl.ink)
-                    .submitLabel(.done)
-                    .focused($focused)
-                    .onSubmit { if canSave { onSave(cleaned) } }
-                    .padding(.horizontal, 16)
-                    .frame(height: 52)
-                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Nacre.glass))
-                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(focused ? Pearl.action : Nacre.edge, lineWidth: focused ? 1.5 : 1))
-                    .accessibilityLabel(label)
-                Text(hint).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.horizontal, 16)
+            APSheetTitle(title: title) { dismiss() }
+                .padding(.top, 14)
+            Text(label).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                .padding(.horizontal, 4).padding(.top, 10)
+            TextField("", text: $name)
+                .font(Nacre.body).foregroundColor(Pearl.ink).tint(Pearl.action)
+                .submitLabel(.done)
+                .focused($focused)
+                .onSubmit { if canSave { onSave(cleaned) } }
+                .padding(.horizontal, 14)
+                .frame(minHeight: 44)
+                .wellStyle(focused: focused)
+                .accessibilityLabel(label)
+            Text(hint).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                .padding(.horizontal, 4).padding(.top, 2)
+                .fixedSize(horizontal: false, vertical: true)
+            APQuietButton(title: other, action: onOther)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 6)
             Spacer(minLength: 16)
-            BottomActions {
-                Button("Save") { onSave(cleaned) }
-                    .buttonStyle(NacreButtonStyle())
-                    .disabled(!canSave)
-            } secondary: {
-                Button(other, action: onOther)
-                    .buttonStyle(NacreTextButtonStyle())
-            }
+            Button("Save") { onSave(cleaned) }
+                .buttonStyle(APPrimaryButtonStyle())
+                .disabled(!canSave)
+                .padding(.bottom, 8)
         }
+        .padding(.horizontal, 16)
         .background(SheetBackground())
-        .presentationDetents([.medium])
+        .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .onAppear { focused = true }
     }

@@ -56,8 +56,11 @@ struct DebtList: Decodable {
     }
 }
 
-// MARK: - DB-01 Debts
+// MARK: - DB-01 Debts (G5b-Debts)
 
+/// A+ (REDESIGN-12): "You owe" over the 40 pt total with the month's
+/// minimums, then CARDS and LOANS as rows (a missing rate says "Add the
+/// details" in link), one line that balances don't come off her Allowance.
 @MainActor
 struct DebtsView: View {
     @EnvironmentObject private var app: AppModel
@@ -67,58 +70,32 @@ struct DebtsView: View {
 
     var body: some View {
         ProfilePage {
-            ProfileHeading(title: "Debts", intro: lead)
+            ProfileHeading(title: "Debts")
             if let data = data {
                 if data.debts.isEmpty {
-                    ProfileNote("No card balance carried from an earlier month and no loans on your linked accounts. Card purchases this month are counted as spending.")
-                        .padding(.top, 8)
+                    APEmptyState(title: "Nothing owing",
+                                 line: "No card balance carried over and no loans. This month’s card purchases count as spending.",
+                                 top: 120) { IconBubble(symbol: "creditcard", kind: .good) }
                 } else {
-                    section("Cards", data.debts.filter(\.isCard))
-                    section("Loans", data.debts.filter { !$0.isCard })
+                    DebtSummary(total: data.total, minimums: data.minimums).padding(.top, 8)
+                    DebtSection(title: "Cards", debts: data.debts.filter(\.isCard)) { editing = $0 }
+                    DebtSection(title: "Loans", debts: data.debts.filter { !$0.isCard }) { editing = $0 }
+                    ProfileNote("Balances don’t come off your Allowance.").padding(.top, 6)
                 }
             } else if error == nil {
                 ProgressView().frame(maxWidth: .infinity, minHeight: 200)
             }
-            if let error = error { Hint(text: error).padding(.top, 4) }
+            if let error = error { APErrorLine(text: error).padding(.top, 4) }
         }
         .refreshable { await load() }
         .reloads { await load() }
         .sheet(item: $editing) { d in
             DebtDetailsSheet(debt: d) { reply in
                 data = reply
+                app.say("Details saved")
                 app.changed()
             }
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
         }
-    }
-
-    @ViewBuilder
-    private func section(_ title: String, _ debts: [DebtList.Debt]) -> some View {
-        if !debts.isEmpty {
-            ProfileSection(title)
-            APCard {
-                ForEach(Array(debts.enumerated()), id: \.element.id) { i, d in
-                    if i > 0 { APSeparator() }
-                    Button { editing = d } label: {
-                        ProfileRow(initials: d.name, title: d.name, sub: d.line,
-                                   pill: d.action.map { StatusPill(text: $0, tone: .needsALook) }) {
-                            Text(Format.amount(d.balance)).font(Nacre.body).foregroundColor(Pearl.ink)
-                                .monospacedDigit().lineLimit(1).fixedSize()
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint(d.action ?? "Change the details")
-                }
-            }
-        }
-    }
-
-    /// "You owe $9,408.95. Minimums this month: $345. …"
-    private var lead: String? {
-        guard let data = data, !data.debts.isEmpty else { return nil }
-        let minimums = data.minimums.map { "Minimums this month: \(Format.whole($0))." } ?? "Add the minimums and Pearl counts them with your bills."
-        return "You owe \(Format.amount(data.total)). \(minimums) Balances aren’t taken out of your Allowance; minimums count as bills."
     }
 
     private func load() async {
@@ -131,10 +108,77 @@ struct DebtsView: View {
     }
 }
 
-// MARK: - DB-02 Add the details
+/// "You owe" and the total; "Minimums this month · $145 · with your bills".
+private struct DebtSummary: View {
+    let total: Double
+    let minimums: Double?
 
-/// The rate, minimum and due day from her statement. Clearing a field
-/// clears it on the server.
+    var body: some View {
+        APCard {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("You owe").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                Text(Format.amount(total))
+                    .font(.custom("Fraunces-SemiBold", size: 40, relativeTo: .largeTitle)).tracking(-0.8)
+                    .monospacedDigit().foregroundColor(Pearl.ink).pearlAmountFit()
+            }
+            .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 6)
+            .accessibilityElement(children: .combine)
+            if let minimums = minimums {
+                APKeyValueRow(key: "Minimums this month", value: "\(Format.whole(minimums)) · with your bills")
+            }
+        }
+    }
+}
+
+private struct DebtSection: View {
+    let title: String
+    let debts: [DebtList.Debt]
+    let open: (DebtList.Debt) -> Void
+
+    var body: some View {
+        if !debts.isEmpty {
+            ProfileSection(title)
+            APCard {
+                ForEach(Array(debts.enumerated()), id: \.element.id) { i, d in
+                    if i > 0 { APSeparator() }
+                    Button { open(d) } label: { DebtRow(debt: d) }
+                        .buttonStyle(.plain)
+                        .accessibilityHint(d.action ?? "Change the details")
+                }
+            }
+        }
+    }
+}
+
+/// Face, name over its line (or "Add the details" in link), the balance, ›.
+private struct DebtRow: View {
+    let debt: DebtList.Debt
+
+    var body: some View {
+        HStack(spacing: 12) {
+            RowAvatar(name: debt.name)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(debt.name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(2)
+                Text(debt.action ?? debt.line).font(Nacre.subheadline)
+                    .foregroundColor(debt.action == nil ? Pearl.muted : Pearl.link).lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Text(Format.amount(debt.balance)).font(Nacre.headline).monospacedDigit()
+                .foregroundColor(Pearl.ink).pearlAmountFit().fixedSize()
+            APChevron()
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(minHeight: 64)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: - DB-02 Add the details (G5b-DebtEdit)
+
+/// The rate, minimum and due day from her statement, as wells. Clearing a
+/// field clears it on the server. Couldn't save: the danger line, Try again
+/// and Cancel.
 @MainActor
 struct DebtDetailsSheet: View {
     @EnvironmentObject private var app: AppModel
@@ -151,24 +195,36 @@ struct DebtDetailsSheet: View {
     private var adding: Bool { debt.rate == nil && debt.minimum == nil }
 
     var body: some View {
-        SheetFrame(title: debt.name, subtitle: subtitle, symbol: "creditcard",
-                   heading: adding ? "Add the details" : "Change the details", close: { dismiss() }) {
-            VStack(spacing: 0) {
-                FieldRow(label: "Interest rate", text: $rate, prompt: "5.7%").keyboardType(.decimalPad)
-                APSeparator(afterFace: false)
-                FieldRow(label: "Minimum payment a month", text: $minimum, prompt: "$120").keyboardType(.decimalPad)
-                APSeparator(afterFace: false)
-                FieldRow(label: "Day it’s due (optional)", text: $due, prompt: "14").keyboardType(.numberPad)
+        VStack(alignment: .leading, spacing: 0) {
+            APSheetTitle(title: adding ? "Add the details" : "Change the details") { dismiss() }
+                .padding(.top, 14)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    APWho(face: debt.name, name: debt.name, line: subtitle).padding(.top, 14)
+                    DebtWell(label: "Interest rate", text: $rate, placeholder: "0", suffix: "%", keyboard: .decimalPad)
+                        .padding(.top, 10)
+                    DebtWell(label: "Minimum payment a month", text: $minimum, placeholder: "0", prefix: "$",
+                             keyboard: .decimalPad)
+                    DebtWell(label: "Day it’s due (optional)", text: $due, placeholder: "Day of the month",
+                             keyboard: .numberPad)
+                    if let error = error { APErrorLine(text: error).padding(.top, 8) }
+                }
             }
-            .sheetCard()
-            if let error = error { Hint(text: error) }
-        } actions: {
-            Button("Save") { Task { await save() } }
-                .buttonStyle(NacreButtonStyle(busy: busy))
-                .disabled(busy)
-            Button("Cancel") { dismiss() }
-                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+            .scrollDismissesKeyboard(.interactively)
+            VStack(spacing: 12) {
+                Button(error == nil ? "Save" : "Try again") { Task { await save() } }
+                    .buttonStyle(APPrimaryButtonStyle(busy: busy))
+                    .disabled(busy)
+                if error != nil {
+                    Button("Cancel") { dismiss() }.buttonStyle(APSecondaryButtonStyle())
+                }
+            }
+            .padding(.top, 12).padding(.bottom, 8)
         }
+        .padding(.horizontal, 16)
+        .background(SheetBackground())
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
         .onAppear {
             rate = debt.rate.map(DebtList.Debt.percent) ?? ""
             minimum = debt.minimum.map { String(format: "%.2f", $0) } ?? ""
@@ -191,7 +247,41 @@ struct DebtDetailsSheet: View {
             saved(reply)
             dismiss()
         } catch {
-            self.error = app.handle(error)
+            if app.handle(error) != nil { self.error = "Couldn’t save. Nothing changed. Try again." }
         }
+    }
+}
+
+/// A labelled well (REDESIGN-09) with a `$` before or a `%` after, in `muted`.
+private struct DebtWell: View {
+    let label: String
+    @Binding var text: String
+    var placeholder = ""
+    var prefix: String? = nil
+    var suffix: String? = nil
+    var keyboard: UIKeyboardType = .default
+
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label).font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 4)
+            HStack(spacing: 6) {
+                if let prefix = prefix { Text(prefix).foregroundColor(Pearl.muted) }
+                TextField("", text: $text, prompt: Text(placeholder).foregroundColor(Pearl.muted))
+                    .foregroundColor(Pearl.ink).tint(Pearl.action)
+                    .keyboardType(keyboard)
+                    .focused($focused)
+                    .accessibilityLabel(label)
+                if let suffix = suffix { Text(suffix).foregroundColor(Pearl.muted) }
+            }
+            .font(Nacre.body)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 44)
+            .wellStyle(focused: focused)
+            .contentShape(Rectangle())
+            .onTapGesture { focused = true }
+        }
+        .padding(.top, 8)
     }
 }
