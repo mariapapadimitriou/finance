@@ -272,8 +272,14 @@ class TestSwiftWiring:
     def test_s40_from_the_card(self):
         split = self.src("ios/Pearl/Views/Transactions/SplitFlow.swift")
         menus = self.src("ios/Pearl/Views/Transactions/SplitMenus.swift")
-        assert "PersonOptionsSheet(" in split and "Options for \\(p.name)" in split
+        # A+ (G2-SplitCard): the whole row opens S-40; the ••• is gone.
+        assert "PersonOptionsSheet(" in split and "Button { options = p }" in split
         assert "Shows options." in split
+        assert "PearlMoreButton(label: \"Options for \\(p.name)\")" not in split
+        # One paid-back bar per card, no per-row bars; the renamed link.
+        card = split[split.index("struct SplitPeople"):split.index("// MARK: - Mark paid back")]
+        assert "PaidBackBar(segments: barSegments" in card and "PaidBar(" not in card
+        assert "See who else owes you" in card
         for words in ("Mark paid back", "Mark the rest paid back", "Let the rest go", "Undo let it go",
                       "Change the split", "Paid so far", "Paid with"):
             assert words in menus, words

@@ -1245,74 +1245,46 @@ struct SplitPeople: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     private var amountsUnder: Bool { typeSize.isAccessibilitySize }
 
+    /// A+ (AP-Transaction, G2-SplitCard; REDESIGN-02, -04, -09, -10): the
+    /// heading as a section label with Edit split, then one card: the
+    /// paid-back bar (one segment per row, in the rows' order; none while
+    /// Not sure yet) over A+ payment rows. Each whole row opens what its •••
+    /// used to (S-40, S-40w, S-40y); the per-row bars and the ••• are gone,
+    /// each row's line still says it. "See who else owes you" under it.
     var body: some View {
         let open = split.people.filter { $0.owes >= 0.005 }
         let unsure = split.uncredited ?? []
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             if !unsure.isEmpty {
                 // S-05u 1033:42367 (THL-181): PAID BACK, one row each, newest first.
-                Text("PAID BACK").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
-                    .padding(.horizontal, 16).padding(.top, 12)
-                GlassCard {
+                APSectionLabel(text: "Paid back").padding(.top, 16).padding(.bottom, 8)
+                APCard {
                     ForEach(Array(unsure.enumerated()), id: \.element.id) { i, u in
-                        if i > 0 { RowSeparator(inset: 64) }
+                        if i > 0 { APSeparator() }
                         uncreditedRow(u)
                     }
                 }
             }
             if let joint = split.joint, t.splitsMyPart {
                 // S-04j: who's on the joint account, apart from who owes her.
-                JointPartCard(t: t, joint: joint)
+                JointPartCard(t: t, joint: joint).padding(.top, 16)
             }
-            VStack(alignment: .leading, spacing: 0) {
-                // S-04r v2: "Split 5 ways" with Edit split beside it; S-04j
-                // "Your part, split 3 ways"; S-04u "Split with 2 · Not sure yet".
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(heading(open: open, unsure: unsure))
-                            .font(Pearl.text(.headline, .semibold)).foregroundColor(Pearl.ink)
-                            .accessibilityAddTraits(.isHeader)
-                        if let line = unsureLine {
-                            Text(line).font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
-                        }
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel(split.unsure ? "Split with \(split.people.count), not sure yet. \(unsureLine ?? "")" : heading(open: open, unsure: unsure))
-                    Spacer()
-                    if split.closedAt == nil {
-                        // TEST-14: the 44 pt frame is the tap area, not only the words.
-                        Button(action: onEdit) {
-                            Text("Edit split").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
-                        }
-                        .font(Pearl.text(.callout, .medium)).foregroundColor(Pearl.link)
-                        .buttonStyle(.plain)
-                    }
+            // S-04r v2: "Split 5 ways" with Edit split beside it; S-04j
+            // "Your part, split 3 ways"; S-04u "Split with 2 · Not sure yet".
+            APSectionLabel(text: heading(open: open, unsure: unsure),
+                           action: split.closedAt == nil ? "Edit split" : nil, act: onEdit)
+                .padding(.top, 16).padding(.bottom, 8)
+            APCard {
+                if let line = unsureLine {
+                    Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                        .padding(.horizontal, 16).padding(.top, 14)
                 }
-                .padding(.top, 8)
-                if split.unsure && split.withMe {
-                    // S-04u6 (TEST-18): her own row first, with its •••.
-                    youRow
-                    if !split.people.isEmpty { PearlDivider() }
-                } else if !split.unsure && split.withMe, let mine = split.mine {
-                    // TEST-31 (S-04w, S-04w2): her share, reimbursed by work,
-                    // with the bar and a •••.
-                    mineRow(mine)
-                    if !split.people.isEmpty { PearlDivider() }
-                } else if !split.unsure && split.withMe && split.you >= 0.005 {
-                    // S-04r v3 (TEST-18): "You · Your share · $30.00", no •••;
-                    // tapping it opens Edit split.
-                    setYouRow
-                    if !split.people.isEmpty { PearlDivider() }
+                if !split.unsure {
+                    PaidBackBar(segments: barSegments, spoken: barSpoken)
+                        .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 6)
                 }
-                ForEach(Array(split.people.enumerated()), id: \.element.id) { i, p in
-                    if i > 0 { PearlDivider() }
-                    if split.unsure { unsurePerson(p) } else { person(p) }
-                }
+                OwnBody { rows }
             }
-            .padding(.horizontal, 16).padding(.vertical, 4)
-            .pearlCard(radius: Pearl.radiusTile)
-            .padding(.top, 12)
             // A row's amount springs when it changes (S-44): 250 ms, a cross-fade with Reduce Motion.
             .animation(reduceMotion ? .easeInOut(duration: 0.25) : .spring(response: 0.25, dampingFraction: 0.85),
                        value: split.people.map(\.owes))
@@ -1332,41 +1304,141 @@ struct SplitPeople: View {
                     options = nil
                 }
             }
-            if split.unsure {
-                // S-04u: Settle up and That's everything; S-46c Reopen split.
-                // REFRESH-03: titles alone; what each does is a VoiceOver hint.
-                PearlOptionCard {
-                    if split.closedAt == nil {
-                        PearlOptionRow(symbol: "person.2", title: "Settle up", action: onSettle)
-                            .accessibilityHint("Set what each person owes.")
-                        PearlDivider()
-                        // S-04u8 (TEST-18, note 1238:25742): once everyone has paid.
-                        PearlOptionRow(symbol: "checkmark", title: "That’s everything",
-                                       sub: everyonePaid ? "Everyone has paid. \(Format.amount(split.still ?? split.you)) stays yours." : nil,
-                                       action: onClose)
-                            .accessibilityHint("Keeps the rest as yours and closes the split.")
-                    } else {
-                        PearlOptionRow(symbol: "arrow.triangle.2.circlepath", title: "Reopen split", action: onReopen)
-                    }
-                }
-                .padding(.top, 8)
-            }
-            if split.closedAt == nil {
-                // TEST-14: the whole 44 pt row taps, not only the words.
-                Button(action: onOwed) {
-                    Text("See everyone who owes you")
-                        .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
-                }
-                .font(Nacre.textButton).foregroundColor(Pearl.link).buttonStyle(.plain)
-                .padding(.top, 6)
-            }
+            OwnBody { footer }
         }
     }
 
+    /// Settle up / That's everything (Not sure yet) and See who else owes you.
+    @ViewBuilder private var footer: some View {
+        if split.unsure {
+            // S-04u: Settle up and That's everything; S-46c Reopen split.
+            // REFRESH-03: titles alone; what each does is a VoiceOver hint.
+            APCard {
+                if split.closedAt == nil {
+                    Button(action: onSettle) { CFRowLabel(symbol: "person.2", title: "Settle up") }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Set what each person owes.")
+                    APSeparator(afterFace: false)
+                    // S-04u8 (TEST-18, note 1238:25742): once everyone has paid.
+                    Button(action: onClose) {
+                        CFRowLabel(symbol: "calendar", title: "That’s everything",
+                                   sub: everyonePaid ? "Everyone has paid. \(Format.amount(split.still ?? split.you)) stays yours." : nil)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Keeps the rest as yours and closes the split.")
+                } else {
+                    Button(action: onReopen) { CFRowLabel(symbol: "arrow.triangle.2.circlepath", title: "Reopen split") }
+                        .buttonStyle(.plain)
+                }
+            }
+            .padding(.top, 12)
+        }
+        if split.closedAt == nil {
+            // REDESIGN-04: renamed from "See everyone who owes you".
+            // TEST-14: the whole 44 pt row taps, not only the words.
+            Button(action: onOwed) {
+                Text("See who else owes you")
+                    .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
+            }
+            .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+            .foregroundColor(Pearl.link).buttonStyle(.plain)
+            .padding(.top, 4)
+        }
+
+    }
+
+    /// Her row, then a row each, with the 0.5 pt line after the faces.
+    @ViewBuilder private var rows: some View {
+        let you = youKind
+        if you == .unsure {
+            // S-04u6 (TEST-18): her own row first.
+            youRow
+        } else if you == .mine, let mine = split.mine {
+            // TEST-31 (S-04w, S-04w2): her share, reimbursed by work.
+            mineRow(mine)
+        } else if you == .share {
+            // S-04r v3 (TEST-18): "You · Your share · $30.00".
+            setYouRow
+        }
+        ForEach(Array(split.people.enumerated()), id: \.element.id) { i, p in
+            if i > 0 || you != .none { APSeparator() }
+            if split.unsure { unsurePerson(p) } else { person(p) }
+        }
+    }
+
+    private enum YouKind { case none, unsure, mine, share }
+
+    /// Which of her rows the card starts with.
+    private var youKind: YouKind {
+        if split.unsure && split.withMe { return .unsure }
+        if !split.unsure && split.withMe && split.mine != nil { return .mine }
+        if !split.unsure && split.withMe && split.you >= 0.005 { return .share }
+        return .none
+    }
+
+    /// PaidBackBar: one segment per row, in the rows' order. Her share
+    /// plum (or, reimbursed, green / rose to the part); paid in full green;
+    /// part paid rose to the part; owes empty; let go muted.
+    private var barSegments: [PaidBackBar.Segment] {
+        var out: [PaidBackBar.Segment] = []
+        switch youKind {
+        case .mine:
+            if let mine = split.mine {
+                out.append(mine.full ? .paid : mine.reimbursed >= 0.005
+                           ? .part(mine.reimbursed / max(mine.amount, 0.01)) : .yours)
+            }
+        case .share: out.append(.yours)
+        case .unsure, .none: break
+        }
+        for p in split.people {
+            if p.letGo != nil { out.append(.letGo) }
+            else if p.owes < 0.005 && p.paid >= 0.005 { out.append(.paid) }
+            else if p.paid >= 0.005 { out.append(.part(p.paid / max(p.amount, 0.01))) }
+            else { out.append(.owes) }
+        }
+        return out
+    }
+
+    /// "Paid back so far: Jo all, Sam $10.00 of $30.00, Priya nothing yet, Alex let go".
+    private var barSpoken: String {
+        let each = split.people.map { p -> String in
+            if p.letGo != nil { return "\(p.name) let go" }
+            if p.owes < 0.005 && p.paid >= 0.005 { return "\(p.name) all" }
+            if p.paid >= 0.005 { return "\(p.name) \(Format.amount(p.paid)) of \(Format.amount(p.amount))" }
+            return "\(p.name) nothing yet"
+        }
+        return "Paid back so far: " + each.joined(separator: ", ")
+    }
+
+    /// An A+ payment row on the split card (kit `.prow`): face 40, name over
+    /// its line, the amount on the right edge; the whole row is the button.
+    private func splitRow(face: String, name: String, line: String, lineTone: Color = Pearl.muted,
+                          amount: String?, amountTone: Color, extra: String? = nil) -> some View {
+        let figure = amount.map {
+            Text($0).font(Nacre.headline).monospacedDigit().foregroundColor(amountTone).pearlAmountFit()
+        }
+        return HStack(spacing: 12) {
+            APFace(name: face)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                Text(line).font(Nacre.subheadline).foregroundColor(lineTone)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let extra = extra {
+                    Text(extra).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                }
+                if amountsUnder { figure }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if !amountsUnder { figure }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .frame(minHeight: 60)
+        .contentShape(Rectangle())
+    }
+
     /// TEST-31 S-04w: "You · ✓ Reimbursed by Northwind · Nov 14", $60.00 in
-    /// money-in green and a full bar. S-04w2: "Reimbursed $45.00 of $60.00 ·
-    /// $15.00 stays yours", $15.00 in ink, the bar part-filled in the
-    /// library's 10% steps (decision 7). Its ••• opens S-40w.
+    /// money-in green. S-04w2: "Reimbursed $45.00 of $60.00 · $15.00 stays
+    /// yours", $15.00 in plum. The row opens S-40w.
     private func mineRow(_ mine: Transaction.Splitting.Mine) -> some View {
         let by = mine.links?.last?.sheet.face ?? "work"
         // TEST-31 Money back, S-04m / S-04m2: "✓ Refunded · Nov 14",
@@ -1376,42 +1448,18 @@ struct SplitPeople: View {
             ? "✓ \(done)" + (mine.on.map { " · \(Format.short($0))" } ?? "")
             : "\(mine.refunded ? "Refunded" : "Reimbursed") \(Format.amount(mine.reimbursed)) of \(Format.amount(mine.amount)) · \(Format.amount(mine.stays)) stays yours"
         let shown = mine.full ? mine.reimbursed : mine.stays
-        let amount = Text(Format.amount(shown)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
-            .foregroundColor(mine.full ? Pearl.moneyIn : Pearl.moneyOut).pearlAmountFit()
-        return VStack(spacing: 8) {
-            HStack(spacing: 12) {
-                Button { mineOptions = true } label: {
-                    HStack(spacing: 12) {
-                        PearlFace(name: "Me", size: 40)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("You").font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                            Text(status).font(Pearl.text(.callout))
-                                .foregroundColor(mine.full ? Pearl.moneyIn : Pearl.muted)
-                            if amountsUnder { amount }
-                        }
-                        .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 8)
-                        if !amountsUnder { amount }
-                    }
-                    .frame(minHeight: 44).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(mine.full
-                    ? "You, \(done.lowercased())" + (mine.on.map { ", \(Format.monthDay($0))" } ?? "") + ", \(Format.amount(mine.reimbursed))"
-                    : "You, \(mine.refunded ? "refunded" : "reimbursed") \(Format.amount(mine.reimbursed)) of \(Format.amount(mine.amount)), \(Format.amount(mine.stays)) stays yours")
-                .accessibilityHint("Shows options.")
-                .accessibilityAddTraits(.isButton)
-                .accessibilityIdentifier("split-you-row")
-                PearlMoreButton(label: "Options for you") { mineOptions = true }
-            }
-            // Decision 7: the library's 10% steps (75% shows as 80%). Part
-            // paid is the rose part-paid bar, as S-04r v3 (S-04w2, S-04m2).
-            PaidBar(paid: mine.full ? 1 : (mine.reimbursed / max(mine.amount, 0.01) * 10).rounded() / 10, of: 1,
-                    tone: mine.full ? Pearl.moneyIn : Pearl.action)
-                .accessibilityHidden(true)
+        return Button { mineOptions = true } label: {
+            splitRow(face: "Me", name: "You", line: status, lineTone: mine.full ? Pearl.moneyIn : Pearl.muted,
+                     amount: Format.amount(shown), amountTone: mine.full ? Pearl.moneyIn : Pearl.moneyOut)
         }
-        .padding(.vertical, 10)
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(mine.full
+            ? "You, \(done.lowercased())" + (mine.on.map { ", \(Format.monthDay($0))" } ?? "") + ", \(Format.amount(mine.reimbursed))"
+            : "You, \(mine.refunded ? "refunded" : "reimbursed") \(Format.amount(mine.reimbursed)) of \(Format.amount(mine.amount)), \(Format.amount(mine.stays)) stays yours")
+        .accessibilityHint("Shows options.")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier("split-you-row")
         .sheet(isPresented: $mineOptions, onDismiss: {
             let next = afterMine
             afterMine = nil
@@ -1424,34 +1472,18 @@ struct SplitPeople: View {
         }
     }
 
-    /// S-04r v3: her share on a split with amounts.
-    /// PB-20 (Paid back, 2026-11-15): its ••• is there before anything is
-    /// linked too, for Find what paid it back (S-40w with nothing yet).
+    /// S-04r v3: her share on a split with amounts, in plum. PB-20: the row
+    /// opens S-40w with nothing yet (Change your share, Find what paid it back).
     private var setYouRow: some View {
-        HStack(spacing: 12) {
-            Button(action: onEdit) {
-                HStack(spacing: 12) {
-                    PearlFace(name: "Me", size: 40)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("You").font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                        Text("Your share").font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
-                        if amountsUnder { youAmount }
-                    }
-                    Spacer(minLength: 8)
-                    if !amountsUnder { youAmount }
-                }
-                .padding(.vertical, 10).frame(minHeight: 56).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(split.closedAt != nil)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("You, your share, \(Format.amount(split.you))")
-            .accessibilityHint("Opens Edit split")
-            .accessibilityIdentifier("split-you-row")
-            if split.closedAt == nil {
-                PearlMoreButton(label: "Options for you") { mineOptions = true }
-            }
+        Button { if split.closedAt == nil { mineOptions = true } } label: {
+            splitRow(face: "Me", name: "You", line: "Your share",
+                     amount: Format.amount(split.you), amountTone: Pearl.moneyOut)
         }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("You, your share, \(Format.amount(split.you))")
+        .accessibilityHint("Shows options.")
+        .accessibilityIdentifier("split-you-row")
         .sheet(isPresented: $mineOptions, onDismiss: {
             let next = afterMine
             afterMine = nil
@@ -1464,50 +1496,25 @@ struct SplitPeople: View {
         }
     }
 
-    private var youAmount: some View {
-        Text(Format.amount(split.you)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
-            .foregroundColor(Pearl.moneyOut).pearlAmountFit()
-    }
-
     /// S-04u8 (note 1238:25742): everyone but you has a linked or cash
     /// payment, and your share was never set.
     private var everyonePaid: Bool {
         split.unsure && split.closedAt == nil && !split.people.isEmpty && split.people.allSatisfy { $0.paid >= 0.005 }
     }
 
-    private var leftAmount: some View {
-        Text(Format.amount(split.still ?? split.you)).font(Pearl.text(.headline, .semibold))
-            .monospacedDigit().foregroundColor(Pearl.moneyOut).pearlAmountFit()
-    }
-
-    /// S-04u6: "You · Your share · not set yet", and S-40y from its •••.
+    /// S-04u6: "You · Your share · not set yet", and S-40y from the row.
     /// S-04u8: "Your share · what's left after paybacks · $17.00".
     private var youRow: some View {
         let closed = split.closedAt != nil
         let left = closed || everyonePaid
-        return HStack(spacing: 12) {
-            Button { if !closed { youOptions = true } } label: {
-                HStack(spacing: 12) {
-                    PearlFace(name: "Me", size: 40)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("You").font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                        Text(closed ? "Your share · what was left"
-                             : everyonePaid ? "Your share · what’s left after paybacks" : "Your share · not set yet")
-                            .font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
-                        if left && amountsUnder { leftAmount }
-                    }
-                    Spacer(minLength: 8)
-                    if left && !amountsUnder { leftAmount }
-                }
-                .frame(minHeight: 44).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityElement(children: .combine)
-            if !closed {
-                PearlMoreButton(label: "Options for you") { youOptions = true }
-            }
+        return Button { if !closed { youOptions = true } } label: {
+            splitRow(face: "Me", name: "You",
+                     line: closed ? "Your share · what was left"
+                        : everyonePaid ? "Your share · what’s left after paybacks" : "Your share · not set yet",
+                     amount: left ? Format.amount(split.still ?? split.you) : nil, amountTone: Pearl.moneyOut)
         }
-        .padding(.vertical, 10)
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
         .sheet(isPresented: $youOptions) {
             YouOptionsSheet(t: t, onClose: { youOptions = false }) {
                 youOptions = false
@@ -1540,7 +1547,8 @@ struct SplitPeople: View {
         return "You kept \(Format.amount(split.still ?? split.you)) · nobody owes you"
     }
 
-    /// S-04u / S-46c: what someone has paid, or "Nothing yet"; never "owes".
+    /// S-04u / S-46c (G2-SplitCard): what someone has paid, in green, or
+    /// "Nothing yet"; never "owes".
     private func unsurePerson(_ p: Transaction.Splitting.Person) -> some View {
         let paid = p.paid >= 0.005
         let closed = split.closedAt != nil
@@ -1549,87 +1557,41 @@ struct SplitPeople: View {
             : closed ? "Didn’t pay · that’s fine" : "Nothing yet"
         let spoken = paid ? "\(p.name), paid you \(Format.amount(p.paid))" + (p.paidOn.map { " on \(Format.monthDay($0))" } ?? "")
             : "\(p.name), \(sub)"
-        return HStack(spacing: 12) {
-            Button { if paid || !closed { options = p } } label: {
-                HStack(spacing: 12) {
-                    PearlFace(name: p.name, size: 40)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(p.name).font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                        Text(sub).font(Pearl.text(.callout)).foregroundColor(paid ? Pearl.moneyIn : Pearl.muted)
-                        if paid, let how = how, p.links?.count == 1 {
-                            Text(how).font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
-                        }
-                        if paid && amountsUnder { paidAmount(p) }
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 8)
-                    if paid && !amountsUnder { paidAmount(p) }
-                }
-                .frame(minHeight: 44).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(spoken)
-            .accessibilityAddTraits(.isButton)
-            // S-46: people who paid nothing have no ••• once it's closed.
-            if paid || !closed {
-                PearlMoreButton(label: "Options for \(p.name)") { options = p }
-            }
+        return Button { if paid || !closed { options = p } } label: {
+            splitRow(face: p.name, name: p.name, line: sub, lineTone: paid ? Pearl.moneyIn : Pearl.muted,
+                     amount: paid ? Format.amount(p.paid) : nil, amountTone: Pearl.moneyIn,
+                     extra: paid && p.links?.count == 1 ? how : nil)
         }
-        .padding(.vertical, 10)
-    }
-
-    private func paidAmount(_ p: Transaction.Splitting.Person) -> some View {
-        Text(Format.amount(p.paid)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
-            .foregroundColor(Pearl.moneyIn).pearlAmountFit()
+        .buttonStyle(.plain)
+        // S-46: people who paid nothing open nothing once it's closed.
+        .disabled(!(paid || !closed))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken)
+        .accessibilityAddTraits(.isButton)
     }
 
     /// What they still owe (ink); what they paid (money in); what she let go (muted).
-    private func owedAmount(_ p: Transaction.Splitting.Person) -> some View {
-        Text(Format.amount(p.owes >= 0.005 ? p.owes : p.letGo.map { $0.was - p.paid } ?? p.paid))
-            .font(Pearl.text(.headline, .semibold)).monospacedDigit()
-            .foregroundColor(p.letGo != nil ? Pearl.muted : p.owes >= 0.005 ? Pearl.ink : Pearl.moneyIn)
-            .pearlAmountFit()
+    private func owedFigure(_ p: Transaction.Splitting.Person) -> (String, Color) {
+        (Format.amount(p.owes >= 0.005 ? p.owes : p.letGo.map { $0.was - p.paid } ?? p.paid),
+         p.letGo != nil ? Pearl.muted : p.owes >= 0.005 ? Pearl.ink : Pearl.moneyIn)
     }
 
     private func person(_ p: Transaction.Splitting.Person) -> some View {
         let full = p.owes < 0.005 && p.letGo == nil && p.paid >= 0.005
-        return VStack(spacing: 8) {
-            HStack(spacing: 12) {
-                Button { options = p } label: {
-                    HStack(spacing: 12) {
-                        PearlFace(name: p.name, size: 40)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(p.name).font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                            // Bar only (1284:230, S-44b–i): the status line and
-                            // the bar, no "what paid it back" line under it
-                            // (product owner, Nov 13). The payments are in •••.
-                            Text((full ? "✓ " : "") + status(p)).font(Pearl.text(.callout))
-                                .foregroundColor(full ? Pearl.moneyIn : Pearl.muted)
-                            if amountsUnder { owedAmount(p) }
-                        }
-                        .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 8)
-                        if !amountsUnder { owedAmount(p) }
-                    }
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(spoken(p))
-                .accessibilityHint("Shows options.")
-                .accessibilityAddTraits(.isButton)
-                PearlMoreButton(label: "Options for \(p.name)") { options = p }
-            }
-            if p.paid >= 0.005 && p.letGo == nil {
-                PaidBar(paid: p.paid, of: p.amount, tone: full ? Pearl.moneyIn : Pearl.action)
-                    .accessibilityHidden(true)
-            }
+        let figure = owedFigure(p)
+        return Button { options = p } label: {
+            // Bar only (1284:230, S-44b–i): the status line, no "what paid
+            // it back" line under it (product owner, Nov 13). The payments
+            // are in the row's options.
+            splitRow(face: p.name, name: p.name, line: (full ? "✓ " : "") + status(p),
+                     lineTone: full ? Pearl.moneyIn : Pearl.muted, amount: figure.0, amountTone: figure.1)
         }
-        .padding(.vertical, 10)
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken(p))
+        .accessibilityHint("Shows options.")
+        .accessibilityAddTraits(.isButton)
     }
-
     /// VoiceOver for a person on a split with shares. Bar only (product
     /// owner, 2026-11-13): it says what the row draws, "Priya, paid back,
     /// November 12, $20.00", and not how it was paid ("part of a $60.00

@@ -140,7 +140,7 @@ struct PiggyPaySheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: "Pay from a piggy bank") { dismiss() }
+            CFSheetTitle(title: "Pay from a piggy bank") { dismiss() }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     QuestionHeader(name: t.merchant, amount: Format.amount(charge), tone: Pearl.ink, sub: nil)
@@ -148,9 +148,9 @@ struct PiggyPaySheet: View {
                         if banks.isEmpty {
                             Text("You don’t have a piggy bank yet.").font(Nacre.body).foregroundColor(Pearl.muted)
                         } else {
-                            GlassCard {
+                            APCard {
                                 ForEach(Array(banks.enumerated()), id: \.element.id) { index, bank in
-                                    if index > 0 { RowSeparator() }
+                                    if index > 0 { APSeparator(afterFace: false) }
                                     Button { chosen = bank.id } label: {
                                         HStack {
                                             VStack(alignment: .leading, spacing: 2) {
@@ -171,7 +171,7 @@ struct PiggyPaySheet: View {
                             }
                             TextField("Amount", text: $amount)
                                 .keyboardType(.decimalPad)
-                                .font(Nacre.body).padding(.horizontal, 16).frame(minHeight: 52)
+                                .font(Nacre.body).padding(.horizontal, 16).frame(minHeight: 64)
                                 .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Pearl.card))
                                 .accessibilityLabel("How much the piggy bank paid")
                             if let typed = typed, typed > 0, typed <= charge {
@@ -188,18 +188,18 @@ struct PiggyPaySheet: View {
                     }
                     if t.bankId != nil {
                         Button("Put it back in the month") { Task { await takeBack() } }
-                            .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                            .buttonStyle(NacreTextButtonStyle(tone: Pearl.link))
                     }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 12)
             }
             .scrollDismissesKeyboard(.interactively)
             Button("Save") { Task { await save() } }
-                .buttonStyle(NacreButtonStyle(busy: busy))
+                .buttonStyle(APPrimaryButtonStyle(busy: busy))
                 .disabled(busy || chosen == nil || (typed ?? 0) <= 0 || (typed ?? 0) > charge + 0.005)
                 .padding(.horizontal, 16).padding(.bottom, 8)
         }
-        .background(SheetBackground())
+        .cfSheet()
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .task { await load() }
@@ -543,7 +543,7 @@ struct TransactionDetailView: View {
             // section is built in its own body (OwnBody), so no one body's
             // stack frame holds the whole page, and Transaction is small (Boxed).
             VStack(alignment: .leading, spacing: 8) {
-                OwnBody { header }.padding(.bottom, 16)
+                OwnBody { header }.padding(.bottom, 10)
                     // S-04r v2s (TEST-09): once the hero scrolls under the bar,
                     // the bar takes the merchant's name.
                     .background(GeometryReader { g in
@@ -586,14 +586,8 @@ struct TransactionDetailView: View {
                 }
                 .accessibilityLabel("Back")
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                if let skip = guessing?.onSkip {
-                    Button("Skip", action: skip)
-                        .font(Nacre.subheadline).foregroundColor(Pearl.ink)
-                        .accessibilityHint("It stays in Needs a look.")
-                }
-            }
         }
+        .modifier(GuessHidesTabBar(on: guessFromList))
         // S-04r v2s (TEST-09, TEST-26): a real inline bar with the merchant's
         // name once the hero has gone. The app's bars are see-through
         // (PearlApp), so the page draws S-04r v2s's --surface-page bar itself
@@ -1004,23 +998,15 @@ struct TransactionDetailView: View {
 
     // MARK: Header
 
+    /// A+ (AP-Transaction, G1-TxSpend, G1-TxMore, G1-TxRefund; kit `.hero`):
+    /// the 56 pt ring in the bar's row beside Back, the Counts pill on the
+    /// right of that row, the name in Fraunces 22, the amount in Fraunces
+    /// 44, and its lines in 15 muted.
     private var header: some View {
-        VStack(spacing: 8) {
-            if t.transfer == nil {
-                Initials(name: t.merchant, size: 56)
-                    .overlay(Circle().strokeBorder(
-                        AngularGradient(colors: [Nacre.rose, Nacre.lilac, Nacre.seaglass, Nacre.rose], center: .center),
-                        lineWidth: 1.2))
-                    .padding(.bottom, 6)
-            } else {
-                // TF-01: ⇄ in the avatar, like every transaction page's initials.
-                Text("\u{21C4}").font(Nacre.headline).foregroundColor(Pearl.ink)
-                    .frame(width: 56, height: 56)
-                    .background(Circle().fill(Nacre.glass))
-                    .overlay(Circle().strokeBorder(Nacre.edge, lineWidth: 1.5))
-                    .padding(.bottom, 6)
-                    .accessibilityHidden(true)
-            }
+        VStack(spacing: 0) {
+            // TF-01: ⇄ in the ring for a transfer.
+            CFRing(name: t.merchant, size: 56, transfer: t.transfer != nil)
+                .padding(.bottom, 8)
             if t.transfer == nil {
                 // T-80: tap the name to rename the merchant.
                 Button { renaming = true } label: {
@@ -1042,7 +1028,7 @@ struct TransactionDetailView: View {
                     .accessibilityAddTraits(.isHeader)
             }
             Text(heroAmount)
-                .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
+                .font(.cfBig).tracking(-0.88)
                 // RC-03: a payback counts it down, 400 ms ease-out.
                 .costCountDown(t.amount)
                 // T-41w: money that paid a purchase back is money in, green.
@@ -1058,22 +1044,16 @@ struct TransactionDetailView: View {
             } else {
                 // TP-04: "Fri, Nov 14 · into Chequing ··4417".
                 Text(heroDateLine)
-                    .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    .font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     .multilineTextAlignment(.center)
             }
-            if t.transfer != nil {
-                // TF-01's Counts pill: "⇄  Doesn’t count".
-                Text("\u{21C4}  Doesn’t count")
-                    .font(Nacre.footnote).foregroundColor(Pearl.ink)
-                    .padding(.horizontal, 12).frame(height: 30)
-                    .background(Capsule().fill(Nacre.glass))
-                    .padding(.top, 4)
-            }
-            if t.transfer == nil { OwnBody { countsOrName } }
             OwnBody { heroPills }
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 4)
+        // The Counts pill: top right, in Back's row (kit `.pill`, 16 down).
+        .overlay(alignment: .topTrailing) { OwnBody { countsOrName }.padding(.top, 8) }
+        // The ring sits in the bar's row, 8 under the status bar, as drawn.
+        .padding(.top, -36)
     }
 
     /// RC-02 (ROWCOST-01; replaces S-04r v2's header): what it costs her
@@ -1086,26 +1066,15 @@ struct TransactionDetailView: View {
     @ViewBuilder private var heroPills: some View {
         if !t.joint.isEmpty && t.transfer == nil {
             // T-40: "Joint with Sam · 50%"; T-75 on a charge: "yours unless you say".
-            HStack(spacing: 6) {
-                Image(systemName: "person.2").font(.system(size: 12, weight: .medium))
-                Text(!t.inflow && t.accountShare == nil && !t.jointPeople.isEmpty
-                     ? "Joint with \(t.jointPeople.joined(separator: " and ")) · yours unless you say" : jointLine)
-            }
-            .font(Nacre.footnote).foregroundColor(Pearl.ink)
-            .padding(.horizontal, 12).frame(height: 28)
-            .background(Capsule().fill(Nacre.glass))
-            .padding(.top, 4)
-            .accessibilityElement(children: .combine)
+            CFPill(text: !t.inflow && t.accountShare == nil && !t.jointPeople.isEmpty
+                   ? "Joint with \(t.jointPeople.joined(separator: " and ")) · yours unless you say" : jointLine,
+                   symbol: "person.2")
+                .padding(.top, 10)
         }
         if t.pending {
-            HStack(spacing: 6) {
-                Circle().fill(Pearl.danger).frame(width: 8, height: 8)
-                Text("Pending · amount may change")
-            }
-            .font(Nacre.footnote).foregroundColor(Pearl.ink)
-            .padding(.horizontal, 12).frame(height: 28)
-            .background(Capsule().fill(Nacre.glass))
-            .padding(.top, 4)
+            // Pending isn't an error: no red dot (A+: red only for over and errors).
+            CFPill(text: "Pending · amount may change", symbol: "clock", symbolTone: Pearl.muted)
+                .padding(.top, 10)
         }
     }
 
@@ -1113,21 +1082,16 @@ struct TransactionDetailView: View {
     /// "Name them" in its place on a deposit Pearl asks a payback about,
     /// while the bank's name is all it has; it opens T-14 Who sent this?.
     @ViewBuilder private var countsOrName: some View {
-        if let q = paybackAsk, !q.named, t.asks {
+        if t.transfer != nil {
+            // TF-01's Counts pill (G1-TxMore): "⇄ Doesn’t count".
+            CFPill(text: "Doesn’t count", symbol: "arrow.left.arrow.right", symbolTone: Pearl.muted)
+        } else if let q = paybackAsk, !q.named, t.asks {
             NameThemPill { asking = Asking(step: .sender) }
         } else {
-            HStack(spacing: 6) {
-                // T-41w: "↺ Paid back"; otherwise the Counts arrow.
-                Image(systemName: paidBackAnswer != nil ? "arrow.counterclockwise"
-                      : countsPill.up ? "arrow.up" : "arrow.down")
-                    .font(.system(size: 12, weight: .semibold)).foregroundColor(countsPill.tone)
-                Text(countsPill.label)
-            }
-            .font(Nacre.footnote).foregroundColor(Pearl.ink)
-            .padding(.horizontal, 12).frame(height: 30)
-            .background(Capsule().fill(Nacre.glass))
-            .padding(.top, 4)
-            .accessibilityElement(children: .combine)
+            // T-41w: "↺ Paid back"; otherwise the Counts arrow.
+            CFPill(text: countsPill.label,
+                   symbol: paidBackAnswer != nil ? "arrow.counterclockwise" : countsPill.up ? "arrow.up" : "arrow.down",
+                   symbolTone: countsPill.tone)
         }
     }
 
@@ -1217,7 +1181,7 @@ struct TransactionDetailView: View {
     // MARK: What it counts as
 
     private var categoryCard: some View {
-        GlassCard {
+        APCard {
             Button {
                 if t.leftToSort { parting = deposit(rest: true) }
                 // Income opens What was this?: its kinds, and what else it could be (2026-11-08).
@@ -1242,8 +1206,9 @@ struct TransactionDetailView: View {
             if alwaysInCategoryCard {
                 // T-03r (1074:698, dark 1074:814): Always for the merchant is
                 // part of what it is, so it sits under the category, not in Options.
-                RowSeparator()
-                alwaysToggle(sub: "New \(t.merchant) purchases go to \(t.label)")
+                APSeparator(afterFace: false)
+                // A+ (REDESIGN-09 fix): no line repeating the row's title.
+                alwaysToggle(sub: nil)
             }
         }
     }
@@ -1255,32 +1220,16 @@ struct TransactionDetailView: View {
     }
 
     private func categoryLabel(symbol: String, title: String, sub: String?) -> some View {
-        GlassCard { categoryRow(symbol: symbol, title: title, sub: sub) }
+        APCard { categoryRow(symbol: symbol, title: title, sub: sub) }
     }
 
+    /// A+ (G1-TxSpend, G1-TxMore, G1-TxRefund): the category's icon, its
+    /// name in 17 semibold over any line, and "Change" in `link` (no
+    /// chevron then); income's kind ends in the chevron.
     private func categoryRow(symbol: String, title: String, sub: String?, change: Bool = false,
                              systemImage: String? = nil) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: systemImage ?? CategorySheet.symbol(for: symbol))
-                .font(.system(size: 15, weight: .medium)).foregroundColor(Pearl.action)
-                .frame(width: 36, height: 36)
-                .background(Circle().fill(Pearl.action.opacity(0.1)))
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(Nacre.headline).foregroundColor(Pearl.ink).lineLimit(2)
-                if let sub = sub {
-                    Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                }
-            }
-            Spacer(minLength: 8)
-            if change {
-                Text("Change").font(Font.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
-                    .foregroundColor(Pearl.action)
-            }
-            Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
-        }
-        .padding(.horizontal, 16).frame(minHeight: 60).padding(.vertical, 4)
-        .contentShape(Rectangle())
+        CFRowLabel(symbol: systemImage ?? CategorySheet.symbol(for: symbol), title: title, sub: sub, bold: true,
+                   trailing: change ? .word("Change") : .chevron)
     }
 
     // MARK: Pearl's guess (T-96)
@@ -1320,10 +1269,27 @@ struct TransactionDetailView: View {
             // T-93o (product owner, 2026-11-13): a best guess of Other reads
             // "Other", Pearl's guess, like any guess; Yes is this one alone,
             // with no Always (Ask.canRule), and tapping still opens What was this?.
-            categoryLabel(symbol: symbol, title: label, sub: still ? "Pearl’s guess" : "Your choice")
-                .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .strokeBorder(Pearl.ink.opacity(still ? 0.7 : 0),
-                                  style: StrokeStyle(lineWidth: 1.2, dash: [5, 3])))
+            // A+ (G1-TxSpend): PEARL'S GUESS over the icon and "Dining out?"
+            // in Fraunces 20, on a card with a dashed rose outline and no
+            // shadow; her own pick is the plain card.
+            VStack(alignment: .leading, spacing: 12) {
+                Text(still ? "PEARL’S GUESS" : "YOUR CHOICE")
+                    .font(.custom("Figtree-SemiBold", size: 12, relativeTo: .caption)).tracking(1.2)
+                    .foregroundColor(Pearl.action)
+                HStack(spacing: 12) {
+                    CFIcon(symbol: CategorySheet.symbol(for: symbol))
+                    Text(still ? "\(label)?" : label)
+                        .font(Pearl.heading(20, relativeTo: .title3)).foregroundColor(Pearl.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(GuessCardSurface(dashed: still))
+            .contentShape(RoundedRectangle(cornerRadius: Pearl.radiusCard, style: .continuous))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(still ? "Pearl’s guess, \(label)" : "Your choice, \(label)")
         }
         .buttonStyle(.plain)
         .disabled(busy)
@@ -1331,24 +1297,35 @@ struct TransactionDetailView: View {
     }
 
     /// T-96: Yes, with the rule stated in plain sight by the Always switch.
+    /// A+ (G1-TxSpend, kit `.btnrow`): Skip and "Yes, Dining out" side by
+    /// side at the bottom, from Needs a look and from the list alike; from
+    /// the list the tab bar goes so they have the bottom (REDESIGN-09).
+    /// Skip leaves it in Needs a look; from the list it goes back.
     @ViewBuilder private var guessActions: some View {
-        // From the Transactions tab the guess just stays a guess, dotted, until
-        // she taps it and picks (2026-11-08): no button.
-        if let label = guessName, let guessing = guessing, guessing.onDraft == nil {
-            BottomActions {
+        if let label = guessName, guessing?.onDraft == nil, guessing != nil || !t.asks {
+            HStack(spacing: 12) {
+                Button("Skip") {
+                    if let skip = guessing?.onSkip { skip() } else { dismiss() }
+                }
+                .buttonStyle(APSecondaryButtonStyle())
+                .accessibilityHint("It stays in Needs a look.")
                 Button("Yes, \(label)") {
                     let keep = offersNewOnes && newOnesOn
-                    if let name = chosenCategory {
-                        answer(with: name, always: keep)
-                    } else {
+                    if let guessing = guessing, chosenCategory == nil {
                         guessing.onYes(keep)
+                    } else {
+                        answer(with: chosenCategory ?? label, always: keep)
                     }
                 }
-                .buttonStyle(NacreButtonStyle(busy: busy))
-                .disabled(busy)
+                .buttonStyle(APPrimaryButtonStyle(busy: busy))
             }
+            .disabled(busy)
+            .padding(.horizontal, 16).padding(.bottom, 8)
         }
     }
+
+    /// A guess opened from the list hides the tab bar (REDESIGN-09).
+    private var guessFromList: Bool { guessing == nil && guessName != nil && !t.asks }
 
     private var isIncome: Bool { t.inflow && t.counts == "income" && t.transfer == nil }
 
@@ -1455,7 +1432,7 @@ struct TransactionDetailView: View {
     /// look is asking, answered here.
     private var askingCard: some View {
         Button { Task { await openQuestion() } } label: {
-            GlassCard {
+            APCard {
                 row(title: t.label, sub: t.note.flatMap { $0.isEmpty ? nil : $0 } ?? "Needs a look", chevron: true)
             }
         }
@@ -1467,14 +1444,20 @@ struct TransactionDetailView: View {
 
     /// PAID BACK (T-39), REFUND FOR (T-41), REFUNDED BY, or the charge a
     /// payback is for.
+    /// Its own bodies (stack check: one was 31 KB).
     @ViewBuilder private var linked: some View {
+        OwnBody { linkedBack }
+        OwnBody { paysBack }
+    }
+
+    @ViewBuilder private var linkedBack: some View {
         // SPLIT-25 (S-05v): a split purchase's card is the one place its
         // paybacks are listed; one that isn't split keeps PAID BACK.
         if !t.repaidBy.isEmpty && t.splitting == nil {
             section("Paid back")
             SolidCard {
                 ForEach(Array(t.repaidBy.enumerated()), id: \.element.id) { index, b in
-                    if index > 0 { RowSeparator(inset: 72) }
+                    if index > 0 { APSeparator() }
                     let part = b.paid.flatMap { abs($0 - abs(b.amount)) >= 0.005 ? $0 : nil }
                     // S-05o from the purchase: View, then Unlink… (S-34s / S-34k).
                     Button {
@@ -1535,7 +1518,7 @@ struct TransactionDetailView: View {
             section("Refunded by")
             SolidCard {
                 ForEach(Array(t.refundedBy.enumerated()), id: \.element.id) { index, r in
-                    if index > 0 { RowSeparator(inset: 72) }
+                    if index > 0 { APSeparator() }
                     if let link = r.link {
                         // SPLIT-25: S-05o "View the refund", "Unlink refund…".
                         Button { linkOptions = link } label: {
@@ -1550,6 +1533,10 @@ struct TransactionDetailView: View {
                 }
             }
         }
+    }
+
+    /// What this money in paid back: her share (TEST-31 T-41w) or a split.
+    @ViewBuilder private var paysBack: some View {
         if let charge = t.repaysCharge, charge.person == "me", t.refundOf == nil {
             // TEST-31 T-41w (1297:64759, dark 1297:64849): work paid her
             // share. PAID BACK, the purchase over "Your share · Nov 12",
@@ -1578,7 +1565,7 @@ struct TransactionDetailView: View {
                 .accessibilityAddTraits(.isButton)
             }
             section("Options")
-            GlassCard {
+            APCard {
                 Button {
                     if let link = charge.link {
                         unlinkingLink = link
@@ -1604,14 +1591,14 @@ struct TransactionDetailView: View {
                               sub: "\(Format.short(charge.date)) · split \(split.people.count + (split.you >= 0.005 ? 1 : 0)) ways",
                               amount: abs(charge.amount), inflow: false)
                     ForEach(people) { p in
-                        RowSeparator(inset: 64)
+                        APSeparator()
                         linkedRow(name: p.name,
                                   sub: p.owes >= 0.005 ? "Owes \(Format.amount(p.owes))"
                                       : p.letGo != nil ? "Let go" : "Paid back",
                                   amount: p.amount, inflow: false)
                     }
                     if split.you >= 0.005 {
-                        RowSeparator(inset: 64)
+                        APSeparator()
                         linkedRow(name: "You", sub: "Your share", amount: split.you, inflow: false)
                     }
                 }
@@ -1623,7 +1610,7 @@ struct TransactionDetailView: View {
             }
             // S-33: the money that paid it back can be unlinked (S-34).
             section("Options")
-            GlassCard {
+            APCard {
                 Button {
                     // TEST-31: "all of it" is work's, not a person's.
                     unlinkingPayback = PaybackLink(charge: charge.id, inflow: t.id,
@@ -1677,7 +1664,9 @@ struct TransactionDetailView: View {
     private var jointGuessCard: some View {
         let person = t.jointPeople.count == 1 ? t.jointPeople[0] : nil
         return VStack(spacing: 14) {
-            Text("PEARL’S GUESS").font(Nacre.caption2).tracking(0.6).foregroundColor(Pearl.action)
+            Text("PEARL’S GUESS")
+                .font(.custom("Figtree-SemiBold", size: 12, relativeTo: .caption)).tracking(1.2)
+                .foregroundColor(Pearl.action)
             Text(person.map { "Is this \($0)’s pay?" } ?? "Is this your pay?")
                 .font(Nacre.title2).foregroundColor(Pearl.ink).multilineTextAlignment(.center)
             HStack(spacing: 10) {
@@ -1697,29 +1686,24 @@ struct TransactionDetailView: View {
                         }
                     }
                 }
-                .buttonStyle(NacreButtonStyle(busy: busy))
+                .buttonStyle(APPrimaryButtonStyle(busy: busy))
+                // TEST-32: the control fill reads in both modes.
                 Button("Something else") { asking = Asking(step: .joint) }
-                    .font(Nacre.headline).foregroundColor(Pearl.ink)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Capsule().fill(Pearl.card))  // TEST-32: was white under white words in dark
-                    .buttonStyle(.plain)
+                    .buttonStyle(APSecondaryButtonStyle())
             }
             .disabled(busy)
         }
-        .padding(20)
+        .padding(16)
         .frame(maxWidth: .infinity)
-        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(.ultraThinMaterial))
-        .background(RoundedRectangle(cornerRadius: 26, style: .continuous)
-            .fill(LinearGradient(colors: [Nacre.rose.opacity(0.35), Nacre.lilac.opacity(0.25), Nacre.seaglass.opacity(0.35)],
-                                 startPoint: .topLeading, endPoint: .bottomTrailing)))
-        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(Nacre.edge, lineWidth: 1.2))
+        // A+: Pearl's guess is the dashed rose outline (G1-TxSpend).
+        .background(GuessCardSurface(dashed: true))
     }
 
     /// Whose an answered joint deposit is, to change it.
     @ViewBuilder private var jointRow: some View {
         if t.inflow && !t.joint.isEmpty && !t.jointFrom.isEmpty && t.transfer == nil {
             section("Joint account")
-            GlassCard {
+            APCard {
                 Button { asking = Asking(step: .joint) } label: {
                     row(title: "Whose pay", sub: jointWhose, chevron: true)
                 }
@@ -1829,14 +1813,14 @@ struct TransactionDetailView: View {
 
     /// "Payback + gift": what a deposit in parts was (S-33).
     private var partsCard: some View {
-        GlassCard {
+        APCard {
             let people = Set(t.parts.compactMap(\.person))
             if paidBackOnly, people.count == 1, let who = people.first {
                 // PB-41: "Paid back · Sam Lee" (How it counts).
                 row(title: "Paid back · \(who)", chevron: false, icon: "person.2")
                 if let jp = t.jointPayback {
                     // TP-04: the joint side is theirs; it opens that money out.
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     Button { Task { await open(jp.outId) } } label: {
                         row(title: "Joint side: \(possessive(jp.person)) money, not your spending", chevron: true, icon: "person.2")
                     }
@@ -1869,12 +1853,12 @@ struct TransactionDetailView: View {
             section(t.partOf.map { "Part of a \(Format.amount($0.amount)) deposit" } ?? "Parts")
             SolidCard {
                 ForEach(Array(parts.enumerated()), id: \.element.id) { index, p in
-                    if index > 0 { RowSeparator(inset: 72) }
+                    if index > 0 { APSeparator() }
                     partRow(p)
                 }
             }
             section("Options")
-            GlassCard {
+            APCard {
                 if t.partOf == nil {
                     // S-33 v2's Edit: S-10e, the parts filled in (SPLIT-03).
                     Button {
@@ -1885,7 +1869,7 @@ struct TransactionDetailView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(busy)
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                 }
                 Button { unlinking = true } label: {
                     row(title: "Unlink", sub: "Make it one deposit again", chevron: true)
@@ -1910,7 +1894,7 @@ struct TransactionDetailView: View {
         section("Paid back · \(n) purchase\(n == 1 ? "" : "s")")
         SolidCard {
             ForEach(Array(t.parts.enumerated()), id: \.element.id) { index, p in
-                if index > 0 { RowSeparator(inset: 72) }
+                if index > 0 { APSeparator() }
                 Button { Task { await openDepositLink(p) } } label: { paidBackRow(p) }
                     .buttonStyle(.plain)
                     .disabled(busy)
@@ -1918,7 +1902,7 @@ struct TransactionDetailView: View {
             }
         }
         section("Options")
-        GlassCard {
+        APCard {
             Button {
                 editingParts = true
                 repicking = true
@@ -1928,7 +1912,7 @@ struct TransactionDetailView: View {
             }
             .buttonStyle(.plain)
             .disabled(busy)
-            RowSeparator()
+            APSeparator(afterFace: false)
             Button { unlinking = true } label: {
                 // TP-04: "Unlink all · it's a transfer again".
                 row(title: t.jointPayback != nil ? "Unlink all · it’s a transfer again" : n == 2 ? "Unlink both" : "Unlink",
@@ -2062,7 +2046,7 @@ struct TransactionDetailView: View {
         let back = paybacks.map(\.amount).reduce(0, +)
         let person = paybacks.compactMap(\.person).first
         return VStack(spacing: 16) {
-            SheetTitle(title: "Unlink?") { unlinking = false }
+            CFSheetTitle(title: "Unlink?") { unlinking = false }
             QuestionHeader(name: t.partOf == nil ? t.merchant : t.merchant,
                            amount: Format.amount(t.partOf?.amount ?? t.amount), tone: Pearl.ink,
                            sub: Format.short(t.partOf?.date ?? t.date))
@@ -2075,7 +2059,7 @@ struct TransactionDetailView: View {
                     unlinking = false
                     Task { await unlinkParts() }
                 }
-                .buttonStyle(NacreButtonStyle())
+                .buttonStyle(APPrimaryButtonStyle())
                 Button("Keep linked") { unlinking = false }
                     .font(Nacre.headline).foregroundColor(Pearl.ink)
                     .frame(maxWidth: .infinity, minHeight: 52)
@@ -2086,14 +2070,14 @@ struct TransactionDetailView: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(SheetBackground())
+        .cfSheet()
         .presentationDetents([.height(320)])
     }
 
     /// S-34 for one payback: "Dad will owe you $64.00 again."
     private func paybackUnlinkSheet(_ link: PaybackLink) -> some View {
         VStack(spacing: 16) {
-            SheetTitle(title: "Unlink?") { unlinkingPayback = nil }
+            CFSheetTitle(title: "Unlink?") { unlinkingPayback = nil }
             QuestionHeader(name: link.name, amount: Format.amount(link.amount), tone: Pearl.ink,
                            sub: Format.short(link.date))
                 .padding(.horizontal, 16)
@@ -2104,7 +2088,7 @@ struct TransactionDetailView: View {
                     unlinkingPayback = nil
                     Task { await unlinkPayback(link) }
                 }
-                .buttonStyle(NacreButtonStyle())
+                .buttonStyle(APPrimaryButtonStyle())
                 Button("Keep linked") { unlinkingPayback = nil }
                     .font(Nacre.headline).foregroundColor(Pearl.ink)
                     .frame(maxWidth: .infinity, minHeight: 52)
@@ -2115,7 +2099,7 @@ struct TransactionDetailView: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(SheetBackground())
+        .cfSheet()
         .presentationDetents([.height(320)])
     }
 
@@ -2138,7 +2122,7 @@ struct TransactionDetailView: View {
             }
         })) {
             HStack(spacing: 12) {
-                IconBubble(symbol: "repeat")
+                CFIcon(symbol: "repeat")
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Always for \(t.merchant)").font(Nacre.body).foregroundColor(Pearl.ink)
                         .fixedSize(horizontal: false, vertical: true)
@@ -2151,7 +2135,8 @@ struct TransactionDetailView: View {
         }
         .tint(Pearl.action)
         .disabled(busy)
-        .padding(.horizontal, 16).frame(minHeight: 52).padding(.vertical, sub == nil ? 0 : 12)
+        .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 64)
+
         .accessibilityHint("New ones from \(t.merchant) sort the same way")
     }
 
@@ -2177,7 +2162,7 @@ struct TransactionDetailView: View {
         if canSplit || couldBePay || unlink || canOneOff || canPayFromBank || offersNewOnes
             || incomeAlways != nil || jointCharge {
             section("Options")
-            GlassCard {
+            APCard {
                 if jointCharge {
                     // S-01jr (JOINT-B, supersedes S-01j): Whose was it?, then Split my part.
                     Button { whose = true } label: {
@@ -2186,11 +2171,11 @@ struct TransactionDetailView: View {
                     .buttonStyle(.plain)
                     .disabled(busy)
                     if canSplitJoint {
-                        RowSeparator()
+                        APSeparator(afterFace: false)
                         jointSplitRow
                     }
                     if canPayFromBank || canSplit || couldBePay || unlink || canOneOff || offersNewOnes
-                        || incomeAlways != nil { RowSeparator() }
+                        || incomeAlways != nil { APSeparator(afterFace: false) }
                 }
                 if canPayFromBank {
                     Button { payingFromBank = true } label: {
@@ -2199,7 +2184,7 @@ struct TransactionDetailView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(busy)
-                    if canSplit || couldBePay || unlink || canOneOff || offersNewOnes { RowSeparator() }
+                    if canSplit || couldBePay || unlink || canOneOff || offersNewOnes { APSeparator(afterFace: false) }
                 }
                 // No Split into parts on money in (2026-11-09): a payback picks
                 // everything it paid back on Who paid you back?.
@@ -2211,7 +2196,7 @@ struct TransactionDetailView: View {
                     .disabled(busy)
                 }
                 if couldBePay {
-                    if canSplit { RowSeparator() }
+                    if canSplit { APSeparator(afterFace: false) }
                     Button { asking = Asking(step: .cadence) } label: {
                         if let pay = t.regularPay {
                             // T-37: "Every 2 weeks · next on Fri, Nov 21".
@@ -2228,25 +2213,26 @@ struct TransactionDetailView: View {
                     .disabled(busy)
                 }
                 if unlink {
-                    if canSplit || couldBePay { RowSeparator() }
+                    if canSplit || couldBePay { APSeparator(afterFace: false) }
                     Button { unlinkingRefund = true } label: {
-                        row(title: "Unlink refund", chevron: true)
+                        row(title: "Unlink refund", chevron: true, icon: "link")
                     }
+
                     .buttonStyle(.plain)
                     .disabled(busy)
                 }
                 if canOneOff {
-                    if canSplit || couldBePay || unlink { RowSeparator() }
+                    if canSplit || couldBePay || unlink { APSeparator(afterFace: false) }
                     Toggle(isOn: Binding(get: { oneOff ?? t.oneOff },
                                          set: { on in Task { await setOneOff(on) } })) {
                         HStack(spacing: 12) {
-                            IconBubble(symbol: "1.circle")
+                            CFIcon(symbol: "1.circle")
                             Text("Exclude from usual month").font(Nacre.body).foregroundColor(Pearl.ink)
                         }
                     }
                     .tint(Pearl.action)
                     .disabled(busy)
-                    .padding(.horizontal, 16).frame(minHeight: 52)
+                    .padding(.horizontal, 16).frame(minHeight: 64)
                     .accessibilityHint("Leaves it out of your usual month")
                     if let line = t.oneOffLine?.line, oneOff ?? t.oneOff {
                         // T-42: what leaving it out does to the month.
@@ -2256,36 +2242,36 @@ struct TransactionDetailView: View {
                     }
                 }
                 if offersNewOnes {
-                    if canSplit || couldBePay || unlink || canOneOff { RowSeparator() }
+                    if canSplit || couldBePay || unlink || canOneOff { APSeparator(afterFace: false) }
                     alwaysToggle(sub: nil)
                 }
                 if let payer = incomeAlways {
-                    if canSplit || couldBePay || unlink || canOneOff || offersNewOnes { RowSeparator() }
+                    if canSplit || couldBePay || unlink || canOneOff || offersNewOnes { APSeparator(afterFace: false) }
                     Toggle(isOn: Binding(get: { incomeAlwaysOn ?? (t.incomeRule?.on == true) },
                                          set: { on in Task { await setIncomeAlways(on) } })) {
                         HStack(spacing: 12) {
-                            IconBubble(symbol: "repeat")
+                            CFIcon(symbol: "repeat")
                             Text("Always for \(payer)").font(Nacre.body).foregroundColor(Pearl.ink)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     .tint(Pearl.action)
                     .disabled(busy)
-                    .padding(.horizontal, 16).frame(minHeight: 52)
+                    .padding(.horizontal, 16).frame(minHeight: 64)
                     .accessibilityHint("New ones from \(payer) count as \(Self.kindName(t.incomeType))")
                 }
                 if canPayFromBank {
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     Toggle(isOn: Binding(get: { billKey != nil },
                                          set: { on in if on { addingBill = true } else { Task { await removeBill() } } })) {
                         HStack(spacing: 12) {
-                            IconBubble(symbol: "calendar")
+                            CFIcon(symbol: "calendar")
                             Text("Regular bill").font(Nacre.body).foregroundColor(Pearl.ink)
                         }
                     }
                     .tint(Pearl.action)
                     .disabled(busy)
-                    .padding(.horizontal, 16).frame(minHeight: 52)
+                    .padding(.horizontal, 16).frame(minHeight: 64)
                     .accessibilityHint("Adds it to your bills")
                 }
             }
@@ -2373,7 +2359,7 @@ struct TransactionDetailView: View {
 
     @ViewBuilder private var details: some View {
         section("Details")
-        GlassCard {
+        APCard {
             // T-75's Whose was it? is in Options now (S-01j, SPLIT-08).
             Button { editingNote = true } label: {
                 if t.myNote.isEmpty {
@@ -2385,7 +2371,7 @@ struct TransactionDetailView: View {
             .buttonStyle(.plain)
             if let trip = t.trip {
                 // TR-06 (1327:6382): the trip it's in, which opens the trip's page (TR-02).
-                RowSeparator()
+                APSeparator(afterFace: false)
                 NavigationLink { TripPage(id: trip.id) } label: {
                     row(title: "\(trip.name) · \(Format.span(trip.start, trip.end))", chevron: true, icon: "tag")
                 }
@@ -2394,7 +2380,7 @@ struct TransactionDetailView: View {
             }
             // A refund's tags are its purchase's (T-41), and income has none (T-37).
             if Features.tags && t.refundOf == nil && !isIncome {
-                RowSeparator()
+                APSeparator(afterFace: false)
                 Button { editingTags = true } label: {
                     if t.tags.isEmpty {
                         row(title: "Add tags", placeholder: true, chevron: true, icon: "tag")
@@ -2413,7 +2399,7 @@ struct TransactionDetailView: View {
         if !t.excluded.isEmpty && t.transfer == nil {
             // Left out (T-56, T-77's Leave out): put it back in her numbers.
             Button("Put it back") { Task { await putBack() } }
-                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                .buttonStyle(NacreTextButtonStyle(tone: Pearl.link))
                 .padding(.top, 12)
                 .disabled(busy)
         }
@@ -2459,7 +2445,7 @@ struct TransactionDetailView: View {
     @ViewBuilder private func transferLegs(_ transfer: Transaction.Transfer) -> some View {
         let (outDate, inDate) = legDates(transfer)
         section("How it counts")
-        GlassCard {
+        APCard {
             // Opens What was this? to change it.
             Button { sorting = sortAsk(.transfer) } label: {
                 categoryRow(symbol: "", title: "Between your accounts", sub: nil, systemImage: "arrow.left.arrow.right")
@@ -2468,29 +2454,30 @@ struct TransactionDetailView: View {
             .disabled(busy)
             .accessibilityHint("Changes what it was")
         }
-        section("Moved")
+        // G1-TxMore: MOVED with how far apart on the right, in `link`.
+        HStack {
+            APSectionLabel(text: "Moved")
+            Spacer(minLength: 8)
+            Text(apartWords(outDate, inDate))
+                .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline)).foregroundColor(Pearl.link)
+                .padding(.trailing, 4)
+        }
+        .padding(.top, 16)
         SolidCard {
             leg(account: transfer.from, sub: "Out · \(Format.weekdayDay(outDate))")
-            apart(outDate, inDate)
+            APSeparator()
             leg(account: transfer.to, sub: "In · \(Format.weekdayDay(inDate))")
         }
         section("Options")
-        GlassCard {
+        APCard {
             if t.inflow, let joint = transfer.joint, let out = transfer.otherId {
                 // TP-01 (Paybacks 2): "Mom paid me back", above This isn't a transfer.
                 jointPaidBackRow(joint, out: out)
-                RowSeparator()
+                APSeparator(afterFace: false)
             }
             Button { unpairing = true } label: {
-                HStack(spacing: 12) {
-                    // TEXT-01: no second line; the sheet asks.
-                    Text("This isn’t a transfer").font(Nacre.body).foregroundColor(Pearl.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 8)
-                    Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
-                }
-                .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 52)
-                .contentShape(Rectangle())
+                // TEXT-01: no second line; the sheet asks.
+                row(title: "This isn’t a transfer", chevron: true, icon: "link")
             }
             .buttonStyle(.plain)
             .disabled(busy)
@@ -2553,56 +2540,48 @@ struct TransactionDetailView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 16).padding(.vertical, 11)
+        .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 64)
         .accessibilityElement(children: .combine)
     }
 
-    /// "1 day apart", "Same day": a line from one end's avatar to the other's.
-    private func apart(_ out: String, _ into: String) -> some View {
+    /// "1 day apart", "Same day" (G1-TxMore: beside MOVED).
+    private func apartWords(_ out: String, _ into: String) -> String {
         let days = abs(Calendar.current.dateComponents([.day], from: Format.localDay(out) ?? Date(),
                                                        to: Format.localDay(into) ?? Date()).day ?? 0)
-        return HStack(spacing: 26) {
-            // Under the avatars' centre (16 + 40 / 2).
-            Rectangle().fill(Pearl.muted.opacity(0.5)).frame(width: 1.5, height: 22)
-            Text(days == 0 ? "Same day" : days == 1 ? "1 day apart" : "\(days) days apart")
-                .font(Nacre.footnote).foregroundColor(Pearl.muted)
-            Spacer(minLength: 0)
-        }
-        .padding(.leading, 35.25)
+        return days == 0 ? "Same day" : days == 1 ? "1 day apart" : "\(days) days apart"
     }
 
     // MARK: Parts
 
+    /// A+ kit `.label`: caps outside the card, 24 above (the page's 8 and
+    /// 16 more) and 8 below. TEST-14: it grows with Dynamic Type and wraps.
     private func section(_ text: String) -> some View {
-        // TEST-14 (round 2): the 11 pt caption didn't grow with Dynamic Type
-        // ("partially unsupported"); the overline is the sheets' section
-        // label, which does, and wraps rather than clips.
-        PearlSectionLabel(text: text)
+        APSectionLabel(text: text)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 16).padding(.top, 12)
+            .padding(.top, 16)
     }
 
+    /// A+ kit `.row.noface`: the 36 pt icon, the title (17) over its line
+    /// (15 muted), the chevron; 64 high. "Add a note" is in ink (G1-TxMore).
     private func row(title: String, sub: String? = nil, placeholder: Bool = false, chevron: Bool,
                      value: String? = nil, icon: String? = nil) -> some View {
         HStack(spacing: 12) {
-            if let icon = icon { IconBubble(symbol: icon) }
+            if let icon = icon { CFIcon(symbol: icon) }
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(placeholder ? Nacre.body : (sub == nil ? Nacre.body : Nacre.headline))
-                    .foregroundColor(placeholder ? Pearl.muted : Pearl.ink)
+                Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
                     .lineLimit(2)
                 if let sub = sub {
-                    Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 8)
             if let value = value {
                 Text(value).font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
             }
-            if chevron {
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
-            }
+            if chevron { CFChevron() }
         }
-        .padding(.horizontal, 16).frame(minHeight: 52).padding(.vertical, 6)
+        .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 64)
         .contentShape(Rectangle())
     }
 
@@ -2736,7 +2715,7 @@ struct TransactionDetailView: View {
     /// T-41b: "Unlink? · It goes back to Needs a look."
     private var refundUnlinkSheet: some View {
         VStack(spacing: 16) {
-            SheetTitle(title: "Unlink?") { unlinkingRefund = false }
+            CFSheetTitle(title: "Unlink?") { unlinkingRefund = false }
             QuestionHeader(name: t.merchant, amount: "+" + Format.amount(t.amount), tone: Pearl.ink,
                            sub: Format.short(t.date))
                 .padding(.horizontal, 16)
@@ -2746,7 +2725,7 @@ struct TransactionDetailView: View {
                     unlinkingRefund = false
                     Task { await unlinkRefund() }
                 }
-                .buttonStyle(NacreButtonStyle())
+                .buttonStyle(APPrimaryButtonStyle())
                 Button("Keep linked") { unlinkingRefund = false }
                     .font(Nacre.headline).foregroundColor(Pearl.ink)
                     .frame(maxWidth: .infinity, minHeight: 52)
@@ -2757,7 +2736,7 @@ struct TransactionDetailView: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(SheetBackground())
+        .cfSheet()
         .presentationDetents([.height(300)])
     }
 
@@ -3094,23 +3073,40 @@ struct TransactionDetailView: View {
     }
 }
 
-/// The card a linked transaction sits on (T-39, T-41, T-05): glass in light
-/// (REFRESH-05, T-03r), the solid card with the pink edge in dark as before.
-struct SolidCard<Content: View>: View {
-    @ViewBuilder var content: () -> Content
-    @Environment(\.colorScheme) private var scheme
+/// A+ (G1-TxSpend): Pearl's guess on the A+ card with a 1.5 pt dashed
+/// `action` outline and no shadow; her own pick on the plain card.
+struct GuessCardSurface: View {
+    let dashed: Bool
 
     var body: some View {
-        let stack = VStack(alignment: .leading, spacing: 0, content: content)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        if scheme == .dark {
-            stack
-                .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Pearl.card))
-                .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(Nacre.edge, lineWidth: 1.2))
-                .shadow(color: Color(red: 0.4, green: 0.3, blue: 0.6).opacity(0.1), radius: 10, y: 6)
+        let shape = RoundedRectangle(cornerRadius: Pearl.radiusCard, style: .continuous)
+        if dashed {
+            shape.fill(APlus.card)
+                .overlay(shape.strokeBorder(Pearl.action, style: StrokeStyle(lineWidth: 1.5, dash: [5, 3])))
         } else {
-            stack.glassCard(radius: 26)
+            APCardSurface()
         }
+    }
+}
+
+/// A guess opened from the list hides the tab bar, so Skip and Yes have
+/// the bottom (REDESIGN-09).
+struct GuessHidesTabBar: ViewModifier {
+    let on: Bool
+
+    func body(content: Content) -> some View {
+        if on { content.toolbar(.hidden, for: .tabBar) } else { content }
+    }
+}
+
+/// The card a linked transaction sits on (T-39, T-41, T-05): the one A+
+
+/// card (G1-TxRefund's REFUND FOR, G1-TxMore's MOVED).
+struct SolidCard<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        APCard(content: content)
     }
 }
 
@@ -3123,21 +3119,24 @@ struct NoteSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SheetTitle(title: "Note") { dismiss() }
+            CFSheetTitle(title: "Note") { dismiss() }
             TextField("", text: $note, prompt: Text("What was it for?").foregroundColor(Pearl.muted), axis: .vertical)
                 .font(Nacre.body).lineLimit(3...6)
                 .focused($focused)
-                .padding(16)
-                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Nacre.glass))
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Nacre.edge, lineWidth: 1))
+                .tint(Pearl.action)
+                .padding(.horizontal, 14).padding(.vertical, 12)
+                .frame(minHeight: 96, alignment: .topLeading)
+                // REDESIGN-09: a visible well (kit `.fld.area`).
+                .wellStyle(focused: focused)
                 .padding(.horizontal, 16)
+
                 .onChange(of: note) { value in if value.count > 200 { note = String(value.prefix(200)) } }
             Spacer()
             Button("Save") { onSave(note.trimmingCharacters(in: .whitespacesAndNewlines)) }
-                .buttonStyle(NacreButtonStyle())
+                .buttonStyle(APPrimaryButtonStyle())
                 .padding(.horizontal, 16).padding(.bottom, 8)
         }
-        .background(SheetBackground())
+        .cfSheet()
         .onAppear { focused = true }
     }
 }
@@ -3152,7 +3151,7 @@ struct TagsSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SheetTitle(title: "Tags") { dismiss() }
+            CFSheetTitle(title: "Tags") { dismiss() }
             HStack(spacing: 8) {
                 TextField("", text: $typed, prompt: Text("Add a tag").foregroundColor(Pearl.muted))
                     .font(Nacre.body).autocorrectionDisabled()
@@ -3176,10 +3175,10 @@ struct TagsSheet: View {
                 .padding(.horizontal, 16)
             }
             Button("Save") { onSave(tags) }
-                .buttonStyle(NacreButtonStyle())
+                .buttonStyle(APPrimaryButtonStyle())
                 .padding(.horizontal, 16).padding(.bottom, 8)
         }
-        .background(SheetBackground())
+        .cfSheet()
     }
 
     private func add() {
@@ -3265,11 +3264,11 @@ struct WhoseSheet: View {
             .sheetPart()
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    GlassCard {
+                    APCard {
                         ChoiceLine(title: "Mine", sub: "All of it counts as yours", selected: mode == "mine") { pick("mine") }
-                        RowSeparator()
+                        APSeparator(afterFace: false)
                         ChoiceLine(title: "\(t.joint)’s", sub: "None of it counts", selected: mode == "theirs") { pick("theirs") }
-                        RowSeparator()
+                        APSeparator(afterFace: false)
                         ChoiceLine(title: "Part of it", sub: "Say how much was yours", selected: mode == "part") { mode = "part" }
                     }
                     .disabled(busy)
@@ -3279,13 +3278,13 @@ struct WhoseSheet: View {
                             .sheetCard()
                         Toggle("Always split \(t.merchant) like this", isOn: $splitAlways)
                             .font(Nacre.body).tint(Pearl.action)
-                            .padding(.horizontal, 16).frame(minHeight: 52)
+                            .padding(.horizontal, 16).frame(minHeight: 64)
                             .sheetCard()
                     } else {
                         // Before Mine is tapped, since Mine answers at once.
                         Toggle("Always all mine at \(t.merchant)", isOn: $mineAlways)
                             .font(Nacre.body).tint(Pearl.action)
-                            .padding(.horizontal, 16).frame(minHeight: 52)
+                            .padding(.horizontal, 16).frame(minHeight: 64)
                             .sheetCard()
                     }
                     if t.accountShare != nil {
@@ -3297,7 +3296,7 @@ struct WhoseSheet: View {
             }
             if mode == "part" {
                 Button("Save") { Task { await save() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
+                    .buttonStyle(APPrimaryButtonStyle(busy: busy))
                     .disabled(busy || !ready)
                     .sheetPart()
             }
@@ -3305,7 +3304,7 @@ struct WhoseSheet: View {
         .padding(.horizontal, 16).padding(.bottom, 8)
         // POLISH-01: sized to content; the gaps between its parts count too.
         .background(Color.clear.frame(height: 14 * 3 + 8).sheetPart())
-        .background(SheetBackground())
+        .cfSheet()
         .sheet(isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } })) {
             if let changes = asking {
                 JointChangeSheet(accountName: t.merchant, share: nil, was: nil, holders: [], changes: changes,

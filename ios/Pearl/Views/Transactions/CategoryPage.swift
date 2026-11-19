@@ -25,25 +25,20 @@ struct CategoryPage: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                GlassCard {
-                    HStack(alignment: .top, spacing: 0) {
-                        stat(headline, Format.whole(total), tone)
-                        if let usual = usual, counts == "spending" {
-                            stat("Usual month", Format.whole(usual), Pearl.ink)
-                        }
-                    }
-                    .padding(16)
-                }
-                GlassCard {
+            VStack(alignment: .leading, spacing: 0) {
+                hero
+                // G1-Category: the month as a section label, then the rows.
+                APSectionLabel(text: month.map { Format.monthName($0) } ?? "This month")
+                    .padding(.top, 24).padding(.bottom, 8)
+                APCard {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { i, t in
-                        if i > 0 { RowSeparator(inset: 72) }
+                        if i > 0 { APSeparator() }
                         NavigationLink(value: t) { TransactionRow(t: t, showsCategory: false) }
                             .buttonStyle(.plain)
                     }
                 }
             }
-            .padding(.horizontal, Pearl.gutter).padding(.top, 8).padding(.bottom, 32)
+            .padding(.horizontal, Pearl.gutter).padding(.bottom, 32)
         }
         .nacreScreen()
         .navigationBarBackButtonHidden(true)
@@ -53,9 +48,6 @@ struct CategoryPage: View {
                     Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold)).foregroundColor(Pearl.ink)
                 }
                 .accessibilityLabel("Back")
-            }
-            ToolbarItem(placement: .principal) {
-                Text(name).font(Nacre.headline).foregroundColor(Pearl.ink)
             }
         }
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -77,15 +69,28 @@ struct CategoryPage: View {
         counts == "spending" ? Pearl.moneyOut : counts == "income" ? Pearl.moneyIn : Pearl.ink
     }
 
-    private func stat(_ label: String, _ value: String, _ tone: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(Nacre.footnote).foregroundColor(Pearl.muted)
-            Text(value).font(Pearl.display(.title3)).foregroundColor(tone)
+    /// A+ (G1-Category; decision: a category page shows its icon): the
+    /// category's icon in the bar's row, its name in Fraunces 22, "Spent in
+    /// November", the total in Fraunces 44 and the usual month, centred.
+    private var hero: some View {
+        VStack(spacing: 0) {
+            CFIcon(symbol: CategorySheet.symbol(for: name), size: 32).padding(.bottom, 8)
+            Text(name).font(Nacre.title2).foregroundColor(Pearl.ink)
+                .accessibilityAddTraits(.isHeader)
+            Text(headline).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+            Text(Format.whole(total)).font(.cfBig).tracking(-0.88).foregroundColor(Pearl.ink)
                 .lineLimit(1).minimumScaleFactor(0.6)
+            if let usual = usual, counts == "spending" {
+                Text("Usual month \(Format.whole(usual))").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity)
+        .multilineTextAlignment(.center)
         .accessibilityElement(children: .combine)
+        // The icon sits in Back's row, as drawn.
+        .padding(.top, -36)
     }
+
 
     /// Her usual month for the category, once Pearl has months to go on.
     private func loadUsual() async {

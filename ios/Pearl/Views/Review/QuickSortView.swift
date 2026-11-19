@@ -130,18 +130,18 @@ struct QuickSortView: View {
             if let done = done {
                 doneScreen(done)
             } else {
+                // A+ (G1-QuickSort, G1-QuickSort2): ✕ and "9 left", the
+                // streak across the top, the card, and Skip / Yes at the
+                // bottom. No notes under the card (A+ decision): the toast
+                // says what Yes did.
                 header
-                Spacer(minLength: 12)
-                stack.padding(.horizontal, 32)
+                stack.padding(.horizontal, 16).padding(.top, 44)
                 Spacer(minLength: 16)
-                // The lines under the card, in their own body (stack, 2026-11-16).
-                OwnBody { cardLines }
                 if let error = error {
-                    Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).padding(.top, 6)
+                    Text(error).font(Nacre.footnote).foregroundColor(Pearl.danger).padding(.bottom, 8)
                 }
-                // T-95: the buttons rise into the hint's place, clear of the toast.
-                buttons.padding(.top, 20).padding(.bottom, 40)
-                    .padding(.bottom, toast == nil && undoPattern == nil ? 0 : 28)
+                buttons.padding(.horizontal, 16).padding(.bottom, 26)
+                    .padding(.top, toast == nil && undoPattern == nil ? 0 : 68)
             }
         }
         .nacreScreen()
@@ -151,13 +151,13 @@ struct QuickSortView: View {
                 UndoToast(text: toast.text, undo: toast.undo == nil ? nil : { Task { await undo(toast) } }, stays: true) {
                     withAnimation { if self.toast?.id == toast.id { self.toast = nil } }
                 }
-                .padding(.bottom, 8)
+                .padding(.bottom, 84)
             } else if let p = undoPattern, done == nil {
                 // AI-18y (1332:64062): the next card is up; Undo brings this one back.
                 UndoToast(text: "\(p.title): sorted from now on", undo: { Task { await undoYes(p) } }, stays: true) {
                     withAnimation { if undoPattern == p { undoPattern = nil } }
                 }
-                .padding(.bottom, 8)
+                .padding(.bottom, 84)
             }
         }
         .task { await begin() }
@@ -291,7 +291,7 @@ struct QuickSortView: View {
     /// TR-01 (1327:4974): what Pearl saw, as a question: "A flight, a
     /// hotel, 5 days in Montréal. A trip?" (TEXT-01).
     @ViewBuilder private func tripLines(_ trip: TripAsk) -> some View {
-        Text(trip.story + " A trip?")
+        Text(ChatWords.tripAway(trip) + " " + ChatWords.tripQuestion(trip))
             .font(Nacre.footnote).foregroundColor(Pearl.ink)
             .multilineTextAlignment(.center).padding(.horizontal, 32)
             .fixedSize(horizontal: false, vertical: true)
@@ -371,47 +371,32 @@ struct QuickSortView: View {
 
     // MARK: The deck
 
+    /// A+ (G1-QuickSort): ✕ (the glass button) and "9 left" in its row, then
+    /// the 12-dash streak (A+ decision: the streak at the top).
     private var header: some View {
-        ZStack {
-            VStack(spacing: 4) {
-                Text("Quick sort").font(Nacre.headline).foregroundColor(Pearl.ink)
+        VStack(spacing: 14) {
+            ZStack {
                 // Counts down as she answers: what's still to sort.
                 Text("\(remaining) left")
-                    .font(Nacre.footnote).foregroundColor(Pearl.ink)
-            }
-            .accessibilityElement(children: .combine)
-            HStack {
-                Button { Task { await leave() } } label: {
-                    Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(Pearl.ink)
-                        .frame(width: 44, height: 44)
-                        // T-93r dark (1077:1468): the Glass button, glass fill and edge (TEST-01).
-                        .background(Circle().fill(scheme == .dark ? Nacre.glass : Color.white.opacity(0.85)))
-                        .overlay(Circle().strokeBorder(scheme == .dark ? Nacre.glassEdge : .clear, lineWidth: 1))
+                    .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline)).foregroundColor(Pearl.ink)
+                    .accessibilityLabel("Quick sort, \(remaining) left")
+                HStack {
+                    CFCloseButton(label: "Later") { Task { await leave() } }
+                        .accessibilityHint("The rest stay in Needs a look.")
+                    Spacer()
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Later")
-                .accessibilityHint("The rest stay in Needs a look.")
-                Spacer()
             }
+            SortStreak(sorted: sortedSoFar, toSort: remaining)
         }
         .padding(.horizontal, 16).padding(.top, 8)
     }
 
+    /// What's been answered in this sitting, for the streak.
+    private var sortedSoFar: Int { patternAt + tripAt + index }
+
     private var stack: some View {
-        ZStack {
-            // The cards still to come, peeking out underneath.
-            ForEach((1...2).reversed(), id: \.self) { depth in
-                if depth < remaining {
-                    // T-93r dark (1077:1477): --surface-card with a --border edge (TEST-01).
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .fill(scheme == .dark ? Pearl.card : Color.white.opacity(0.55))
-                        .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .strokeBorder(scheme == .dark ? Pearl.border : Color.white.opacity(0.8), lineWidth: 1))
-                        .padding(.horizontal, CGFloat(depth) * 8)
-                        .offset(y: CGFloat(depth) * 10)
-                }
-            }
+        // A+: one card, no peeking stack (G1-QuickSort).
+        ZStack(alignment: .top) {
             if let pattern = pattern {
                 patternCard(pattern)
                     .offset(x: offsetX, y: drag.height * 0.2)
@@ -459,7 +444,6 @@ struct QuickSortView: View {
                     .id(ask.id)
             }
         }
-        .frame(height: 400)
     }
 
     private var offsetX: CGFloat {
@@ -474,30 +458,29 @@ struct QuickSortView: View {
     /// "Saved or spent?", "Who sent this?"… for the rest.
     private func card(_ ask: Ask) -> some View {
         let t = ask.t
-        return VStack(spacing: 10) {
+        // A+ kit `.qcard`: the overline, the 56 pt ring, the name, the
+        // amount in Fraunces 40, its day and card, and the question.
+        return VStack(spacing: 0) {
             Text(drafts[ask.id]?.label != nil ? "YOUR CHOICE" : isGuess(ask) ? "PEARL’S GUESS" : "NEEDS A LOOK")
-                .font(Nacre.caption2).tracking(0.6).foregroundColor(Pearl.action)
-            Initials(name: t.name, size: 64)
-                .overlay(Circle().strokeBorder(
-                    AngularGradient(colors: [Nacre.rose, Nacre.lilac, Nacre.seaglass, Nacre.rose], center: .center),
-                    lineWidth: 1.2))
-                .padding(.top, 4)
-            Text(t.name).font(Nacre.headline).foregroundColor(Pearl.ink)
-                .multilineTextAlignment(.center).lineLimit(2)
+                .font(.custom("Figtree-SemiBold", size: 12, relativeTo: .caption)).tracking(1.2)
+                .foregroundColor(Pearl.action)
+            CFRing(name: t.name, size: 56).padding(.top, 14)
+            Text(t.name).font(Nacre.body).foregroundColor(Pearl.ink)
+                .multilineTextAlignment(.center).lineLimit(2).padding(.top, 10)
             Text((t.inflow ? "+" : "\u{2212}") + Format.amount(amounts[ask.id] ?? t.shownAmount))
-                .font(.custom("Fraunces-SemiBold", size: 40, relativeTo: .largeTitle))
+                .font(.custom("Fraunces-SemiBold", size: 40, relativeTo: .largeTitle)).tracking(-0.8)
                 .foregroundColor(tone(t)).lineLimit(1).minimumScaleFactor(0.6)
             if let note = amounts[ask.id].map({ abs(t.amount) - $0 > 0.005 ? "Your share of \(Format.amount(abs(t.amount)))" : "" }) ?? t.shareNote, !note.isEmpty {
-                Text(note).font(Nacre.footnote).foregroundColor(Pearl.ink)
+                Text(note).font(Nacre.footnote).foregroundColor(Pearl.muted)
             }
             Text([Format.relativeDay(t.date), t.accountName].compactMap { $0 }.filter { !$0.isEmpty }
                     .joined(separator: " · "))
-                .font(Nacre.footnote).foregroundColor(Pearl.ink).lineLimit(1)
+                .font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(1)
             Text(drafts[ask.id]?.label.map { "\($0)?" }
                  ?? (isGuess(ask) ? (ask.item.pair?.question ?? "\(guess(ask))?") : ask.chip))
                 .font(Nacre.title).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center).lineLimit(3).minimumScaleFactor(0.7)
-                .padding(.top, 8)
+                .padding(.top, 14)
             if let split = drafts[ask.id]?.split {
                 // T-98s: "Your share $42.06 · Sam owes you $42.06".
                 Text(split.note).font(Nacre.footnote).foregroundColor(Pearl.ink)
@@ -516,8 +499,9 @@ struct QuickSortView: View {
     private func patternCard(_ p: PatternAsk) -> some View {
         VStack(spacing: 8) {
             Text("A PATTERN")
-                .font(Nacre.caption2).tracking(0.78).foregroundColor(Pearl.action)
-            Initials(name: p.name, size: 64)
+                .font(.custom("Figtree-SemiBold", size: 12, relativeTo: .caption)).tracking(1.2)
+                .foregroundColor(Pearl.action)
+            CFRing(name: p.name, size: 56)
             Text(p.who).font(Nacre.headline).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center).lineLimit(2)
             // AI-18b (1332:63964): "$12–$48" over "Usually $27 · about every week"
@@ -539,12 +523,14 @@ struct QuickSortView: View {
     }
 
     /// TR-01 (1327:4974): one card for the whole trip: the place, what it
-    /// came to (per currency, TR-02m), its dates and count, "A trip?".
+    /// came to (per currency, TR-02m), its dates and count, "Were you in Montréal?" (G7-TripAsk).
     private func tripCard(_ t: TripAsk) -> some View {
         VStack(spacing: 8) {
-            Text("A TRIP?")
-                .font(Nacre.caption2).tracking(0.78).foregroundColor(Pearl.action)
-            Initials(name: t.place ?? "Trip", size: 64, trip: true)
+            Text("A TRIP")
+                .font(.custom("Figtree-SemiBold", size: 12, relativeTo: .caption)).tracking(1.2)
+                .foregroundColor(Pearl.action)
+            CFRing(name: t.place ?? "Trip", size: 56,
+                   mark: String((t.place ?? "Trip").filter { $0.isLetter }.prefix(2)).uppercased())
             if let place = t.place {
                 Text(place).font(Nacre.headline).foregroundColor(Pearl.ink)
                     .multilineTextAlignment(.center).lineLimit(2)
@@ -554,10 +540,14 @@ struct QuickSortView: View {
                 .foregroundColor(Pearl.ink).lineLimit(1).minimumScaleFactor(0.5)
             Text(t.line).font(Nacre.footnote).foregroundColor(Pearl.muted)
                 .multilineTextAlignment(.center).lineLimit(2)
-            Text("A trip?")
+            // G7-TripAsk (approved 2026-11-18): "Were you in Montréal?",
+            // never "A trip?", and what Pearl saw under it.
+            Text(ChatWords.tripQuestion(t))
                 .font(Nacre.title).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.7)
                 .padding(.top, 8)
+            Text(ChatWords.tripAway(t)).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                .multilineTextAlignment(.center)
         }
         .modifier(CardFace())
         .overlay(alignment: .topLeading) { stamp(guessing: true) }
@@ -604,16 +594,17 @@ struct QuickSortView: View {
             }
     }
 
+    /// A+ (G1-QuickSort, kit `.btnrow`): Skip (control) and Yes or Answer
+    /// (rose) side by side; a plan question has No between them.
     @ViewBuilder private var buttons: some View {
         let guessing = current.map(hasYes) ?? true
-        HStack(spacing: current?.kind == .check ? 36 : 64) {
-            roundButton(symbol: "forward", label: "Skip", filled: false) { left() }
+        HStack(spacing: 12) {
+            Button("Skip") { left() }.buttonStyle(APSecondaryButtonStyle())
             // Plan questions ("Is TD Savings where you save?") take a No on the card.
             if let ask = current, ask.kind == .check {
-                roundButton(symbol: "xmark", label: "No", filled: false) { no(ask) }
+                Button("No") { no(ask) }.buttonStyle(APSecondaryButtonStyle())
             }
-            roundButton(symbol: guessing ? "checkmark" : "text.bubble",
-                        label: guessing ? "Yes" : "Answer", filled: true) { right() }
+            Button(guessing ? "Yes" : "Answer") { right() }.buttonStyle(APPrimaryButtonStyle())
                 // T-98s (REFRESH-03): "Saves the split and Groceries, for this one."
                 .accessibilityHint(current.flatMap { ask in drafts[ask.id].flatMap { d in
                     d.split != nil ? "Saves the split and \(splitCategory(ask, d)), for this one." : nil } } ?? "")
@@ -643,18 +634,20 @@ struct QuickSortView: View {
 
     // MARK: Done (T-72)
 
+    /// A+ (G1-QuickSort2): the full streak, "9 sorted" in Fraunces 28, what
+    /// it did to the Allowance, and Done.
     private func doneScreen(_ d: QuickSortDone) -> some View {
-        VStack(spacing: 12) {
-            Spacer()
-            HeroShell(width: 150)
-            Text("\(d.sorted) sorted").font(Nacre.title).foregroundColor(Pearl.ink).padding(.top, 8)
+        VStack(spacing: 0) {
+            SortStreak(sorted: max(d.sorted, 1), toSort: 0)
+                .padding(.horizontal, 32).padding(.top, 200)
+            Text("\(d.sorted) sorted").font(Nacre.title).foregroundColor(Pearl.ink).padding(.top, 36)
                 .accessibilityAddTraits(.isHeader)
-            Text(doneLine(d)).font(Nacre.body).foregroundColor(Pearl.ink)
-                .multilineTextAlignment(.center).padding(.horizontal, 24)
+            Text(doneLine(d)).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                .multilineTextAlignment(.center).padding(.horizontal, 24).padding(.top, 8)
             Spacer()
             Button("Done", action: onClose)
-                .buttonStyle(NacreButtonStyle())
-                .padding(.horizontal, 16).padding(.bottom, 16)
+                .buttonStyle(APPrimaryButtonStyle())
+                .padding(.horizontal, 16).padding(.bottom, 26)
         }
     }
 
@@ -663,7 +656,7 @@ struct QuickSortView: View {
         let rest = "Anything you skip stays in Needs a look."
         guard let before = d.before, let after = d.after, abs(after - before) >= 0.5 else { return rest }
         let change = after > before ? "went up" : "went down"
-        return "Your allowance \(change) \(Format.whole(after - before)). \(rest)"
+        return "Your Allowance \(change) \(Format.whole(after - before)).\n\(rest)"
     }
 
     // MARK: Answers
@@ -991,38 +984,34 @@ struct QuickSortView: View {
     private func tone(_ t: BriefTransaction) -> Color { t.inflow ? Pearl.moneyIn : Pearl.moneyOut }
 }
 
-/// "Quick sort · 11 to sort" at the top of Needs a look (T-10; REFRESH-03's P1).
+/// "9 to sort · About 2 minutes", the streak and Quick sort, at the top of
+/// Needs a look (T-10; A+ G1-NeedsALook).
 struct QuickSortCard: View {
-    @Environment(\.colorScheme) private var scheme
     let count: Int
+    /// What's sorted already, for the streak.
+    var sorted = 0
     let action: () -> Void
 
+    /// About ten seconds a card.
+    private var howLong: String {
+        let minutes = Int((Double(count) * 10 / 60).rounded())
+        return minutes <= 1 ? "About a minute" : "About \(minutes) minutes"
+    }
+
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 14) {
-                Image(systemName: "rectangle.stack")
-                    .font(.system(size: 24)).foregroundColor(Pearl.action)
-                    .frame(width: 40, height: 40)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Quick sort").font(Nacre.headline).foregroundColor(Pearl.ink)
-                    Text("\(count) to sort")
-                        .font(Nacre.footnote).foregroundColor(Pearl.ink)
+        APCard {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("\(count) to sort").font(Nacre.headline).foregroundColor(Pearl.ink)
+                    Spacer(minLength: 8)
+                    Text(howLong).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                 }
-                Spacer()
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(Pearl.ink)
+                .accessibilityElement(children: .combine)
+                SortStreak(sorted: sorted, toSort: count)
+                Button("Quick sort", action: action).buttonStyle(APPrimaryButtonStyle())
             }
-            .padding(.horizontal, 16).padding(.vertical, 14)
-            .background(RoundedRectangle(cornerRadius: 22, style: .continuous)
-                // T-83r dark (1076:1277): --surface-card, so the ink words read (TEST-01).
-                .fill(scheme == .dark
-                      ? LinearGradient(colors: [Pearl.card], startPoint: .leading, endPoint: .trailing)
-                      : LinearGradient(colors: [Color.white.opacity(0.75), Nacre.seaglass.opacity(0.35)],
-                                       startPoint: .leading, endPoint: .trailing)))
-            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Nacre.glassEdge, lineWidth: 1))
-            .contentShape(Rectangle())
+            .padding(.horizontal, 18).padding(.vertical, 16)
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -1032,18 +1021,12 @@ private struct CardFace: ViewModifier {
     @Environment(\.colorScheme) private var scheme
 
     func body(content: Content) -> some View {
+        // A+ kit `.qcard`: the A+ card at radius 28, 24 / 22 in.
         content
-            .padding(24)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(scheme == .dark
-                      ? LinearGradient(colors: [Pearl.card], startPoint: .top, endPoint: .bottom)
-                      : LinearGradient(colors: [Color(hex: 0xFFF1F6), Color(hex: 0xF7F3FF), Color(hex: 0xEFFBF8)],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing)))
-            .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .strokeBorder(LinearGradient(colors: [Nacre.rose, Nacre.lilac, Nacre.seaglass],
-                                             startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.2))
-            .shadow(color: Color(red: 0.4, green: 0.3, blue: 0.6).opacity(0.15), radius: 16, y: 10)
+            .padding(.vertical, 24).padding(.horizontal, 22)
+            .frame(maxWidth: .infinity)
+            .apCard(radius: Pearl.radiusSort)
+
     }
 }
 

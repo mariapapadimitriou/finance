@@ -13,11 +13,12 @@ struct QuestionCaption: View {
     let text: String
 
     var body: some View {
+        // A+ kit `.label`: 13 medium caps, tracked, muted, 4 in.
         Text(text.uppercased())
-            .font(Nacre.caption1).foregroundColor(Pearl.ink)
+            .font(Nacre.label).tracking(0.78).foregroundColor(Pearl.muted)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, 16).padding(.top, 4)
+            .padding(.leading, 4).padding(.top, 8)
             .accessibilityAddTraits(.isHeader)
     }
 }
@@ -47,7 +48,7 @@ struct RhythmStrip: View {
     private var ring: String? { ringed ?? dates.last }
 
     private var strip: some View {
-        HStack(alignment: .top, spacing: dates.count >= 7 ? 0 : 14) {
+        HStack(alignment: .top, spacing: dates.count >= 7 ? 0 : 4) {
             ForEach(Array(dates.enumerated()), id: \.offset) { i, day in
                 if i > 0 && dates.count >= 7 { Spacer(minLength: 4) }
                 pill(i, day)
@@ -58,14 +59,17 @@ struct RhythmStrip: View {
 
     @ViewBuilder private func pill(_ i: Int, _ day: String) -> some View {
         let number = Self.dayFormat.string(from: Format.localDay(day) ?? Date())
-        let label = VStack(spacing: 4) {
-            Text(number).font(Nacre.subheadline).foregroundColor(Pearl.ink)
-                .frame(width: number.count > 1 ? 36 : 32, height: 32)
-                .background(Capsule().fill(Pearl.action.opacity(0.1)))
-                .overlay(Capsule().strokeBorder(Pearl.action, lineWidth: day == ring ? 1.5 : 0))
+        // A+ kit `.rhythm`: a 30 pt disc on `action-wash`, 13 semibold;
+        // the ringed one has a 1.5 pt rose line; the month 11 muted.
+        let label = VStack(spacing: 2) {
+            Text(number).font(.custom("Figtree-SemiBold", size: 13, relativeTo: .footnote)).foregroundColor(Pearl.ink)
+                .frame(width: 30, height: 30)
+                .background(Circle().fill(Pearl.action.opacity(0.1)))
+                .overlay(Circle().strokeBorder(Pearl.action, lineWidth: day == ring ? 1.5 : 0))
             Text(Self.monthFormat.string(from: Format.localDay(day) ?? Date()))
-                .font(Nacre.caption1).foregroundColor(Pearl.muted)
+                .font(Nacre.caption2).foregroundColor(Pearl.muted)
         }
+        .frame(width: 32)
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel([Format.monthDay(day), amount.map { Format.amount($0) }].compactMap { $0 }.joined(separator: ", "))
@@ -109,14 +113,14 @@ struct WhyCard: View {
                 RhythmStrip(dates: dates, amount: amount, ringed: ringed, onTap: onTap)
             }
             if let footer = footer {
-                Text(footer).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                Text(footer).font(Nacre.footnote).foregroundColor(Pearl.ink)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Nacre.glass))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Pearl.border, lineWidth: 1))
+        // A+ (G1-Recurring, G1-Pay): the one A+ card.
+        .apCard()
     }
 }
 
@@ -136,21 +140,21 @@ struct AnswerTile: View {
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             action()
         } label: {
-            VStack(alignment: .leading, spacing: 4) {
+            // A+ kit `.tile`: the icon, the title (16) over its line (13
+            // muted), on `card` with the 1 pt card line, radius 18.
+            VStack(alignment: .leading, spacing: 2) {
                 if let symbol = symbol {
-                    Image(systemName: symbol).font(.system(size: 17)).foregroundColor(Pearl.action)
-                        .frame(width: 36, height: 36)
-                        .background(Circle().fill(Pearl.action.opacity(0.1)))
+                    CFIcon(symbol: symbol).padding(.bottom, 6)
                 }
-                Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
+                Text(title).font(.custom("Figtree-Regular", size: 16, relativeTo: .callout)).foregroundColor(Pearl.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(line).font(Nacre.footnote).foregroundColor(Pearl.muted)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
             .padding(12)
-            .frame(maxWidth: .infinity, minHeight: symbol == nil ? 71 : 110, alignment: .topLeading)
-            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Nacre.glass))
+            .frame(maxWidth: .infinity, minHeight: symbol == nil ? 71 : 96, alignment: .topLeading)
+            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(APlus.card))
             .overlay(edge)
             .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
@@ -168,7 +172,7 @@ struct AnswerTile: View {
         } else if guess {
             shape.strokeBorder(Pearl.action, style: StrokeStyle(lineWidth: 1.5, dash: [5, 3]))
         } else {
-            shape.strokeBorder(Pearl.border, lineWidth: 1)
+            shape.strokeBorder(APlus.cardLine, lineWidth: 1)
         }
     }
 }
@@ -191,8 +195,9 @@ struct AnswerGrid<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 7, alignment: .top), count: columns),
-                  spacing: 7, content: content)
+        // kit `.tiles`: 10 apart.
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10, alignment: .top), count: columns),
+                  spacing: 10, content: content)
     }
 }
 
@@ -209,23 +214,22 @@ struct AnswerRow: View {
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             action()
         } label: {
-            HStack(spacing: 12) {
-                Image(systemName: symbol).font(.system(size: 17)).foregroundColor(Pearl.action)
-                    .frame(width: 34, height: 34)
-                    .background(Circle().fill(Pearl.action.opacity(0.1)))
+            HStack(spacing: 10) {
+                CFIcon(symbol: symbol, size: 32)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
+                    Text(title).font(.custom("Figtree-Regular", size: 16, relativeTo: .callout)).foregroundColor(Pearl.ink)
                     Text(line).font(Nacre.footnote).foregroundColor(Pearl.muted)
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 16).padding(.vertical, 10)
+            .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background(CFTileSurface())
             .contentShape(Rectangle())
         }
         .buttonStyle(TilePress())
-        .glassCard(radius: 22)
+
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title). \(line)")
         .accessibilityAddTraits(.isButton)

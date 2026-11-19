@@ -109,16 +109,14 @@ struct CategorySheet: View {
     /// Every answer on one scroll: the Always switch, the categories, then Not spending.
     private var onePage: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: title) { dismiss() }.sheetPart()
+            CFSheetTitle(title: title) { dismiss() }.sheetPart()
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 0) {
                     header
                     if let merchant = merchant, showsAlways {
-                        Toggle(isOn: $newOnes) {
-                            Text("Always for \(merchant)").font(Nacre.body).foregroundColor(Pearl.ink)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .tint(Pearl.action).padding(.horizontal, 4)
+                        // G1-WhatWasThis: Always on its own card, no second line.
+                        APCard { CFToggleRow(symbol: "repeat", title: "Always for \(merchant)", isOn: $newOnes) }
+                            .padding(.top, 14)
                     }
                     if available.isEmpty {
                         LoadState(error: app.categoriesError) { Task { await app.loadCategories() } }
@@ -126,9 +124,7 @@ struct CategorySheet: View {
                     ForEach(Self.spendingGroups + ["lifestyleEnd"], id: \.self) { group in
                         if group == "lifestyleEnd" {
                             if let cases = notSpending {
-                                Text("NOT SPENDING").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
-                                    .padding(.horizontal, 16).padding(.top, 4)
-                                    .accessibilityAddTraits(.isHeader)
+                                groupLabel("Not spending")
                                 CaseGrid(cases: cases, chosen: Binding(get: { nil }, set: { key in
                                     if let key = key { onCase?(key, newOnes && caseRule?(key) != nil && key != "not_mine") }
                                 }))
@@ -136,30 +132,21 @@ struct CategorySheet: View {
                         } else {
                             let items = tiles(in: group)
                             if !items.isEmpty {
-                                Text((Self.groupNames[group] ?? group).uppercased())
-                                    .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
-                                    .padding(.horizontal, 16).padding(.top, 4)
-                                    .accessibilityAddTraits(.isHeader)
-                                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                                    ForEach(items) { c in tile(c) }
-                                }
+                                groupLabel(Self.groupNames[group] ?? group)
+                                CFTileGrid { ForEach(items) { c in tile(c) } }
                             }
                         }
                     }
                     if onRegularBill != nil {
-                        RowSeparator(inset: 0).padding(.top, 4)
-                        Toggle(isOn: $bill) {
-                            Text("Regular bill").font(Nacre.body).foregroundColor(Pearl.ink)
-                        }
-                        .tint(Pearl.action).padding(.horizontal, 4)
+                        APCard { CFToggleRow(symbol: "calendar", title: "Regular bill", isOn: $bill) }.padding(.top, 16)
                     }
-                    if let extras = extras { extras }
+                    if let extras = extras { extras.padding(.top, 16) }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 16)
                 .sheetPart()
             }
         }
-        .background(SheetBackground())
+        .cfSheet()
         // POLISH-01 audit 1: sized to what it shows.
         .fitsContent()
         .presentationDragIndicator(.visible)
@@ -172,28 +159,23 @@ struct CategorySheet: View {
 
     private var steps: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: title) { dismiss() }
+            CFSheetTitle(title: title) { dismiss() }
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 0) {
                     header
                     if !spendingOnly {
-                        Picker("", selection: $spending) {
-                            Text("Spending").tag(true)
-                            Text("Not spending").tag(false)
-                        }
-                        .pickerStyle(.segmented)
-                        .accessibilityLabel("Spending or not spending")
+                        // G1-Change: kit `.seg`, not the stock picker.
+                        CFSegmented(options: [(true, "Spending"), (false, "Not spending")], selection: $spending)
+                            .padding(.top, 14)
+                            .accessibilityLabel("Spending or not spending")
                     }
                     if answering, let cases = notSpending {
                         CaseGrid(cases: cases, chosen: $chosenCase)
+                            .padding(.top, 16)
                             // Leaving every one out is a bigger step: she turns that on herself.
                             .onChange(of: chosenCase) { key in rememberCase = key != "not_mine" }
                         if let key = chosenCase, let rule = caseRule?(key) {
-                            Toggle(isOn: $rememberCase) {
-                                Text(rule).font(Nacre.body).foregroundColor(Pearl.ink)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            .tint(Pearl.action).padding(.horizontal, 4)
+                            APCard { CFToggleRow(symbol: "repeat", title: rule, isOn: $rememberCase) }.padding(.top, 12)
                         }
                     }
                     if !answering && available.isEmpty {
@@ -202,62 +184,45 @@ struct CategorySheet: View {
                     ForEach(answering ? [] : (spending ? Self.spendingGroups : Self.otherGroups), id: \.self) { group in
                         let items = tiles(in: group)
                         if !items.isEmpty {
-                            Text((Self.groupNames[group] ?? group).uppercased())
-                                .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
-                                .padding(.horizontal, 16).padding(.top, 4)
-                                .accessibilityAddTraits(.isHeader)
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                                ForEach(items) { c in tile(c) }
-                            }
+                            groupLabel(Self.groupNames[group] ?? group)
+                            CFTileGrid { ForEach(items) { c in tile(c) } }
                         }
                     }
                     if onRegularBill != nil, spending, !answering {
-                        RowSeparator(inset: 0).padding(.top, 4)
-                        Toggle(isOn: $bill) {
-                            Text("Regular bill").font(Nacre.body).foregroundColor(Pearl.ink)
-                        }
-                        .tint(Pearl.action)
-                        .padding(.horizontal, 4)
+                        APCard { CFToggleRow(symbol: "calendar", title: "Regular bill", isOn: $bill) }.padding(.top, 16)
                     }
-                    if spending, !answering, let extras = extras { extras }
+                    if spending, !answering, let extras = extras { extras.padding(.top, 16) }
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
             }
             if let line = previewLine, !answering {
-                GlassCard {
-                    HStack(spacing: 12) {
-                        IconBubble(symbol: "arrow.triangle.2.circlepath")
-                        Text(line).font(Nacre.body).foregroundColor(Pearl.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .padding(14)
-                }
-                .padding(.horizontal, 16).padding(.top, 8)
-                .accessibilityElement(children: .combine)
+                // G1-Change (REDESIGN-14): the one-line champagne banner,
+                // "Also moves the 6 earlier ones · Allowance +$46".
+                CFBanner(text: line)
+                    .padding(.horizontal, 16).padding(.top, 8)
             }
             if answering {
                 Button("Continue") {
                     if let c = chosenCase { onCase?(c, caseRule?(c) != nil && rememberCase) }
                 }
-                    .buttonStyle(NacreButtonStyle())
+                    .buttonStyle(APPrimaryButtonStyle())
                     .disabled(chosenCase == nil)
-                    .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8)
+                    .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
             } else {
             Button("Save") {
                 onRegularBill?(bill && spending)
                 onSave(chosen, remember)
             }
-                .buttonStyle(NacreButtonStyle())
+                .buttonStyle(APPrimaryButtonStyle())
                 .disabled((chosen == current && !bill && !confirmsCurrent) || available.isEmpty)
-                .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, remember ? 0 : 8)
+                .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, remember ? 0 : 8)
             if remember {
                 Button("Just this one") {
                     onRegularBill?(bill && spending)
                     onSave(chosen, false)
                 }
-                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                .buttonStyle(NacreTextButtonStyle(tone: Pearl.link))
                 .disabled(chosen == current)
                 .padding(.horizontal, 16).padding(.bottom, 8)
             }
@@ -268,7 +233,7 @@ struct CategorySheet: View {
                     .padding(.horizontal, 16).padding(.bottom, 8)
             }
         }
-        .background(SheetBackground())
+        .cfSheet()
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .task { if available.isEmpty { await app.loadCategories() } }
@@ -285,20 +250,14 @@ struct CategorySheet: View {
         }
     }
 
-    /// "LO  Loblaws  −$84.12".
+    /// kit `.who`: "LO  Loblaws / −$84.12 · Wed, Nov 11".
     private var header: some View {
-        HStack(spacing: 12) {
-            Initials(name: mark ?? name, size: 48)
-                .overlay(Circle().strokeBorder(
-                    AngularGradient(colors: [Nacre.rose, Nacre.lilac, Nacre.seaglass, Nacre.rose], center: .center),
-                    lineWidth: 1.2))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(name).font(Nacre.title2).foregroundColor(Pearl.ink).lineLimit(onDelete == nil ? 1 : 3)
-                Text(amount).font(Nacre.subheadline).foregroundColor(tone)
-            }
-            Spacer(minLength: 0)
-        }
-        .accessibilityElement(children: .combine)
+        CFWho(name: name, line: amount, tone: tone, mark: mark, nameLines: onDelete == nil ? 1 : 3)
+    }
+
+    /// kit `.label`, 16 above and 8 below the tiles.
+    private func groupLabel(_ text: String) -> some View {
+        APSectionLabel(text: text).padding(.top, 16).padding(.bottom, 8)
     }
 
     private func tiles(in group: String) -> [CategoryList.Category] {
@@ -310,36 +269,19 @@ struct CategorySheet: View {
 
     private func tile(_ c: CategoryList.Category) -> some View {
         let on = chosen == c.name
-        return Button {
+        // A+ (G1-Change, G1-WhatWasThis): a slim tile; the chosen one has the
+        // 2 pt rose line; on the answer-at-once page Pearl's guess has the
+        // dashed rose line.
+        let mark: CFTile.Mark = answersAtOnce ? (on && !c.name.isEmpty ? .guess : .rest) : (on ? .current : .rest)
+        return CFTile(symbol: Self.symbol(for: c.name), title: c.name, mark: mark) {
             if answersAtOnce {
                 onRegularBill?(bill)
                 onSave(c.name, merchant != nil && newOnes)
             } else {
                 chosen = c.name
             }
-        } label: {
-            VStack(spacing: 6) {
-                Image(systemName: Self.symbol(for: c.name))
-                    .font(.system(size: 16))
-                    .foregroundColor(Pearl.action)
-                    .frame(width: 36, height: 36)
-                    .background(Circle().fill(Pearl.blush.opacity(on ? 1 : 0.7)))
-                Text(c.name)
-                    .font(.custom(on ? "Figtree-SemiBold" : "Figtree-Regular", size: 13, relativeTo: .footnote))
-                    .foregroundColor(on ? Pearl.action : Pearl.ink)
-                    .lineLimit(2).multilineTextAlignment(.center).minimumScaleFactor(0.85)
-            }
-            .frame(maxWidth: .infinity, minHeight: 76)
-            .padding(.vertical, 6)
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(on ? Pearl.blush.opacity(0.75) : Nacre.glass))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(on ? Pearl.action : Nacre.separator, lineWidth: on ? 1.5 : 1))
-            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
-        .buttonStyle(.plain)
         .accessibilityLabel(c.name)
-        .accessibilityAddTraits(on ? .isSelected : [])
     }
 
     /// The web's category icons (src/pearl/icons.jsx), in SF Symbols.
@@ -431,7 +373,8 @@ struct CaseTile: Identifiable, Hashable {
     }
 }
 
-/// Three across, the category sheet's tile look.
+/// A+ (G1-WhatWasThis, G1-Select's Mark as…): two across, kit `.tile.slim`;
+/// the chosen answer has the 2 pt rose line.
 struct CaseGrid: View {
     let cases: [CaseTile]
     @Binding var chosen: String?
@@ -439,29 +382,12 @@ struct CaseGrid: View {
     var role: String? = nil
 
     var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+        CFTileGrid {
             ForEach(cases) { c in
                 let on = chosen == c.key
-                Button { chosen = c.key } label: {
-                    VStack(spacing: 6) {
-                        Image(systemName: c.symbol).font(.system(size: 16)).foregroundColor(Pearl.action)
-                            .frame(width: 36, height: 36).background(Circle().fill(Pearl.blush.opacity(on ? 1 : 0.7)))
-                        Text(c.label)
-                            .font(.custom(on ? "Figtree-SemiBold" : "Figtree-Regular", size: 13, relativeTo: .footnote))
-                            .foregroundColor(on ? Pearl.action : Pearl.ink)
-                            .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.85)
-                            .padding(.horizontal, 4)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 76).padding(.vertical, 6)
-                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(on ? Pearl.blush.opacity(0.75) : Nacre.glass))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(on ? Pearl.action : Nacre.separator, lineWidth: on ? 1.5 : 1))
-                    .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(role.map { "\(c.label), \($0)" } ?? c.label)
-                .accessibilityAddTraits(on ? .isSelected : [])
+                CFTile(symbol: c.symbol, title: c.label, mark: on ? .current : .rest,
+                       iconTone: c.key == "not_mine" ? Pearl.action : Pearl.action) { chosen = c.key }
+                    .accessibilityLabel(role.map { "\(c.label), \($0)" } ?? c.label)
             }
         }
     }
@@ -473,22 +399,27 @@ extension CategorySheet {
     static func preview(api: APIClient, id: String, merchant: String) -> (String, Bool) async -> String? {
         { name, remember in
             struct Preview: Decodable {
-                let line: String?
+                let delta: Double?
                 let merchantCount: Int?
                 enum CodingKeys: String, CodingKey {
-                    case line
+                    case delta
                     case merchantCount = "merchant_count"
                 }
             }
+
             guard let p: Preview = try? await api.post("api/transactions/\(id)/category/preview",
                                                      ["category": name, "apply_to_merchant": remember]) else { return nil }
+            // REDESIGN-14 (G1-Change): one line, "Also moves the 6 earlier
+            // ones · Allowance +$46". Less text: the reason goes.
             var words: [String] = []
             let others = max(0, (p.merchantCount ?? 1) - 1)
             if remember && others > 0 {
-                words.append("Also moves \(others) other \(merchant) transaction\(others == 1 ? "" : "s"), and new ones from now on.")
+                words.append(others == 1 ? "Also moves the earlier one" : "Also moves the \(others) earlier ones")
             }
-            if let line = p.line, !line.isEmpty { words.append(line) }
-            return words.isEmpty ? nil : words.joined(separator: " ")
+            if let delta = p.delta, abs(delta) >= 0.5 {
+                words.append("Allowance \(delta > 0 ? "+" : "\u{2212}")\(Format.whole(abs(delta)))")
+            }
+            return words.isEmpty ? nil : words.joined(separator: " \u{00B7} ")
         }
     }
 }

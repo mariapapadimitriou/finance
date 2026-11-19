@@ -30,14 +30,11 @@ struct AddTransactionSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: "Add a transaction") { dismiss() }
+            CFSheetTitle(title: "Add a transaction") { dismiss() }
             ScrollView {
                 VStack(spacing: 14) {
-                    Picker("", selection: $moneyIn) {
-                        Text("Money out").tag(false)
-                        Text("Money in").tag(true)
-                    }
-                    .pickerStyle(.segmented)
+                    // G1-Change (Add a transaction): kit `.seg`, not the stock picker.
+                    CFSegmented(options: [(false, "Money out"), (true, "Money in")], selection: $moneyIn)
                     .accessibilityLabel("Money out or money in")
                     .onChange(of: moneyIn) { _ in
                         category = nil
@@ -45,15 +42,10 @@ struct AddTransactionSheet: View {
                         similar = nil
                     }
                     amountField
-                    GlassCard {
-                        HStack {
-                            Text("Name").font(Nacre.body).foregroundColor(Pearl.ink)
-                            TextField("", text: $name, prompt: Text("e.g. Farmers’ market").foregroundColor(Pearl.muted))
-                                .font(Nacre.body).foregroundColor(Pearl.muted).multilineTextAlignment(.trailing)
-                                .textInputAutocapitalization(.words)
-                        }
-                        .padding(.horizontal, 16).frame(minHeight: 52)
-                        RowSeparator()
+                    // REDESIGN-09: Name is a well, its label above it.
+                    PearlField(label: "Name", placeholder: "Where was it?", text: $name)
+                        .textInputAutocapitalization(.words)
+                    APCard {
                         row("Date", value: dayLabel) { pickingDay.toggle() }
                         if pickingDay {
                             DatePicker("", selection: $day, in: ...Date(), displayedComponents: .date)
@@ -61,11 +53,11 @@ struct AddTransactionSheet: View {
                                 .padding(.horizontal, 8)
                                 .onChange(of: day) { _ in pickingDay = false }
                         }
-                        RowSeparator()
+                        APSeparator(afterFace: false)
                         row("Category", value: categoryLabel, placeholder: categoryLabel == nil) {
                             pickingCategory = true
                         }
-                        RowSeparator()
+                        APSeparator(afterFace: false)
                         Menu {
                             Picker("", selection: $account) {
                                 Text("Cash").tag("cash")
@@ -80,7 +72,7 @@ struct AddTransactionSheet: View {
                         similarCard(similar)
                     }
                     if let error = error {
-                        Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
+                        Text(error).font(Nacre.footnote).foregroundColor(Pearl.danger)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16)
                     }
                 }
@@ -90,11 +82,11 @@ struct AddTransactionSheet: View {
             Button(similar == nil ? "Add" : "It’s a different one · add it") {
                 Task { await add(confirm: similar != nil) }
             }
-            .buttonStyle(NacreButtonStyle(busy: busy))
+            .buttonStyle(APPrimaryButtonStyle(busy: busy))
             .disabled(!ready || busy)
             .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
         }
-        .background(SheetBackground())
+        .cfSheet()
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .task { await loadAccounts() }
@@ -115,14 +107,18 @@ struct AddTransactionSheet: View {
 
     // MARK: The amount
 
-    /// "$0.00" in large type; "+$150.00" in green for money in.
+    /// A+ (G1-Change, kit `.fld.big`): the amount in a 72 pt well, Fraunces
+    /// 36, the `$` muted; the 2 pt rose line while she types.
     private var amountField: some View {
         ZStack {
-            Text(amountText)
-                .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
-                .foregroundColor(value == nil ? Pearl.muted : (moneyIn ? Pearl.moneyIn : Pearl.moneyOut))
-                .lineLimit(1).minimumScaleFactor(0.5)
-                .accessibilityHidden(true)
+            HStack(spacing: 6) {
+                Text("$").foregroundColor(Pearl.muted)
+                Text(value.map { Format.amount($0).replacingOccurrences(of: "$", with: "") } ?? "0.00")
+                    .foregroundColor(value == nil ? Pearl.muted : (moneyIn ? Pearl.moneyIn : Pearl.ink))
+            }
+            .font(.custom("Fraunces-SemiBold", size: 36, relativeTo: .largeTitle))
+            .lineLimit(1).minimumScaleFactor(0.5)
+            .accessibilityHidden(true)
             TextField("", text: $amount)
                 .keyboardType(.decimalPad)
                 .focused($typingAmount)
@@ -135,7 +131,12 @@ struct AddTransactionSheet: View {
                     similar = nil
                 }
         }
-        .frame(maxWidth: .infinity, minHeight: 60)
+        .frame(maxWidth: .infinity, minHeight: 72)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(APlus.well))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .strokeBorder(typingAmount ? Pearl.action : APlus.wellLine, lineWidth: typingAmount ? 2 : 1))
+        .contentShape(Rectangle())
+        .onTapGesture { typingAmount = true }
     }
 
     private var value: Double? {
@@ -188,11 +189,11 @@ struct AddTransactionSheet: View {
     /// What kind of income money in is (the kinds T-71 offers).
     private var kindSheet: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: "What kind of income?") { pickingCategory = false }
+            CFSheetTitle(title: "What kind of income?") { pickingCategory = false }
             ScrollView {
-                GlassCard {
+                APCard {
                     ForEach(Array(Self.incomeKinds.enumerated()), id: \.element) { i, k in
-                        if i > 0 { RowSeparator() }
+                        if i > 0 { APSeparator(afterFace: false) }
                         Button {
                             incomeKind = k
                             similar = nil
@@ -215,7 +216,7 @@ struct AddTransactionSheet: View {
                 .padding(16)
             }
         }
-        .background(SheetBackground())
+        .cfSheet()
         .presentationDetents([.medium, .large])
     }
 
@@ -224,9 +225,10 @@ struct AddTransactionSheet: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("This looks like something already in your transactions:")
                 .font(Nacre.footnote).foregroundColor(Pearl.ink).padding(.horizontal, 16)
-            GlassCard {
+            APCard {
                 ForEach(Array(matches.prefix(3).enumerated()), id: \.element.id) { i, m in
-                    if i > 0 { RowSeparator() }
+                    if i > 0 { APSeparator(afterFace: false) }
+
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(m.merchant).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
