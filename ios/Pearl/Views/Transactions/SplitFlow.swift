@@ -297,7 +297,10 @@ struct SplitSheet: View {
             if t.splitsMyPart { JointStrip(t: t) }
             stepView
             if let error = error {
-                Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
+                // G2-BNotSure S-03ue: the error is a red line with ⓘ.
+                Label(error, systemImage: "exclamationmark.circle")
+                    .font(Nacre.footnote).foregroundColor(Pearl.danger)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -525,7 +528,7 @@ struct SplitSheet: View {
 
     // MARK: S-03u Not sure yet (SPLIT-C)
 
-    /// REFRESH-03 (S-03u): the explainer, now said to VoiceOver only
+    /// G2-BNotSure (S-03u0): the explainer, one quiet line under the methods
     /// (G2-NotAdding draws the people and "Nothing yet").
     private var unsureWords: String {
         "No amounts yet. Paybacks come off as they arrive."
@@ -536,27 +539,26 @@ struct SplitSheet: View {
     /// action) takes someone off.
     private var unsureHow: some View {
         VStack(alignment: .leading, spacing: 14) {
-            APCard {
-                if withMe {
-                    // S-03u2: her own row, with no amount.
-                    APPersonRow(face: "Me", name: "You", line: "Your share · not set yet") { EmptyView() }
-                        .accessibilityElement(children: .combine)
-                        .accessibilityHint("Set it any time, or never")
-                    if !people.isEmpty { APSeparator() }
-                }
-                ForEach(Array(people.enumerated()), id: \.element) { i, name in
-                    if i > 0 { APSeparator() }
-                    let paid = saved(name)?.paid ?? 0
-                    SwipeToRemove(label: name) { askRemove(name) } content: {
-                        APPersonRow(face: name, name: name,
-                                    line: paid >= 0.005 ? "Paid you \(Format.amount(paid))" : "Nothing yet",
-                                    lineTone: paid >= 0.005 ? Pearl.moneyIn : Pearl.muted) { EmptyView() }
-                            .accessibilityElement(children: .combine)
-                            .accessibilityHint("Any amount they send you")
+            // G2-BNotSure (S-03u0): the one quiet line under the methods.
+            Text(unsureWords).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                .padding(.horizontal, 4).padding(.bottom, -4)
+                .fixedSize(horizontal: false, vertical: true)
+            if !people.isEmpty {
+                // S-03us: each person, "Any amount they send you" (or what
+                // they've sent); her own share is set later (S-47).
+                APCard {
+                    ForEach(Array(people.enumerated()), id: \.element) { i, name in
+                        if i > 0 { APSeparator() }
+                        let paid = saved(name)?.paid ?? 0
+                        SwipeToRemove(label: name) { askRemove(name) } content: {
+                            APPersonRow(face: name, name: name,
+                                        line: paid >= 0.005 ? "Paid you \(Format.amount(paid))" : "Any amount they send you",
+                                        lineTone: paid >= 0.005 ? Pearl.moneyIn : Pearl.muted) { EmptyView() }
+                                .accessibilityElement(children: .combine)
+                        }
                     }
                 }
             }
-            .accessibilityHint(unsureWords)
             // S-03u2 / S-03u3 (TEST-18): "I had some too", on by default.
             APCard {
                 addNewRow
@@ -899,7 +901,8 @@ struct SplitSheet: View {
         let mineOdd = key == Self.me && oddToMe
         if key == Self.me && withMe && mode == "amount" {
             // S-03rg / S-03rh / S-03ri (TEST-21): only while it gives way.
-            if givesWay { bits.append(restCents < 0 ? "Your share · can’t go below $0.00" : "Your share · what’s left") }
+            // G2-AShare: "What’s left" (S-03rg), "Your share" (S-03rh, at $0.00).
+            if givesWay { bits.append(restCents < 0 ? "Your share" : "What’s left") }
         } else if key == Self.me && withMe && gapCents > 0 {
             // S-03b v2 (REFRESH-03): "Your share $44.12", before saving; the
             // rest is said once, under the total.
@@ -1028,6 +1031,10 @@ struct SplitSheet: View {
         if gapCents > 0 && blocksShort { return "\(Format.amount(g)) left to assign" }
         // S-03b v2 / S-03r / S-03re (REFRESH-03): "$4.12 left · stays yours".
         if gapCents > 0 { return "\(Format.amount(g)) left · stays yours" }
+        // G2-AShare S-03rh: "That’s $5.88 too much, even with your share at
+        // $0.00"; S-03ri: "That’s $15.88 too much", then Take it from her share.
+        if givesWay { return "That’s \(Format.amount(g)) too much, even with your share at $0.00" }
+        if takeFromMine != nil { return "That’s \(Format.amount(g)) too much" }
         // S-03rh: with her share giving way it is already at $0.00.
         let typed = rows.filter { !(givesWay && $0 == Self.me) }.map { Int((number($0) * 100).rounded()) }.reduce(0, +)
         return "\(Format.amount(Double(typed) / 100)) of \(Format.amount(Double(totalCents) / 100)) · \(Format.amount(g)) too much"
@@ -1327,40 +1334,39 @@ struct SplitPeople: View {
 
     /// Settle up / That's everything (Not sure yet) and See who else owes you.
     @ViewBuilder private var footer: some View {
-        if split.unsure {
-            // S-04u: Settle up and That's everything; S-46c Reopen split.
+        if split.unsure, split.closedAt != nil {
+            // G2-BCard S-46c: a closed split's Reopen split is the secondary capsule.
+            Button("Reopen split", action: onReopen)
+                .buttonStyle(PearlSecondaryButtonStyle())
+                .padding(.top, 12)
+        } else if split.unsure {
+            // S-04u: Settle up and That's everything.
             // REFRESH-03: titles alone; what each does is a VoiceOver hint.
             APCard {
-                if split.closedAt == nil {
-                    Button(action: onSettle) { CFRowLabel(symbol: "person.2", title: "Settle up") }
-                        .buttonStyle(.plain)
-                        .accessibilityHint("Set what each person owes.")
-                    APSeparator(afterFace: false)
-                    // S-04u8 (TEST-18, note 1238:25742): once everyone has paid.
-                    Button(action: onClose) {
-                        CFRowLabel(symbol: "calendar", title: "That’s everything",
-                                   sub: everyonePaid ? "Everyone has paid. \(Format.amount(split.still ?? split.you)) stays yours." : nil)
-                    }
+                Button(action: onSettle) { CFRowLabel(symbol: "person.2", title: "Settle up") }
                     .buttonStyle(.plain)
-                    .accessibilityHint("Keeps the rest as yours and closes the split.")
-                } else {
-                    Button(action: onReopen) { CFRowLabel(symbol: "arrow.triangle.2.circlepath", title: "Reopen split") }
-                        .buttonStyle(.plain)
+                    .accessibilityHint("Set what each person owes.")
+                APSeparator(afterFace: false)
+                // S-04u8 (TEST-18, note 1238:25742): once everyone has paid.
+                Button(action: onClose) {
+                    CFRowLabel(symbol: "calendar", title: "That’s everything",
+                               sub: everyonePaid ? "Everyone has paid. \(Format.amount(split.still ?? split.you)) stays yours." : nil)
                 }
+                .buttonStyle(.plain)
+                .accessibilityHint("Keeps the rest as yours and closes the split.")
             }
             .padding(.top, 12)
         }
-        if split.closedAt == nil {
-            // REDESIGN-04: renamed from "See everyone who owes you".
-            // TEST-14: the whole 44 pt row taps, not only the words.
-            Button(action: onOwed) {
-                Text("See who else owes you")
-                    .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
-            }
-            .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
-            .foregroundColor(Pearl.link).buttonStyle(.plain)
-            .padding(.top, 4)
+        // REDESIGN-04: renamed from "See everyone who owes you".
+        // TEST-14: the whole 44 pt row taps, not only the words.
+        // G2-BCard S-46c: under a closed split too.
+        Button(action: onOwed) {
+            Text("See who else owes you")
+                .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
         }
+        .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+        .foregroundColor(Pearl.link).buttonStyle(.plain)
+        .padding(.top, 4)
 
     }
 
@@ -1851,8 +1857,11 @@ struct MarkPaidSheet: View {
     /// one can be ticked when it took several (S-26).
     private var bankSheet: some View {
         APSheet(dismissDisabled: busy) {
-            APSheetHeader(heading: "Which payment was it?",
-                          line: unsure ? "From \(person.name), any amount" : "From \(person.name), \(Format.amount(person.owes))",
+            // G2-AMarkPaid (S-06rb): the question, then who it's from as the
+            // sheet's who: BANK OR E-TRANSFER, Priya, "$30.00 owed on Loblaws".
+            APSheetHeader(heading: "Which payment was it?", face: person.name, overline: "Bank or e-Transfer",
+                          title: person.name,
+                          sub: unsure ? "Any amount, on \(t.merchant)" : "\(Format.amount(person.owes)) owed on \(t.merchant)",
                           back: back) { dismiss() }
             PearlField(placeholder: "Search by name or amount", text: $query, kind: .search)
             .task(id: query) {
@@ -1910,7 +1919,8 @@ struct MarkPaidSheet: View {
             if let i = picked.firstIndex(of: d.id) { picked.remove(at: i) } else { picked.append(d.id) }
         } label: {
             HStack(spacing: 12) {
-                APTickBox(on: on)
+                // G2-AMarkPaid: the money-in icon first, the tick at the end.
+                APIcon(symbol: "creditcard", tone: Pearl.moneyIn)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(d.name) · \(Format.short(d.date))").font(Nacre.body)
                         .foregroundColor(Pearl.ink)
@@ -1924,6 +1934,7 @@ struct MarkPaidSheet: View {
                 Spacer(minLength: 8)
                 Text("+" + Format.amount(use ?? d.whole)).font(Nacre.headline).monospacedDigit()
                     .foregroundColor(Pearl.moneyIn)
+                APCheckCircle(on: on)
             }
             .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 64).contentShape(Rectangle())
             .opacity(full ? 0.5 : 1)
@@ -1931,6 +1942,24 @@ struct MarkPaidSheet: View {
         .buttonStyle(.plain)
         .disabled(full || busy)
         .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    /// S-06rb's tick: a 24 pt circle, a 1.5 pt muted ring; ticked, rose with ✓.
+    struct APCheckCircle: View {
+        let on: Bool
+
+        var body: some View {
+            ZStack {
+                if on {
+                    Circle().fill(Pearl.action)
+                    Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)).foregroundColor(Pearl.onAction)
+                } else {
+                    Circle().strokeBorder(Pearl.muted, lineWidth: 1.5)
+                }
+            }
+            .frame(width: 24, height: 24)
+            .accessibilityHidden(true)
+        }
     }
 
     /// S-06rc cash in hand / S-06rd another app: the amount, when, then Mark
@@ -1958,7 +1987,9 @@ struct MarkPaidSheet: View {
                 .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(APlus.well))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(typingAmount ? Pearl.action : APlus.wellLine, lineWidth: typingAmount ? 2 : 1))
-                Text(unsure ? "Any amount, up to the \(Format.amount(limit)) that still counts as yours"
+                // G2-BMarkPaid S-06uc: "Any amount Sam gave you"; the most it
+                // can take is said if she types more.
+                Text(unsure ? "Any amount \(person.name) gave you"
                      : "\(person.name) owes \(Format.amount(person.owes))").font(Nacre.footnote).foregroundColor(Pearl.muted)
                     .multilineTextAlignment(.center)
             }
@@ -1978,13 +2009,13 @@ struct MarkPaidSheet: View {
             }
             if overBy >= 0.005 {
                 // S-06 v2 (SPLIT-11): more than they owe; S-11c says what. Ink, not red.
-                Text("\(Format.amount(overBy)) more than \(person.name) owes. You’ll sort the extra next.")
+                Text("\(Format.amount(overBy)) more than \(person.name) owes. You’ll say what the extra is next.")
                     .font(Nacre.subheadline).foregroundColor(Pearl.ink)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let error = error { CautionBanner(text: error) }
         } footer: {
-            PearlSheetButtons(primary: overBy >= 0.005 ? "Next: the extra \(Format.amount(overBy))"
+            PearlSheetButtons(primary: overBy >= 0.005 ? "Next"
                                        : "Mark \(Format.amount(typed ?? (unsure ? 0 : person.owes))) paid back",
                               busy: busy, busyLabel: "Saving…") {
                 if overBy >= 0.005 {

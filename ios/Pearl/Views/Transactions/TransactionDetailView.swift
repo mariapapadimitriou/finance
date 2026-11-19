@@ -922,6 +922,7 @@ struct TransactionDetailView: View {
                 app.changed()
                 showSplit(title, undo: undo)
             }
+            .onlyPerson(t.splitting?.people.count == 1)  // G2-BRemove S-03fu1 (splits engBOT)
         }
     }
 

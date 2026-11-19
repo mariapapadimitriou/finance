@@ -88,8 +88,15 @@ struct UnlinkLinkSheet: View {
             if let card = s.card {
                 HStack(spacing: 12) {
                     APIcon(symbol: PersonOptionsSheet.symbol(link.kind), tone: Pearl.moneyIn)
-                    Text(card.label).font(Nacre.body).foregroundColor(Pearl.ink)
-                        .fixedSize(horizontal: false, vertical: true)
+                    // G2-AUnlink: who sent it over what it was ("e-Transfer
+                    // from Jo Park · Nov 16" over "Part of $60.00").
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(cardTitle ?? card.label).font(Nacre.body).foregroundColor(Pearl.ink)
+                        if let sub = cardSub {
+                            Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                        }
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
                     Text(Format.amount(card.amount)).font(Nacre.headline).monospacedDigit()
                         .foregroundColor(Pearl.moneyIn)
@@ -101,19 +108,41 @@ struct UnlinkLinkSheet: View {
                 // gone from the sheet; VoiceOver keeps it on the payment row.
                 .accessibilityHint(wholeHint ?? "")
             }
-            if failed { CautionBanner(text: Self.error) }
-        } footer: {
-            VStack(spacing: 0) {
-                PearlSheetButtons(primary: failed ? "Try again" : (s.confirm ?? s.button), busy: busy,
-                                  busyLabel: "Unlinking…", secondary: s.keep ?? "Keep linked",
-                                  onPrimary: { Task { await unlink() } }, onSecondary: onCancel)
-                if let note = s.note {
-                    Text(note).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, 16).padding(.bottom, 12)
-                }
+            if failed {
+                // G2-AUnlink (S-34sr): the error is a red line under the card.
+                Label(Self.error, systemImage: "exclamationmark.circle")
+                    .font(Nacre.footnote).foregroundColor(Pearl.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityElement(children: .combine)
             }
+        } footer: {
+            PearlSheetButtons(primary: failed ? "Try again" : (s.confirm ?? s.button), busy: busy,
+                              busyLabel: "Unlinking…", secondary: s.keep ?? "Keep linked",
+                              onPrimary: { Task { await unlink() } }, onSecondary: onCancel)
+                // G2-AUnlink: no footnote under the buttons; VoiceOver keeps it.
+                .accessibilityHint(s.note ?? "")
+        }
+    }
+
+    /// "e-Transfer from Jo Park · Nov 16" (shared), "e-Transfer from Sam
+    /// Lee", "Cash · Nov 12", "Refund from Costco".
+    private var cardTitle: String? {
+        switch link.kind {
+        case "cash", "app": return "\(PersonOptionsSheet.word(link)) · \(Format.short(link.date))"
+        default:
+            let shared = !(link.others ?? []).isEmpty
+            return shared ? "\(link.sheet.name) · \(Format.short(link.date))" : link.sheet.name
+        }
+    }
+
+    /// "Part of $60.00", "You marked this as cash", or the day.
+    private var cardSub: String? {
+        switch link.kind {
+        case "cash": return link.deposit.map { "Deposited \(Format.short($0.date))" } ?? "You marked this as cash"
+        case "app": return "You marked this as paid in \(PersonOptionsSheet.word(link))"
+        default:
+            if let others = link.others, !others.isEmpty, let whole = link.whole { return "Part of \(Format.amount(whole))" }
+            return Format.short(link.date)
         }
     }
 

@@ -171,7 +171,7 @@ struct PaidBackFindSheet: View {
         } else if let f = found, rows.isEmpty {
             // PB-23: what she looked for, said back; Clear search when she typed.
             EmptyStateBlock(title: "No money in matches",
-                            line: "Nothing came in for about \(Format.amount(f.about)) after \(Format.short(f.date)). If it hasn’t arrived yet, Pearl asks when it does.",
+                            line: "Nothing came in for about \(Format.amount(f.about)) after \(Format.short(f.date)). Pearl asks when it does.",
                             action: query.isEmpty ? nil : "Clear search") { query = "" }
         } else if found != nil {
             ForEach(groups, id: \.key) { g in

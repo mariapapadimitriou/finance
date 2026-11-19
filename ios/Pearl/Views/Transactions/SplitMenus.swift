@@ -930,6 +930,45 @@ struct APPaymentCard: View {
     }
 }
 
+/// G2-APersonStates (S-40c, S-40c2; Rethought, approved 2026-11-18): a
+/// payment is one tappable row: its icon, "e-Transfer · Nov 16" over what it
+/// was, the amount in green and a chevron. Its options (View…, Unlink…)
+/// open on tap instead of sitting as two rows under every payment.
+struct APLinkRow: View {
+    let symbol: String
+    let title: String
+    var line: String? = nil
+    let amount: Double
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                APIcon(symbol: symbol, tone: Pearl.moneyIn)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
+                    if let line = line, !line.isEmpty {
+                        Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Text(Format.amount(amount)).font(Nacre.headline).monospacedDigit()
+                    .foregroundColor(Pearl.moneyIn).pearlAmountFit()
+                APChevron()
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .frame(minHeight: 64)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel([title, line, Format.amount(amount)].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityHint("Shows its options")
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
 /// `.bullet` rows in a card: WHAT CHANGES.
 struct APBullets: View {
     let lines: [String]
@@ -1080,8 +1119,9 @@ struct MineOptionsSheet: View {
     private var sub: String {
         // REDESIGN-10: "Not paid back yet".
         guard let mine = mine else { return "Not paid back yet" }
+        // G2-BOptions S-40w: "Reimbursed by Northwind · $60.00".
         return mine.full
-            ? "✓ " + (mine.refunded ? "Refunded" : "Reimbursed by \(by)") + (mine.on.map { " · \(Format.short($0))" } ?? "")
+            ? (mine.refunded ? "Refunded" : "Reimbursed by \(by)") + " · \(Format.amount(mine.reimbursed))"
             : "\(mine.refunded ? "Refunded" : "Reimbursed") \(Format.amount(mine.reimbursed)) of \(Format.amount(mine.amount)) · \(Format.amount(mine.stays)) stays yours"
     }
 
@@ -1099,10 +1139,13 @@ struct MineOptionsSheet: View {
             APOptionCard {
                 // PB-20: first, also before anything is linked. The frame
                 // draws the title alone; what it finds is the VoiceOver hint.
-                APOptionRow(symbol: "questionmark.circle", title: "Find what paid it back") { onChoose(.findPaidBack) }
-                    .accessibilityHint("Work, a refund, or someone paying you")
-                    .accessibilityIdentifier("find-paid-back")
-                APSeparator()
+                // S-40w: once all of her share is reimbursed, nothing is left to find.
+                if mine?.full != true {
+                    APOptionRow(symbol: "questionmark.circle", title: "Find what paid it back") { onChoose(.findPaidBack) }
+                        .accessibilityHint("Work, a refund, or someone paying you")
+                        .accessibilityIdentifier("find-paid-back")
+                    APSeparator()
+                }
                 APOptionRow(symbol: "person.2", title: "Change your share") { onChoose(.changeShare) }
             }
         }
@@ -1145,29 +1188,63 @@ struct PersonOptionsSheet: View {
     private var unsureBody: some View {
         APSheet {
             APSheetHeader(face: p.name, overline: "\(t.merchant) · Not sure yet", title: p.name,
-                             sub: p.paid >= 0.005 ? "Paid you \(Format.amount(p.paid)) so far" : "Nothing yet",
-                             subTone: p.paid >= 0.005 ? Pearl.moneyIn : Pearl.muted, close: onClose)
-            if !links.isEmpty {
-                APSheetLabel(text: "Paid so far")
-                ForEach(links) { link in paymentCard(link) }
-            }
+                             sub: unsureLine, subTone: p.paid >= 0.005 ? Pearl.moneyIn : Pearl.muted, close: onClose)
             if split.closedAt == nil {
-                // REFRESH-03: the rows alone; no subtitles, no footnote.
-                // The lead option is filled on S-40u and S-40u2, as on S-40a.
+                // G2-BOptions (S-40u): PAID SO FAR is one card: the payment,
+                // then Mark paid back, Remind and Unlink… under it.
+                if !links.isEmpty { APSheetLabel(text: "Paid so far") }
                 APOptionCard {
-                    APOptionRow(symbol: "banknote", title: "Mark paid back",
+                    ForEach(links) { link in
+                        paymentLine(link)
+                        APSeparator(afterFace: false)
+                    }
+                    APOptionRow(symbol: "arrow.uturn.backward", title: "Mark paid back",
                                    prominent: true) { onChoose(.markPaid) }
                     APSeparator()
                     APOptionRow(symbol: "pencil.line", title: "Remind \(p.name)") { onChoose(.remind) }
+                    ForEach(links) { link in
+                        APSeparator()
+                        APOptionRow(symbol: "link", title: links.count == 1 ? "Unlink…" : "Unlink \(Format.amount(link.amount))…") {
+                            onChoose(.unlink(link))
+                        }
+                    }
                 }
                 APSheetLabel(text: "Change the split")
                 APOptionCard {
-                    APOptionRow(symbol: "person", title: "Remove \(p.name)") { onChoose(.remove) }
-                        .accessibilityHint(removeSub ?? "")
+                    APOptionRow(symbol: "person.2", title: "Change the split") { onChoose(.changeShare) }
+                    APSeparator()
+                    // S-40u: Remove is the destructive row, in red, with
+                    // what it gives back under it.
+                    APOptionRow(symbol: "person", title: "Remove \(p.name)",
+                                sub: p.paid >= 0.005 ? "The \(Format.amount(p.paid)) goes back to \(t.merchant)" : nil,
+                                tone: Pearl.danger, titleTone: Pearl.danger) { onChoose(.remove) }
+                        .accessibilityHint(p.paid >= 0.005 ? "" : (removeSub ?? ""))
                 }
+            } else if !links.isEmpty {
+                APSheetLabel(text: "Paid so far")
+                ForEach(links) { link in paymentCard(link) }
             }
             openPurchase
         }
+    }
+
+    /// S-40u: "Paid you $20.00 · Nov 14", or "Nothing yet".
+    private var unsureLine: String {
+        guard p.paid >= 0.005 else { return "Nothing yet" }
+        let last = links.map(\.date).max()
+        return "Paid you \(Format.amount(p.paid))" + (last.map { " · \(Format.short($0))" } ?? " so far")
+    }
+
+    /// S-40u: the payment at the top of the PAID SO FAR card, "e-Transfer ·
+    /// Nov 14" and its amount in green; its Unlink… is a row below.
+    private func paymentLine(_ link: Transaction.LinkInfo) -> some View {
+        HStack(spacing: 12) {
+            Text("\(Self.word(link)) · \(Format.short(link.date))").font(Nacre.body).foregroundColor(Pearl.ink)
+            Spacer(minLength: 8)
+            Text(Format.amount(link.amount)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.moneyIn)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 56)
+        .accessibilityElement(children: .combine)
     }
 
     /// A+ `.quiet`, centred: "Open Loblaws" (AP-OwedPerson).
@@ -1183,73 +1260,144 @@ struct PersonOptionsSheet: View {
         APSheet {
             APSheetHeader(face: p.name, overline: "\(t.merchant) · split \(ways) ways", title: p.name,
                              sub: headline, subTone: paidInFull ? Pearl.moneyIn : Pearl.muted, close: onClose)
-            if !links.isEmpty {
-                APSheetLabel(text: paidInFull ? "Paid with" : "Paid so far")
-                ForEach(links) { link in paymentCard(link) }
-            }
-            if p.letGo != nil {
-                APOptionCard {
-                    APOptionRow(symbol: "arrow.triangle.2.circlepath", title: "Undo let it go",
-                                   sub: "\(p.name) owes you \(Format.amount(letGoAmount)) again", prominent: true) {
-                        onChoose(.undoLetGo)
-                    }
-                }
-            } else if p.owes >= 0.005 {
-                let part = p.paid >= 0.005
-                // REFRESH-03 (S-40a, S-40b): subtitles that only described the
-                // row are gone; VoiceOver keeps them as hints. The one that
-                // costs money ("becomes your spending") stays.
-                APOptionCard {
-                    APOptionRow(symbol: "arrow.uturn.backward", title: part ? "Mark the rest paid back" : "Mark paid back",
-                                   prominent: true) { onChoose(.markPaid) }
-                        .accessibilityHint("By bank, cash or another app")
-                    APSeparator()
-                    APOptionRow(symbol: "pencil.line", title: "Remind \(p.name)") { onChoose(.remind) }
-                        .accessibilityHint(part ? "Copies a message for the \(Format.amount(p.owes)) left"
-                                                : "Copies a message for you to send")
-                    APSeparator()
-                    // G2-Person: the title alone; what it costs is the hint.
-                    APOptionRow(symbol: "chevron.right", title: part ? "Let the rest go" : "Let it go") { onChoose(.letGo) }
-                        .accessibilityHint("The \(Format.amount(p.owes)) becomes your spending")
-                }
-            }
-            if let extra = answerExtra {
-                // S-48e: "Change what the extra $6.67 is".
-                APOptionCard {
-                    APOptionRow(symbol: "arrow.triangle.2.circlepath", title: "Change what the extra \(Format.amount(extra)) is",
-                                   sub: (p.gift ?? 0) >= 0.005 ? "Now: a gift · or you owe \(p.name), or \(possessive(p.name)) share"
-                                       : "Now: you owe \(p.name) · or \(possessive(p.name)) share, or a gift") {
-                        onChoose(.changeAnswer)
-                    }
-                }
-            }
-            if paidInFull, links.count == 1, let link = links.first, TransactionDetailView.personPayback(link) {
-                // PB-42 note (1397:4698): S-40c keeps its own rows and adds How
-                // much and Which purchase, each opening PB-42 on that step.
-                APOptionCard {
-                    APOptionRow(symbol: "target", title: "How much", sub: "All of it · \(Format.amount(link.amount))") {
-                        onChoose(.howMuch(link))
-                    }
-                    APSeparator()
-                    APOptionRow(symbol: "cart", title: "Which purchase", sub: "\(t.merchant) · \(Format.weekdayDay(t.date))") {
-                        onChoose(.whichPurchase(link))
-                    }
-                }
-            }
-            APSheetLabel(text: "Change the split")
-            APOptionCard {
-                if p.paid >= 0.005 && p.owes >= 0.005 && p.letGo == nil {
-                    // S-48e: Sam paid less; his share reopens S-48a.
-                    APOptionRow(symbol: "person.2", title: "Change \(possessive(p.name)) share") { onChoose(.changeAnswer) }
-                } else {
-                    APOptionRow(symbol: "person.2", title: "Change \(possessive(p.name)) share") { onChoose(.changeShare) }
-                }
-                APSeparator()
-                APOptionRow(symbol: "person", title: "Remove \(p.name)") { onChoose(.remove) }
-                    .accessibilityHint(removeSub ?? "")
+            if answerExtra != nil {
+                settledCard
+            } else {
+                paymentsCard
+                stateCard
+                payBackCard
+                changeSplitCard
             }
             openPurchase
         }
+        .sheet(item: $payment, onDismiss: {
+            // The pick runs once its sheet has gone, as S-40's own do.
+            let next = afterPayment
+            afterPayment = nil
+            if let next = next { onChoose(next) }
+        }) { link in
+            // S-05or: the payment's own options, View… and Unlink….
+            PaybackOptionsSheet(link: link, overline: "PAID BACK", onClose: { payment = nil },
+                                onView: { afterPayment = .view(link); payment = nil },
+                                onUnlink: { afterPayment = .unlink(link); payment = nil })
+        }
+    }
+
+    /// G2-APersonStates (S-40c, S-40c2; Rethought, approved): PAID WITH /
+    /// PAID SO FAR, every payment one row in one card; a tap opens its options.
+    @ViewBuilder private var paymentsCard: some View {
+        if !links.isEmpty {
+            APSheetLabel(text: paidInFull ? "Paid with" : "Paid so far")
+            APOptionCard {
+                ForEach(Array(links.enumerated()), id: \.element.id) { i, link in
+                    if i > 0 { APSeparator() }
+                    paymentRow(link)
+                }
+            }
+        }
+    }
+
+    /// S-40d Undo let it go, or S-40a / S-40b Mark paid back, Remind, Let it go.
+    @ViewBuilder private var stateCard: some View {
+        if p.letGo != nil {
+            APOptionCard {
+                APOptionRow(symbol: "arrow.triangle.2.circlepath", title: "Undo let it go",
+                               sub: "\(p.name) owes you \(Format.amount(letGoAmount)) again", prominent: true) {
+                    onChoose(.undoLetGo)
+                }
+            }
+        } else if p.owes >= 0.005 {
+            let part = p.paid >= 0.005
+            // REFRESH-03 (S-40a, S-40b): subtitles that only described the
+            // row are gone; VoiceOver keeps them as hints. The one that
+            // costs money ("becomes your spending") stays.
+            APOptionCard {
+                APOptionRow(symbol: "arrow.uturn.backward", title: part ? "Mark the rest paid back" : "Mark paid back",
+                               prominent: true) { onChoose(.markPaid) }
+                    .accessibilityHint("By bank, cash or another app")
+                APSeparator()
+                APOptionRow(symbol: "pencil.line", title: "Remind \(p.name)") { onChoose(.remind) }
+                    .accessibilityHint(part ? "Copies a message for the \(Format.amount(p.owes)) left"
+                                            : "Copies a message for you to send")
+                APSeparator()
+                // G2-Person: the title alone; what it costs is the hint.
+                APOptionRow(symbol: "chevron.right", title: part ? "Let the rest go" : "Let it go") { onChoose(.letGo) }
+                    .accessibilityHint("The \(Format.amount(p.owes)) becomes your spending")
+            }
+        }
+    }
+
+    /// PB-42 note (1397:4698): S-40c keeps How much and Which purchase, each
+    /// opening PB-42 on that step.
+    @ViewBuilder private var payBackCard: some View {
+        if paidInFull, links.count == 1, let link = links.first, TransactionDetailView.personPayback(link) {
+            APOptionCard {
+                APOptionRow(symbol: "target", title: "How much", sub: "All of it · \(Format.amount(link.amount))") {
+                    onChoose(.howMuch(link))
+                }
+                APSeparator()
+                APOptionRow(symbol: "cart", title: "Which purchase", sub: "\(t.merchant) · \(Format.weekdayDay(t.date))") {
+                    onChoose(.whichPurchase(link))
+                }
+            }
+        }
+    }
+
+    /// CHANGE THE SPLIT: Change Sam's share, Remove Sam.
+    @ViewBuilder private var changeSplitCard: some View {
+        APSheetLabel(text: "Change the split")
+        APOptionCard {
+            if p.paid >= 0.005 && p.owes >= 0.005 && p.letGo == nil {
+                // S-48e: Sam paid less; his share reopens S-48a.
+                APOptionRow(symbol: "person.2", title: "Change \(possessive(p.name)) share") { onChoose(.changeAnswer) }
+            } else {
+                APOptionRow(symbol: "person.2", title: "Change \(possessive(p.name)) share") { onChoose(.changeShare) }
+            }
+            APSeparator()
+            // S-40c / S-40c2: what removing undoes first shows under the
+            // title ("Unlinks both payments first").
+            APOptionRow(symbol: "person", title: "Remove \(p.name)",
+                        sub: p.paid >= 0.005 ? removeSub : nil) { onChoose(.remove) }
+                .accessibilityHint(p.paid >= 0.005 ? "" : (removeSub ?? ""))
+        }
+    }
+
+    /// G2-BOptions S-48e: after settling with an extra, one card: Change what
+    /// the extra $6.67 is (reopens the question), View the payment, Unlink….
+    @ViewBuilder private var settledCard: some View {
+        if let extra = answerExtra {
+            APOptionCard {
+                APOptionRow(symbol: "arrow.triangle.2.circlepath", title: "Change what the extra \(Format.amount(extra)) is",
+                               sub: "Reopens the question") {
+                    onChoose(.changeAnswer)
+                }
+                .accessibilityHint((p.gift ?? 0) >= 0.005 ? "Now a gift" : "Now you owe \(p.name)")
+                ForEach(links) { link in
+                    if link.view != nil {
+                        APSeparator()
+                        APOptionRow(symbol: "eye", title: links.count == 1 ? "View the payment" : "View \(Format.amount(link.amount))") {
+                            onChoose(.view(link))
+                        }
+                    }
+                    APSeparator()
+                    APOptionRow(symbol: "link", title: links.count == 1 ? "Unlink…" : "Unlink \(Format.amount(link.amount))…") {
+                        onChoose(.unlink(link))
+                    }
+                }
+            }
+        }
+    }
+
+    /// The payment whose options are open (S-40c's tappable row).
+    @State private var payment: Transaction.LinkInfo?
+    @State private var afterPayment: PersonChoice?
+
+    /// S-40c: "e-Transfer · Nov 16" over "Part of $60.00", $30.00, ›.
+    private func paymentRow(_ link: Transaction.LinkInfo) -> some View {
+        APLinkRow(symbol: Self.symbol(link.kind), title: "\(Self.word(link)) · \(Format.short(link.date))",
+                     line: detail(link), amount: link.amount) { payment = link }
+            .accessibilityLabel("\(Self.word(link)) · \(Format.short(link.date)), \(detail(link, spoken: true)), \(Format.amount(link.amount))")
+            .accessibilityIdentifier("payment-\(link.id)")
     }
 
     private var paidInFull: Bool { p.owes < 0.005 && p.letGo == nil && p.paid >= 0.005 }
@@ -1269,6 +1417,13 @@ struct PersonOptionsSheet: View {
                 ? "Paid \(Format.amount(p.paid)) · owes \(Format.amount(p.owes))"
                 : "Owes you \(Format.amount(p.owes))"
         }
+        // S-48e: "Paid $40.00 · you owe Priya $6.67".
+        if let over = p.over, over >= 0.005 {
+            return "Paid \(Format.amount(p.paid)) · you owe \(p.name) \(Format.amount(over))"
+        }
+        if let gift = p.gift, gift >= 0.005 {
+            return "Paid \(Format.amount(p.paid)) · \(Format.amount(gift)) a gift"
+        }
         return "✓ Paid back in full" + (p.paidOn.map { " · \(Format.short($0))" } ?? "")
     }
 
@@ -1282,14 +1437,16 @@ struct PersonOptionsSheet: View {
             return t.splitting?.unsure == true || p.share < 0.005 ? "Nothing to unlink"
                 : "The \(Format.amount(p.share)) goes back to your share"
         }
-        if links.count > 1 { return links.count == 2 ? "Asks first: unlinks both payments" : "Asks first: unlinks \(links.count) payments" }
-        guard let link = links.first else { return "Asks first" }
+        // G2-APersonStates: "Unlinks only Loblaws’ $30.00 first",
+        // "Unlinks both payments first". Remove still asks before it goes.
+        if links.count > 1 { return links.count == 2 ? "Unlinks both payments first" : "Unlinks \(links.count) payments first" }
+        guard let link = links.first else { return nil }
         switch link.kind {
-        case "cash": return "Asks first: the \(Format.amount(link.amount)) cash is forgotten"
-        case "app": return "Asks first: the \(Format.amount(link.amount)) \(link.noun) is forgotten"
+        case "cash": return "Forgets the \(Format.amount(link.amount)) cash first"
+        case "app": return "Forgets the \(Format.amount(link.amount)) \(link.noun) first"
         default:
-            return (link.others ?? []).isEmpty ? "Asks first: unlinks the \(link.noun)"
-                : "Asks first: unlinks only \(possessive(t.merchant)) \(Format.amount(link.amount))"
+            return (link.others ?? []).isEmpty ? "Unlinks the \(link.noun) first"
+                : "Unlinks only \(possessive(t.merchant)) \(Format.amount(link.amount)) first"
         }
     }
 
@@ -1302,17 +1459,19 @@ struct PersonOptionsSheet: View {
                       onUnlink: { onChoose(.unlink(link)) })
     }
 
-    /// "You marked this as cash", "Part of $60.00 · also paid back Pizza
-    /// Nova" (S-40c, REFRESH-03), "From Dana Lee".
-    private func detail(_ link: Transaction.LinkInfo) -> String {
+    /// G2-APersonStates: "You marked it", "Part of $60.00" (S-40c),
+    /// "From Sam Lee" (S-40c2). The other purchases it paid are on its options.
+    private func detail(_ link: Transaction.LinkInfo, spoken: Bool = false) -> String {
         switch link.kind {
         case "cash":
-            return link.deposit.map { "Deposited \(Format.short($0.date))" } ?? "You marked this as cash"
-        case "app": return "You marked this as paid in \(Self.word(link))"
+            return link.deposit.map { "Deposited \(Format.short($0.date))" } ?? "You marked it"
+        case "app": return "You marked it"
         case "part": return link.message
         default:
             if let others = link.others, !others.isEmpty, let whole = link.whole {
-                return "Part of \(Format.amount(whole)) · also paid back \(Format.andList(others))"
+                // VoiceOver still hears what else it paid back.
+                return spoken ? "Part of \(Format.amount(whole)) · also paid back \(Format.andList(others))"
+                    : "Part of \(Format.amount(whole))"
             }
             if let r = link.sheet.name.range(of: " from ") { return "From " + link.sheet.name[r.upperBound...] }
             return link.message
@@ -1446,7 +1605,7 @@ struct RemoveWords {
 
     /// `countsAgain` (S-03fu, a Not sure yet split): what the purchase counts
     /// as once their paybacks are unlinked, said instead of a share.
-    init(_ p: Transaction.Splitting.Person, merchant: String, countsAgain: Double? = nil) {
+    init(_ p: Transaction.Splitting.Person, merchant: String, countsAgain: Double? = nil, only: Bool = false) {
         let name = p.name
         let shared = p.shared ?? []
         let kept = (p.cash ?? 0) + (p.app ?? 0)
@@ -1462,8 +1621,12 @@ struct RemoveWords {
                            + "\(s.others.count == 1 ? "stays" : "stay") paid back.")
             changes.append("The \(Format.amount(s.here)) goes back to Needs a look.")
         }
-        if bank >= 0.005 {
-            // S-03f / S-03fu: "Priya’s $28.04 goes back to Needs a look."
+        if bank >= 0.005 && countsAgain != nil {
+            // G2-BRemove S-03fu: "Sam’s $20.00 e-Transfer goes back to Needs a look".
+            let word = p.links?.first(where: { !["cash", "app"].contains($0.kind) }).map { PersonOptionsSheet.word($0) } ?? "payment"
+            changes.append("\(possessive(name)) \(Format.amount(bank)) \(word) goes back to Needs a look")
+        } else if bank >= 0.005 {
+            // S-03f: "Priya’s $28.04 goes back to Needs a look."
             changes.append("\(possessive(name)) \(Format.amount(bank)) goes back to Needs a look.")
         }
         if kept >= 0.005 {
@@ -1474,8 +1637,10 @@ struct RemoveWords {
             changes.append("The \(Format.amount(kept)) \(app ? "app payment" : "cash") is forgotten.")
         }
         if let counts = countsAgain {
-            // S-03fu: "Pizza Nova counts as $100.00 again."
-            changes.append("\(merchant) counts as \(Format.amount(counts)) again.")
+            // G2-BRemove S-03fu: "Pizza Nova counts as $100.00 again"; the
+            // only person (S-03fu1): "Nobody is left, so the split goes".
+            changes.append("\(merchant) counts as \(Format.amount(counts)) again")
+            if only { changes.append("Nobody is left, so the split goes") }
         } else {
             changes.append("\(possessive(name)) \(Format.amount(p.share)) share becomes yours.")
         }
@@ -1497,15 +1662,26 @@ struct RemovePersonSheet: View {
     let onClose: () -> Void
     /// Throws a message to show, or nothing went wrong.
     let run: () async throws -> Void
+    /// G2-BRemove S-03fu1: the only person on a Not sure yet split, so the
+    /// split goes with them. Set by whoever knows the split.
+    var only = false
     @State private var busy = false
     @State private var failed: String?
 
+    /// S-03fu1: `.onlyPerson(split.people.count == 1)` on the sheet.
+    func onlyPerson(_ yes: Bool) -> RemovePersonSheet {
+        var copy = self
+        copy.only = yes
+        return copy
+    }
+
     var body: some View {
-        let words = RemoveWords(p, merchant: merchant, countsAgain: countsAgain)
+        let words = RemoveWords(p, merchant: merchant, countsAgain: countsAgain, only: only)
         APSheet(dismissDisabled: busy) {
             // G2-LetGo (Remove): the question centred, what they paid, then
-            // WHAT CHANGES as bullets.
-            APSheetHeader(heading: "Remove \(p.name) from the split?", close: onClose)
+            // WHAT CHANGES as bullets. S-03fu1: "Remove the only person?".
+            APSheetHeader(heading: only && countsAgain != nil ? "Remove the only person?" : "Remove \(p.name) from the split?",
+                          close: onClose)
                 .disabled(busy)
             if !words.lead.isEmpty {
                 Text(words.lead).font(Nacre.body).foregroundColor(Pearl.ink)
@@ -1513,7 +1689,12 @@ struct RemovePersonSheet: View {
             }
             APSheetLabel(text: "What changes")
             APBullets(lines: words.changes)
-            if let failed = failed { CautionBanner(text: failed) }
+            if let failed = failed {
+                // G2-BRemove: the error is a red line with ⓘ under WHAT CHANGES.
+                Label(failed, systemImage: "exclamationmark.circle")
+                    .font(Nacre.footnote).foregroundColor(Pearl.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         } footer: {
             PearlSheetButtons(primary: failed != nil ? "Try again" : words.unlinks ? "Unlink and remove" : "Remove \(p.name)",
                               busy: busy, busyLabel: "Removing…", secondary: "Keep \(p.name)",

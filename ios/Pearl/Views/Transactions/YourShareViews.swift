@@ -169,89 +169,22 @@ struct YourShareSheet: View {
         }
     }
 
+    /// G2-BShare (S-47a–e; Rethought, approved 2026-11-18): what's left is
+    /// one big number with a one-line breakdown; the WHAT'S LEFT table and
+    /// the Allowance explainer are gone.
     private var sheet: some View {
         APSheet(dismissDisabled: busy) {
-            APSheetHeader(face: "Me", overline: "Your share · \(t.merchant)", title: "What was your share?",
-                             close: onClose)
+            APSheetHeader(heading: "What was your share?", close: onClose)
                 .disabled(busy)
+            leftHero
             Text(unpaid.count == 1
-                 ? "Type what you had. Pearl gives what’s left to \(unpaid[0].name), who hasn’t paid yet."
-                 : "Type what you had. Pearl splits what’s left between \(Format.andList(unpaid.map(\.name))).")
-                .font(Pearl.text(.headline)).foregroundColor(Pearl.ink)
+                 ? "Pearl gives what’s left to \(unpaid[0].name), who hasn’t paid yet."
+                 : "Pearl splits what’s left between \(Format.andList(unpaid.map(\.name))).")
+                .font(Nacre.body).foregroundColor(Pearl.ink)
+                .padding(.horizontal, 4)
                 .fixedSize(horizontal: false, vertical: true)
             field
-            APSheetLabel(text: "What’s left")
-            APOptionCard {
-                line(t.merchant, "The whole purchase", Format.amount(base))
-                if !paidPeople.isEmpty && unpaid.count > 1 {
-                    // S-47c / S-47f: each payer, locked; a tap says how to change it.
-                    ForEach(paidPeople) { p in
-                        APSeparator()
-                        Button { showLock(p) } label: {
-                            line(p.name, ["Paid back", p.paidOn.map { Format.short($0) }, "locked"]
-                                    .compactMap { $0 }.joined(separator: " · "),
-                                 "\u{2212}" + Format.amount(p.paid))
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityHint("Says how to change it")
-                    }
-                } else if !paidPeople.isEmpty {
-                    APSeparator()
-                    // S-47f with one payer; S-47g (section 20) with several.
-                    Button { if paidPeople.count == 1 { showLock(paidPeople[0]) } else { whoPaid = true } } label: {
-                        line("Paid back", "\(Format.andList(paidPeople.map(\.name))) · linked, locked",
-                             "\u{2212}" + Format.amount(Double(paidCents) / 100))
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint(paidPeople.count == 1 ? "Says how to change it" : "Shows who paid you back")
-                }
-                APSeparator()
-                if tooMuch {
-                    // S-47e (note 1238:25742): while the share is too big, only
-                    // what she can have; no Your share or "owes you" rows.
-                    line(unpaid.isEmpty ? "Left for you" : "Left for you and \(Format.andList(unpaid.map(\.name)))", "Your share can be up to this",
-                         Format.amount(Double(roomCents) / 100))
-                } else {
-                line("Your share", "What you had",
-                     mineCents.map { "\u{2212}" + Format.amount(Double($0) / 100) } ?? "—")
-                }
-                if unpaid.count > 1 && !tooMuch {
-                    APSeparator()
-                    // S-47c: the method for what's left.
-                    Picker("How to split what’s left", selection: $method) {
-                        Text("Evenly").tag("even")
-                        Text("Amounts").tag("amount")
-                        Text("%").tag("percent")
-                        Text("Shares").tag("shares")
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal, 16).padding(.vertical, 8)
-                }
-                ForEach(tooMuch ? [] : unpaid) { p in
-                    APSeparator()
-                    if unpaid.count == 1 {
-                        line("\(p.name) owes you", "Hasn’t paid · gets what’s left",
-                             Format.amount(Double(leftCents) / 100))
-                    } else {
-                        unpaidRow(p)
-                    }
-                }
-            }
-            if unpaid.count > 1 && mineCents != nil && !tooMuch {
-                // S-47c / S-47d: "Adds up to $120.00 ✓" or "$13.00 left to assign".
-                Text(gapCents == 0 ? "Adds up to \(Format.amount(base)) \u{2713}"
-                     : gapCents > 0 ? "\(Format.amount(Double(gapCents) / 100)) left to assign"
-                     : "That’s \(Format.amount(Double(-gapCents) / 100)) too much")
-                    .font(Nacre.footnote).foregroundColor(gapCents == 0 ? Nacre.teal : Pearl.ink)
-                    .frame(maxWidth: .infinity)
-            }
-            if !tooMuch {
-            InfoNote(text: unpaid.count == 1
-                     ? "Your Allowance doesn’t change now. When \(unpaid[0].name) pays, your \(mineCents.map { Format.amount(Double($0) / 100) } ?? "share") is what stays counted."
-                     : "Your Allowance doesn’t change now. As they pay, it goes up; your share is what stays counted.")
-            }
+            if unpaid.count > 1 && !tooMuch { splitLeft }
             if let failed = failed { CautionBanner(text: failed) }
         } footer: {
             PearlSheetButtons(primary: failed != nil ? "Try again"
@@ -271,68 +204,110 @@ struct YourShareSheet: View {
         }
     }
 
-    private var field: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Your share").font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
-            TextField("", text: $mine, prompt: Text("$0.00").foregroundColor(Pearl.muted))
-                .font(Pearl.text(.headline)).foregroundColor(Pearl.ink).keyboardType(.decimalPad)
-                .focused($typing, equals: Self.me)
-                .padding(.horizontal, 14).frame(minHeight: 50)
-                .background(RoundedRectangle(cornerRadius: Pearl.radiusChoice, style: .continuous).fill(Pearl.card))
-                .overlay(RoundedRectangle(cornerRadius: Pearl.radiusChoice, style: .continuous)
-                    .strokeBorder(tooMuch || typing == Self.me ? Pearl.action : Pearl.border,
-                                  lineWidth: tooMuch || typing == Self.me ? 1.5 : 1))
-                .accessibilityLabel("Your share")
-                .accessibilityIdentifier("your-share")
-                .disabled(busy)
-            // S-47e: more than what's left; S-47a: not typed yet.
-            Text(tooMuch ? "That’s more than what’s left. Paybacks cover \(Format.amount(Double(paidCents) / 100)), so your share can be up to \(Format.amount(Double(roomCents) / 100))."
-                 : mineCents == nil ? "You can leave it and set it later." : "")
-                .font(Pearl.text(.footnote)).foregroundColor(tooMuch ? Pearl.action : Pearl.muted)
-                .fixedSize(horizontal: false, vertical: true)
+    /// "Left for you and Alex", $45.00, then "$120.00 · 🔒 $75.00 paid back
+    /// by Priya, Sam and Jo". The locked line opens who paid (S-47f / S-47g).
+    private var leftHero: some View {
+        VStack(spacing: 0) {
+            Text(unpaid.isEmpty ? "Left for you" : "Left for you and \(Format.andList(unpaid.map(\.name)))")
+                .font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                .multilineTextAlignment(.center)
+            Text(Format.amount(Double(roomCents) / 100))
+                .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle)).tracking(-0.88)
+                .foregroundColor(Pearl.ink).pearlAmountFit()
+            if !paidPeople.isEmpty {
+                Button { if paidPeople.count == 1 { showLock(paidPeople[0]) } else { whoPaid = true } } label: {
+                    (Text("\(Format.amount(base)) · ") + Text(Image(systemName: "lock")) + Text(" \(Format.amount(Double(paidCents) / 100)) paid back by \(Format.andList(paidPeople.map(\.name)))"))
+                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(Format.amount(base)), \(Format.amount(Double(paidCents) / 100)) paid back by \(Format.andList(paidPeople.map(\.name))), locked")
+                .accessibilityHint(paidPeople.count == 1 ? "Says how to change it" : "Shows who paid you back")
+            } else {
+                Text(Format.amount(base)).font(Nacre.footnote).foregroundColor(Pearl.muted)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
+    }
+
+    /// S-47c: HOW TO SPLIT WHAT'S LEFT, the method, each who hasn't paid, and
+    /// "Adds up to $120.00 ✓".
+    private var splitLeft: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            APSheetLabel(text: "How to split what’s left")
+            APSegments(options: [("even", "Evenly"), ("amount", "Amounts"), ("percent", "%"), ("shares", "Shares")],
+                       selection: $method)
+            APOptionCard {
+                ForEach(Array(unpaid.enumerated()), id: \.element.id) { i, p in
+                    if i > 0 { APSeparator() }
+                    unpaidRow(p)
+                }
+            }
+            if mineCents != nil {
+                APTotalLine(text: gapCents == 0 ? "Adds up to \(Format.amount(base)) \u{2713}"
+                                : gapCents > 0 ? "\(Format.amount(Double(gapCents) / 100)) left to assign"
+                                : "That’s \(Format.amount(Double(-gapCents) / 100)) too much",
+                            tone: gapCents == 0 ? .good : gapCents > 0 ? .quiet : .over)
+            }
         }
     }
 
-    private func line(_ title: String, _ sub: String, _ value: String) -> some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                Text(sub).font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
+    private var field: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Your share").font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 4)
+            HStack(spacing: 8) {
+                Text("$").font(Nacre.headline).foregroundColor(Pearl.muted).accessibilityHidden(true)
+                TextField("", text: $mine, prompt: Text("0.00").foregroundColor(Pearl.muted))
+                    .font(Nacre.headline).foregroundColor(Pearl.ink).monospacedDigit()
+                    .tint(Pearl.action).keyboardType(.decimalPad)
+                    .focused($typing, equals: Self.me)
+                    .accessibilityLabel("Your share")
+                    .accessibilityIdentifier("your-share")
             }
-            .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 8)
-            Text(value).font(Pearl.text(.headline, .medium)).monospacedDigit().foregroundColor(Pearl.ink)
+            .padding(.horizontal, 14).frame(minHeight: 50)
+            .wellStyle(focused: typing == Self.me, error: tooMuch)
+            .disabled(busy)
+            // S-47e: "Your share can be up to $45.00." S-47b: "Alex owes you $28.00".
+            if tooMuch {
+                Text("Your share can be up to \(Format.amount(Double(roomCents) / 100)).")
+                    .font(Nacre.footnote).foregroundColor(Pearl.danger).padding(.horizontal, 4)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if unpaid.count == 1, mineCents != nil {
+                Text("\(unpaid[0].name) owes you \(Format.amount(Double(leftCents) / 100))")
+                    .font(Nacre.subheadline).foregroundColor(Pearl.ink)
+                    .frame(maxWidth: .infinity).padding(.top, 8)
+            }
         }
-        .padding(.horizontal, 16).padding(.vertical, 10)
-        .accessibilityElement(children: .combine)
     }
 
     /// S-47c: one who hasn't paid, with their part of what's left.
     private func unpaidRow(_ p: Transaction.Splitting.Person) -> some View {
         HStack(spacing: 12) {
+            APFace(name: p.name)
             VStack(alignment: .leading, spacing: 2) {
-                Text(p.name).font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
+                Text(p.name).font(Nacre.body).foregroundColor(Pearl.ink)
                 Text(method == "percent" || method == "shares"
                      ? "Nothing paid yet · owes \(Format.amount(Double(theirCents(p.name)) / 100))" : "Nothing paid yet")
-                    .font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
+                    .font(Nacre.subheadline).foregroundColor(Pearl.muted)
             }
+            .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
             if method == "even" {
                 Text(Format.amount(Double(theirCents(p.name)) / 100))
-                    .font(Pearl.text(.headline)).monospacedDigit().foregroundColor(Pearl.ink)
+                    .font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
             } else {
             TextField("", text: fieldBinding(p.name), prompt: Text(prompt(p.name)).foregroundColor(Pearl.ink))
-                .font(Pearl.text(.headline)).monospacedDigit().multilineTextAlignment(.trailing)
+                .font(Nacre.headline).monospacedDigit().multilineTextAlignment(.trailing)
                 .keyboardType(method == "shares" ? .numberPad : .decimalPad)
                 .focused($typing, equals: p.name)
                 .frame(width: 92, height: 36).padding(.horizontal, 8)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Pearl.card))
-                .overlay(RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(typing == p.name ? Pearl.action : Pearl.border, lineWidth: typing == p.name ? 1.5 : 1))
+                .wellStyle(focused: typing == p.name)
                 .accessibilityLabel("\(p.name) \(method == "percent" ? "percent" : method == "shares" ? "shares" : "amount")")
             }
         }
-        .padding(.horizontal, 16).padding(.vertical, 8)
+        .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 60)
         // TEST-27: on Evenly the row is one element, "Jo, Nothing paid yet,
         // $26.00", so the spoken words are the visible ones.
         .accessibilityElement(children: method == "even" ? .combine : .contain)
@@ -388,10 +363,13 @@ struct WhoPaidBackSheet: View {
     let onOpen: (String) -> Void
 
     var body: some View {
+        // G2-BShare S-47g: the title centred with ✕, one quiet line, the
+        // payers, then Back to your share.
         APSheet {
-            APSheetHeader(overline: "Paid back · \(merchant)", title: "Who paid you back", close: onClose)
-            Text("These payments are linked, so they’re locked. To change someone’s share, unlink their payback.")
-                .font(Pearl.text(.headline)).foregroundColor(Pearl.ink)
+            APSheetHeader(heading: "Who paid you back", close: onClose)
+            Text("Linked payments are locked. To change someone’s share, unlink their payback.")
+                .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                .padding(.horizontal, 4)
                 .fixedSize(horizontal: false, vertical: true)
             APOptionCard {
                 ForEach(Array(payers.enumerated()), id: \.element.id) { i, p in
@@ -399,31 +377,32 @@ struct WhoPaidBackSheet: View {
                     row(p)
                 }
             }
-        } footer: {
-            Button("Back to your share", action: onClose).buttonStyle(PearlSecondaryButtonStyle())
-                .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 12)
+            Button("Back to your share", action: onClose)
+                .buttonStyle(NacreTextButtonStyle())
+                .frame(maxWidth: .infinity)
         }
     }
 
     private func row(_ p: Transaction.Splitting.Person) -> some View {
+        // S-47g: "e-Transfer · Nov 14 · locked", "Cash · Nov 15 · locked".
         let cash = (p.cash ?? 0) >= p.paid - 0.005
-        let sub = ["Paid back", p.paidOn.map { Format.short($0) }, cash ? "cash" : nil, "locked"]
+        let how = cash ? "Cash" : (p.links?.first.map { PersonOptionsSheet.word($0) } ?? "Paid back")
+        let sub = [how, p.paidOn.map { Format.short($0) }, "locked"]
             .compactMap { $0 }.joined(separator: " · ")
         return Button { onOpen(p.name) } label: {
             HStack(spacing: 12) {
                 APFace(name: p.name, size: 40)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(p.name).font(Pearl.text(.headline, .semibold)).foregroundColor(Pearl.ink)
-                    Text(sub).font(Pearl.text(.subheadline)).foregroundColor(Pearl.muted)
+                    Text(p.name).font(Nacre.body).foregroundColor(Pearl.ink)
+                    Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
-                Text(Format.amount(p.paid)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
-                    .foregroundColor(Pearl.ink).pearlAmountFit()
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
-                    .accessibilityHidden(true)
+                Text(Format.amount(p.paid)).font(Nacre.headline).monospacedDigit()
+                    .foregroundColor(Pearl.moneyIn).pearlAmountFit()
+                APChevron()
             }
-            .padding(.horizontal, 16).padding(.vertical, 9).frame(minHeight: 44).contentShape(Rectangle())
+            .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 60).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
