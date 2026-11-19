@@ -426,22 +426,21 @@ struct TransactionsView: View {
     /// bar of Spent (plum) / Saved (green) / Leftover (track), its legend,
     /// and "8 need a look" with the mini streak and Sort. Red only for over.
     private var summaryCard: some View {
-        // T-45, T-53: a search or a filter shows its own totals.
-        let narrowed = inSearch || filters.isActive
-        let spent = narrowed ? shown.filter { !$0.inflow && $0.counts == "spending" }.reduce(0) { $0 + $1.amount }
-            : (monthTotals?.spent ?? 0)
-        let income = narrowed ? shown.filter { $0.inflow && $0.counts == "income" }.reduce(0) { $0 + $1.amount }
-            : (monthTotals?.income ?? 0)
-        let saved = narrowed ? 0 : (monthTotals?.saved ?? 0)
+        // T-67 (TEST-34): a filter or a search never changes the month
+        // card; it is always the month's own Came in, Leftover and legend.
+        // (Narrowed totals gave "Came in $0", Leftover "—" and "Leftover $0".)
+        let spent = monthTotals?.spent ?? 0
+        let income = monthTotals?.income ?? 0
+        let saved = monthTotals?.saved ?? 0
         // T-01r3 (TEST-05, section 20): before this month's pay is in, the
         // headline is "Spent so far" in ink and the pay still to come shows,
         // not a red Over measured against money that hasn't come yet.
-        let pay = narrowed ? nil : monthTotals?.pay
+        let pay = monthTotals?.pay
         return APCard {
             OwnBody {
                 MonthSummary(month: month.map { Format.monthName($0) } ?? "This month",
                              monthSpoken: month.map { Format.month($0) } ?? "",
-                             canPick: !months.isEmpty, narrowed: narrowed,
+                             canPick: !months.isEmpty,
                              spent: spent, income: income, saved: saved, pay: pay, counts: $counts,
                              pickMonth: { showMonths = true })
             }
@@ -2269,7 +2268,6 @@ struct MonthSummary: View {
     let month: String
     let monthSpoken: String
     let canPick: Bool
-    let narrowed: Bool
     let spent: Double
     let income: Double
     let saved: Double
@@ -2278,7 +2276,7 @@ struct MonthSummary: View {
     let pickMonth: () -> Void
 
     private var left: Double { income - spent - saved }
-    private var over: Bool { left < -0.5 && !narrowed && pay == nil }
+    private var over: Bool { left < -0.5 && pay == nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -2313,7 +2311,7 @@ struct MonthSummary: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(pay != nil ? "Spent so far" : over ? "Over" : "Leftover")
                     .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                Text(narrowed ? "\u{2014}" : Format.whole(pay != nil ? spent : abs(left)))
+                Text(Format.whole(pay != nil ? spent : abs(left)))
                     .font(.cfBig).tracking(-0.88)
                     .foregroundColor(over ? Pearl.danger : Pearl.ink)
                     .lineLimit(1).minimumScaleFactor(0.6)
