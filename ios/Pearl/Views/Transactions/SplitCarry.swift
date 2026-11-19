@@ -2,7 +2,7 @@ import Foundation
 
 /// TEST-36 (S-03e, G2-Amounts): switching how to split starts the new method
 /// from the split as it stands, so $60.00 each with Sam stays $60.00 and
-/// $60.00 on Amounts, 50% and 50% on %, 1 and 1 on Shares.
+/// $60.00 on Amounts ("60.00"), 50% and 50% on %, 1 and 1 on Shares.
 /// tests/test_split_carry.py checks it with swiftc.
 enum SplitCarry {
     /// The new method's typed values, from each row's share in cents (in row
@@ -14,7 +14,8 @@ enum SplitCarry {
         var out: [String: String] = [:]
         switch mode {
         case "amount":
-            for r in rows where r.key != me { out[r.key] = plain(Double(r.cents) / 100) }
+            // Cents always, as every amount well shows them (TEST-48): "60.00".
+            for r in rows where r.key != me { out[r.key] = String(format: "%.2f", Double(r.cents) / 100) }
         case "percent":
             let pct = { (c: Int) in (Double(c) * 10000 / Double(total)).rounded() / 100 }
             for r in rows where r.key != me { out[r.key] = plain(pct(r.cents)) }

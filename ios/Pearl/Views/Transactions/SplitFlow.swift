@@ -133,7 +133,8 @@ struct SplitSheet: View {
                 _mode = State(initialValue: "amount")
                 // S-03rg (TEST-21): her share isn't filled in, so it gives way
                 // (what's left, which is what she saved) until she types it.
-                for p in s.people { v[p.name] = Self.plain(p.share) }
+                // TEST-48: amounts in the wells always have cents, "60.00".
+                for p in s.people { v[p.name] = Self.plainCents(Int((p.share * 100).rounded())) }
             }
             _values = State(initialValue: v)
         }
@@ -163,38 +164,42 @@ struct SplitSheet: View {
             APSheetTitleBar(title: sheetTitle) { dismiss() }
                 // TEST-16: a tap off the fields puts the number pad away.
                 .contentShape(Rectangle()).onTapGesture { focused = nil }
+            if pinned {
+                // TEST-48: with the number pad up, the purchase and the
+                // method switch stay put above the rows.
+                VStack(alignment: .leading, spacing: 14) {
+                    head
+                    methodControl
+                }
+                .padding(.horizontal, 16).padding(.bottom, 8)
+            }
             ScrollViewReader { scroller in
             ScrollView {
                 column
                     .padding(.horizontal, 16).padding(.bottom, 12)
             }
             .scrollDismissesKeyboard(.interactively)
-            // TEST-16 (S-03re): with the number pad up, the status line and
-            // "Split the rest evenly" stay in view right above Save.
+            // TEST-16 / TEST-48: with the number pad up, the status line and
+            // "Split the rest evenly" sit in the footer right above Save, and
+            // the row she's typing in is scrolled into view (not cut off
+            // under the title).
             .onChange(of: focused) { now in
                 guard now != nil else { return }
                 // Once the pad and its Done bar are up, and again as she types.
                 for wait in [0.35, 0.8] {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
-                        withAnimation { scroller.scrollTo(Self.statusID, anchor: .bottom) }
-                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + wait) { showFocused(scroller) }
                 }
             }
-            // TEST-16 (round 2): typing changes the status line and what's
-            // under it ("Split the rest evenly"), which pushed it below the
-            // view; keep it in sight while she types.
+            // Typing changes the captions under the names, and their height.
             .onChange(of: values) { _ in
                 guard focused != nil else { return }
                 for wait in [0.1, 0.5] {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
-                        withAnimation { scroller.scrollTo(Self.statusID, anchor: .bottom) }
-                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + wait) { showFocused(scroller) }
                 }
             }
             // Once the pad has finished coming up, and the sheet has made room.
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
-                guard focused != nil else { return }
-                withAnimation { scroller.scrollTo(Self.statusID, anchor: .bottom) }
+                showFocused(scroller)
             }
             }
             // TEST-16 / TEST-22 (round 2): Save is the scroll view's sibling,
@@ -281,16 +286,29 @@ struct SplitSheet: View {
         }
     }
 
+    /// TEST-48: How to split with a well focused. The purchase and the
+    /// method switch are pinned above the scroll view, and the status line
+    /// moves to the footer, so the number pad can't push them out of view.
+    private var pinned: Bool { step == 1 && focused != nil }
+
+    private func showFocused(_ scroller: ScrollViewProxy) {
+        guard let key = focused else { return }
+        withAnimation { scroller.scrollTo(key, anchor: .center) }
+    }
+
+    /// S-45c (TEST-02): settling shows the whole purchase, not the part
+    /// still counting as hers. G2-WhoWith: "−$84.12 · Wed, Nov 11".
+    private var head: some View {
+        APQuestionWho(name: t.merchant, amount: headAmount, tone: t.tone, sub: headSub)
+            .accessibilityElement(children: .combine)
+            .contentShape(Rectangle()).onTapGesture { focused = nil }
+    }
+
     /// The scroll view's column, its own view so `body` stays a small frame
     /// (check_stack).
     private var column: some View {
         VStack(alignment: .leading, spacing: 14) {
-            // S-45c (TEST-02): settling shows the whole purchase, not
-            // the part still counting as hers. G2-WhoWith: "−$84.12 ·
-            // Wed, Nov 11".
-            APQuestionWho(name: t.merchant, amount: headAmount, tone: t.tone, sub: headSub)
-                .accessibilityElement(children: .combine)
-                .contentShape(Rectangle()).onTapGesture { focused = nil }
+            if !pinned { head }
             stepView
             if let error = error {
                 // G2-BNotSure S-03ue: the error is a red line with ⓘ.
@@ -539,7 +557,7 @@ struct SplitSheet: View {
 
     @ViewBuilder private var how: some View {
         VStack(alignment: .leading, spacing: 14) {
-            methodControl
+            if !pinned { methodControl }
             if mode == "unknown" { unsureHow } else { amountsHow }
             if let onRemoveSplit = onRemoveSplit, t.splitting != nil, !settling, focus == nil {
                 // S-41j: Edit split › Remove the split.
@@ -600,6 +618,7 @@ struct SplitSheet: View {
                     SwipeToRemove(enabled: key != Self.me, label: label(key)) { askRemove(key) } content: {
                         shareRow(key)
                     }
+                    .id(key)
                 }
             }
             // S-03r2 / S-03r2b / S-03j v2 (TEST-08): "I had some too" under
@@ -612,8 +631,10 @@ struct SplitSheet: View {
                 APSeparator()
                 withMeRow()
             }
-            status
-                .id(Self.statusID)
+            if !pinned {
+                status
+                    .id(Self.statusID)
+            }
             if let key = lockNote, onPersonOptions == nil {
                 // Where there's no S-40u to open, the note says why.
                 InfoNote(text: lockWords(key))
@@ -1106,7 +1127,8 @@ struct SplitSheet: View {
         let odd = spread(gapCents - each * targets.count, over: targets)
         for k in targets {
             let c = Int((number(k) * 100).rounded()) + each + (odd[k] ?? 0)
-            values[k] = Self.plain(Double(c) / 100)
+            // TEST-48: an amount well says "60.00", like her share's.
+            values[k] = mode == "amount" ? Self.plainCents(c) : Self.plain(Double(c) / 100)
         }
     }
 
@@ -1128,17 +1150,24 @@ struct SplitSheet: View {
         return saveTitle
     }
 
-    @ViewBuilder private var footer: some View {
-        Button(primaryTitle) {
-            if step == 0 { addTyped(); step = 1 }
-            else if settling, let first = toCheck.first { asking = first }
-            else { Task { await save() } }
+    /// One stack, so the keyboard footer wraps it whole (TEST-37).
+    private var footer: some View {
+        VStack(spacing: 0) {
+            if pinned && mode != "unknown" {
+                // TEST-48: while typing, the status line rides above Save.
+                status.padding(.horizontal, 16).padding(.top, 8)
+            }
+            Button(primaryTitle) {
+                if step == 0 { addTyped(); step = 1 }
+                else if settling, let first = toCheck.first { asking = first }
+                else { Task { await save() } }
+            }
+            .buttonStyle(APPrimaryButtonStyle(busy: busy))
+            .disabled(step == 0 ? people.isEmpty && typed.trimmingCharacters(in: .whitespaces).isEmpty
+                      : mode == "unknown" ? (people.isEmpty || busy)
+                      : (gapCents < 0 || blocksShort || busy))
+            .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
         }
-        .buttonStyle(APPrimaryButtonStyle(busy: busy))
-        .disabled(step == 0 ? people.isEmpty && typed.trimmingCharacters(in: .whitespaces).isEmpty
-                  : mode == "unknown" ? (people.isEmpty || busy)
-                  : (gapCents < 0 || blocksShort || busy))
-        .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
     }
 
     private func save() async {
