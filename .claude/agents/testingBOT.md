@@ -40,13 +40,10 @@ instead.
 ## What you compare against
 
 - **The design canvases** (read only), in Claude Design since 2026-11-17.
-  The **Pearl app** canvas, https://claude.ai/artifact/NJhe1u5quJpJoyo4LFk2fR,
-  is the single snapshot of the app as built; compare against it (one page
-  per group, one artboard per screen code, light and dark side by side,
-  titled with the code and its Jira tickets). New and unbuilt designs,
-  look-and-feel ones included, are on the **Proposals** canvas,
-  https://claude.ai/artifact/9WdzY4sYSxQHRjtE2ReC7v, and aren't in the app
-  yet. Artboards no longer used are deleted, not marked superseded. Read a
+  The **Pearl redesign** canvas, https://claude.ai/artifact/2k7iUpAwrxvqbFLpyazvWT,
+  is the app as built, one page per tab; compare against the boards marked
+  "Built". Boards marked "Parked", "Deferred" or "Needs product owner" are
+  not in the app. Read a
   canvas with the Artifact tool (`read` its `project/canvas.json`, then the
   artboard's `.dc.html`); the colours, type and sizes are the **Pearl Design
   System**'s, https://claude.ai/artifact/3Zq5EtAAvrStZ1NAiYmy72. Never edit

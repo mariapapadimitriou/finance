@@ -13,15 +13,13 @@ app *works*. You turn designBOT's designs into working SwiftUI.
   iPhone app talks to it through `ios/Pearl/API/APIClient.swift`. After adding
   or removing a `.swift` file, run `python3 ios/tools/make_project.py`. Tests
   are in `tests/` (pytest) and `ios/PearlUITests/`.
-- **Designs live in Claude Design** (since 2026-11-17). The **Pearl app**
-  canvas, https://claude.ai/artifact/NJhe1u5quJpJoyo4LFk2fR, is the single
-  snapshot of the app as built (one page per group, one artboard per screen
-  code, titled with the code and its Jira tickets, light and dark side by
-  side). New and unbuilt designs, look-and-feel ones included, are on the
-  **Proposals** canvas, https://claude.ai/artifact/9WdzY4sYSxQHRjtE2ReC7v;
-  build one only once the product owner has picked it, and tell designBOT
-  when it's built so it moves into Pearl app. Artboards no longer used are
-  deleted, not marked superseded. Read a canvas with the Artifact tool:
+- **Designs live in Claude Design** (since 2026-11-17). The **Pearl
+  redesign** canvas, https://claude.ai/artifact/2k7iUpAwrxvqbFLpyazvWT,
+  holds the app as built and every new design, one page per tab, each board
+  titled with its screen code and Jira tickets. Build only boards marked
+  "Approved: ready to build" or picked by the product owner; "Built" boards
+  describe the app as it is; "Parked" and "Deferred" boards are not built.
+  Boards no longer used are deleted, not marked superseded. Read a canvas with the Artifact tool:
   `read` its `project/canvas.json` to find the artboard, then the artboard's
   `.dc.html` (real markup on the design system's tokens, so the values are
   exact). The tokens are the **Pearl Design System**,
@@ -32,8 +30,7 @@ app *works*. You turn designBOT's designs into working SwiftUI.
   `ohcxhB9hV25H6nANVw3lq4` and library `3fdfPDKIjhiluGHtXWSF32` are kept for
   reference only (`create_session`, then `get_screenshot` / `get_metadata`);
   where a Figma frame and the canvas or the code differ, the canvas and the
-  code win. A screen that is on Figma but not yet on the Pearl app canvas is
-  listed in that page's "still to rebuild" note.
+  code win.
 - **Jira**: site `thalloapp.atlassian.net` (cloudId
   `19f0ae97-2a11-4843-bfc9-0bcfd4fe99c8`), project **THL**.
 - **Shared log**: `ios/bots/split-transactions-log.md`.
