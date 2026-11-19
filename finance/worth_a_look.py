@@ -2,7 +2,7 @@
 
 * GET  /api/worth-a-look   {"items": [...]}
 * POST /api/worth-a-look   {"action", "ids" | "id"}: seen, not_now, clear,
-                           undo_clear, yes, undo_yes. Every reply has
+                           undo_clear, yes, undo_yes, got_it. Every reply has
                            "ok" and the fresh "items".
 
 An item is one event (`id`): the same thing again has the same id, a new
@@ -22,6 +22,11 @@ Rules (product owner):
   the item away. Yes here, on a new subscription, is I-04's answer
   (`income_bills_api.confirm_bills`); on a price rise, the bill's amount.
   Not now only hides the Home item: the question stays where it was.
+* T-74 (AP-Paycheque): a month with a third paycheque is good news with
+  its own "Got it" (`ack`), which is Home's old note's Got it
+  (`/review/dismiss`); a tap opens that month's income.
+* Your plan and Save are parked: no item opens either (plan pace is off;
+  the new month opens Home's Allowance).
 """
 
 from __future__ import annotations
@@ -40,10 +45,9 @@ DROP_DAYS = 7
 MAX_IDS = 50
 # A subscription is new for this long after its first charge.
 NEW_DAYS = 100
-# Heads-ups: a bill this many days ahead, a card payment, a plan's share.
+# Heads-ups: a bill this many days ahead, a card payment.
 BILL_DAYS = 3
 CARD_DAYS = 5
-PACE_SHARE = 0.8
 UNSETTLED_DAYS = 7
 UNPAID_DAYS = 21
 NEW_MONTH_DAYS = 3
@@ -54,7 +58,8 @@ COMPARE = {"Food Delivery": "takeout", "Dining": "dining out"}
 RISE_MIN, RISE_SHARE = 1.0, 0.04
 
 TIERS = ("yes", "heads_up", "good")
-ACTIONS = ("seen", "not_now", "clear", "undo_clear", "yes", "undo_yes")
+ACTIONS = ("seen", "not_now", "clear", "undo_clear", "yes", "undo_yes", "got_it")
+ACK_KINDS = ("paycheque",)
 YES_KINDS = ("subscription", "price_rise")
 HIDDEN = ("seen", "not_now", "cleared", "yes")
 
@@ -99,9 +104,9 @@ def _key(merchant: str) -> str:
 
 def _item(id_: str, kind: str, tier: str, title: str, icon: str, tone: str, *,
           amount: str | None = None, yes: str | None = None, target: dict | None = None,
-          rank: float = 0.0, data: dict | None = None) -> dict:
+          rank: float = 0.0, data: dict | None = None, ack: str | None = None) -> dict:
     out = {"id": id_, "kind": kind, "tier": tier, "title": title, "amount": amount,
-           "icon": icon, "tone": tone, "yes": yes,
+           "icon": icon, "tone": tone, "yes": yes, "ack": ack,
            "target": ({"screen": target.get("screen"), "id": target.get("id"),
                        "name": target.get("name"), "month": target.get("month")}
                       if target else None),
@@ -294,33 +299,6 @@ def _cards_due(ctx: _Ctx) -> list[dict]:
     return out
 
 
-def _plan_pace(ctx: _Ctx) -> list[dict]:
-    """A category in her plan (in use) at 80% or more, with days left."""
-    import calendar
-
-    from . import your_plan
-    from .safe_to_spend import bill_charges
-    plan = your_plan.in_use(your_plan.load(ctx.st))
-    held = your_plan.set_aside(ctx.txns, ctx.today, plan, bill_charges(ctx.txns, ctx.today))
-    left = calendar.monthrange(ctx.today.year, ctx.today.month)[1] - ctx.today.day
-    if not held or left <= 0:
-        return []
-    month = ctx.today.strftime("%Y-%m")
-    out = []
-    for line in held["lines"]:
-        if line["plan"] <= 0:
-            continue
-        used = line["spent"] / line["plan"]
-        if used < PACE_SHARE:
-            continue
-        pct = int(used * 100)
-        out.append(_item(f"plan_pace:{line['label']}:{month}", "plan_pace", "heads_up",
-                         f"{line['label']} is {pct}% used · {left} day{'s' if left != 1 else ''} left",
-                         "pace", "warn", target={"screen": "plan", "name": line["label"], "month": month},
-                         rank=-used))
-    return out
-
-
 def _owed(ctx: _Ctx) -> dict:
     from . import parts
     return parts.owed(ctx.st, ctx.txns, ctx.today)
@@ -369,7 +347,24 @@ def _new_month(ctx: _Ctx) -> list[dict]:
     month = ctx.today.strftime("%Y-%m")
     return [_item(f"new_month:{month}", "new_month", "heads_up",
                   f"New month · Allowance is ${int(shown):,}", "calendar", "rose",
-                  target={"screen": "plan", "month": month})]
+                  target={"screen": "allowance", "month": month})]
+
+
+def _paycheque(ctx: _Ctx, review: dict) -> list[dict]:
+    """T-74: a month that held a third paycheque (review's three_pay_month,
+    what Home's note showed), until she says Got it."""
+    import calendar
+    out = []
+    for m in review.get("three_pay_month") or []:
+        if m.get("skipped"):
+            continue
+        month = m["month"]
+        name = calendar.month_name[int(month[5:7])]
+        out.append(_item(f"paycheque:{month}", "paycheque", "good", f"3 paycheques in {name}",
+                         "pay", "good", ack="Got it", data={"key": m["key"]},
+                         target={"screen": "income", "month": month},
+                         rank=-date.fromisoformat(month + "-01").toordinal()))
+    return out
 
 
 def _piggy_halfway(ctx: _Ctx) -> list[dict]:
@@ -431,8 +426,9 @@ def candidates(st, today: date) -> list[dict]:
     owed = _owed(ctx)
     groups = [
         _subscriptions(ctx), _price_rises(ctx), _duplicates(ctx, review), _trips(ctx, review),
-        _bills_due(ctx), _cards_due(ctx), _plan_pace(ctx), _unsettled(ctx, owed), _unpaid(ctx, owed),
-        _new_month(ctx), _piggy_halfway(ctx), _month_compare(ctx),
+        # Plan pace waits while Your plan is parked (no item opens it).
+        _bills_due(ctx), _cards_due(ctx), _unsettled(ctx, owed), _unpaid(ctx, owed),
+        _new_month(ctx), _paycheque(ctx, review), _piggy_halfway(ctx), _month_compare(ctx),
     ]
     out = []
     for order, group in enumerate(groups):
@@ -576,6 +572,19 @@ def worth_a_look_post():
         if action == "clear":
             out["cleared"] = done
         return jsonify({**out, "items": items(st, today, found)})
+
+    if action == "got_it":
+        # T-74's Got it: the note doesn't come back (as /review/dismiss).
+        if not ids or not {i.split(":", 1)[0] for i in ids} <= set(ACK_KINDS):
+            return jsonify({"error": "Only a paycheque note has Got it."}), 400
+        found = {it["id"]: it for it in candidates(st, today)}
+        for i in ids:
+            it = found.get(i)
+            if it is None:
+                continue
+            st.dismiss_review(it["_data"]["key"])
+            _set_state(st, i, "seen", today)
+        return jsonify({**out, "items": items(st, today)})
 
     if action == "undo_clear":
         done = [i for i in ids if (rows.get(i) or {}).get("state") == "cleared"]

@@ -35,8 +35,11 @@ struct HomeView: View {
     /// item opens just its trip question.
     @State private var quickSort: QuickSortDeck?
     @State private var opening = false
+    /// The new-month item scrolls Home back to its Allowance.
+    @State private var toOrb = 0
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             if let home = home {
                 HomeFeed(home: home, setup: setup, owed: owed, worth: worth,
@@ -49,6 +52,8 @@ struct HomeView: View {
                 }
                 .padding(.horizontal, Pearl.gutter)
             }
+        }
+        .onChange(of: toOrb) { _ in withAnimation { proxy.scrollTo(HomeOrb.anchor, anchor: .top) } }
         }
         .nacreScreen()
         .navigationBarHidden(true)
@@ -87,11 +92,11 @@ struct HomeView: View {
             accounts: { route = .accounts },
             reconnect: { reconnecting = $0 },
             reload: { Task { await load() } },
-            dismissNote: { note in Task { await dismissNote(note) } },
             clear: { Task { await clearWorth() } },
             open: { item in Task { await open(item) } },
             yes: { item in Task { await answer(item, yes: true) } },
-            notNow: { item in Task { await answer(item, yes: false) } })
+            notNow: { item in Task { await answer(item, yes: false) } },
+            gotIt: { item in Task { await gotIt(item) } })
     }
 
     // MARK: Loading
@@ -134,12 +139,6 @@ struct HomeView: View {
               let settings: NotificationSettings = try? await app.api.get("api/notifications"),
               settings.prefs.prompt?.answer == nil else { return }
         askingToNotify = settings.prefs.quiet
-    }
-
-    /// Got it: the note doesn't come back.
-    private func dismissNote(_ note: Review.PayMonth) async {
-        let _: OK? = try? await app.api.post("api/review/dismiss", ["key": note.key])
-        await load()
     }
 
     /// H-00r (REFRESH-00 decision 2): Sort now opens Quick sort with every
@@ -192,6 +191,16 @@ struct HomeView: View {
         }
     }
 
+    /// T-74's Got it (the old note's): it doesn't come back, here or anywhere.
+    private func gotIt(_ item: WorthItem) async {
+        do {
+            let reply: WorthReply = try await app.api.post("api/worth-a-look", ["action": "got_it", "id": item.id])
+            withAnimation { worth = reply.items }
+        } catch {
+            if let words = app.handle(error) { app.say(words) }
+        }
+    }
+
     /// A one-tap item: seen, then where it lives.
     private func open(_ item: WorthItem) async {
         let _: WorthReply? = try? await app.api.post("api/worth-a-look", ["action": "seen", "id": item.id])
@@ -208,6 +217,9 @@ struct HomeView: View {
         case "category":
             // Cash flow, where categories live (filtering it from here waits for Cash flow).
             tab = .cashFlow
+        case "allowance":
+            // The new month: Home's own Allowance, the orb at the top.
+            toOrb += 1
         default:
             if let r = HomeRoute(target) { route = r }
         }
@@ -229,7 +241,7 @@ enum HomeRoute: Hashable {
     case review, owed, accounts
     case owedPerson(String)
     case transaction(String)
-    case bills, debts, plan
+    case bills, debts
 
     init?(_ t: WorthItem.Target) {
         switch t.screen {
@@ -238,7 +250,7 @@ enum HomeRoute: Hashable {
         case "owed": self = .owed
         case "bill": self = .bills
         case "debt": self = .debts
-        case "plan": self = .plan
+        case "income": self = .bills
         case "review": self = .review
         default: return nil
         }
@@ -258,7 +270,6 @@ private struct HomeDestination: View {
         case .transaction(let id): TransactionByID(id: id, categories: app.categories)
         case .bills: IncomeBillsView()
         case .debts: DebtsView()
-        case .plan: YourPlanView()
         }
     }
 }
@@ -271,11 +282,11 @@ struct HomeActions {
     let accounts: () -> Void
     let reconnect: (Home.Connection) -> Void
     let reload: () -> Void
-    let dismissNote: (Review.PayMonth) -> Void
     let clear: () -> Void
     let open: (WorthItem) -> Void
     let yes: (WorthItem) -> Void
     let notNow: (WorthItem) -> Void
+    let gotIt: (WorthItem) -> Void
 }
 
 // MARK: - The feed
@@ -299,7 +310,7 @@ private struct HomeFeed: View {
     /// AP-HomeCalm: nothing needs her.
     private var calm: Bool {
         troubled.isEmpty && !(setup?.active ?? false) && home.reviewCount == 0 && !owes
-            && home.paychequeNote == nil && worth.isEmpty
+            && worth.isEmpty
     }
 
     var body: some View {
@@ -316,7 +327,7 @@ private struct HomeFeed: View {
                           sorting: sorting, actions: actions)
                 if !worth.isEmpty {
                     WorthALookSection(items: worth, onClear: actions.clear, onOpen: actions.open,
-                                      onYes: actions.yes, onNotNow: actions.notNow)
+                                      onYes: actions.yes, onNotNow: actions.notNow, onGotIt: actions.gotIt)
                         .padding(.top, 20)
                 }
             }
@@ -352,6 +363,7 @@ struct HomeTopBar: View {
 /// The orb: 188 with cards under it, 232 and 48 lower when calm. The
 /// estimate, over and no-income states keep their line under it.
 private struct HomeOrb: View {
+    static let anchor = "home-orb"
     let home: Home
     let calm: Bool
 
@@ -371,6 +383,7 @@ private struct HomeOrb: View {
             }
         }
         .frame(maxWidth: .infinity)
+        .id(HomeOrb.anchor)
         .padding(.top, calm ? 48 : 0)
         .padding(.bottom, calm ? 24 : 0)
     }
@@ -406,9 +419,6 @@ private struct HomeCards: View {
             }
             if let owed = owed {
                 OwedCard(owed: owed, open: actions.seeOwed).padding(.top, 12)
-            }
-            if let note = home.paychequeNote {
-                PaychequeNoteCard(month: note) { actions.dismissNote(note) }.padding(.top, 12)
             }
         }
     }
@@ -489,31 +499,6 @@ struct OwedCard: View {
     /// "2 people owe you", "1 person owes you".
     static func words(_ owed: OwedOverview) -> String {
         owed.people == 1 ? "1 person owes you" : "\(owed.people) people owe you"
-    }
-}
-
-/// A month with a third paycheque: why it looks bigger, and nothing to do.
-struct PaychequeNoteCard: View {
-    let month: Review.PayMonth
-    let onDismiss: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            APIcon(symbol: "dollarsign.circle", tone: .good)
-            // REFRESH-03 (H-00n), PC-01 (TEXT-01): "3 paycheques in October".
-            Text("3 paycheques in \(Format.monthName(month.month))")
-                .font(Nacre.body).foregroundColor(Pearl.ink)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-            Button("Got it", action: onDismiss)
-                .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
-                .foregroundColor(Pearl.link)
-                .buttonStyle(.plain)
-                .tapTarget(vertical: 12, horizontal: 6)
-        }
-        .padding(.horizontal, 16).padding(.vertical, 12)
-        .frame(minHeight: 64)
-        .apCard()
     }
 }
 

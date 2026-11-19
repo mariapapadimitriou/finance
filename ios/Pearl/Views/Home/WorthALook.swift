@@ -19,6 +19,8 @@ struct WorthItem: Decodable, Identifiable, Hashable {
     var tone: String? = nil
     /// The inline primary ("Yes", "Update the bill"); nil for one-tap items.
     var yes: String? = nil
+    /// T-74 (AP-Paycheque): a lone "Got it" pill under the line.
+    var ack: String? = nil
     var target: Target? = nil
 
     struct Target: Decodable, Hashable {
@@ -42,7 +44,7 @@ struct WorthItem: Decodable, Identifiable, Hashable {
         }
     }
 
-    enum CodingKeys: String, CodingKey { case id, kind, tier, title, amount, icon, tone, yes, target }
+    enum CodingKeys: String, CodingKey { case id, kind, tier, title, amount, icon, tone, yes, ack, target }
 
     /// The line icon (SF Symbols for the boards' line icons).
     var symbol: String {
@@ -59,6 +61,7 @@ struct WorthItem: Decodable, Identifiable, Hashable {
         case "person": return "person"
         case "calendar": return "calendar"
         case "piggy": return "banknote"
+        case "pay": return "banknote"
         case "trend_down": return "arrow.down.right"
         default: return "sparkles"
         }
@@ -75,7 +78,9 @@ struct WorthItem: Decodable, Identifiable, Hashable {
     /// Where a tap goes; nil when the item answers inline or has nowhere to go.
     var opens: Bool {
         guard yes == nil, let screen = target?.screen else { return false }
-        return ["transaction", "trip", "bill", "debt", "plan", "owed_person", "owed", "category", "review"].contains(screen)
+        // Your plan and Save are parked: nothing opens them.
+        return ["transaction", "trip", "bill", "debt", "owed_person", "owed", "category", "review",
+                "income", "allowance"].contains(screen)
     }
 }
 
@@ -104,6 +109,7 @@ struct WorthALookSection: View {
     let onOpen: (WorthItem) -> Void
     let onYes: (WorthItem) -> Void
     let onNotNow: (WorthItem) -> Void
+    let onGotIt: (WorthItem) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -113,7 +119,7 @@ struct WorthALookSection: View {
                 ForEach(Array(items.prefix(3).enumerated()), id: \.element.id) { i, item in
                     if i > 0 { APSeparator(afterFace: false) }
                     WorthRow(item: item, onOpen: { onOpen(item) }, onYes: { onYes(item) },
-                             onNotNow: { onNotNow(item) })
+                             onNotNow: { onNotNow(item) }, onGotIt: { onGotIt(item) })
                         .transition(reduceMotion ? .opacity
                                     : .asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity),
                                                   removal: .move(edge: .leading).combined(with: .opacity)))
@@ -132,9 +138,19 @@ struct WorthRow: View {
     let onOpen: () -> Void
     let onYes: () -> Void
     let onNotNow: () -> Void
+    let onGotIt: () -> Void
 
     var body: some View {
-        if item.yes != nil {
+        if let ack = item.ack {
+            // T-74: the line opens that month's income; Got it under it.
+            VStack(alignment: .leading, spacing: 6) {
+                Button(action: onOpen) { line.contentShape(Rectangle()) }.buttonStyle(.plain)
+                Button(ack, action: onGotIt).buttonStyle(WorthPillStyle(primary: true))
+                    .padding(.leading, 48)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            .frame(minHeight: 56)
+        } else if item.yes != nil {
             VStack(alignment: .leading, spacing: 6) {
                 line
                 HStack(spacing: 8) {
@@ -168,7 +184,7 @@ struct WorthRow: View {
                 Text(amount).font(.custom("Figtree-SemiBold", size: 16, relativeTo: .body))
                     .monospacedDigit().foregroundColor(Pearl.ink)
                     .pearlAmountFit().fixedSize()
-            } else if item.opens {
+            } else if item.opens && item.ack == nil {
                 Image(systemName: "chevron.right").font(.system(size: 14, weight: .semibold))
                     .foregroundColor(Pearl.muted)
                     .accessibilityHidden(true)

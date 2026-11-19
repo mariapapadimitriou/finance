@@ -132,7 +132,7 @@ class TestSubscription:
         [it] = items(client)
         assert it == {"id": "subscription:Crave", "kind": "subscription", "tier": "yes",
                       "title": "New subscription: Crave", "amount": "$19.99/mo",
-                      "icon": "subscription", "tone": "rose", "yes": "Yes", "target": None,
+                      "icon": "subscription", "tone": "rose", "yes": "Yes", "ack": None, "target": None,
                       "since": TODAY.isoformat()}
 
     def test_an_old_one_is_not_new(self, client):
@@ -320,11 +320,10 @@ class TestPlanPace:
             "rows": [{"category": "Dining", "amount": 100, "source": "you"}],
             "in_use": True, "since": "2026-11-01", "stopped_since": None}))
 
-    def test_most_of_it_used(self, client):
+    def test_parked_with_your_plan(self, client):
+        # Your plan is parked with Save: no item opens it, so plan pace waits.
         self.plan(client, 85.0)
-        [it] = items(client)
-        assert it["title"] == "Dining is 85% used · 12 days left"
-        assert it["target"] == {"screen": "plan", "id": None, "name": "Dining", "month": "2026-11"}
+        assert items(client) == []
 
     def test_under_the_line(self, client):
         self.plan(client, 60.0)
@@ -377,7 +376,7 @@ class TestNewMonth:
         client.clock["today"] = date(2026, 12, 2)
         [it] = items(client)
         assert it["id"] == "new_month:2026-12" and it["title"].startswith("New month · Allowance is $")
-        assert it["target"]["screen"] == "plan"
+        assert it["target"]["screen"] == "allowance", "Home's Allowance, not Your plan (parked)"
 
     def test_not_after_the_third(self, client):
         self.setup(client)
@@ -391,7 +390,7 @@ class TestGoodNews:
         [it] = items(client)
         assert it == {"id": f"piggy_halfway:{bank}", "kind": "piggy_halfway", "tier": "good",
                       "title": "Japan fund is halfway there", "amount": None, "icon": "piggy",
-                      "tone": "good", "yes": None,
+                      "tone": "good", "yes": None, "ack": None,
                       "target": {"screen": "piggy", "id": bank, "name": "Japan fund", "month": None},
                       "since": TODAY.isoformat()}
 
@@ -519,3 +518,44 @@ class TestAuth:
         c = client_for(tmp_path, monkeypatch, hosted=True, password="hunter2")
         assert c.get("/api/worth-a-look").status_code == 401
         assert c.post("/api/worth-a-look", json={"action": "seen", "ids": []}).status_code == 401
+
+
+class TestPaycheque:
+    """T-74 (AP-Paycheque): a month with a third paycheque, good news with Got it."""
+
+    def pay(self, c):
+        start = date(2026, 7, 10)
+        c.st.add_transactions([tx((start + timedelta(days=14 * i)).isoformat(), "Northwind Ltd", -2150.0,
+                                  "Income", description="NORTHWIND LTD PAYROLL") for i in range(10)])
+
+    def test_third_paycheque_is_good_news_opening_that_months_income(self, client):
+        self.pay(client)
+        found = [it for it in items(client) if it["kind"] == "paycheque"]
+        assert found, items(client)
+        it = found[0]
+        assert it["id"] == "paycheque:2026-10" and it["title"] == "3 paycheques in October"
+        assert (it["tier"], it["tone"], it["ack"], it["yes"]) == ("good", "good", "Got it", None)
+        assert it["target"] == {"screen": "income", "id": None, "name": None, "month": "2026-10"}
+
+    def test_got_it_is_homes_got_it(self, client):
+        self.pay(client)
+        out = post(client, "got_it", ["paycheque:2026-10"])
+        assert not [it for it in out["items"] if it["kind"] == "paycheque"]
+        home = client.get("/api/home").get_json()
+        assert home["paycheque_note"] is None, "the note doesn't come back anywhere"
+
+    def test_got_it_only_for_a_paycheque(self, client):
+        post(client, "got_it", ["subscription:x"], status=400)
+
+    def test_ranks_before_other_good_news(self, client):
+        self.pay(client)
+        piggy(client)
+        goods = [it for it in items(client) if it["tier"] == "good"]
+        assert [it["kind"] for it in goods] == ["paycheque"]
+
+
+def test_no_item_opens_your_plan_or_save(client):
+    """Your plan and Save are parked."""
+    import finance.worth_a_look as w
+    src = open(w.__file__, encoding="utf-8").read()
+    assert '"screen": "plan"' not in src

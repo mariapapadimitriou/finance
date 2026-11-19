@@ -400,7 +400,7 @@ class TestLessWords:
         # A+ (AP-Home, REDESIGN-04): "2 people owe you" with the total on the
         # right; a Not sure yet split is a Worth a look item now.
         "ios/Pearl/Views/Home/HomeView.swift": [
-            '"\\(count) to sort"', '" \\u{00B7} Pearl sorted \\(pearlSorted)"', '"3 paycheques in \\(Format.monthName(month.month))"',
+            '"\\(count) to sort"', '" \\u{00B7} Pearl sorted \\(pearlSorted)"',
             '"\\(owed.people) people owe you"', 'Allowance.restCaption'],
         "ios/Pearl/Views/Home/OwedViews.swift": ['"Not in the total until settled."'],
         # Account setup (#359) moved O-09b's people picker to AS-02, and its

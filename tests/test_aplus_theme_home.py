@@ -75,6 +75,14 @@ class TestHome:
         assert "BankAlertCard(" in self.home, "a bank to reconnect keeps its own card"
         assert "ProfileCircle()" in self.home
 
+    def test_paycheque_is_a_worth_a_look_item(self):
+        # T-74 (AP-Paycheque): Got it on the item; no separate card; nothing opens Your plan.
+        assert "PaychequeNoteCard" not in self.home and '"got_it"' in self.home
+        worth = code(read("Views", "Home", "WorthALook.swift"))
+        assert "Button(ack, action: onGotIt)" in worth
+        assert '"plan"' not in worth and "YourPlanView" not in self.home
+        assert 'case "allowance":' in self.home
+
     def test_calm_state(self):
         assert "CalmState()" in self.home
         assert "size: calm ? AllowanceOrb.full : AllowanceOrb.small" in self.home
