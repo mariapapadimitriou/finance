@@ -134,6 +134,9 @@ def _plaid_message(body: str) -> str:
 # history means removing it and linking again. So asking for the maximum up
 # front costs nothing and saves a relink later.
 DAYS_REQUESTED = 730
+SYNC_PAGE = 500                      # rows a /transactions/sync page holds, at most
+# transactions_update_status values that mean only a recent slice is in yet.
+HISTORY_NOT_IN = ("NOT_READY", "INITIAL_UPDATE_COMPLETE")
 
 
 def create_link_token(user_id: str = "spendie-user", access_token: str | None = None) -> dict:
@@ -178,6 +181,8 @@ def exchange_public_token(store, public_token: str, institution: str = "") -> di
 
     item_id = resp["item_id"]
     store.add_plaid_item(item_id, resp["access_token"], institution)
+    # Its history is on the way: a new connection sends a recent slice first.
+    store.set_plaid_history_pending(item_id, True)
     # The access token is deliberately absent from what we hand back.
     return {"item_id": item_id, "institution": institution}
 
@@ -199,6 +204,7 @@ def _sync_one(store, item: dict) -> dict:
     full = cursor is None
     added, modified, removed = [], [], []
     accounts: dict = {}
+    more, status = False, ""
 
     # Plaid pages the change feed; keep asking until it says there is no more.
     # The bound is a safety net against a feed that never reports has_more
@@ -208,7 +214,9 @@ def _sync_one(store, item: dict) -> dict:
         # e-Transfer's message ("uber eats", "for rent") is only ever in the
         # original (2026-10-21). An option on the request, so nothing about
         # the connection changes and nobody signs in again.
-        kwargs = {"access_token": access_token,
+        # The most a page holds (Plaid's 500, not its default 100): years of
+        # history come back in as few pages as they can.
+        kwargs = {"access_token": access_token, "count": SYNC_PAGE,
                   "options": TransactionsSyncRequestOptions(include_original_description=True)}
         if cursor:
             kwargs["cursor"] = cursor
@@ -222,7 +230,9 @@ def _sync_one(store, item: dict) -> dict:
         # page need not repeat an account an earlier page introduced.
         accounts.update(_accounts_from(resp))
         cursor = resp.get("next_cursor") or cursor
-        if not resp.get("has_more"):
+        more = bool(resp.get("has_more"))
+        status = str(resp.get("transactions_update_status") or "")
+        if not more:
             break
 
     # The feed names only accounts with transactions in it, so a card or
@@ -315,6 +325,12 @@ def _sync_one(store, item: dict) -> dict:
                 store.set_transaction_category(txn_id, category)
 
     store.set_plaid_cursor(item_id, cursor or "")
+    # Her whole history is in once the feed has nothing more and Plaid says
+    # it has finished fetching it. NOT_READY / INITIAL_UPDATE_COMPLETE mean a
+    # recent slice only; no status (older API) counts as in.
+    history = not more and status not in HISTORY_NOT_IN
+    if history:
+        store.set_plaid_history_pending(item_id, False)
     if item.get("logo") is None:
         store.set_plaid_logo(item_id, _bank_logo(client, access_token))
     return {
@@ -326,6 +342,7 @@ def _sync_one(store, item: dict) -> dict:
         "deleted": deleted,
         "imported": imported,
         "skipped_accounts": skipped_accounts,
+        "history": history,
     }
 
 
@@ -693,6 +710,9 @@ def sync_all(store) -> dict:
                         "institution": item.get("institution") or "",
                         "error": message})
     hide_quiet_twins(store)
+    # After Start over: the baseline of "Pearl sorts for you", once it's all in.
+    from . import pattern_sort
+    pattern_sort.settle_baseline(store)
     # Once per bank: the sender, message and bank's wording on rows stored
     # before Pearl read them (2026-10-22). Only banks that just synced.
     refreshed = refresh_details_once(store, [i for i, o in zip(items, out) if not o.get("error")])

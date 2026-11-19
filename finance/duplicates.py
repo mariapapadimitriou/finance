@@ -193,14 +193,17 @@ def brief(t: Transaction) -> dict:
             "source_verb": source_verb(t)}
 
 
-def questions(transactions: list[Transaction], found_on: dict[str, str] | None = None
-              ) -> list[dict]:
-    """The pending pairs, for the needs-a-look queue (D-02)."""
+def questions(transactions: list[Transaction], found_on: dict[str, str] | None = None,
+              since: str | None = None) -> list[dict]:
+    """The pending pairs, for the needs-a-look queue (D-02): from `since`
+    on, when given (the copy's date)."""
     by_id = {t.fingerprint: t for t in transactions}
     found_on = found_on or {}
     out = []
     for t in transactions:
         if t.duplicate_state != PENDING or not t.duplicate_of:
+            continue
+        if since and t.date[:10] < since:
             continue
         twin = by_id.get(t.duplicate_of)
         if twin is None:

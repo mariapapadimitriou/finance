@@ -69,10 +69,11 @@ def crave(c, since="2026-08-20"):
     c.st.add_transactions(rows)
 
 
-def netflix(c, confirm=True):
-    """Netflix at $15 since June, $17 from October; counted as a bill."""
-    rows = [tx(f"2026-{m:02d}-15", "Netflix", 15.00, "Streaming", account="visa") for m in (6, 7, 8, 9)]
-    rows += [tx(f"2026-{m:02d}-15", "Netflix", 17.00, "Streaming", account="visa") for m in (10, 11)]
+def netflix(c, confirm=True, rose=(11,)):
+    """Netflix at $15 since June, $17 from November (its last charge);
+    counted as a bill."""
+    rows = [tx(f"2026-{m:02d}-15", "Netflix", 17.00 if m in rose else 15.00, "Streaming", account="visa")
+            for m in range(6, 12)]
     c.st.add_transactions(rows)
     if confirm:
         r = c.put("/api/income-bills/bills", json={"ticked": {"Netflix": True}})
@@ -170,6 +171,13 @@ class TestPriceRise:
         assert it["title"] == "Netflix went up $2" and it["yes"] == "Update the bill"
         assert it["amount"] is None and it["target"] is None
 
+    def test_a_rise_months_ago_is_not_news(self, client):
+        """Measured against the charge before the latest, not a median over
+        her history (2026-11-19): after Start over, October's rise isn't new
+        in November."""
+        netflix(client, rose=(10, 11))
+        assert [i for i in items(client) if i["kind"] == "price_rise"] == []
+
     def test_not_a_bill_she_counts(self, client):
         netflix(client, confirm=False)
         assert items(client) == []
@@ -222,6 +230,19 @@ class TestDuplicate:
     def test_yes_is_not_for_this_kind(self, client):
         copy = duplicate(client)
         post(client, "yes", [f"duplicate:{copy}"], status=400)
+
+    def test_only_the_last_sixty_days_are_asked(self, client):
+        """2026-11-19: after Start over, years of copies don't flood Home or
+        Quick sort. An older one isn't asked about, there or here."""
+        a = tx("2026-08-01", "DoorDash", 28.10, "Food Delivery", account="visa")
+        b = tx("2026-08-01", "DoorDash", 28.10, "Food Delivery", account="chq", description="DOORDASH*X")
+        client.st.add_transactions([a, b])
+        rows = {t.account_id: t.fingerprint for t in client.st.all_transactions() if t.merchant == "DoorDash"}
+        client.st.add_duplicate(rows["chq"], rows["visa"])
+        assert items(client) == []
+        assert not [k for k in client.get("/api/quick-sort?all=1").get_json()["keys"] if k.startswith("dup:")]
+        recent = duplicate(client)
+        assert [i["id"] for i in items(client)] == [f"duplicate:{recent}"]
 
 
 class TestTrip:
@@ -437,6 +458,16 @@ class TestRanking:
         bill(client, "Phone", 2)
         got = items(client)
         assert [i["kind"] for i in got] == ["subscription", "bill_due", "bill_due"]
+
+    def test_a_heads_up_always_has_a_place(self, client):
+        """2026-11-19: questions take two slots at most when there's a
+        heads-up, so a bill due isn't hidden behind them."""
+        crave(client)
+        netflix(client)
+        duplicate(client)
+        assert [i["tier"] for i in items(client)] == ["yes", "yes", "yes"]
+        bill(client, "Hydro", 1)
+        assert [i["tier"] for i in items(client)] == ["yes", "yes", "heads_up"]
 
     def test_hiding_one_makes_room(self, client):
         piggy(client)

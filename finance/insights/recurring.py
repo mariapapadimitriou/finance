@@ -192,6 +192,9 @@ def _analyze_merchant(merchant: str, rows: list[Transaction], today: date) -> di
             "charges_per_year": per_year,
             "occurrences": len(cluster),
             "amount": round(latest_amount, 2),
+            # The charge before the latest: what a price rise is measured
+            # against (Worth a look, 2026-11-19), not the median of years.
+            "previous_amount": round(amounts[-2], 2) if len(amounts) > 1 else None,
             "typical_amount": typical,
             "annual_cost": annual,
             "monthly_cost": round(annual / 12, 2),

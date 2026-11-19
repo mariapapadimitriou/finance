@@ -444,12 +444,16 @@ def build(transactions: list[Transaction], today: str | None = None,
                          "rest": {"whole": q["whole"], "sorted": q["sorted"]},
                          "reason": f"${-rt.amount:,.2f} left to sort from a ${q['whole']:,.2f} deposit."})
 
-    # 5. Months with a third paycheque.
+    # 5. Months with a third paycheque: this month or last only (T-74,
+    # product owner 2026-11-19). After Start over brings years back, an old
+    # month isn't news.
     pay = cadence(transactions, today_d.isoformat())
+    this_month = today_d.strftime("%Y-%m")
+    last_month = (today_d.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
     three = []
     for m in (pay or {}).get("three_pay_months", []):
         key = "pay3:" + m
-        if key in dismissed:
+        if key in dismissed or m not in (this_month, last_month):
             continue
         three.append({"key": key, "month": m, "paycheque": pay["paycheque"],
                       "monthly": pay["monthly"],
@@ -458,8 +462,10 @@ def build(transactions: list[Transaction], today: str | None = None,
                                 "a month, so the third isn’t a raise."})
 
     # 6. Likely duplicates: is this the same purchase? (THL-165 D-02). Asked
-    # until answered, however old: until then the copy is counted once.
-    dupes = duplicate_questions(transactions, found_on)
+    # about the last ASK_DAYS only (product owner, 2026-11-19), so years of
+    # history after Start over don't flood Quick sort or Home; an older one
+    # still counts the copy once, as it did before she answered.
+    dupes = duplicate_questions(transactions, found_on, since=since)
 
     # Skipped items stay listed, marked, and leave the badge (THL-213).
     keys = ({"u:" + t["id"] for t in groups["transfers"]}

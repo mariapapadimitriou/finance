@@ -7,13 +7,28 @@ the trip renames the tag, and taking the tag off (Tags, TR-09) ends the trip.
 A trip never moves money between months: each row still counts in its own.
 
 AI only detects; she confirms. Pearl asks about a likely trip with one Quick
-sort card (TR-01), and only when two signals agree (product owner):
+sort card (TR-01), and only when two signals agree (product owner). Four
+kinds of signal:
 
-* a run of first-time merchants: at least RUN_MIN rows on two or more days,
-  no more than RUN_GAP days apart, at merchants she has never paid before;
-* and at least one of: a flight (Travel) or a hotel (Lodging) in the two
-  weeks before or during it, foreign transaction fees during it, or a city
-  (where Plaid gives one) that isn't the one she's usually in.
+* new places: a run of first-time merchants, at least RUN_MIN rows on two
+  or more days, no more than RUN_GAP days apart. Not in her first SETTLE
+  days of history, when every merchant is new;
+* away: a run of spending, as long, in a city (where Plaid gives one) that
+  isn't home. Home is the city she's mostly in around then, so a move
+  doesn't make months of her life "away"; a second trip to the same place,
+  same hotel and restaurants, is still away;
+* a booking: a flight (Travel) in the two weeks before or during it, or a
+  hotel (Lodging) then that isn't in her home city;
+* foreign transaction fees during it (on two days or more, a run too);
+* gone from home: with away only, nothing spent in her home city on any of
+  those days, where she spends there most days around them (a road trip
+  with no booking, to a place she's been before).
+
+A run of one kind and a second kind with it make an ask; one alone never
+does. Runs that touch are one trip. A stay longer than RUN_SPAN days isn't
+a trip (a work stint), and the same away city again within STINT_GAP days
+is the same stay. Her whole history counts, back to the first day: after
+Start over she's asked about every trip again, newest first.
 
 Nothing groups until she says Yes. Skip and Pearl never asks about those
 dates again (`SKIPPED_KEY`). She can make a trip herself from Select (TR-07,
@@ -26,6 +41,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from bisect import bisect_left, bisect_right
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 
@@ -36,13 +52,18 @@ TRIPS_KEY = "trips"                 # {id: trip}
 SKIPPED_KEY = "trip_skipped"        # [[start, end]] she skipped: never asked again
 ENDED_KEY = "trip_ended"            # {id: {trip, skipped}}: what Undo on TR-13 puts back
 ENDED_KEEP = 20                     # the last few ended trips, for Undo
-RUN_MIN = 4                         # first-time merchant rows in a run
+RUN_MIN = 4                         # rows in a run of new places or away
 RUN_GAP = 2                         # days between them, at most
 RUN_SPAN = 21                       # a run this long isn't a trip
+STINT_GAP = 7                       # the same away city again within a week: the same stay
 BEFORE = 14                         # a flight or hotel booked up to two weeks before
-SETTLE = 30                         # days of history before anything counts as "new"
-LOOKBACK = 120                      # only trips that ended in the last four months
-FEE = re.compile(r"\b(foreign transaction fee|forex fee|fx fee|foreign fee|non-sterling|conversion fee)\b", re.I)
+SETTLE = 30                         # days of history before a merchant counts as "new"
+HOME_MONTHS = 2                     # home: her usual city within two months either side
+HOME_MIN = 10                       # rows with a city needed to say so; else her usual city overall
+AROUND = 28                         # "gone from home": the days either side that show her usual
+STEADY_DAYS = 14                    # at least this many of them in her history
+STEADY_SHARE = 0.5                  # and she spent in her home city on at least half
+FEE =re.compile(r"\b(foreign transaction fee|forex fee|fx fee|foreign fee|non-sterling|conversion fee)\b", re.I)
 
 
 class Problem(ValueError):
@@ -272,60 +293,165 @@ def _spending(t: Transaction) -> bool:
     return t.amount > 0 and not t.excluded and (t.category or "Other") not in NON_SPEND
 
 
+def _day(t: Transaction) -> str:
+    return t.date[:10]
+
+
+def _gap(a: str, b: str) -> int:
+    return (date.fromisoformat(b) - date.fromisoformat(a)).days
+
+
+def _month_no(day: str) -> int:
+    return int(day[:4]) * 12 + int(day[5:7]) - 1
+
+
+def _homes(txns: list[Transaction]):
+    """Her home city on a given day: the city she's mostly in within
+    HOME_MONTHS either side, or her usual city overall where that window
+    has too few cities to say. Never a fixed place (no city is hard-coded)."""
+    by_month: dict[int, Counter] = {}
+    for t in txns:
+        c = _city(t)
+        if c:
+            by_month.setdefault(_month_no(_day(t)), Counter())[c] += 1
+    overall = sum(by_month.values(), Counter())
+    usual = overall.most_common(1)[0][0] if overall else ""
+    homes: dict[int, str] = {}
+    for m in by_month:
+        near = sum((by_month.get(m + k, Counter()) for k in range(-HOME_MONTHS, HOME_MONTHS + 1)), Counter())
+        homes[m] = near.most_common(1)[0][0] if sum(near.values()) >= HOME_MIN else usual
+    return lambda day: homes.get(_month_no(day), usual)
+
+
+def _runs(rows: list[Transaction], gap: int = RUN_GAP) -> list[list[Transaction]]:
+    """Rows (in date order) no more than `gap` days apart, together."""
+    runs: list[list[Transaction]] = []
+    for t in rows:
+        if runs and _gap(_day(runs[-1][-1]), _day(t)) <= gap:
+            runs[-1].append(t)
+        else:
+            runs.append([t])
+    return runs
+
+
+def _main_city(run: list[Transaction]) -> str:
+    return Counter(_city(t) for t in run).most_common(1)[0][0]
+
+
+def _stints(runs: list[list[Transaction]]) -> list[list[Transaction]]:
+    """The same away city again within STINT_GAP days is the same stay: a
+    month's work there with weekends off is one long stint, not four trips."""
+    out: list[list[Transaction]] = []
+    for run in runs:
+        if out and _main_city(out[-1]) == _main_city(run) and _gap(_day(out[-1][-1]), _day(run[0])) <= STINT_GAP:
+            out[-1] = out[-1] + run
+        else:
+            out.append(run)
+    return out
+
+
+def _windows(kinds: dict[str, list[list[Transaction]]]) -> list[dict]:
+    """Every run, with the runs that touch it (RUN_GAP days or less), as one
+    span of dates with the kinds of run in it."""
+    spans = sorted((_day(r[0]), _day(r[-1]), k) for k, runs in kinds.items() for r in runs)
+    out: list[dict] = []
+    for start, end_, kind in spans:
+        if out and _gap(out[-1]["end"], start) <= RUN_GAP:
+            out[-1]["end"] = max(out[-1]["end"], end_)
+            out[-1]["kinds"].add(kind)
+        else:
+            out.append({"start": start, "end": end_, "kinds": {kind}})
+    return out
+
+
 def candidates(st, txns: list[Transaction], today: str) -> list[dict]:
-    """Likely trips Pearl may ask about: two signals agree, none overlapping a
-    trip or dates she skipped, ended in the last four months."""
+    """Likely trips Pearl may ask about, across her whole history: two kinds
+    of signal agree, none overlapping a trip or dates she skipped, newest
+    first (the one she remembers best, and the one that matters to this
+    month, comes first; each is still its own question). None while a
+    bank's history is still coming in (after Start over or a new link): a
+    recent slice alone would make every merchant look new."""
+    if not st.plaid_history_ready(today):
+        return []
     spend = sorted((t for t in txns if _spending(t) or FEE.search(t.description or "")),
                    key=lambda t: (t.date, t.fingerprint))
     if not spend:
         return []
-    first_day = min(t.date[:10] for t in txns)
+    first_day = min(_day(t) for t in txns)
     settled = (date.fromisoformat(first_day) + timedelta(days=SETTLE)).isoformat()
+    home = _homes(txns)
     first_seen: dict[str, str] = {}
     for t in spend:
         k = merchant_key(t.merchant or "")
         if k and k not in first_seen:
-            first_seen[k] = t.date[:10]
-    new = [t for t in spend if t.amount > 0 and t.date[:10] >= settled
-           and first_seen.get(merchant_key(t.merchant or "")) == t.date[:10]
-           and (t.category or "") not in ("Travel", "Lodging") and not FEE.search(t.description or "")]
-    runs: list[list[Transaction]] = []
-    for t in new:
-        if runs and (date.fromisoformat(t.date[:10]) - date.fromisoformat(runs[-1][-1].date[:10])).days <= RUN_GAP:
-            runs[-1].append(t)
-        else:
-            runs.append([t])
-    cities = Counter(_city(t) for t in txns if _city(t))
-    home = cities.most_common(1)[0][0] if cities else ""
+            first_seen[k] = _day(t)
+    fee_rows = [t for t in spend if FEE.search(t.description or "")]
+    # What she spent there: not the flight, the hotel or the fee, which are
+    # signals of their own.
+    there = [t for t in spend if t.amount > 0 and (t.category or "") not in ("Travel", "Lodging")
+             and not FEE.search(t.description or "")]
+    new = [t for t in there if _day(t) >= settled and first_seen.get(merchant_key(t.merchant or "")) == _day(t)]
+    away = [t for t in there if _city(t) and _city(t) != home(_day(t))]
+
+    def enough(run: list[Transaction], rows: int) -> bool:
+        return len(run) >= rows and len({_day(t) for t in run}) >= 2
+
+    windows = _windows({
+        "new": [r for r in _runs(new) if enough(r, RUN_MIN)],
+        "away": [r for r in _stints(_runs(away)) if enough(r, RUN_MIN)],
+        "fees": [r for r in _runs(fee_rows) if enough(r, 2)],
+    })
+    flights_all = [t for t in spend if t.category == "Travel"]
+    hotels_all = [t for t in spend if t.category == "Lodging" and not (_city(t) and _city(t) == home(_day(t)))]
+    there_days = [_day(t) for t in there]
+    at_home = {_day(t) for t in there if _city(t) and _city(t) == home(_day(t))}
+
+    def gone_from_home(start: str, end_: str) -> bool:
+        """Nothing spent at home those days, where she spends there most days
+        around them: a home with steady daily spending, so a quiet spell
+        isn't taken for being away."""
+        s, e = date.fromisoformat(start), date.fromisoformat(end_)
+        if any((s + timedelta(days=i)).isoformat() in at_home for i in range((e - s).days + 1)):
+            return False
+        near = [d for d in ((s - timedelta(days=i)).isoformat() for i in range(1, AROUND + 1))
+                if d >= first_day] + \
+               [d for d in ((e + timedelta(days=i)).isoformat() for i in range(1, AROUND + 1))
+                if d < today]
+        return len(near) >= STEADY_DAYS and sum(d in at_home for d in near) >= STEADY_SHARE * len(near)
     busy = [(t["start"], t["end"]) for t in all_trips(st).values()] + [tuple(s) for s in _skipped(st)]
     taken = trip_of(st)
-    oldest = (date.fromisoformat(today) - timedelta(days=LOOKBACK)).isoformat()
     out = []
-    for run in runs:
-        days = sorted({t.date[:10] for t in run})
-        start, end_ = days[0], days[-1]
-        span = (date.fromisoformat(end_) - date.fromisoformat(start)).days + 1
-        if len(run) < RUN_MIN or len(days) < 2 or span > RUN_SPAN or end_ < oldest or end_ >= today:
-            continue
+    for w in windows:
+        start, end_ = w["start"], w["end"]
+        span = _gap(start, end_) + 1
+        if span > RUN_SPAN or end_ >= today:
+            continue                                        # a stint, or not over yet
         if any(_overlaps((start, end_), b) for b in busy):
             continue
         before = (date.fromisoformat(start) - timedelta(days=BEFORE)).isoformat()
         after = (date.fromisoformat(end_) + timedelta(days=3)).isoformat()
-        flights = [t for t in spend if t.category == "Travel" and before <= t.date[:10] <= end_]
-        hotels = [t for t in spend if t.category == "Lodging" and before <= t.date[:10] <= end_]
-        fees = [t for t in spend if FEE.search(t.description or "") and start <= t.date[:10] <= after]
-        away = Counter(_city(t) for t in run if _city(t) and _city(t) != home)
-        place = away.most_common(1)[0][0] if away and away.most_common(1)[0][1] * 2 >= len(run) else None
-        if not (flights or hotels or fees or place):
+        flights = [t for t in flights_all if before <= _day(t) <= end_]
+        hotels = [t for t in hotels_all if before <= _day(t) <= end_]
+        fees = [t for t in fee_rows if start <= _day(t) <= after]
+        inside = there[bisect_left(there_days, start):bisect_right(there_days, end_)]
+        with_city = [t for t in inside if _city(t)]
+        elsewhere = Counter(_city(t) for t in with_city if _city(t) != home(_day(t)))
+        top = elsewhere.most_common(1)
+        place = top[0][0] if top and top[0][1] * 2 >= len(with_city) else None
+        away_ = "away" in w["kinds"] or place is not None
+        signals = ["new" in w["kinds"], away_, bool(flights or hotels), "fees" in w["kinds"] or bool(fees),
+                   away_ and gone_from_home(start, end_)]
+        if sum(signals) < 2:
             continue                                        # one signal is not enough
-        rows = [t for t in spend if t.amount > 0 and start <= t.date[:10] <= end_] + flights + hotels + fees
-        ids = [i for i in dict.fromkeys(t.fingerprint for t in sorted(rows, key=lambda t: t.date))
-               if i not in taken]
+        rows = inside + flights + hotels + fees
+        picked = {t.fingerprint: t for t in sorted(rows, key=lambda t: t.date)}
+        ids = [i for i in picked if i not in taken]
         trip = {"id": f"{start}:{end_}", "key": f"trip:{start}:{end_}", "ids": ids,
                 "start": start, "end": end_, "days": span, "place": place,
                 "flight": bool(flights), "hotel": bool(hotels), "fees": bool(fees),
                 "name": f"Trip to {place}" if place else ""}
-        out.append({**summary(st, {**trip, "id": trip["id"]}, txns), **trip})
+        out.append({**summary(st, trip, [picked[i] for i in ids]), **trip})
+    out.sort(key=lambda c: (c["end"], c["start"]), reverse=True)
     return out
 
 

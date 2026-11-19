@@ -113,14 +113,15 @@ def test_unsure_and_other_categories(client):
 
 
 def _three_pay_anchor():
-    """The 1st of a month three or four months back, never February, so pay
-    on the 1st, 15th and 29th lands three times in it whatever today is.
-    Pay every 14 days from today only holds a third paycheque about twice a
-    year, and on 2026-11-15 the last six months held none."""
-    y, m = TODAY.year, TODAY.month - 3
-    if m < 1:
-        y, m = y - 1, m + 12
-    return date(y, 1 if m == 2 else m, 1)
+    """The 1st of last month, so pay on the 1st, 15th and 29th lands three
+    times in it. T-74 only offers this month or last (2026-11-19), so an
+    older month wouldn't be asked about. Never February, which has no 29th
+    most years: then there's nothing to test this month."""
+    first = TODAY.replace(day=1)
+    anchor = (first - timedelta(days=1)).replace(day=1)
+    if anchor.month == 2 or anchor + timedelta(days=28) > TODAY - timedelta(days=3):
+        pytest.skip("last month can't hold three paycheques on the 1st, 15th and 29th")
+    return anchor
 
 
 def test_income_type_guesses_and_three_paycheque_months(client):
@@ -138,6 +139,29 @@ def test_income_type_guesses_and_three_paycheque_months(client):
     assert q["income_type"][0]["guess"] == "other"
     assert q["three_pay_month"], "biweekly pay over half a year holds a third paycheque"
     assert "two paycheques a month" in q["three_pay_month"][0]["reason"]
+
+
+def test_an_older_third_paycheque_month_isnt_offered(client):
+    """T-74 (2026-11-19): only this month or last. Pay over the last half
+    year whose third paycheque fell three or four months back isn't news."""
+    from finance.income import cadence
+    first = TODAY.replace(day=1)
+    y, m = TODAY.year, TODAY.month - 3
+    if m < 1:
+        y, m = y - 1, m + 12
+    anchor = date(y, 1 if m == 2 else m, 1)
+    start, k = TODAY - timedelta(days=182), 0
+    while anchor - timedelta(days=14 * (k + 1)) >= start:
+        k += 1
+    begin = anchor - timedelta(days=14 * k)
+    pays = [row(-2400, "PAYROLL ACME", when=(begin + timedelta(days=14 * i)).isoformat(),
+                category="Income")
+            for i in range(14) if begin + timedelta(days=14 * i) <= TODAY - timedelta(days=3)]
+    load(client.st, *pays)
+    found = cadence(client.st.all_transactions(), TODAY.isoformat())["three_pay_months"]
+    recent = {TODAY.strftime("%Y-%m"), (first - timedelta(days=1)).strftime("%Y-%m")}
+    assert anchor.strftime("%Y-%m") in found
+    assert [it["month"] for it in queue(client)["three_pay_month"]] == sorted(set(found) & recent)
 
 
 def test_unsorted_transfers_are_in_the_queue_and_count(client):
