@@ -70,7 +70,8 @@ class TestHome:
         for gone in ("MonthCard", "PearlSortedCard", "so far\")", "patternWeek"):
             assert gone not in self.home, gone
         assert 'APSectionLabel(text: "Needs a look", action: "See the list"' in self.home
-        assert "SortStreak(sorted: sorted, toSort: count)" in self.home
+        # AP-Home (approved r7): the Needs a look card has no streak dashes.
+        assert "SortStreak(" not in self.home
         assert '"Sort now"' in self.home
         assert "sorted: home.sorted ?? home.pearlSorted ?? 0" in self.home, "REDESIGN-18"
         assert "people owe you" in self.home and "OwedCard(" in self.home

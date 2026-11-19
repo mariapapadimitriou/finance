@@ -21,9 +21,14 @@ TX = ("Views", "Transactions")
 
 
 class TestFollowUps(unittest.TestCase):
-    def test_mini_streak_counts_her_answers_and_pearls_like_home(self):
+    def test_card_counts_its_own_month_and_has_no_streak(self):
+        # CF-SCROLL (AP-CashFlow r7): the card's count is the month's own
+        # open questions (6), the badge still everything (8); no mini streak.
         tv = read(*TX, "TransactionsView.swift")
-        self.assertIn("reviewSorted = review.youSorted + review.pearlSorted", tv)
+        self.assertIn("let open = review.shownAsks.filter { !$0.skipped }", tv)
+        self.assertIn("by[String(ask.t.date.prefix(7)), default: 0] += 1", tv)
+        self.assertIn("let count = month.flatMap { lookByMonth[$0] } ?? 0", tv)
+        self.assertNotIn("SortStreak(", tv)
         self.assertNotIn("review.sortedToday + review.pearlSorted", tv)
         self.assertIn('case youSorted = "you_sorted"', read("API", "Models.swift"))
         rv = read("Views", "Review", "ReviewView.swift")
@@ -44,7 +49,7 @@ class TestFollowUps(unittest.TestCase):
         tv = read(*TX, "TransactionsView.swift")
         # TEST-35: the count is the rows Needs a look lists (shownAsks), so
         # parked plan questions, trips and patterns stay out of it.
-        self.assertIn("reviewCount = review.listedOpen", tv)
+        self.assertIn("review.shownAsks.filter { !$0.skipped }", tv)
         self.assertIn("var listedOpen: Int { shownAsks.filter { !$0.skipped }.count }", rv)
 
     def test_cash_flow_opens_filtered_to_a_category(self):
@@ -75,10 +80,13 @@ class TestBoards(unittest.TestCase):
         self.assertIn("Button { chosen = m; onDone(m) }", tv)
         self.assertNotIn('Button("Done") { onDone(chosen ?? current) }', tv)
 
-    def test_filters_show_as_pills_with_show_all(self):
+    def test_filters_show_as_chips_each_with_its_clear(self):
+        # CF-SCROLL (G1-Months T-67, G1-Scroll T-53): the card's chip and
+        # Filters' chips under the card, each with its own ✕ (cf.css .fchip).
         tv = read(*TX, "TransactionsView.swift")
-        self.assertIn("CFFilterStrip(pills: filters.chips(accounts: filterAccounts).map(\\.label))", tv)
-        self.assertIn('option("All accounts", on: filters.accounts.isEmpty)', tv)
+        self.assertIn("CFChipWrap(chips: chipItems)", tv)
+        self.assertIn("for chip in filters.chips(accounts: filterAccounts)", tv)
+        self.assertIn('[("", "All accounts")] + accounts.map', tv)
 
     def test_results_states(self):
         tv = read(*TX, "TransactionsView.swift")
