@@ -134,6 +134,8 @@ struct PartsSheet: View {
     @State private var picked: [String: Double] = [:]
     @State private var query = ""
     @State private var found: [Owing] = []
+    /// T-09r: Another purchase was tapped, so the whole list shows.
+    @State private var otherRefund = false
     /// S-11 v2 "How much of it?": all of what's left unless she types less.
     @State private var partAmount = ""
     /// S-11 v2 Off a category: the category list, for this amount.
@@ -327,7 +329,20 @@ struct PartsSheet: View {
             switch kind {
             case "gift": return "Income · Gift"
             case "income": return "Income · \(TransactionDetailView.kindName(incomeKind))"
+            // G2-ADeposit2 (S-10e): "Sep 28 · Dad’s share".
+            case "payback":
+                let bits = [date.map { Format.short($0) }, person.map { "\(possessive($0)) share" }].compactMap { $0 }
+                return bits.isEmpty ? nil : bits.joined(separator: " · ")
             default: return nil
+            }
+        }
+
+        /// S-10e: each part's icon, as on S-10.
+        var symbol: String {
+            switch kind {
+            case "payback", "refund", "reimbursement": return "arrow.uturn.backward"
+            case "gift": return "gift"
+            default: return "sparkles"
             }
         }
 
@@ -457,15 +472,24 @@ struct PartsSheet: View {
         .interactiveDismissDisabled(heldSplit != nil)
         .sheet(isPresented: $leaving) {
             // S-24xr (TEST-06): a Pearl sheet, not a stock alert.
+            // G2-PLeave: the question centred with ✕, the held share as the
+            // who ("Dad’s share · Costco", Not saved yet), one line, two buttons.
             let merchant = heldSplit?.merchant ?? "It"
-            PearlConfirmSheet(face: heldSplit?.merchant, overline: "\(possessive(who)) share · \(merchant)",
-                              title: "Leave without saving?",
-                              message: "\(merchant) won’t be split with \(who), and the \(Format.whole(deposit.amount)) stays in Needs a look.",
-                              primary: "Leave without saving", secondary: "Keep sorting",
-                              onClose: { leaving = false }) {
-                leaving = false
-                heldSplit = nil
-                dismiss()
+            APSheet {
+                APSheetHeader(heading: "Leave without saving?", face: heldSplit?.merchant,
+                              title: "\(possessive(who)) share · \(merchant)", sub: "Not saved yet",
+                              close: { leaving = false })
+                Text("\(merchant) won’t be split with \(who), and the \(Format.whole(deposit.amount)) stays in Needs a look.")
+                    .font(Nacre.body).foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            } footer: {
+                PearlSheetButtons(primary: "Leave without saving", secondary: "Keep sorting",
+                                  onPrimary: {
+                                      leaving = false
+                                      heldSplit = nil
+                                      dismiss()
+                                  },
+                                  onSecondary: { leaving = false })
             }
         }
         .sheet(item: $letGoAsk) { o in
@@ -593,6 +617,7 @@ struct PartsSheet: View {
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
             }
         case .cash: cashList
+        case .refund where likelyRefund != nil: likelyRefundView
         case .owing, .refund, .work: owingList
         case .progress: progressView
         case .kind: kindList
@@ -653,6 +678,40 @@ struct PartsSheet: View {
     }
 
     // MARK: S-09, S-25, S-35 What did this pay back?
+
+    // MARK: T-09r What was this a refund for? (G1-TxSheets; Rethought, approved 2026-11-18)
+
+    /// The purchase Pearl thinks it refunds: the first the server lists, while
+    /// she hasn't asked for another one or typed a search.
+    private var likelyRefund: Owing? {
+        guard step == .refund, !otherRefund, query.isEmpty else { return nil }
+        return found.first
+    }
+
+    /// T-09r: MOST LIKELY, the one purchase; the buttons (Yes, this one ·
+    /// Another purchase) are the sheet's footer. Another purchase opens the list.
+    private var likelyRefundView: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let o = likelyRefund {
+                label("Most likely")
+                APCard {
+                    HStack(spacing: 12) {
+                        APFace(name: o.merchant)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(o.merchant).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                            Text(o.pending == true ? "Pending" : Format.short(o.date))
+                                .font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                        }
+                        Spacer(minLength: 8)
+                        Text("\u{2212}" + Format.amount(o.owes)).font(Nacre.headline).monospacedDigit()
+                            .foregroundColor(Pearl.moneyOut).pearlAmountFit()
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 64)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        }
+    }
 
     private var owingList: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -952,8 +1011,9 @@ struct PartsSheet: View {
                 jointLabel(first)
             }
             if rows.isEmpty && otherRows.isEmpty {
-                Text("No purchases match.").font(Nacre.subheadline).foregroundColor(Pearl.muted)
-                    .padding(.horizontal, 16)
+                // G2-APaidBackMore PB-12: the calm empty state.
+                EmptyStateBlock(title: "No purchases match", line: "Search for the purchase, or try another name.",
+                                action: nil) {}
             } else if !rows.isEmpty {
                 if typed.isEmpty, joint != nil {
                     jointLabel(first)
@@ -1831,29 +1891,24 @@ struct PartsSheet: View {
     }
 
     /// S-10e Edit the $600 (SPLIT-03): the parts as saved; swipe one away and
-    /// its amount goes back to Left to sort.
+    /// its amount goes back to Left to sort. G2-ADeposit2 (Rethought,
+    /// approved 2026-11-18): no totals bar repeating the parts; PARTS, each
+    /// with its icon, and one total line under them that says it adds up.
     private var editView: some View {
         VStack(alignment: .leading, spacing: 8) {
-            let paybacks = parts.filter { $0.kind == "payback" }.map(\.amount).reduce(0, +)
-            let others = parts.filter { $0.kind != "payback" }
-            if leftCents == 0 && paybacks > 0 && !others.isEmpty {
-                // "● Paybacks $492.00   ● Gift $108.00"
-                bar(sorted: paybacks, first: "Paybacks",
-                    second: Set(others.map(\.label)).count == 1 ? others[0].label : "Other parts")
-            } else {
-                bar(sorted: sortedDone, first: "Sorted", second: "Left to sort")
-            }
+            APSectionLabel(text: "Parts")
             APCard {
                 ForEach(Array(parts.enumerated()), id: \.element.id) { i, p in
-                    if i > 0 { APSeparator(afterFace: false) }
+                    if i > 0 { APSeparator() }
                     // REFRESH-03 (S-10e): the swipe hint under the list is gone;
                     // VoiceOver's "Remove …" action carries it.
                     SwipeToRemove(label: p.editTitle) { withAnimation { remove(p) } } content: {
-                        HStack(spacing: 10) {
+                        HStack(spacing: 12) {
+                            APIcon(symbol: p.symbol)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(p.editTitle).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
                                 if let sub = p.editSub {
-                                    Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                                    Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                                 }
                             }
                             Spacer(minLength: 8)
@@ -1861,20 +1916,28 @@ struct PartsSheet: View {
                                 .font(Nacre.headline).monospacedDigit()
                                 .foregroundColor(["gift", "income"].contains(p.kind) ? Pearl.moneyIn : Pearl.ink)
                         }
-                        .padding(.horizontal, 16).frame(minHeight: 56)
+                        .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 64)
                     }
                     .accessibilityHint("Its amount goes back to Left to sort.")
                 }
                 if leftCents > 0 {
-                    if !parts.isEmpty { APSeparator(afterFace: false) }
-                    HStack {
+                    if !parts.isEmpty { APSeparator() }
+                    HStack(spacing: 12) {
+                        APIcon(symbol: "questionmark.circle")
                         Text("Left to sort").font(Nacre.body).foregroundColor(Pearl.ink)
                         Spacer()
-                        Text(Format.amount(left)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.action)
+                        Text(Format.amount(left)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
                     }
-                    .padding(.horizontal, 16).frame(minHeight: 52)
+                    .padding(.horizontal, 16).frame(minHeight: 64)
+                    .accessibilityElement(children: .combine)
                 }
             }
+            // "$600.00 of $600.00 ✓", or what's still left.
+            APTotalLine(text: leftCents == 0
+                            ? "\(Format.amount(deposit.amount)) of \(Format.amount(deposit.amount)) ✓"
+                            : "\(Format.amount(sortedDone)) of \(Format.amount(deposit.amount)) · \(Format.amount(left)) left",
+                        tone: leftCents == 0 ? .good : .quiet)
+                .padding(.top, 6)
         }
     }
 
@@ -2002,7 +2065,60 @@ struct PartsSheet: View {
 
     /// The shared What was this? page (T-08), for the rest or the extra:
     /// "How much of it?" on top, then tiles that answer at once.
-    private var kindList: some View {
+    @ViewBuilder private var kindList: some View {
+        if let lead = shareLead, !allTiles { shareKinds(lead) } else { fullKindList }
+    }
+
+    /// G2-BIncome S-11w / S-11m: what the rest already did, then "The other
+    /// $15.00 is…". Nil anywhere else (S-11 v2, S-11x, MP-03).
+    private var shareLead: String? {
+        guard whole == nil, manyKind == nil, let c = credited.first, shareLine != nil || shareOwing != nil else { return nil }
+        let done = shareOwing != nil ? "\(Format.amount(c.amount)) refunded your share."
+            : "\(Format.amount(c.amount)) paid back your share of \(c.merchant ?? "it")."
+        return "\(done) The other \(Format.amount(left)) is…"
+    }
+
+    /// S-11w (Rethought, approved 2026-11-18): the four likely answers first
+    /// (A gift, Bonus, My pay, Paid back); the rest behind Something else….
+    /// S-11m: Another purchase, Not mine, each "Part of Sam's share",
+    /// Something else. A tile answers at once.
+    private func shareKinds(_ lead: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(lead).font(Nacre.body).foregroundColor(Pearl.ink)
+                .padding(.horizontal, 4).fixedSize(horizontal: false, vertical: true)
+            if shareOwing != nil {
+                CaseGrid(cases: extraTiles, chosen: tile).disabled(busy)
+            } else {
+                CaseGrid(cases: Self.likelyExtra, chosen: tile).disabled(busy)
+            }
+            if let error = error {
+                Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).padding(.horizontal, 4)
+            }
+            if shareOwing == nil {
+                HStack {
+                    Button("Something else…") { allTiles = true }
+                        .buttonStyle(NacreTextButtonStyle())
+                        .accessibilityHint("Shows every answer")
+                    Spacer(minLength: 8)
+                    Button("Sort it later") { Task { await save(later: true) } }
+                        .buttonStyle(NacreTextButtonStyle())
+                        .disabled(busy)
+                        .accessibilityHint("\(Format.amount(left)) stays in Needs a look")
+                }
+                .padding(.horizontal, 4)
+            }
+        }
+    }
+
+    /// S-11w's four likely answers for work that paid more than her share.
+    static let likelyExtra: [CaseTile] = [
+        CaseTile(key: "gifts", label: "A gift", symbol: "gift"),
+        CaseTile(key: "bonus", label: "Bonus", symbol: "sparkle"),
+        CaseTile(key: "regular", label: "My pay", symbol: "briefcase"),
+        CaseTile(key: "paid_back", label: "Paid back", symbol: "arrow.uturn.backward"),
+    ]
+
+    private var fullKindList: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("How much of it?").font(Nacre.body).foregroundColor(Pearl.ink)
@@ -2235,6 +2351,11 @@ struct PartsSheet: View {
             Button(shareQueue.isEmpty || howMuchFinishes ? "Save" : "Next") { takeHowMuch() }
                 .buttonStyle(APPrimaryButtonStyle(busy: busy)).disabled(!howMuchReady || busy)
                 .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
+        case .refund where likelyRefund != nil:
+            // T-09r: one button for the likely purchase; the list is behind Another purchase.
+            pair("Yes, this one", disabled: false, {
+                if let o = likelyRefund { toggle(o); takeRefund() }
+            }, "Another purchase") { otherRefund = true }
         case .refund, .work:
             Button("Next") { takeRefund() }
                 .buttonStyle(APPrimaryButtonStyle()).disabled(picked.isEmpty)

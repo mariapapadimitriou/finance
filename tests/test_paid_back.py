@@ -292,7 +292,7 @@ class TestTilesBySource:
         for words in ('"What paid this back?"', '"Search deposits, or an amount"',
                       '"Your share"', '"\\(whose) share"', '"Next"',
                       '"No money in matches"', '"Clear search"',
-                      "If it hasn’t arrived yet, Pearl asks when it does.",
+                      "after \\(Format.short(f.date)). Pearl asks when it does.",
                       '"Take \\(more) from \\(other)?"', '"Take \\(more)"',
                       '"Leave it on \\(other)"', '"Use only the \\(Format.amount(free))"',
                       "of this deposit is free, so it pays back your share first.",

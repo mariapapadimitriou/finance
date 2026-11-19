@@ -136,7 +136,9 @@ struct PaybackLinkSheet: View {
                 // PP-02: what moved, with Undo.
                 PearlToast(model: notice, stays: true) {}
             }
-            APSheetHeader(overline: "Paid back", title: link.dialog, sub: headerSub, close: onClose)
+            // G2-ALink (PB-42): "Sam’s payback" over "All of it · Nov 14".
+            APSheetHeader(title: "\(possessive(first)) payback", sub: headerSub, close: onClose)
+                .accessibilityHint(link.dialog)
             APOptionCard {
                 APOptionRow(symbol: "target", title: "How much",
                                sub: all ? "All of it · \(Format.amount(link.amount))" : "Part of it · \(Format.amount(link.amount))") {

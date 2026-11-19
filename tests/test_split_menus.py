@@ -378,11 +378,11 @@ class TestLessWords:
         "ios/Pearl/Views/Transactions/SplitMenus.swift": [
             'title: "Remove \\(p.name)"', '"Pearl doesn’t send it. You paste it."',
             '"Part of \\(Format.amount(whole)) · also paid back \\(Format.andList(others))"',
-            'goes back to Needs a look.")', 'is forgotten.")', 'counts as \\(Format.amount(counts)) again.'],
+            'goes back to Needs a look.")', 'is forgotten.")', 'counts as \\(Format.amount(counts)) again"', '"Nobody is left, so the split goes"'],
         "ios/Pearl/Views/Transactions/SplitFlow.swift": [
             '"No amounts yet. Paybacks come off as they arrive."', 'left · stays yours"', '"Adds up ✓ · \\(over)"',
             '"Comes off \\(t.merchant) now"', '"Deposit it later? Pearl won’t count it twice."',
-            'more than \\(person.name) owes. You’ll sort the extra next.', '"Your Allowance doesn’t change."',
+            'more than \\(person.name) owes. You’ll say what the extra is next.', '"Your Allowance doesn’t change."',
             '"Settled · " + bits.joined(separator: " · ")', 'Next · check',
             'part\\(t.jointPeople.count == 1 ? " is" : "s are") already off.'],
         "ios/Pearl/Views/Transactions/PartsFlow.swift": [
