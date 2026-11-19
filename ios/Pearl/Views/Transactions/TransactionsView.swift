@@ -55,6 +55,10 @@ struct TransactionsView: View {
     /// T-67 (CF-SCROLL): Spent, Saved, Came in or need a look tapped on the
     /// card: that month and kind, with its chip under the card.
     @State private var cardFilter: CardFilter?
+    /// That figure's rows, exactly those the card adds up (the server's
+    /// `kind=`); nil while they load.
+    @State private var cardRows: [Transaction]?
+    @State private var loadedCard: CardFilter?
     @State private var showFilters = false
     @State private var showMonths = false
 
@@ -326,6 +330,7 @@ struct TransactionsView: View {
             }
         }
         .onChange(of: needsEverything) { on in if on { Task { await loadRest() } } }
+        .onChange(of: cardFilter) { _ in Task { await loadCardRows() } }
         .fullScreenCover(item: $quickDeck) { deck in
             QuickSortView(asks: deck.asks, categories: categories, names: deck.names,
                           patterns: deck.patterns, trips: deck.trips) {
@@ -421,10 +426,22 @@ struct TransactionsView: View {
                 }
                 .padding(.top, 24).padding(.bottom, 8)
                 .cfMonthEdge(month)
-        case .rows(let month, _, let rows):
-            APCard { OwnBody { dayRows(rows) } }
-                .padding(.top, byDay || filters.sort == .merchant ? 0 : 12)
+        case .rows(let month, _, let rows, let top, let bottom):
+            if top && bottom {
+                APCard { OwnBody { dayRows(rows) } }
+                    .padding(.top, byDay || filters.sort == .merchant ? 0 : 12)
+                    .cfMonthEdge(month)
+            } else {
+                // Q4: a long card's slice; the line between slices is drawn
+                // as any other row's.
+                VStack(alignment: .leading, spacing: 0) {
+                    if !top { APSeparator().padding(.leading, selecting ? 34 : 0) }
+                    OwnBody { dayRows(rows) }
+                }
+                .modifier(CFCardSlice(top: top, bottom: bottom))
+                .padding(.top, top && !(byDay || filters.sort == .merchant) ? 12 : 0)
                 .cfMonthEdge(month)
+            }
         case .kind(let month, _, let title, let select):
             APSectionLabel(text: title, action: select ? "Select" : nil) { selecting = true }
                 .padding(.top, 24).padding(.bottom, 8)
@@ -447,7 +464,7 @@ struct TransactionsView: View {
     /// Everything must be here: a filter, a sort, a card chip, or Filters
     /// open (its "Show N" counts every month).
     private var needsEverything: Bool {
-        !inTrip && (filters.isActive || filters.sort != .newest || cardFilter != nil || showFilters)
+        !inTrip && (filters.isActive || filters.sort != .newest || cardFilter?.kind == .look || showFilters)
     }
 
     /// Each thing narrowing the list, as a chip with its ✕ (cf.css `.fchip`).
@@ -741,7 +758,7 @@ struct TransactionsView: View {
                 // G1-Empty: "No matches · Try another word. · Clear search".
                 CFState(title: "No matches", line: "Try another word.", action: "Clear search") { query = "" }
             } else if filters.isActive || cardFilter != nil {
-                if rows.count < total {
+                if rows.count < total && cardFilter?.kind.server == nil || cardFilter?.kind.server != nil && cardRows == nil {
                     CFLoadingRows()
                 } else {
                     CFState(title: "Nothing matches", line: noMatchLine, action: "Clear filters") {
@@ -1119,15 +1136,16 @@ struct TransactionsView: View {
     /// the search's or every month's, narrowed, then sorted. Grouped by
     /// month afterwards (CFBlock), so each sort stays within its month.
     private func visible(applying f: TxFilters) -> [Transaction] {
-        let base = inSearch ? (results ?? []) : rows
         let card = inSearch ? nil : cardFilter
+        let figure = card?.kind.server != nil
+        let base = inSearch ? (results ?? []) : figure ? (cardRows ?? []) : rows
         let look = lookIds
         let kept: (Transaction) -> Bool = { t in
             f.matches(t, owed: owed) && (card?.matches(t, look: look) ?? true)
         }
         // A transfer's arrival, where the filter keeps it but not the line
         // it was merged into ("Savings" kept, the line is Chequing's).
-        var out = TransferEnds.adding(inSearch ? resultsMerged : merged, to: base.filter(kept), keep: kept,
+        var out = TransferEnds.adding(inSearch ? resultsMerged : figure ? [] : merged, to: base.filter(kept), keep: kept,
                                        id: { $0.id }, line: { $0.mergedInto }, date: { $0.date })
         switch f.sort {
         case .largest: out.sort { $0.amount > $1.amount }
@@ -1259,6 +1277,34 @@ struct TransactionsView: View {
             self.error = app.handle(error)
         }
         if needsEverything { await loadRest() }
+        if cardFilter?.kind.server != nil { await loadCardRows() }
+    }
+
+    /// A card chip's rows: what the card's Spent, Saved or Came in adds up
+    /// for its month, from the server, so they match it exactly (CF-SCROLL).
+    private func loadCardRows() async {
+        guard let c = cardFilter, let kind = c.kind.server else { cardRows = nil; return }
+        if cardRows == nil || c != loadedCard { cardRows = nil }
+        var got: [Transaction] = []
+        var p = listQuery
+        p["month"] = c.month
+        p["kind"] = kind
+        p["limit"] = "1000"
+        do {
+            repeat {
+                p["offset"] = String(got.count)
+                let list: TransactionList = try await app.api.get("api/transactions/list", query: p)
+                guard cardFilter == c else { return }
+                got += list.transactions
+                if list.transactions.isEmpty || got.count >= list.total { break }
+            } while true
+            cardRows = got
+            loadedCard = c
+        } catch {
+            guard cardFilter == c else { return }
+            self.error = app.handle(error)
+            cardRows = []
+        }
     }
 
     /// The next older page, as the end of the list comes into view.

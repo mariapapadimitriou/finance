@@ -24,13 +24,15 @@ enum CardKind: String, Equatable {
         }
     }
 
-    /// Whether a row is this kind. `look` is Needs a look's own rows.
-    func matches(_ t: Transaction, look: Set<String>) -> Bool {
+    /// The card figure's own rows come from the server (`kind=` on the
+    /// list), so they add up to exactly the card; nil for need a look,
+    /// which is Needs a look's own rows, kept here.
+    var server: String? {
         switch self {
-        case .spent: return t.counts == "spending"
-        case .saved: return t.group == "savings"
-        case .cameIn: return t.counts == "income"
-        case .look: return look.contains(t.id)
+        case .spent: return "spent"
+        case .saved: return "saved"
+        case .cameIn: return "income"
+        case .look: return nil
         }
     }
 }
@@ -42,8 +44,10 @@ struct CardFilter: Equatable {
 
     var label: String { "\(kind.label) \u{00B7} \(Format.monthName(month))" }
 
+    /// Need a look's rows in this month; a figure's rows are the server's
+    /// already (`kind.server`), so they're all kept.
     func matches(_ t: Transaction, look: Set<String>) -> Bool {
-        t.date.hasPrefix(month) && kind.matches(t, look: look)
+        kind.server != nil || (t.date.hasPrefix(month) && look.contains(t.id))
     }
 
     /// T-54's empty line, for this month and kind.
@@ -78,8 +82,9 @@ enum CFBlock: Identifiable {
     case day(month: String, title: String, select: Bool)
     /// By merchant: the merchant and what it came to.
     case group(month: String, title: String, total: Double)
-    /// One card of rows.
-    case rows(month: String, key: String, rows: [Transaction])
+    /// One card of rows, or one slice of a long card (`top` / `bottom`
+    /// say whether this slice holds the card's first or last row).
+    case rows(month: String, key: String, rows: [Transaction], top: Bool, bottom: Bool)
     /// By category: "SPENT", "MONEY IN", "NOT COUNTED" in one month.
     case kind(month: String, key: String, title: String, select: Bool)
     /// By category: that kind's categories in one month.
@@ -87,7 +92,7 @@ enum CFBlock: Identifiable {
 
     var month: String {
         switch self {
-        case .divider(let m, _), .day(let m, _, _), .group(let m, _, _), .rows(let m, _, _),
+        case .divider(let m, _), .day(let m, _, _), .group(let m, _, _), .rows(let m, _, _, _, _),
              .kind(let m, _, _, _), .categories(let m, _, _):
             return m
         }
@@ -98,7 +103,7 @@ enum CFBlock: Identifiable {
         case .divider(let m, _): return "m:" + m
         case .day(let m, let t, _): return "d:\(m):\(t)"
         case .group(let m, let t, _): return "g:\(m):\(t)"
-        case .rows(let m, let k, _): return "r:\(m):\(k)"
+        case .rows(let m, let k, let rows, _, _): return "r:\(m):\(k):\(rows.first?.id ?? "")"
         case .kind(let m, let k, _, _): return "k:\(m):\(k)"
         case .categories(let m, let k, _): return "c:\(m):\(k)"
         }
@@ -123,10 +128,24 @@ enum CFBlock: Identifiable {
             } else if sort == .merchant {
                 out += groupBlocks(rows, month: month)
             } else {
-                out.append(.rows(month: month, key: "all", rows: rows))
+                out += cards(rows, month: month, key: "all")
             }
         }
         return out
+    }
+
+    /// Rows a lazy item holds at most: a longer card (a month under Largest
+    /// first, or a search) is cut into slices that draw as one card, so the
+    /// list stays lazy however many rows a month has.
+    static let slice = 50
+
+    /// One card's rows as one item, or as slices of `slice` rows.
+    static func cards(_ rows: [Transaction], month: String, key: String) -> [CFBlock] {
+        guard rows.count > slice else { return [.rows(month: month, key: key, rows: rows, top: true, bottom: true)] }
+        return stride(from: 0, to: rows.count, by: slice).map { i in
+            .rows(month: month, key: key, rows: Array(rows[i..<min(i + slice, rows.count)]),
+                  top: i == 0, bottom: i + slice >= rows.count)
+        }
     }
 
     /// T-01r: a card per day. Days keep the order they first come, so a row
@@ -142,7 +161,7 @@ enum CFBlock: Identifiable {
         var out: [CFBlock] = []
         for (i, day) in order.enumerated() {
             out.append(.day(month: month, title: day, select: select && i == 0))
-            out.append(.rows(month: month, key: day, rows: by[day] ?? []))
+            out += cards(by[day] ?? [], month: month, key: day)
         }
         return out
     }
@@ -155,7 +174,7 @@ enum CFBlock: Identifiable {
         func flush() {
             guard let t = title, !run.isEmpty else { return }
             out.append(.group(month: month, title: t, total: run.reduce(0) { $0 + $1.amount }))
-            out.append(.rows(month: month, key: t, rows: run))
+            out += cards(run, month: month, key: t)
         }
         for t in rows {
             if t.merchant != title { flush(); title = t.merchant; run = [] }
@@ -390,6 +409,56 @@ struct CFMonthDivider: View {
         } else {
             Color.clear.frame(height: 0).cfMonthEdge(month).accessibilityHidden(true)
         }
+    }
+}
+
+// MARK: - A long card in slices
+
+/// One slice of a long card: the A+ card (`APCardSurface`'s fill, line and
+/// shadow) drawn as one tall rounded card and cut to this slice, so only
+/// the first slice has the rounded top and only the last the rounded
+/// bottom, with no line or shadow where two slices meet.
+struct CFCardSlice: ViewModifier {
+    let top: Bool
+    let bottom: Bool
+    var radius: CGFloat = Pearl.radiusCard
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipShape(CFSliceShape(top: top, bottom: bottom, radius: radius, edges: false))
+            .background(
+                GeometryReader { g in
+                    let reach = radius + 2
+                    APCardSurface(radius: radius)
+                        .frame(height: g.size.height + (top ? 0 : reach) + (bottom ? 0 : reach))
+                        .offset(y: top ? 0 : -reach)
+                }
+                .clipShape(CFSliceShape(top: top, bottom: bottom, radius: radius, edges: true))
+            )
+    }
+}
+
+/// Where a slice may draw. `edges`: the card's surface, with room for its
+/// shadow at the sides and at the card's own top and bottom, cut flat where
+/// it meets the next slice. Otherwise the content, rounded at the card's
+/// own corners only.
+private struct CFSliceShape: Shape {
+    let top: Bool
+    let bottom: Bool
+    let radius: CGFloat
+    let edges: Bool
+
+    func path(in r: CGRect) -> Path {
+        if edges {
+            let out: CGFloat = 40
+            return Path(CGRect(x: r.minX - out, y: top ? r.minY - out : r.minY, width: r.width + 2 * out,
+                               height: r.height + (top ? out : 0) + (bottom ? out : 0)))
+        }
+        let reach = radius + 2
+        let tall = CGRect(x: r.minX, y: top ? r.minY : r.minY - reach, width: r.width,
+                          height: r.height + (top ? 0 : reach) + (bottom ? 0 : reach))
+        return Path(roundedRect: tall, cornerRadius: radius, style: .continuous)
     }
 }
 

@@ -41,10 +41,57 @@ def test_pages_run_back_across_months_newest_first(client):  # noqa: F811
     assert len({d[:7] for d in dates}) == 3
 
 
+def test_a_card_chip_lists_exactly_what_the_card_adds_up(client):  # noqa: F811
+    """Spent, Came in and Saved · a month: the rows the list gives for each
+    add up to exactly the card's figure (shares, refunds, left-out and other
+    months included in the data)."""
+    month = date.today().isoformat()[:7]
+    last = _months_back(1)
+    ids = load(client.st,
+               row(84.12, "LOBLAWS", account="card", kind="credit", category="Groceries", when=f"{month}-02"),
+               row(120.00, "SUSHI NAMI", account="card", kind="credit", category="Dining out", when=f"{month}-03"),
+               row(-20.00, "LOBLAWS REFUND", account="card", kind="credit", category="Groceries",
+                   when=f"{month}-04"),
+               row(61.20, "SHELL", account="card", kind="credit", category="Gas & Fuel", when=f"{month}-05"),
+               row(-2150.00, "NORTHWIND PAYROLL", account="chq", category="Income", when=f"{month}-01"),
+               row(-45.00, "E-TRANSFER FROM ANA", account="chq", category="Income", when=f"{month}-06"),
+               row(500.00, "TO TANGERINE SAVINGS", account="chq", category="Saved", when=f"{month}-07"),
+               row(-100.00, "FROM TANGERINE SAVINGS", account="chq", category="Saved", when=f"{month}-08"),
+               row(200.00, "TFSA TOP UP", account="chq", category="Saved", when=f"{month}-09"),
+               row(75.00, "COSTCO", account="card", kind="credit", category="Groceries", when=last),
+               row(300.00, "TO SAVINGS LAST MONTH", account="chq", category="Saved", when=last))
+    # Her share of a split, and a row she left out.
+    assert client.put(f"/api/transactions/{ids['SUSHI NAMI']}/split", json={
+        "mode": "amount", "people": [{"name": "Sam", "amount": 60.0}]}).status_code == 200
+    assert client.put(f"/api/transactions/{ids['TFSA TOP UP']}/exclude",
+                      json={"reason": "Not mine"}).status_code == 200
+    assert client.put(f"/api/transactions/{ids['SHELL']}/exclude",
+                      json={"reason": "Work"}).status_code == 200
+
+    card = client.get("/api/transactions/list", query_string={"month": month, "limit": 1}).get_json()
+    figures = {"spent": card["month_totals"]["spent"], "income": card["month_totals"]["income"],
+               "saved": card["month_totals"]["saved"]}
+    assert figures["spent"] > 0 and figures["income"] > 0 and figures["saved"] > 0
+    for kind, figure in figures.items():
+        got = client.get("/api/transactions/list",
+                         query_string={"month": month, "kind": kind, "limit": 1000}).get_json()
+        rows = got["transactions"]
+        assert got["total"] == len(rows)
+        assert all(r["date"][:7] == month for r in rows), kind
+        assert round(sum(r["card_amount"] for r in rows), 2) == round(figure, 2), kind
+        # The card's own totals are the same whatever the chip.
+        assert got["month_totals"]["spent"] == figures["spent"]
+        assert got["month_totals"]["income"] == figures["income"]
+    saved = client.get("/api/transactions/list",
+                       query_string={"month": month, "kind": "saved", "limit": 1000}).get_json()
+    assert {r["description"] for r in saved["transactions"]} == {"TO TANGERINE SAVINGS", "FROM TANGERINE SAVINGS"}
+    assert client.get("/api/transactions/list", query_string={"kind": "nope"}).status_code == 400
+
+
 # The phone: one list, paged.
 
 def test_the_list_asks_for_every_month_a_page_at_a_time():
-    reload = TV[TV.index("    private func reload() async {"):TV.index("    /// The next older page")]
+    reload = TV[TV.index("    private func reload() async {"):TV.index("    /// A card chip's rows:")]
     assert 'p["month"]' not in reload
     assert 'p["offset"] = String(got.count)' in reload
     assert "private static let page = 200" in TV
@@ -80,7 +127,7 @@ def test_the_month_pins_under_a_folding_bar_with_filters_and_add():
 def test_card_figures_filter_by_month_and_kind():
     assert "case spent, saved, cameIn, look" in SCROLL
     assert 'var label: String { "\\(kind.label) \\u{00B7} \\(Format.monthName(month))" }' in SCROLL
-    assert "t.date.hasPrefix(month) && kind.matches(t, look: look)" in SCROLL
+    assert "kind.server != nil || (t.date.hasPrefix(month) && look.contains(t.id))" in SCROLL
     legend = TV[TV.index("    private var legend: some View {"):TV.index("    private func dot(")]
     assert "figure(.spent," in legend and "figure(.saved," in legend
     assert "figure(.leftover" not in legend
@@ -130,3 +177,23 @@ def test_quick_sort_circles_keep_their_voiceover_words():
     assert ".frame(minWidth: 68, minHeight: 44)" in buttons
     assert "APSecondaryButtonStyle" not in buttons
     assert re.search(r"\.padding\(\.bottom, Self\.toastLift\)", QS)
+
+
+def test_card_chips_use_the_servers_rows_for_the_card_figures():
+    assert 'case .cameIn: return "income"' in SCROLL and 'case .saved: return "saved"' in SCROLL
+    load = TV[TV.index("    private func loadCardRows() async {"):][:900]
+    assert 'p["kind"] = kind' in load and 'p["month"] = c.month' in load
+    assert "figure ? (cardRows ?? []) : rows" in TV
+    # The old guess at Saved (a "savings" group) is gone.
+    assert 't.group == "savings"' not in SCROLL
+
+
+def test_long_cards_are_cut_into_lazy_slices_drawn_as_one():
+    assert "static let slice = 50" in SCROLL
+    cards = SCROLL[SCROLL.index("static func cards("):][:600]
+    assert "top: i == 0, bottom: i + slice >= rows.count" in cards
+    for build in ("dayBlocks", "groupBlocks"):
+        body = SCROLL[SCROLL.index(f"private static func {build}"):][:900]
+        assert "cards(" in body, build
+    assert 'out += cards(rows, month: month, key: "all")' in SCROLL
+    assert ".modifier(CFCardSlice(top: top, bottom: bottom))" in TV

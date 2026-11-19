@@ -365,6 +365,11 @@ def transactions_list():
     counts = a.get("counts") or None
     if counts not in (None, "spending", "income", "none"):
         return jsonify({"error": "counts is spending, income or none."}), 400
+    # CF-SCROLL: a card chip (Spent, Came in, Saved · a month) lists exactly
+    # the rows the card's figure adds up, each with its `card_amount`.
+    kind = a.get("kind") or None
+    if kind is not None and kind not in txlist.CARD_KINDS:
+        return jsonify({"error": "kind is spent, income or saved."}), 400
 
     def _amount(key):
         raw = a.get(key)
@@ -414,9 +419,18 @@ def transactions_list():
     # A transfer between two of her accounts is one line, not two (2026-10-22).
     from .transfers import transfer_pairs
     pairs = transfer_pairs(st.all_transactions(), today=_today_iso())
-    every = chosen      # the totals keep both ends: money moved, nothing counted
     merged: list = []
-    chosen = txlist.collapse_transfers(chosen, pairs, merged)
+    if kind:
+        # Each row the figure counts, on its own line (no transfer merging,
+        # so none of them is hidden in another's line), with its part. Every
+        # row Saved counts is listed: it is never left out or someone else's
+        # (analytics.saved_part), so it is always one of `txlist.visible`.
+        chosen = [(t, {**r, "card_amount": round(part, 2)}) for t, r in chosen
+                  for part in [txlist.card_part(t, r, kind)] if part is not None]
+        every = chosen
+    else:
+        every = chosen      # the totals keep both ends: money moved, nothing counted
+        chosen = txlist.collapse_transfers(chosen, pairs, merged)
     filters.pop("ids", None)
     on_page = {t.fingerprint for t, _ in chosen[offset:offset + limit]}
     by = a.get("by") or "day"

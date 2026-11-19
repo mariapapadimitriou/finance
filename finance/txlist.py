@@ -852,13 +852,32 @@ def totals(rows: list[tuple[Transaction, dict]]) -> dict:
     spent = income = not_counted = 0.0
     for t, r in rows:
         if r["counts"] == "spending":
-            spent += spend_amount(t)
+            spent += card_part(t, r, "spent")
         elif r["counts"] == "income":
-            income += -_mine(t)
+            income += card_part(t, r, "income")
         else:
             not_counted += r["amount"]
     return {"spent": round(spent, 2), "income": round(income, 2),
             "not_counted": round(not_counted, 2), "count": len(rows)}
+
+
+# The month card's figures a chip can narrow the list to (CF-SCROLL).
+CARD_KINDS = ("spent", "income", "saved")
+
+
+def card_part(t: Transaction, r: dict, kind: str) -> float | None:
+    """This row's part of the month card's Spent, Came in or Saved, or None
+    when it isn't part of that figure. `totals` (Spent, Came in) and
+    `analytics.invested_in` (Saved) add up exactly these, so a card chip's
+    rows always add up to the card."""
+    if kind == "spent":
+        return spend_amount(t) if r["counts"] == "spending" else None
+    if kind == "income":
+        return -_mine(t) if r["counts"] == "income" else None
+    if kind == "saved":
+        from .analytics import saved_part
+        return saved_part(t)
+    raise ValueError(kind)
 
 
 def _focus_value(tot: dict, kind: str) -> float:
