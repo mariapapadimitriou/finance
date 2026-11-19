@@ -19,9 +19,16 @@ struct AddToBillsSheet: View {
     @State private var pickingDay = false
     @State private var chosenCategory = ""
     @State private var pickingCategory = false
+    /// T-106 (G1-TxPage): Repeats and Your share open Pearl sheets, not stock menus.
+    @State private var picking: Pick?
     @State private var loaded = false
     @State private var busy = false
     @State private var error: String?
+
+    private enum Pick: String, Identifiable {
+        case cadence, share
+        var id: String { rawValue }
+    }
 
     private struct Suggestion: Decodable {
         let cadence: String
@@ -41,24 +48,18 @@ struct AddToBillsSheet: View {
             CFSheetTitle(title: "Add to your bills?") { dismiss() }
             ScrollView {
                 VStack(spacing: 12) {
-                    QuestionHeader(name: t.merchant, amount: Format.money(t), tone: t.tone, sub: nil)
+                    // T-106 (G1-TxPage): "Rogers · −$95.00 · every month".
+                    APQuestionWho(name: t.merchant, amount: Format.money(t), tone: t.tone,
+                                  sub: cadenceName.lowercased())
                     APCard {
-                        Menu {
-                            Picker("", selection: $cadence) {
-                                ForEach(Self.cadences, id: \.key) { c in Text(c.name).tag(c.key) }
-                            }
-                        } label: { rowLabel("Repeats", cadenceName) }
-                        .buttonStyle(.plain)
+                        Button { picking = .cadence } label: { rowLabel("Repeats", cadenceName) }
+                            .buttonStyle(.plain)
                         APSeparator(afterFace: false)
-                        Menu {
-                            Picker("", selection: $share) {
-                                ForEach(shares, id: \.self) { s in Text("\(s)%").tag(s) }
-                            }
-                        } label: { rowLabel("Your share", "\(share)%") }
-                        .buttonStyle(.plain)
+                        Button { picking = .share } label: { rowLabel("Your share", "\(share)%") }
+                            .buttonStyle(.plain)
                         APSeparator(afterFace: false)
                         Button { pickingDay.toggle() } label: {
-                            rowLabel("Next payment", "Around \(Format.short(Format.isoDay(next)))")
+                            rowLabel("Next payment", "Around \(Format.short(Format.isoDay(next)))", chevron: false)
                         }
                         .buttonStyle(.plain)
                         if pickingDay {
@@ -69,7 +70,8 @@ struct AddToBillsSheet: View {
                         }
                         APSeparator(afterFace: false)
                         Button { pickingCategory = true } label: {
-                            rowLabel("Category", chosenCategory.isEmpty ? "Choose" : chosenCategory)
+                            rowLabel("Category", chosenCategory.isEmpty ? "Choose" : chosenCategory,
+                                     choose: chosenCategory.isEmpty)
                         }
                         .buttonStyle(.plain)
                     }
@@ -78,10 +80,7 @@ struct AddToBillsSheet: View {
                             .font(Nacre.footnote).foregroundColor(Pearl.muted)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16)
                     }
-                    if let error = error {
-                        Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16)
-                    }
+                    if let error = error { APErrorLine(text: error) }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 12)
             }
@@ -94,6 +93,21 @@ struct AddToBillsSheet: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .task { await load() }
+        .sheet(item: $picking) { which in
+            switch which {
+            case .cadence:
+                CFRadioSheet(title: "Repeats", options: Self.cadences.map { ($0.key, $0.name) }, chosen: cadence) {
+                    cadence = $0
+                    picking = nil
+                }
+            case .share:
+                CFRadioSheet(title: "Your share", options: shares.map { (String($0), "\($0)%") },
+                             chosen: String(share)) {
+                    share = Int($0) ?? share
+                    picking = nil
+                }
+            }
+        }
         .sheet(isPresented: $pickingCategory) {
             CategorySheet(name: t.merchant, amount: Format.money(t), tone: t.tone, categories: categories,
                           current: chosenCategory, spendingOnly: true) { name, _ in
@@ -119,12 +133,13 @@ struct AddToBillsSheet: View {
         ((t.fullAmount ?? t.amount) * Double(share) / 100 * 100).rounded() / 100
     }
 
-    private func rowLabel(_ title: String, _ value: String) -> some View {
+    /// kit `.kv`; "Choose" in `link` until there's an answer (T-106s).
+    private func rowLabel(_ title: String, _ value: String, chevron: Bool = true, choose: Bool = false) -> some View {
         HStack(spacing: 8) {
             Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
             Spacer()
-            Text(value).font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
-            Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
+            Text(value).font(Nacre.body).foregroundColor(choose ? Pearl.link : Pearl.muted).lineLimit(1)
+            if chevron { CFChevron() }
         }
         .padding(.horizontal, 16).frame(minHeight: 50).contentShape(Rectangle())
         .accessibilityElement(children: .combine)

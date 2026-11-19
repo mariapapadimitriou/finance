@@ -151,7 +151,7 @@ struct ReviewView: View {
     private var list: some View {
         List {
             if let review = review {
-                let rows = review.asks.filter { $0.skipped == showingSkipped && (["all", "skipped"].contains(filter) || Self.kindName($0.kind) == filter) }
+                let rows = review.shownAsks.filter { $0.skipped == showingSkipped && (["all", "skipped"].contains(filter) || Self.kindName($0.kind) == filter) }
                 if showingSkipped && !rows.isEmpty {
                     // T-11 (G1-NeedsMore): one line; swiping is the list's own.
                     Text("Guesses count for now.")
@@ -224,8 +224,8 @@ struct ReviewView: View {
             if let review = review {
                 // T-83: All, then a chip per kind of question with any to sort,
                 // then Skipped, third paycheques included.
-                let open = review.asks.filter { !$0.skipped }
-                let skipped = review.asks.count - open.count
+                let open = review.shownAsks.filter { !$0.skipped }
+                let skipped = review.shownAsks.count - open.count
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         chip("All · \(open.count)", on: filter == "all") { filter = "all" }
@@ -454,8 +454,8 @@ struct ReviewView: View {
     /// All sorted only at zero: an empty filter says what's left, and skipped
     /// ones aren't sorted (T-16).
     @ViewBuilder private func empty(_ review: Review, shown: Int) -> some View {
-        let open = review.asks.filter { !$0.skipped }.count
-        let skipped = review.asks.filter(\.skipped).count
+        let open = review.shownAsks.filter { !$0.skipped }.count
+        let skipped = review.shownAsks.filter(\.skipped).count
         if open > 0 {
             VStack(spacing: 12) {
                 Text(showingSkipped ? "Nothing skipped." : "None of these.").font(Nacre.body).foregroundColor(Pearl.muted)
@@ -507,7 +507,7 @@ struct ReviewView: View {
     private var recentNames: [String] { review?.people ?? [] }
 
     /// Quick sort (THL-254) walks the same open questions as this list.
-    private var quick: [Ask] { review?.asks.filter { !$0.skipped } ?? [] }
+    private var quick: [Ask] { review?.shownAsks.filter { !$0.skipped } ?? [] }
 
     // MARK: Loading and answering
 
@@ -783,5 +783,22 @@ struct TransactionByID: View {
         } catch {
             self.error = app.handle(error)
         }
+    }
+}
+
+// MARK: - Your plan, parked
+
+extension Review {
+    /// Every question the app asks: `asks` without the Your plan questions
+    /// (T-101, T-102, T-109), parked with Save (product owner, 2026-11-18)
+    /// until `YourPlanGate.shown`. Quick sort and Needs a look use this.
+    var shownAsks: [Ask] {
+        YourPlanGate.shown ? asks : asks.filter { $0.kind != .check }
+    }
+
+    /// The open Your plan questions the server counted but the app parks;
+    /// taken off Cash flow's "need a look" count.
+    var parkedPlanQuestions: Int {
+        YourPlanGate.shown ? 0 : checks.filter { $0.skipped != true }.count
     }
 }

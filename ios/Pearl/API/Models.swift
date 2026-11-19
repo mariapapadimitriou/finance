@@ -1949,16 +1949,8 @@ extension Review {
         out += whoSent.map { Ask(kind: .whoSent, item: $0) }
         out += duplicate.map { Ask(kind: .duplicate, item: $0) }
         out += recurringTransfer.map { Ask(kind: .recurring, item: $0) }
-        // Your plan questions (T-101, T-102, T-109) are parked with Save
-        // (product owner, 2026-11-18): none in Quick sort or Needs a look.
-        if YourPlanGate.shown { out += checks.map { Ask(kind: .check, item: $0) } }
+        out += checks.map { Ask(kind: .check, item: $0) }
         return out
-    }
-
-    /// The open Your plan questions the server counted but the app parks
-    /// (0 once `YourPlanGate.shown`); taken off "need a look" counts.
-    var parkedPlanQuestions: Int {
-        YourPlanGate.shown ? 0 : checks.filter { $0.skipped != true }.count
     }
 }
 

@@ -267,6 +267,39 @@ struct CFFilterStrip: View {
     }
 }
 
+/// A Pearl sheet of radio rows (T-106's Repeats and Your share): the title
+/// with ✕, one card of choices, the chosen one's radio on. A row picks at
+/// once; no Done. Never a stock Menu.
+struct CFRadioSheet: View {
+    let title: String
+    let options: [(key: String, name: String)]
+    let chosen: String
+    let pick: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        APSheet {
+            APSheetHeader(heading: title) { dismiss() }
+            APOptionCard {
+                ForEach(Array(options.enumerated()), id: \.element.key) { i, o in
+                    if i > 0 { APSeparator(afterFace: false) }
+                    Button { pick(o.key) } label: {
+                        HStack(spacing: 12) {
+                            APRadio(on: chosen == o.key)
+                            Text(o.name).font(Nacre.body).foregroundColor(Pearl.ink)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 16).frame(minHeight: 52)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(chosen == o.key ? [.isButton, .isSelected] : .isButton)
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Segmented switch
 
 /// kit `.seg`: 38 high on `chip`, 3 in, the chosen half on `surface-card`
