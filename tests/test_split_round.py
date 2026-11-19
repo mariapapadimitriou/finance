@@ -1044,7 +1044,7 @@ class TestWhoSentThis:
         # A+ restyle (G2): the A+ sheet title bar.
         assert 'APSheetTitleBar(title: "Who sent this?")' in sheet
         assert "TextField" not in sheet
-        assert ".disabled(picked.isEmpty || busy)" in sheet and "NacreButtonStyle(busy: busy)" in sheet
+        assert ".disabled(picked.isEmpty || busy)" in sheet and "APPrimaryButtonStyle(busy: busy)" in sheet
         assert 'Text("ON \\(Format.andList(shops).uppercased())")' in sheet
         assert "each owe \\(amount). Tick who sent it." in sheet
         assert "and this is \\(amount), so Pearl won’t guess. Tick \\(name) if it was them." in sheet
