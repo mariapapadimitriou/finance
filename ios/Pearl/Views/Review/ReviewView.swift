@@ -168,8 +168,10 @@ struct ReviewView: View {
                         ForEach(rows) { ask in
                             Button { asking = ask } label: { row(ask) }
                                 .buttonStyle(.plain)
-                                .listRowBackground(Nacre.glass)
-                                .listRowSeparatorTint(Nacre.separator)
+                                // A+ (G1-NeedsALook): the A+ card and its 0.5 pt line after the faces.
+                                .listRowBackground(APlus.card)
+                                .listRowSeparatorTint(APlus.separator)
+                                .alignmentGuide(.listRowSeparatorLeading) { _ in 68 }
                                 .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                     Button(ask.skipped ? "Put back" : "Skip") {
@@ -208,6 +210,7 @@ struct ReviewView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Needs a look").font(Nacre.largeTitle).foregroundColor(Pearl.ink)
+                .padding(.leading, 4)
                 .accessibilityAddTraits(.isHeader)
             if let review = review {
                 // T-83: All, then a chip per kind of question with any to sort,
@@ -236,15 +239,16 @@ struct ReviewView: View {
             if !showingSkipped && !showingSorted
                 && !(quick.isEmpty && (review?.patternAsks ?? []).isEmpty && (review?.tripAsks ?? []).isEmpty) {
                 // T-10; REFRESH-03's P1 took "Tap one to sort it." out. AI-18 and TR-01 count too.
-                QuickSortCard(count: quick.count + (review?.patternAsks.count ?? 0) + (review?.tripAsks.count ?? 0)) {
+                QuickSortCard(count: quick.count + (review?.patternAsks.count ?? 0) + (review?.tripAsks.count ?? 0),
+                              sorted: (review?.sortedToday ?? 0) + (review?.pearlSorted ?? 0)) {
                     sorting = true
                 }
             }
             if let error = error, review != nil {
-                Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
+                Text(error).font(Nacre.footnote).foregroundColor(Pearl.danger)
             }
         }
-        .padding(.bottom, 12)
+        .padding(.bottom, 4)
     }
 
     /// The web's names for each kind of question (NeedsALook.jsx).
@@ -265,27 +269,18 @@ struct ReviewView: View {
         }
     }
 
+    /// A+ (G1-NeedsALook): kit `.chip`, the chosen one in rose with its
+    /// on-action words (reads in light and dark).
     private func chip(_ label: String, on: Bool, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(label)
-                .font(Nacre.footnote)
-                // T-83r dark (1076:1293): the chosen chip is --ink with
-                // --surface-page words, so it reads in dark (TEST-01).
-                .foregroundColor(on && scheme == .dark ? Pearl.onInk : Pearl.ink)
-                .padding(.horizontal, 14).frame(height: 34)
-                .background(Capsule().fill(on ? (scheme == .dark ? Pearl.ink : Color.white.opacity(0.9)) : Nacre.glass))
-                .overlay(Capsule().strokeBorder(Nacre.glassEdge, lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(on ? .isSelected : [])
+        CFChip(label: label, on: on, action: action)
     }
 
     /// Initials, who, when, the question as a dashed chip, and the amount.
     private func row(_ ask: Ask) -> some View {
         let t = ask.t
-        return HStack(spacing: 14) {
+        return HStack(alignment: .top, spacing: 12) {
             Initials(name: t.name)
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(t.name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
                 Text(ask.kind == .joint ? "Joint · \(Format.relativeDay(t.date))"
                      : ask.item.rest.map { "\(Format.relativeDay(t.date)) · \(Format.amount($0.sorted)) sorted" }
@@ -304,10 +299,12 @@ struct ReviewView: View {
                 GuessChip(label: ask.chip, question: false).padding(.top, 4)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            // A+ amount colours: money in green, spending plum.
             Text((t.inflow ? "+" : "\u{2212}") + Format.amount(t.shownAmount))
                 .font(Nacre.headline).monospacedDigit()
-                .foregroundColor(Pearl.ink)
+                .foregroundColor(t.inflow ? Pearl.moneyIn : Pearl.moneyOut)
                 .fixedSize()
+                .padding(.top, 9)
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
         .contentShape(Rectangle())
@@ -372,7 +369,7 @@ struct ReviewView: View {
     }
 
     private func sectionHeading(_ text: String) -> some View {
-        PearlSectionLabel(text: text)
+        APSectionLabel(text: text)
             .listRowBackground(Color.clear).listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 0, trailing: 16))
     }
@@ -396,8 +393,8 @@ struct ReviewView: View {
                             }
                         }
                     }
-                    .listRowBackground(Nacre.glass)
-                    .listRowSeparatorTint(Nacre.separator)
+                    .listRowBackground(APlus.card)
+                    .listRowSeparatorTint(APlus.separator)
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         if let body = row.undo {
                             Button("Undo") { Task { await undoSorted(body) } }.tint(Pearl.action)
@@ -418,7 +415,7 @@ struct ReviewView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             Text((row.amount < 0 ? "+" : "\u{2212}") + Format.amount(abs(row.amount)))
                 .font(Nacre.headline).monospacedDigit()
-                .foregroundColor(Pearl.ink)
+                .foregroundColor(row.amount < 0 ? Pearl.moneyIn : Pearl.moneyOut)
                 .fixedSize()
         }
         .padding(.vertical, 4)
@@ -447,7 +444,7 @@ struct ReviewView: View {
             VStack(spacing: 12) {
                 Text(showingSkipped ? "Nothing skipped." : "None of these.").font(Nacre.body).foregroundColor(Pearl.muted)
                 Button("\(open) other\(open == 1 ? "" : "s") to sort") { filter = "all" }
-                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.link))
             }
             .frame(maxWidth: .infinity).padding(.vertical, 32)
         } else if showingSkipped {
@@ -458,25 +455,28 @@ struct ReviewView: View {
                 Text("You skipped \(skipped). Pearl uses its guess until you sort them.")
                     .font(Nacre.body).foregroundColor(Pearl.muted).multilineTextAlignment(.center)
                 Button("See skipped") { filter = "skipped" }
-                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.link))
+
             }
             .frame(maxWidth: .infinity).padding(.vertical, 32)
         } else {
-            // T-16: All sorted.
-            VStack(spacing: 8) {
-                Image(systemName: "checkmark").font(.system(size: 20, weight: .semibold))
+            // T-16, A+ (G1-NeedsALook): the check on a quiet disc, All sorted
+            // in Fraunces 22, one line (less text), and Done.
+            VStack(spacing: 6) {
+                Image(systemName: "checkmark").font(.system(size: 17, weight: .semibold))
                     .foregroundColor(Nacre.teal)
-                    .frame(width: 56, height: 56).background(Circle().fill(Nacre.mint))
-                    .padding(.bottom, 6)
+                    .frame(width: 56, height: 56).background(Circle().fill(APlus.chip))
+                    .padding(.bottom, 10)
+                    .accessibilityHidden(true)
                 Text("All sorted").font(Nacre.title2).foregroundColor(Pearl.ink)
-                Text(review.pearlSorted > 0 ? "Nothing left to sort. Pearl sorted \(review.pearlSorted) more by itself."
+                Text(review.pearlSorted > 0 ? "Pearl sorted \(review.pearlSorted) more by itself."
                      : "Your numbers are up to date.")
                     .font(Nacre.subheadline).foregroundColor(Pearl.muted).multilineTextAlignment(.center)
                 Button("Done") { dismiss() }
-                    .buttonStyle(NacreButtonStyle())
-                    .padding(.top, 20)
+                    .buttonStyle(APPrimaryButtonStyle())
+                    .padding(.top, 28)
             }
-            .frame(maxWidth: .infinity).padding(.vertical, 40)
+            .frame(maxWidth: .infinity).padding(.top, 90).padding(.bottom, 40)
         }
     }
 

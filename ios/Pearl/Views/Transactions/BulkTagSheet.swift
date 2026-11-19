@@ -17,7 +17,7 @@ struct BulkTagSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: "Add a tag") { dismiss() }
+            CFSheetTitle(title: "Add a tag") { dismiss() }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     header
@@ -31,14 +31,15 @@ struct BulkTagSheet: View {
                         }
                     }
                     .padding(.horizontal, 14).frame(height: 44)
-                    .background(Capsule().fill(Pearl.ink.opacity(0.08)))
+                    // REDESIGN-09: a visible well.
+                    .wellStyle(focused: false, capsule: true)
                     let tags = shownTags
                     if !tags.isEmpty {
-                        Text("YOUR TAGS").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+                        Text("YOUR TAGS").font(Nacre.label).tracking(0.78).foregroundColor(Pearl.muted)
                             .padding(.horizontal, 16)
-                        GlassCard {
+                        APCard {
                             ForEach(Array(tags.enumerated()), id: \.element) { i, tag in
-                                if i > 0 { RowSeparator(inset: 52) }
+                                if i > 0 { APSeparator() }
                                 Button { toggle(tag) } label: {
                                     HStack(spacing: 12) {
                                         Image(systemName: chosen.contains(tag) ? "checkmark.circle.fill" : "circle")
@@ -62,11 +63,11 @@ struct BulkTagSheet: View {
                 addTyped()
                 onAdd(chosen)
             }
-            .buttonStyle(NacreButtonStyle())
+            .buttonStyle(APPrimaryButtonStyle())
             .disabled(chosen.isEmpty && clean(typed).isEmpty)
             .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
         }
-        .background(SheetBackground())
+        .cfSheet()
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
     }

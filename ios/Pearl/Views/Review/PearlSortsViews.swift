@@ -170,7 +170,7 @@ struct PatternWhySheet: View {
         PearlSheetHeader(face: r.merchant, overline: "\(r.merchant) · \(amount)",
                          title: r.isJoint ? "\(r.label ?? r.answer) of \(r.joint ?? r.account ?? "Joint")" : (r.label ?? r.answer),
                          sub: "Pearl sorted this · \(Format.short(r.day))", subTone: Pearl.moneyIn, close: onClose)
-        PearlSectionLabel(text: "Why")
+        APSectionLabel(text: "Why")
         VStack(spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
                 PearlBubble(symbol: r.isJoint ? "person.2" : CategorySheet.symbol(for: r.answer), tone: r.isJoint ? Pearl.moneyIn : Pearl.action)
@@ -192,8 +192,8 @@ struct PatternWhySheet: View {
             }
         }
         .padding(16)
-        .pearlCard(radius: Pearl.radiusTile)
-        PearlSectionLabel(text: "Undo")
+        .apCard()
+        APSectionLabel(text: "Undo")
         PearlOptionCard {
             PearlOptionRow(symbol: r.isJoint ? "person.2" : "arrow.uturn.backward", title: "Undo this one") {
                 Task { await undo(r) }
@@ -239,9 +239,9 @@ struct PatternRowsView: View {
 
     var body: some View {
         ScrollView {
-            GlassCard {
+            APCard {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { i, t in
-                    if i > 0 { RowSeparator(inset: 72) }
+                    if i > 0 { APSeparator() }
                     NavigationLink { TransactionByID(id: t.id, categories: app.categories) } label: {
                         TransactionRow(t: t)
                     }
@@ -330,27 +330,27 @@ struct LearnedRuleView: View {
                     // "Nothing new is shared.").
                     PageTitle(title: rule.title, line: rule.confirmed?.line)
                     CardCaption("What Pearl does")
-                    GlassCard(radius: cardRadius) {
+                    APCard(radius: cardRadius) {
                         PrivacyRow(symbol: "building.columns", title: "Sorts them as \(rule.label)",
                                    sub: rule.isJoint ? "Into \(rule.account ?? "the joint account")" : "Any card or account") { RowChevron() }
-                        RowSeparator()
+                        APSeparator(afterFace: false)
                         PrivacyRow(symbol: "chart.line.uptrend.xyaxis",
                                    title: rule.isJoint ? "e-Transfers from \(rule.name)" : "Purchases at \(rule.name)",
                                    sub: "Any amount" + (rule.rhythm.map { ", \($0)" } ?? "")) { RowChevron() }
                     }
                     CardCaption("Your choice")
-                    GlassCard(radius: cardRadius) {
+                    APCard(radius: cardRadius) {
                         SwitchRow(symbol: "sparkle", title: "Pearl sorts these",
                                   sub: "Off: new ones go to Quick sort.",
                                   isOn: rule.on, disabled: busy) { on in Task { await set(on) } }
                     }
                     CardCaption("What it sorted")
-                    GlassCard(radius: cardRadius) {
+                    APCard(radius: cardRadius) {
                         NavigationLink { PatternRowsView(title: "The \(rule.sorted.count) Pearl sorted", ids: rule.sorted) } label: {
                             PrivacyRow(title: "See the \(rule.sorted.count) it sorted") { RowChevron() }
                         }
                         .buttonStyle(.plain)
-                        RowSeparator()
+                        APSeparator(afterFace: false)
                         Button { forgetting = true } label: {
                             PrivacyRow(title: "Forget this rule") { RowChevron() }
                         }

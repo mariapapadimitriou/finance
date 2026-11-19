@@ -408,13 +408,13 @@ struct AnswerSheet: View {
                 Text("OPTIONS").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
                     .padding(.horizontal, 16).padding(.top, 4)
                     .accessibilityAddTraits(.isHeader)
-                GlassCard {
+                APCard {
                     if joint {
                         Button { whosing = true } label: {
                             optionLabel("Whose was it?", done: whoseSaid != nil, icon: "person.2")
                         }
                         .buttonStyle(.plain)
-                        if canSplit || f.canOneOff { RowSeparator() }
+                        if canSplit || f.canOneOff { APSeparator(afterFace: false) }
                     }
                     if canSplit {
                         let none = joint && f.splitBase < 0.005
@@ -437,11 +437,11 @@ struct AnswerSheet: View {
                         .disabled(none)
                         .accessibilityElement(children: .combine)
                     }
-                    if canSplit && f.canOneOff { RowSeparator() }
+                    if canSplit && f.canOneOff { APSeparator(afterFace: false) }
                     if f.canOneOff {
                         Toggle(isOn: Binding(get: { oneOff ?? f.oneOff }, set: { on in Task { await setOneOff(on) } })) {
                             HStack(spacing: 12) {
-                                IconBubble(symbol: "1.circle")
+                                CFIcon(symbol: "1.circle")
                                 Text("Exclude from usual month").font(Nacre.body).foregroundColor(Pearl.ink)
                             }
                         }
@@ -456,7 +456,7 @@ struct AnswerSheet: View {
 
     private func optionLabel(_ title: String, done: Bool, icon: String? = nil) -> some View {
         HStack(spacing: 12) {
-            if let icon = icon { IconBubble(symbol: icon) }
+            if let icon = icon { CFIcon(symbol: icon) }
             Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
             Spacer(minLength: 4)
             if done {
@@ -480,15 +480,15 @@ struct AnswerSheet: View {
 
     private var guessSheet: some View {
         VStack(spacing: 16) {
-            SheetTitle(title: guessTitle) { dismiss() }
+            CFSheetTitle(title: guessTitle) { dismiss() }
             if ask.kind == .duplicate {
                 // T-15: both charges, one above the other.
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Looks like the same charge twice.").font(Nacre.body).foregroundColor(Pearl.ink)
-                    GlassCard {
+                    APCard {
                         dupRow(t)
                         if let twin = ask.item.twin {
-                            RowSeparator(inset: 62)
+                            APSeparator()
                             dupRow(twin)
                         }
                     }
@@ -499,7 +499,7 @@ struct AnswerSheet: View {
                                sub: ask.kind == .check ? ask.evidence : nil).padding(.horizontal, 16)
             }
             HStack(spacing: 10) {
-                Button(yesLabel) { yes() }.buttonStyle(NacreButtonStyle())
+                Button(yesLabel) { yes() }.buttonStyle(APPrimaryButtonStyle())
                 Button(noLabel) { no() }
                     .font(Nacre.headline).foregroundColor(Pearl.ink)
                     .frame(maxWidth: .infinity, minHeight: 52)
@@ -510,13 +510,13 @@ struct AnswerSheet: View {
             .padding(.horizontal, 16)
             if ask.kind != .duplicate && ask.kind != .check && t.learnable != false {
                 Button("Just this one") { yes(remember: false) }
-                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.link))
             }
         }
         .padding(.bottom, 8)
         .sheetPart()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(SheetBackground())
+        .cfSheet()
         // POLISH-01: sized to what it shows (Same purchase? was .large).
         .fitsContent()
     }
@@ -581,7 +581,7 @@ struct AnswerSheet: View {
 
     private var intoSheet: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: "What was this?") { dismiss() }.sheetPart()
+            CFSheetTitle(title: "What was this?") { dismiss() }.sheetPart()
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     QuestionHeader(name: who, amount: amountText, tone: tone, sub: ask.evidence)
@@ -610,7 +610,7 @@ struct AnswerSheet: View {
                 .sheetPart()
             }
         }
-        .background(SheetBackground())
+        .cfSheet()
         .fitsContent()
     }
 
@@ -705,7 +705,7 @@ struct AnswerSheet: View {
 
     private var tilesSheet: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: title) { dismiss() }.sheetPart()
+            CFSheetTitle(title: title) { dismiss() }.sheetPart()
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     // RQ-01: the amount and the account only; the schedule is in the card.
@@ -721,7 +721,7 @@ struct AnswerSheet: View {
                 .sheetPart()
             }
         }
-        .background(SheetBackground())
+        .cfSheet()
         .fitsContent()
         .task(id: step) {
             guard step == .joint || step == .cadence, deposits == nil else { return }
@@ -928,7 +928,7 @@ struct AnswerSheet: View {
     /// (PQ-03c). The answer goes through the payback mark, as before.
     private func paybackSheet(_ q: PaybackQuestion) -> some View {
         VStack(spacing: 0) {
-            SheetTitle(title: title) { dismiss() }.sheetPart()
+            CFSheetTitle(title: title) { dismiss() }.sheetPart()
             ScrollView {
                 PaybackQuestionBody(
                     question: q, amount: amountText, date: t.date,
@@ -949,7 +949,7 @@ struct AnswerSheet: View {
                     .sheetPart()
             }
         }
-        .background(SheetBackground())
+        .cfSheet()
         .fitsContent()
     }
 
@@ -984,7 +984,7 @@ struct AnswerSheet: View {
 
     private var choiceSheet: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: title) { dismiss() }.sheetPart()
+            CFSheetTitle(title: title) { dismiss() }.sheetPart()
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     QuestionHeader(name: who, amount: amountText, tone: tone, sub: sub)
@@ -1007,9 +1007,9 @@ struct AnswerSheet: View {
                                 .padding(.horizontal, 16)
                         }
                         if !options.isEmpty {
-                            GlassCard {
+                            APCard {
                                 ForEach(Array(options.enumerated()), id: \.element.id) { index, o in
-                                    if index > 0 { RowSeparator() }
+                                    if index > 0 { APSeparator(afterFace: false) }
                                     optionRow(o)
                                 }
                             }
@@ -1035,23 +1035,23 @@ struct AnswerSheet: View {
                 if step == .sender {
                     // T-14 (THL-232, R-09): keep what the bank called it.
                     Button("Use your bank’s name instead") { onAnswer(.party(t.id, name: "")) }
-                        .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                        .buttonStyle(NacreTextButtonStyle(tone: Pearl.link))
                     Button("Skip") { onAnswer(.skip(ask.item.key, true)) }
-                        .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                        .buttonStyle(NacreTextButtonStyle(tone: Pearl.link))
                 }
                 // POLISH-01 audit 7: Where did it go? answers on the tap, as
                 // Is Sam paying you back? does. Continue and Save stay where
                 // she types (Who sent this?) or searches (What did this pay back?).
                 if step != .kinds && step != .otherKinds && step != .payback && step != .accounts {
                     Button(primaryLabel) { primary() }
-                        .buttonStyle(NacreButtonStyle())
+                        .buttonStyle(APPrimaryButtonStyle())
                         .disabled(!ready)
                         .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 8)
                 }
             }
             .sheetPart()
         }
-        .background(SheetBackground())
+        .cfSheet()
         // POLISH-01 audit 1: sized to its content, not .large.
         .fitsContent()
         .task(id: step) {
@@ -1106,34 +1106,20 @@ struct AnswerSheet: View {
                 }
         }
         .padding(.horizontal, 14).frame(height: 44)
-        .background(Capsule().fill(Pearl.ink.opacity(0.08)))
+        // REDESIGN-09 (G1-Asks): every sheet search is a well.
+        .wellStyle(focused: false, capsule: true)
     }
 
     /// T-71: what kind of income, as tiles.
     private var kindTiles: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+        // A+ (G1-WhatWasThis, money in): slim tiles, two across.
+        CFTileGrid {
             ForEach(Self.kinds, id: \.key) { k in
-                let on = choice == k.key
                 // A tile answers at once.
-                Button { choice = k.key; primary() } label: {
-                    VStack(spacing: 6) {
-                        Image(systemName: k.symbol).font(.system(size: 16)).foregroundColor(Pearl.action)
-                            .frame(width: 36, height: 36).background(Circle().fill(Pearl.blush.opacity(0.7)))
-                        Text(k.name)
-                            .font(.custom(on ? "Figtree-SemiBold" : "Figtree-Regular", size: 13, relativeTo: .footnote))
-                            .foregroundColor(on ? Pearl.action : Pearl.ink)
-                            .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.85)
-                            .padding(.horizontal, 4)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 76).padding(.vertical, 6)
-                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(on ? Pearl.blush.opacity(0.75) : Nacre.glass))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(on ? Pearl.action : Nacre.separator, lineWidth: on ? 1.5 : 1))
+                CFTile(symbol: k.symbol, title: k.name, mark: choice == k.key ? .current : .rest) {
+                    choice = k.key; primary()
                 }
-                .buttonStyle(.plain)
                 .accessibilityLabel(k.name)
-                .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
     }
@@ -1145,8 +1131,7 @@ struct AnswerSheet: View {
     /// the grid, here and not on the screen behind.
     private var otherKindTiles: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("WHICH KIND?").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
-                .padding(.horizontal, 16).accessibilityAddTraits(.isHeader)
+            APSectionLabel(text: "Which kind?")
             CaseGrid(cases: CaseTile.otherIncome, chosen: Binding(get: { savingKind }, set: { key in
                 guard let key = key else { return }
                 choice = key
@@ -1419,12 +1404,10 @@ struct QuestionHeader: View {
         // S-03ax (TEST-17): at accessibility sizes the circle goes, so the
         // initials are never cut, and the name wraps to two lines.
         let big = typeSize.isAccessibilitySize
+        // A+ kit `.who`: the 44 pt ring, the name in Fraunces 22, the line in 15.
         HStack(spacing: 12) {
             if !big {
-                Initials(name: name, size: 48)
-                    .overlay(Circle().strokeBorder(
-                        AngularGradient(colors: [Nacre.rose, Nacre.lilac, Nacre.seaglass, Nacre.rose], center: .center),
-                        lineWidth: 1.2))
+                CFRing(name: name, size: 44)
             }
             VStack(alignment: .leading, spacing: 2) {
                 // POLISH-01 (RQ-01, audit 2): the name and the line under it
@@ -1432,7 +1415,7 @@ struct QuestionHeader: View {
                 Text(name).font(Nacre.title2).foregroundColor(Pearl.ink).lineLimit(big ? 3 : 2)
                     .fixedSize(horizontal: false, vertical: true)
                 (Text(amount).foregroundColor(tone)
-                 + Text(sub.map { $0.isEmpty ? "" : " · " + $0 } ?? "").foregroundColor(Pearl.ink))
+                 + Text(sub.map { $0.isEmpty ? "" : " · " + $0 } ?? "").foregroundColor(Pearl.muted))
                     .font(Nacre.subheadline).lineLimit(big ? 3 : 2)
                     .fixedSize(horizontal: false, vertical: true)
             }

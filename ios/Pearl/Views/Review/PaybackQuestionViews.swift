@@ -66,11 +66,8 @@ private struct PaybackHeader: View {
         let big = typeSize.isAccessibilitySize
         HStack(spacing: 12) {
             if !big {
-                Initials(name: name, size: 48)
-                    .overlay(Circle().strokeBorder(
-                        AngularGradient(colors: [Nacre.rose, Nacre.lilac, Nacre.seaglass, Nacre.rose], center: .center),
-                        lineWidth: 1.2))
-                    .accessibilityHidden(true)
+                // A+ (AP-Sheet, kit `.who`): the 44 pt ring.
+                CFRing(name: name, size: 44)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(name).font(Nacre.title2).foregroundColor(Pearl.ink).lineLimit(big ? 3 : 2)
@@ -95,7 +92,7 @@ private struct PaybackHeader: View {
     @ViewBuilder private var nameThem: some View {
         if let onName = onName {
             Button("Name them", action: onName)
-                .font(Nacre.subheadline).foregroundColor(Pearl.action)
+                .font(Nacre.subheadline).foregroundColor(Pearl.link)
                 .buttonStyle(.plain)
                 .accessibilityHint("Opens Who sent this?")
         }
@@ -109,12 +106,11 @@ struct PaybackQuestionCard: View {
     let action: () -> Void
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
+        // A+ (AP-Sheet): Pearl's guess on a dashed rose card, radius 18.
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
         Button(action: action) {
             HStack(spacing: 12) {
-                Image(systemName: "person.2").font(.system(size: 17)).foregroundColor(Pearl.action)
-                    .frame(width: 36, height: 36)
-                    .background(Circle().fill(Pearl.action.opacity(0.1)))
+                CFIcon(symbol: "person.2")
                 VStack(alignment: .leading, spacing: 2) {
                     Text(card.title).font(Nacre.headline).foregroundColor(Pearl.ink)
                     Text(card.line).font(Nacre.footnote).foregroundColor(Pearl.muted)
@@ -125,8 +121,8 @@ struct PaybackQuestionCard: View {
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(shape.fill(Nacre.glass))
-            .overlay(shape.strokeBorder(Pearl.action, style: StrokeStyle(lineWidth: 1.5, dash: [5, 3])))
+            .background(shape.fill(APlus.card))
+            .overlay(shape.strokeBorder(Pearl.action, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])))
             .contentShape(shape)
         }
         .buttonStyle(TilePress())
@@ -141,10 +137,11 @@ struct NameThemPill: View {
     let action: () -> Void
 
     var body: some View {
+        // A+ kit `.pill`, its word in `link`.
         Button("Name them", action: action)
-            .font(Nacre.footnote).foregroundColor(Pearl.action)
-            .padding(.horizontal, 12).frame(height: 30)
-            .background(Capsule().fill(Nacre.glass))
+            .font(Nacre.footnote).foregroundColor(Pearl.link)
+            .padding(.horizontal, 12).frame(height: 28)
+            .background(Capsule().fill(APlus.chip))
             .buttonStyle(.plain)
             .padding(.top, 4)
             .accessibilityHint("Opens Who sent this?")

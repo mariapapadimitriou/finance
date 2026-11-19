@@ -38,25 +38,25 @@ struct AddToBillsSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: "Add to your bills?") { dismiss() }
+            CFSheetTitle(title: "Add to your bills?") { dismiss() }
             ScrollView {
                 VStack(spacing: 12) {
                     QuestionHeader(name: t.merchant, amount: Format.money(t), tone: t.tone, sub: nil)
-                    GlassCard {
+                    APCard {
                         Menu {
                             Picker("", selection: $cadence) {
                                 ForEach(Self.cadences, id: \.key) { c in Text(c.name).tag(c.key) }
                             }
                         } label: { rowLabel("Repeats", cadenceName) }
                         .buttonStyle(.plain)
-                        RowSeparator()
+                        APSeparator(afterFace: false)
                         Menu {
                             Picker("", selection: $share) {
                                 ForEach(shares, id: \.self) { s in Text("\(s)%").tag(s) }
                             }
                         } label: { rowLabel("Your share", "\(share)%") }
                         .buttonStyle(.plain)
-                        RowSeparator()
+                        APSeparator(afterFace: false)
                         Button { pickingDay.toggle() } label: {
                             rowLabel("Next payment", "Around \(Format.short(Format.isoDay(next)))")
                         }
@@ -67,7 +67,7 @@ struct AddToBillsSheet: View {
                                 .padding(.horizontal, 8)
                                 .onChange(of: next) { _ in pickingDay = false }
                         }
-                        RowSeparator()
+                        APSeparator(afterFace: false)
                         Button { pickingCategory = true } label: {
                             rowLabel("Category", chosenCategory.isEmpty ? "Choose" : chosenCategory)
                         }
@@ -86,11 +86,11 @@ struct AddToBillsSheet: View {
                 .padding(.horizontal, 16).padding(.bottom, 12)
             }
             Button("Add to bills") { Task { await add() } }
-                .buttonStyle(NacreButtonStyle(busy: busy))
+                .buttonStyle(APPrimaryButtonStyle(busy: busy))
                 .disabled(!loaded || busy || chosenCategory.isEmpty)
                 .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
         }
-        .background(SheetBackground())
+        .cfSheet()
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .task { await load() }
