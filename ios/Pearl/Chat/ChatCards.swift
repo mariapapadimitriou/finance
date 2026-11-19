@@ -1,20 +1,22 @@
 import SwiftUI
 
-/// Confirming in the chat, one card at a time (note 1340:8893): the Quick
-/// sort card, inline, with Skip or Yes. Never grouped, no Yes to all.
+/// Confirming in the chat, one card at a time (note 1340:8893; A+ G7-Tell,
+/// G7-TellMore): her words in her bubble, Pearl's lead over the first card,
+/// one card, and Skip · Yes pinned over the composer. Never grouped, no Yes
+/// to all.
 ///
-/// PC-05 (1338:8507 / 1338:8574)  a guess from what she told Pearl, quoting her
-/// PC-06 (1338:8629 / 1338:8698)  with "Maybe split with Jo and Sam?": opens
-///                                Who was it with? prefilled, never splits by itself
-/// PC-08 (1338:8994 / 1338:9061)  one card for the whole trip
-/// PC-09 (1338:9116 / 1338:9183)  one card for the whole pattern
+/// PC-05  a guess from what she told Pearl ("Pearl’s guess · 1 of 7")
+/// PC-06  with "Maybe split with Jo and Sam?": opens Who was it with?
+///        prefilled, never splits by itself; held, "Your choice · 2 of 7"
+/// PC-08  one card for the whole trip: "Were you in Montréal?"
+/// PC-09  one card for the whole pattern, asked once
 ///
 /// This file's buttons are the only place a `UserTap` is made: the chat's one
 /// way to change anything (ChatCore.swift; ios/tools/check_chat.py checks).
+/// That includes Undo on the toast after Set it or a trip made (G7-Confirm).
 @MainActor
 struct ChatDeckView: View {
     @EnvironmentObject private var app: AppModel
-    @Environment(\.colorScheme) private var scheme
     @ObservedObject var engine: ChatEngine
     let deck: Deck
 
@@ -35,20 +37,16 @@ struct ChatDeckView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // "A guess for 7 of 9 from the weekend · 1 of 7", "2 of 7", a trip's or pattern's line.
-            Text(deck.position)
-                .font(Nacre.subheadline).foregroundColor(Pearl.ink)
-                .multilineTextAlignment(.center).lineLimit(2)
-                .padding(.horizontal, 16).padding(.top, 2)
-            Spacer(minLength: 12)
-            stack.padding(.horizontal, 24)
-            Spacer(minLength: 16)
-            lines.padding(.horizontal, 16)
-            if let error = engine.error {
-                Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
-                    .multilineTextAlignment(.center).padding(.horizontal, 16).padding(.top, 6)
+            ScrollView {
+                VStack(spacing: 0) {
+                    if let said = deck.said, !said.isEmpty { ChatYou(text: said) }
+                    if let lead = deck.leadLine { ChatLine(text: lead) }
+                    card
+                    under
+                }
+                .chatPage()
             }
-            buttons.padding(.top, 16).padding(.bottom, 12)
+            ChatDeckButtons(busy: engine.busy || deck.current == nil, yesHint: yesHint, skip: skip, yes: yes)
         }
         .fullScreenCover(item: $asking) { s in
             if let item = s.item {
@@ -85,221 +83,55 @@ struct ChatDeckView: View {
         }
     }
 
-    // MARK: The stack
+    // MARK: The card
 
-    private var remaining: Int { deck.cards.count - deck.index }
-
-    private var stack: some View {
-        ZStack {
-            // The cards still to come, peeking out underneath (PC-05's Next card, Next-but-one).
-            ForEach((1...2).reversed(), id: \.self) { depth in
-                if depth < remaining {
-                    RoundedRectangle(cornerRadius: Pearl.radiusSort, style: .continuous)
-                        .fill(scheme == .dark ? Pearl.card : Color.white.opacity(0.55))
-                        .overlay(RoundedRectangle(cornerRadius: Pearl.radiusSort, style: .continuous)
-                            .strokeBorder(scheme == .dark ? Pearl.border : Nacre.edge, lineWidth: 1.2))
-                        .padding(.horizontal, CGFloat(depth) * 10)
-                        .offset(y: CGFloat(depth) * 10)
-                        .accessibilityHidden(true)
-                }
-            }
-            switch deck.current {
-            case .sort(let s)?:
-                sortCard(s)
-                    .contentShape(Rectangle())
-                    .onTapGesture { if s.item != nil { asking = s } }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityAction(named: "Yes") { yes() }
-                    .accessibilityAction(named: "Skip") { skip() }
-                    .accessibilityAction(named: "What was this?") { if s.item != nil { asking = s } }
-                    .accessibilityIdentifier("chat-sort-card")
-                    .id(s.id)
-            case .trip(let t)?:
-                tripCard(t)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityAction(named: "Yes") { yes() }
-                    .accessibilityAction(named: "Skip") { skip() }
-                    .accessibilityIdentifier("chat-trip-card")
-                    .id(t.id)
-            case .pattern(let p)?:
-                patternCard(p)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityAction(named: "Yes") { yes() }
-                    .accessibilityAction(named: "Skip") { skip() }
-                    .accessibilityIdentifier("chat-pattern-card")
-                    .id(p.id)
-            case .plan?, nil:
-                EmptyView()
-            }
-        }
-        .frame(maxHeight: 410)
-        .transition(.opacity)
-    }
-
-    /// PC-05: "PEARL'S GUESS", who, how much, when and where, "Dining?".
-    private func sortCard(_ s: SortProposal) -> some View {
-        let t = s.txn
-        let draft = drafts[s.id]
-        return VStack(spacing: 8) {
-            ChatOverline(text: draft?.label != nil ? "Your choice" : "Pearl\u{2019}s guess")
-            Initials(name: t.name, size: 64)
-            Text(t.name).font(Nacre.headline).foregroundColor(Pearl.ink)
-                .multilineTextAlignment(.center).lineLimit(2)
-            Text((t.inflow ? "+" : "\u{2212}") + Format.amount(t.shownAmount))
-                .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
-                .foregroundColor(Pearl.ink).lineLimit(1).minimumScaleFactor(0.5)
-            Text([Format.weekdayDay(t.date), t.accountName].compactMap { $0 }.filter { !$0.isEmpty }
-                    .joined(separator: " \u{00B7} "))
-                .font(Nacre.subheadline).foregroundColor(Pearl.muted)
-                .multilineTextAlignment(.center).lineLimit(1)
-            Text("\(draft?.label ?? s.category)?")
-                .font(Pearl.heading(34, relativeTo: .largeTitle)).foregroundColor(Pearl.ink)
-                .multilineTextAlignment(.center).lineLimit(3).minimumScaleFactor(0.6)
-                .padding(.top, 8)
-            if let split = draft?.split {
-                Text(split.note).font(Nacre.footnote).foregroundColor(Pearl.ink)
-                    .multilineTextAlignment(.center).lineLimit(3)
-            } else if draft == nil, !s.splitWith.isEmpty, !t.inflow {
-                // PC-06: Who as a suggestion; it opens Who was it with?, prefilled.
-                Button { Task { await openSplit(s) } } label: {
-                    Text(ChatWords.maybeSplit(s.splitWith))
-                        .font(Nacre.subheadline).foregroundColor(Pearl.ink)
-                        .lineLimit(2).multilineTextAlignment(.center)
-                        .padding(.horizontal, 16).frame(minHeight: 44)
-                        .background(Capsule().fill(Pearl.control))
-                }
-                .buttonStyle(.plain)
-                .disabled(opening)
-                .accessibilityHint("Opens Who was it with?. Nothing is split until you say Yes.")
-            }
-        }
-        .modifier(ChatCardFace())
-    }
-
-    /// PC-08 (TR-01's card): the place, what it came to, its dates and count, "A trip?".
-    private func tripCard(_ t: TripAsk) -> some View {
-        VStack(spacing: 8) {
-            ChatOverline(text: "A trip?")
-            Initials(name: t.place ?? "Trip", size: 64)
-            if let place = t.place {
-                Text(place).font(Nacre.headline).foregroundColor(Pearl.ink)
-                    .multilineTextAlignment(.center).lineLimit(2)
-            }
-            Text(t.totals.shown)
-                .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
-                .foregroundColor(Pearl.ink).lineLimit(1).minimumScaleFactor(0.5)
-            Text(t.line).font(Nacre.subheadline).foregroundColor(Pearl.muted)
-                .multilineTextAlignment(.center).lineLimit(2)
-            Text("A trip?")
-                .font(Pearl.heading(34, relativeTo: .largeTitle)).foregroundColor(Pearl.ink)
-                .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.6)
-                .padding(.top, 8)
-        }
-        .modifier(ChatCardFace())
-    }
-
-    /// PC-09 (AI-18's card): one card for the whole pattern.
-    private func patternCard(_ p: PatternAsk) -> some View {
-        VStack(spacing: 8) {
-            ChatOverline(text: "A pattern")
-            Initials(name: p.name, size: 64)
-            Text(p.who).font(Nacre.headline).foregroundColor(Pearl.ink)
-                .multilineTextAlignment(.center).lineLimit(2)
-            if let amount = p.shownAmount {
-                Text(amount)
-                    .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
-                    .foregroundColor(Pearl.ink).lineLimit(1).minimumScaleFactor(0.5)
-            }
-            Text(p.each).font(Nacre.subheadline).foregroundColor(Pearl.muted)
-                .multilineTextAlignment(.center).lineLimit(2)
-            Text(p.question)
-                .font(Pearl.heading(34, relativeTo: .largeTitle)).foregroundColor(Pearl.ink)
-                .multilineTextAlignment(.center).lineLimit(3).minimumScaleFactor(0.6)
-                .padding(.top, 8)
-        }
-        .modifier(ChatCardFace())
-    }
-
-    // MARK: The lines under the card
-
-    /// What Pearl heard, in ink; what Yes does, muted (PC-05, PC-06, PC-08, PC-09).
-    @ViewBuilder private var lines: some View {
+    @ViewBuilder private var card: some View {
         switch deck.current {
         case .sort(let s)?:
-            // PC-05 / PC-06 (TEXT-01): "Dining out · from “Out with friends
-            // Saturday”"; a draft's own line under it.
-            pair(ChatWords.told(s.category, said: deck.said), sortHint(s))
+            ChatSortCard(s: s, draft: drafts[s.id], over: deck.overline(choice: drafts[s.id]?.label != nil),
+                         opening: opening) { Task { await openSplit(s) } }
+                .contentShape(Rectangle())
+                .onTapGesture { if s.item != nil { asking = s } }
+                .accessibilityElement(children: .combine)
+                .accessibilityAction(named: "Yes") { yes() }
+                .accessibilityAction(named: "Skip") { skip() }
+                .accessibilityAction(named: "What was this?") { if s.item != nil { asking = s } }
+                .accessibilityIdentifier("chat-sort-card")
+                .id(s.id)
         case .trip(let t)?:
-            // PC-08 (TEXT-01): "A flight, a hotel, 5 days in Montréal. A trip?"
-            pair(t.story + " A trip?", nil)
+            // PC-08 (G7-TellMore): "Were you in Montréal?", one card for all.
+            ChatQuestionCard(over: deck.overline(), face: t.place ?? t.name ?? "Trip", trip: true,
+                             name: t.place ?? t.name ?? "", amount: t.totals.shown, amountTone: Pearl.moneyOut,
+                             line: t.line, question: ChatWords.tripQuestion(t), sub: ChatWords.tripAway(t)) { EmptyView() }
+                .accessibilityElement(children: .combine)
+                .accessibilityAction(named: "Yes") { yes() }
+                .accessibilityAction(named: "Skip") { skip() }
+                .accessibilityIdentifier("chat-trip-card")
+                .id(t.id)
         case .pattern(let p)?:
-            pair(p.because, p.yesSkip)
+            // PC-09 (G7-TellMore): asked once for all of them.
+            ChatQuestionCard(over: deck.overline(), face: p.name, name: p.who, amount: p.shownAmount ?? "",
+                             line: p.each, question: p.question, sub: ChatWords.patternSub(p)) { EmptyView() }
+                .accessibilityElement(children: .combine)
+                .accessibilityAction(named: "Yes") { yes() }
+                .accessibilityAction(named: "Skip") { skip() }
+                .accessibilityIdentifier("chat-pattern-card")
+                .id(p.id)
         case .plan?, nil:
             EmptyView()
         }
     }
 
-    private func sortHint(_ s: SortProposal) -> String? {
-        guard let draft = drafts[s.id] else { return nil }
-        // T-98s (Quick sort): a held split goes when she skips.
-        if draft.split != nil { return "Skip forgets the split." }
-        return "Yes saves this."
-    }
-
-    private func pair(_ ink: String?, _ muted: String?) -> some View {
-        VStack(spacing: 0) {
-            if let ink = ink {
-                Text(ink).foregroundColor(Pearl.ink)
-            }
-            if let muted = muted {
-                Text(muted).foregroundColor(Pearl.muted)
-            }
+    /// Under the card: a held split's "Skip forgets the split.", or what
+    /// went wrong (G7-Tell).
+    @ViewBuilder private var under: some View {
+        if case .sort(let s)? = deck.current, drafts[s.id]?.split != nil, engine.error == nil {
+            // T-98s (Quick sort): a held split goes when she skips.
+            ChatNote(text: "Skip forgets the split.", top: 8)
         }
-        .font(Nacre.subheadline)
-        .lineSpacing(1)
-        .multilineTextAlignment(.center)
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .combine)
-    }
-
-    // MARK: Skip · Yes (64 / 72 pt)
-
-    private var buttons: some View {
-        HStack(spacing: 64) {
-            Button(action: skip) {
-                VStack(spacing: 8) {
-                    Image(systemName: "forward")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundColor(Pearl.ink)
-                        .frame(width: 64, height: 64)
-                        .background(Circle().fill(scheme == .dark ? Pearl.card : Color.white.opacity(0.72)))
-                        .overlay(Circle().strokeBorder(scheme == .dark ? Pearl.border : Nacre.edge, lineWidth: 1.2))
-                        .shadow(color: Pearl.cardShadow.opacity(0.1), radius: 10, y: 8)
-                    Text("Skip").font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
-                        .foregroundColor(Pearl.ink)
-                }
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Skip")
-            .accessibilityIdentifier("chat-skip")
-            Button(action: yes) {
-                VStack(spacing: 8) {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundColor(Pearl.onAction)
-                        .frame(width: 72, height: 72)
-                        .background(Circle().fill(Pearl.action))
-                    Text("Yes").font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
-                        .foregroundColor(Pearl.action)
-                }
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Yes")
-            .accessibilityHint(yesHint)
-            .accessibilityIdentifier("chat-yes")
+        if let error = engine.error {
+            ChatErrorLine(text: error)
         }
-        .disabled(engine.busy || deck.current == nil)
     }
 
     private var yesHint: String {
@@ -321,7 +153,10 @@ struct ChatDeckView: View {
         } else {
             decision = .yes(card)
         }
-        Task { await engine.decide(decision, tap: UserTap("yes")) }
+        Task {
+            let did = await engine.decide(decision, tap: UserTap("yes"))
+            ChatToast.offer(did, decision, app: app, engine: engine)
+        }
     }
 
     private func skip() {
@@ -365,56 +200,105 @@ struct ChatDeckView: View {
     }
 }
 
-/// The card: frosted glass with the nacre edge, 28 pt corners (PC-05's Sort card).
-struct ChatCardFace: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(.horizontal, 24).padding(.vertical, 28)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .glassCard(radius: Pearl.radiusSort)
-    }
-}
-
-/// The card's eyebrow: "PEARL'S GUESS", "A TRIP?", "A PATTERN" (13 Medium, rose).
-private struct ChatOverline: View {
-    let text: String
+/// PC-05 / PC-06's card: "Pearl’s guess · 1 of 7", who, how much, when and
+/// where, "Dining out?"; with a split held, "Dining out, split?" over
+/// "Split with Jo and Sam · your share $16.07".
+private struct ChatSortCard: View {
+    let s: SortProposal
+    let draft: CardDraft?
+    let over: String
+    let opening: Bool
+    let openSplit: () -> Void
 
     var body: some View {
-        Text(text.uppercased())
-            .font(Nacre.label).tracking(0.78)
-            .foregroundColor(Pearl.action)
+        let t = s.txn
+        let label = draft?.label ?? s.category
+        return ChatQuestionCard(
+            over: over, face: t.name, name: t.name,
+            amount: (t.inflow ? "+" : "\u{2212}") + Format.amount(t.shownAmount),
+            amountTone: t.inflow ? Pearl.moneyIn : Pearl.moneyOut,
+            line: [Format.weekdayDay(t.date), t.accountName].compactMap { $0 }.filter { !$0.isEmpty }
+                .joined(separator: " \u{00B7} "),
+            question: "\(label)?", sub: draft?.split?.note) {
+            if draft == nil, !s.splitWith.isEmpty, !t.inflow {
+                // PC-06: who, as a suggestion; it opens Who was it with?, prefilled.
+                Button(action: openSplit) {
+                    Text(ChatWords.maybeSplit(s.splitWith))
+                        .font(.custom("Figtree-SemiBold", size: 15, relativeTo: .subheadline))
+                        .foregroundColor(Pearl.action)
+                        .lineLimit(2).multilineTextAlignment(.center)
+                        .padding(.horizontal, 14).frame(minHeight: 32)
+                        .background(Capsule().fill(Pearl.action.opacity(0.1)))
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(opening)
+                .padding(.top, 6)
+                .accessibilityHint("Opens Who was it with?. Nothing is split until you say Yes.")
+            }
+        }
     }
 }
 
-/// PC-12's Set it and Not now. Set it is the plan's only way in; Not now
-/// sends nothing ("Okay, nothing changed.").
+/// Skip · Yes, side by side over the composer (G7-Tell's `yesskip`): Skip
+/// the Secondary, Yes the Primary, 12 apart.
+private struct ChatDeckButtons: View {
+    let busy: Bool
+    let yesHint: String
+    let skip: () -> Void
+    let yes: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button("Skip", action: skip)
+                .buttonStyle(APSecondaryButtonStyle())
+                .accessibilityIdentifier("chat-skip")
+            Button("Yes", action: yes)
+                .buttonStyle(APPrimaryButtonStyle())
+                .accessibilityHint(yesHint)
+                .accessibilityIdentifier("chat-yes")
+        }
+        .disabled(busy)
+        .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 18)
+    }
+}
+
+/// PC-12's Set it and Not now (G7-Confirm), under the plan's card. Set it is
+/// the plan's only way in; Not now sends nothing ("Okay, nothing changed.").
 @MainActor
 struct ChatPlanButtons: View {
+    @EnvironmentObject private var app: AppModel
     @ObservedObject var engine: ChatEngine
     let plan: PlanProposal
 
     var body: some View {
         VStack(spacing: 12) {
-            Button("Set it") { Task { await engine.decide(.yes(.plan(plan)), tap: UserTap("set-it")) } }
-                .buttonStyle(NacreButtonStyle(busy: engine.busy))
-                .accessibilityIdentifier("chat-set-it")
+            Button("Set it") {
+                Task {
+                    let decision = Decision.yes(.plan(plan))
+                    let did = await engine.decide(decision, tap: UserTap("set-it"))
+                    ChatToast.offer(did, decision, app: app, engine: engine)
+                }
+            }
+            .buttonStyle(APPrimaryButtonStyle(busy: engine.busy))
+            .accessibilityIdentifier("chat-set-it")
             Button("Not now") { Task { await engine.decide(.skip(.plan(plan)), tap: UserTap("not-now")) } }
-                .buttonStyle(OutlineCapsuleStyle())
+                .buttonStyle(APSecondaryButtonStyle())
                 .accessibilityIdentifier("chat-not-now")
         }
         .disabled(engine.busy)
+        .padding(.top, 18)
     }
 }
 
-/// The Secondary button: an outline capsule, never filled (PC-12's Not now).
-private struct OutlineCapsuleStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(Nacre.headline)
-            .foregroundColor(Pearl.ink)
-            .frame(maxWidth: .infinity, minHeight: 52)
-            .overlay(Capsule().strokeBorder(Pearl.ink, lineWidth: 1.5))
-            .opacity(configuration.isPressed ? 0.7 : 1)
-            .contentShape(Capsule())
+/// G7-Confirm (NEW, approved 2026-11-18): after Set it or a trip made, the
+/// ink toast with Undo, the same as everywhere ("Dining out plan set",
+/// "Trip to Montréal made"). Its Undo is her tap, so it's made here.
+@MainActor
+enum ChatToast {
+    static func offer(_ did: Performed?, _ decision: Decision, app: AppModel, engine: ChatEngine) {
+        guard let did = did, let u = ChatEngine.undo(for: did, decision) else { return }
+        app.say(u.toast) { try await engine.undo(u, tap: UserTap("undo")) }
     }
 }

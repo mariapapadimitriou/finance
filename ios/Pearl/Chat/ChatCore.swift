@@ -180,8 +180,11 @@ struct PlanProposal: Decodable, Hashable {
     let amount: Double?
     let months: Int?
     let line: String?
+    /// Her plan's amount for this category before Set it, if it had one
+    /// (finance/chat.py `current`): Undo puts it back (G7-Confirm).
+    let current: Double?
 
-    enum CodingKeys: String, CodingKey { case nothing, category, usual, amount, months, line }
+    enum CodingKeys: String, CodingKey { case nothing, category, usual, amount, months, line, current }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -191,15 +194,17 @@ struct PlanProposal: Decodable, Hashable {
         amount = try? c.decodeIfPresent(Double.self, forKey: .amount)
         months = try? c.decodeIfPresent(Int.self, forKey: .months)
         line = try? c.decodeIfPresent(String.self, forKey: .line)
+        current = try? c.decodeIfPresent(Double.self, forKey: .current)
     }
 
-    init(category: String, usual: Double, amount: Double, months: Int) {
+    init(category: String, usual: Double, amount: Double, months: Int, current: Double? = nil) {
         nothing = false
         self.category = category
         self.usual = usual
         self.amount = amount
         self.months = months
         line = nil
+        self.current = current
     }
 }
 
@@ -538,6 +543,26 @@ struct UserTap {
 protocol ChatWriting {
     func post<T: Decodable>(_ path: String, _ body: [String: Any]) async throws -> T
     func put<T: Decodable>(_ path: String, _ body: [String: Any]) async throws -> T
+    /// Undo on the chat's toast only (G7-Confirm).
+    func delete<T: Decodable>(_ path: String, query: [String: String]) async throws -> T
+}
+
+/// G7-Confirm (NEW, approved 2026-11-18): Undo on the ink toast after Set it
+/// or a trip made in the chat. A tap on the toast's Undo, nothing else.
+enum ChatUndo: Hashable {
+    /// Your plan's row back as it was: its old amount, or no row.
+    case plan(category: String, was: Double?)
+    /// The trip she just made goes; its dates aren't marked as asked about
+    /// (DELETE /api/trips/<id>?undo=1, as TR-02c's Undo).
+    case trip(id: String, name: String)
+
+    /// The toast's words: "Dining out plan set", "Trip to Montréal made".
+    var toast: String {
+        switch self {
+        case .plan(let category, _): return "\(category) plan set"
+        case .trip(_, let name): return "\(name) made"
+        }
+    }
 }
 
 /// What she decided on a card.
@@ -558,8 +583,8 @@ enum Performed: Equatable {
     case nothing
     case sorted
     case skipped
-    /// "Done. Trip to Montréal made."
-    case trip(id: String, name: String, line: String)
+    /// "Done. Trip to Montréal made.", its dates ("Mar 4–9"), its total and place.
+    case trip(id: String, name: String, dates: String, total: String, place: String)
     /// "Done. Ana’s deposits rule made."
     case pattern(title: String)
     /// "Done. Dining out plan set to $220 a month."
@@ -587,7 +612,10 @@ struct ChatExecutor {
             struct Made: Decodable { let trip: Trip? }
             let made: Made = try await writer.post("api/trips/asks/\(Self.path(t.id))/yes", [:])
             let name = made.trip?.name ?? t.name ?? "Trip"
-            return .trip(id: made.trip?.id ?? t.id, name: name.isEmpty ? "Trip" : name, line: made.trip?.line ?? t.line)
+            let dates = made.trip.map { Format.span($0.start, $0.end) } ?? Format.span(t.start, t.end)
+            return .trip(id: made.trip?.id ?? t.id, name: name.isEmpty ? "Trip" : name, dates: dates,
+                         total: (made.trip?.totals ?? t.totals).shown,
+                         place: made.trip?.place ?? t.place ?? name)
         case .yes(.pattern(let p)):
             let _: ChatOK = try await writer.post("api/pattern-sort/asks/\(p.id)/yes", ["how": "pc09"])
             return .pattern(title: p.title)
@@ -609,55 +637,103 @@ struct ChatExecutor {
         }
     }
 
+    /// Undo on the toast (G7-Confirm): puts back only what that tap did.
+    func undo(_ u: ChatUndo, tap: UserTap) async throws {
+        switch u {
+        case .plan(let category, let was?):
+            let _: ChatOK = try await writer.put("api/your-plan/rows/\(category)", ["amount": was])
+        case .plan(let category, nil):
+            let _: ChatOK = try await writer.delete("api/your-plan/rows/\(category)", query: [:])
+        case .trip(let id, _):
+            let _: ChatOK = try await writer.delete("api/trips/\(Self.path(id))", query: ["undo": "1"])
+        }
+    }
+
     private static func path(_ id: String) -> String {
         id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
     }
 }
 
-// MARK: - The words (note 1340:8893)
+// MARK: - The words (note 1340:8893; A+ G7 boards)
 
 enum ChatWords {
     static let placeholder = "Message Pearl"
     /// PC-03 (TEXT-01).
     static let onDevice = "On this iPhone only"
     static let nothingChanged = "Okay, nothing changed."
+    /// G7-Chat: under the dots while Pearl works it out.
+    static let working = "Pearl is working it out"
+    /// G7-Unavailable: couldn't answer, with Try again.
+    static let failed = "Pearl couldn\u{2019}t answer that. Try again."
+    /// PC-10 (G7-TellMore): before the server's own line.
+    static let couldntMatch = "Pearl couldn\u{2019}t match that."
 
-    /// PC-04's quote, and PC-12's "You: “…”".
+    /// PC-12's "You: “…”" when there's no bubble for her words.
     static func quote(_ said: String) -> String { "\u{201C}\(said)\u{201D}" }
     static func youSaid(_ said: String) -> String { "You: \u{201C}\(said)\u{201D}" }
 
-    /// PC-05's first line under the card, when the model didn't say it back.
+    /// The model's echo of her words, when it gave none (kept for the
+    /// model's reply; A+ shows her words in her own bubble instead).
     static func echo(_ said: String) -> String { "You said \u{201C}\(said)\u{201D}." }
 
-    /// PC-05 / PC-06 under the card: "Dining out · from “Out with friends
-    /// Saturday”" (TEXT-01): the category and her words, no sentence.
-    static func told(_ category: String, said: String?) -> String {
-        guard let said = said?.trimmingCharacters(in: .whitespacesAndNewlines), !said.isEmpty else { return category }
-        return "\(category) \u{00B7} from \(quote(said))"
+    /// PC-05's line over the first card: "A guess for 7 of the 9 from the
+    /// weekend." The server's words, ending with a full stop.
+    static func lead(_ line: String) -> String {
+        let t = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let last = t.last, !".?!".contains(last) else { return t }
+        return t + "."
     }
 
     /// PC-06's pill: "Maybe split with Jo and Sam?".
     static func maybeSplit(_ names: [String]) -> String { "Maybe split with \(Format.andList(names))?" }
 
-    /// PC-07.
+    /// PC-05's overline: "Pearl’s guess · 1 of 7", "Your choice · 2 of 7".
+    static func guessOver(choice: Bool, _ counter: String) -> String {
+        (choice ? "Your choice" : "Pearl\u{2019}s guess") + " \u{00B7} " + counter
+    }
+
+    /// PC-07 (G7-TellMore): "Sorted 7. 2 left for later."
     static func sortedTitle(sorted: Int, left: Int) -> String {
         [sorted > 0 ? "Sorted \(sorted)." : nil, left > 0 ? "\(left) left for later." : nil]
             .compactMap { $0 }.joined(separator: " ")
     }
 
-    /// PC-07: "2 back in Needs a look." (TEXT-01); nothing when none are left.
+    /// PC-07's row: "2 back in Needs a look"; nothing when none are left.
     static func sortedBody(left: Int) -> String? {
-        left > 0 ? "\(left) back in Needs a look." : nil
+        left > 0 ? "\(left) back in Needs a look" : nil
     }
 
     static func seeThe(_ left: Int) -> String { "See the \(left)" }
 
-    /// PC-08's line over the card: "Maybe a trip, Mar 4–9 · one card for all 23".
-    static func tripLine(_ t: TripAsk) -> String {
-        "Maybe a trip, \(Format.span(t.start, t.end)) · one card for all \(t.count)"
+    /// PC-08's overline (G7-TellMore): "A trip? · one card for all 23".
+    static func tripOver(_ t: TripAsk) -> String { "A trip? \u{00B7} one card for all \(t.count)" }
+
+    /// The trip question (approved 2026-11-18): "Were you in Montréal?",
+    /// never "A trip?". Without a place: "Was this a trip?".
+    static func tripQuestion(_ t: TripAsk) -> String {
+        guard let place = t.place?.trimmingCharacters(in: .whitespaces), !place.isEmpty else {
+            return "Was this a trip?"
+        }
+        return "Were you in \(place)?"
     }
 
-    static let patternLine = "A pattern Pearl spotted · one card for all of them"
+    /// Under the question: "A flight, a hotel, 5 days away." The place is
+    /// in the question, so not again here.
+    static func tripAway(_ t: TripAsk) -> String {
+        let lead = [t.flight == true ? "a flight" : nil, t.hotel == true ? "a hotel" : nil].compactMap { $0 }
+        let stay = "\(t.days) day\(t.days == 1 ? "" : "s") away"
+        let text = lead.isEmpty ? stay : lead.joined(separator: ", ") + ", " + stay
+        return text.prefix(1).uppercased() + text.dropFirst() + "."
+    }
+
+    /// PC-09's overline: "A pattern · once for all of them".
+    static let patternOver = "A pattern \u{00B7} once for all of them"
+
+    /// PC-09 under the question: "Your last 5 at Farm Boy were Groceries.",
+    /// "Your last 8 were Ana’s share."
+    static func patternSub(_ p: PatternAsk) -> String {
+        p.isJoint ? "Your last \(p.count) were \(p.label)." : "Your last \(p.count) at \(p.name) were \(p.label)."
+    }
 
     /// PC-12.
     static func planLead(months: Int) -> String {
@@ -678,8 +754,18 @@ enum ChatWords {
         "Done. \(category) plan set to \(Format.whole(amount)) a month."
     }
 
+    /// PC-13's card: "Dining out plan · $220 a month" over "Set Nov 18".
+    static func planTitle(_ category: String, _ amount: Double) -> String {
+        "\(category) plan \u{00B7} \(Format.whole(amount)) a month"
+    }
+
+    static func planSet(_ day: String) -> String { "Set \(Format.short(day))" }
+
     static func tripDone(_ name: String) -> String { "Done. \(name) made." }
     static func patternDone(_ title: String) -> String { "Done. \(title) rule made." }
+
+    /// G7-Confirm under a trip made: where it lives.
+    static let tripLives = "Change or remove it in Cash flow, or ask Pearl."
 
     /// "Was this a trip?" with none to ask about (engBOT's words; no frame).
     static let noTrip = "Pearl didn\u{2019}t spot a trip in the last four months."
@@ -694,13 +780,28 @@ enum DoneLink: Hashable {
     case plan
 }
 
-/// PC-13: "Done. …", a card saying where it lives, and a link there.
+/// PC-13 (G7-Confirm): "Done. …", a card saying what was made, and the way
+/// there. A trip's card is its row (face, name, dates, total); a plan's or a
+/// rule's has its symbol and a link under it.
 struct DoneNote: Hashable, Identifiable {
+    enum Kind: Hashable { case plan, trip, rule }
+
     let line: String
+    let kind: Kind
     let title: String
-    let place: String?
+    /// "Set Nov 18", "Mar 4–9".
+    let sub: String?
+    /// A trip's total ("$1,284.60").
+    var amount: String? = nil
+    /// A trip's place, for its face ("MO").
+    var face: String? = nil
     let link: DoneLink?
+    /// Under a plan's or rule's card: "See it in Your plan".
     let linkLabel: String?
+    /// Under a trip's card: "Change or remove it in Cash flow, or ask Pearl."
+    var note: String? = nil
+    /// What the toast's Undo takes back.
+    var undo: ChatUndo? = nil
     var id: String { line }
 }
 
@@ -709,11 +810,11 @@ struct DoneNote: Hashable, Identifiable {
 struct Deck {
     let cards: [ProposedAction]
     var index = 0
-    /// PC-05's "A guess for 7 of 9 from the weekend", for told guesses.
+    /// PC-05's "A guess for 7 of the 9 from the weekend", for told guesses.
     let lead: String?
-    /// Her words said back, under a told guess's card.
+    /// The model's echo of her words (A+ shows her own bubble instead).
     let echo: String?
-    /// What she told Pearl, for PC-05's "Dining out · from “…”".
+    /// What she told Pearl: her bubble over the cards.
     var said: String? = nil
     var sorted = 0
     var left = 0
@@ -723,18 +824,25 @@ struct Deck {
     var told: Bool { cards.contains { if case .sort = $0 { return true } else { return false } } }
     private var sorts: Int { cards.filter { if case .sort = $0 { return true } else { return false } }.count }
 
-    /// The line over the card: "A guess for 7 of 9 from the weekend · 1 of 7",
-    /// then "2 of 7"; a trip's or a pattern's own line.
-    var position: String {
+    /// PC-05's count in the overline: "1 of 7", "2 of 7".
+    var counter: String { "\(index + 1) of \(sorts)" }
+
+    /// The card's overline: "Pearl’s guess · 1 of 7", "A trip? · one card for
+    /// all 23", "A pattern · once for all of them". A guess she changed
+    /// says "Your choice" (the view knows).
+    func overline(choice: Bool = false) -> String {
         switch current {
-        case .sort?:
-            let n = "\(index + 1) of \(sorts)"
-            if index == 0, let lead = lead { return "\(lead) · \(n)" }
-            return n
-        case .trip(let t)?: return ChatWords.tripLine(t)
-        case .pattern?: return ChatWords.patternLine
+        case .sort?: return ChatWords.guessOver(choice: choice, counter)
+        case .trip(let t)?: return ChatWords.tripOver(t)
+        case .pattern?: return ChatWords.patternOver
         case .plan?, nil: return ""
         }
+    }
+
+    /// Pearl's line over the first told guess only.
+    var leadLine: String? {
+        guard index == 0, case .sort? = current, let lead = lead, !lead.isEmpty else { return nil }
+        return ChatWords.lead(lead)
     }
 }
 
@@ -742,7 +850,7 @@ struct Deck {
 indirect enum ChatScreen {
     /// PC-03.
     case start
-    /// Her words, while Pearl works it out (no frame: a spinner under them).
+    /// Her words, while Pearl works it out (G7-Chat: the dots).
     case thinking(said: String)
     /// PC-04: her words, Pearl's answer, the totals and the rows behind it.
     case reply(said: String?, text: String, answer: SpendingAnswer?, rows: [BriefTransaction])
@@ -757,7 +865,9 @@ indirect enum ChatScreen {
     /// PC-13, and the trip and pattern confirmations.
     case done(said: String?, [DoneNote])
     /// "Okay, nothing changed."
-    case noChange(said: String?)
+    case noChange(said: String?, plan: PlanProposal? = nil)
+    /// G7-Unavailable: Pearl couldn't answer · Try again.
+    case failed(said: String)
 }
 
 /// The chat's state. Starts fresh each time it opens (note 1340:8893).
@@ -776,6 +886,8 @@ final class ChatEngine: ObservableObject {
     private let allowsPlans: Bool
     private let describe: (Error) -> String
     private var said: String?
+    /// The last thing asked, for G7-Unavailable's Try again.
+    private var last: (said: String?, text: String, mode: ChatMode?)?
     /// The trip and pattern cards, from opening (2026-11-15), for the tools;
     /// read again after a card changes something.
     private var asks: ChatAsks?
@@ -788,6 +900,8 @@ final class ChatEngine: ObservableObject {
     private var latest = ChatFindings()
     /// This turn's cards are already on screen (shown when the tool found them).
     private var shownEarly = false
+    /// "Set Nov 18": today, for PC-13's card.
+    var today: () -> String = { Format.isoDay(Date()) }
 
     init(brain: PearlBrain, reader: ChatReader, executor: ChatExecutor, allowsPlans: Bool,
          describe: @escaping (Error) -> String = { $0.localizedDescription }) {
@@ -797,6 +911,9 @@ final class ChatEngine: ObservableObject {
         self.allowsPlans = allowsPlans
         self.describe = describe
     }
+
+    /// Her words in this exchange, for her bubble (G7: right, in blush).
+    var heard: String? { said }
 
     /// Opened: what Pearl has to suggest comes first (PB-01's shimmer), the
     /// same cards Quick sort has; else the starters.
@@ -840,6 +957,12 @@ final class ChatEngine: ObservableObject {
         await run(said: text, text: text, mode: m)
     }
 
+    /// G7-Unavailable's Try again: the same words, asked again.
+    func retry() async {
+        guard let last = last, !busy else { return }
+        await run(said: last.said, text: last.text, mode: last.mode)
+    }
+
     /// Back to the starters (PC-10's Tell it differently).
     func restart() {
         screen = .start
@@ -856,12 +979,14 @@ final class ChatEngine: ObservableObject {
         working = nil
         mode = nil
         asks = nil
+        last = nil
         restart()
         await open()
     }
 
     private func run(said: String?, text: String, mode: ChatMode?) async {
         self.said = said
+        last = (said, text, mode)
         error = nil
         screen = .thinking(said: said ?? text)
         turn += 1
@@ -916,7 +1041,8 @@ final class ChatEngine: ObservableObject {
                 } catch {
                     // A New chat since: this turn's words are forgotten.
                     guard turn == now else { return }
-                    screen = .reply(said: said, text: describe(error), answer: nil, rows: [])
+                    // G7-Unavailable: "Pearl couldn't answer that. Try again."
+                    screen = .failed(said: said ?? text)
                     return
                 }
             } else {
@@ -999,7 +1125,7 @@ final class ChatEngine: ObservableObject {
         }
         let asked = (f.patterns ?? []).map(ProposedAction.pattern) + (f.trips ?? []).map(ProposedAction.trip)
         if !asked.isEmpty {
-            screen = .cards(Deck(cards: asked, lead: nil, echo: nil))
+            screen = .cards(Deck(cards: asked, lead: nil, echo: nil, said: said ?? last?.text))
             return
         }
         if let p = f.plan, !p.nothing {
@@ -1022,47 +1148,85 @@ final class ChatEngine: ObservableObject {
         screen = text.isEmpty ? .start : .reply(said: said, text: text, answer: nil, rows: [])
     }
 
-    /// Her tap on a card. The only way the chat changes anything.
-    func decide(_ decision: Decision, tap: UserTap) async {
-        guard !busy else { return }
+    /// Her tap on a card. The only way the chat changes anything. Says what
+    /// happened, so her tap's view can raise the toast with Undo.
+    @discardableResult
+    func decide(_ decision: Decision, tap: UserTap) async -> Performed? {
+        guard !busy else { return nil }
         busy = true
         defer { busy = false }
         do {
             let did = try await executor.perform(decision, tap: tap)
             // A trip made or a pattern answered: the cards waiting have changed,
             // and what the server said before may be out of date.
-            asks = nil
-            reader.forget()
+            forgetReads()
             error = nil
-            advance(did)
+            advance(did, decision)
+            return did
         } catch {
             self.error = describe(error)
+            return nil
         }
     }
 
-    private func advance(_ did: Performed) {
+    /// The toast's Undo for a plan set or a trip made (G7-Confirm). Its note
+    /// leaves the chat; with nothing else done there, "Okay, nothing changed."
+    /// Throws so the toast can say it couldn't.
+    func undo(_ u: ChatUndo, tap: UserTap) async throws {
+        try await executor.undo(u, tap: tap)
+        forgetReads()
         switch screen {
-        case .plan:
+        case .done(let said, let notes):
+            let rest = notes.filter { $0.undo != u }
+            screen = rest.isEmpty ? .noChange(said: said) : .done(said: said, rest)
+        case .cards(var deck):
+            deck.done.removeAll { $0.undo == u }
+            screen = .cards(deck)
+        default:
+            break
+        }
+    }
+
+    /// What Undo would take back for this decision, if anything.
+    static func undo(for did: Performed, _ decision: Decision) -> ChatUndo? {
+        switch did {
+        case .plan(let category, _):
+            if case .yes(.plan(let p)) = decision { return .plan(category: category, was: p.current) }
+            return .plan(category: category, was: nil)
+        case .trip(let id, let name, _, _, _):
+            return .trip(id: id, name: name)
+        default:
+            return nil
+        }
+    }
+
+    private func forgetReads() {
+        asks = nil
+        reader.forget()
+    }
+
+    private func advance(_ did: Performed, _ decision: Decision) {
+        let undo = Self.undo(for: did, decision)
+        switch screen {
+        case .plan(_, let shown):
             if case .plan(let category, let amount) = did {
                 screen = .done(said: said, [DoneNote(
-                    line: ChatWords.planDone(category, amount), title: "\(category) plan \u{00B7} \(Format.whole(amount)) a month",
-                    // PC-13 (TEXT-01): no "It's in Profile › …" line; the link says where.
-                    place: nil,
-                    link: .plan, linkLabel: "See it in Your plan")])
+                    line: ChatWords.planDone(category, amount), kind: .plan,
+                    title: ChatWords.planTitle(category, amount), sub: ChatWords.planSet(today()),
+                    link: .plan, linkLabel: "See it in Your plan", undo: undo)])
             } else {
-                screen = .noChange(said: said)
+                screen = .noChange(said: said, plan: shown)
             }
         case .cards(var deck):
             switch did {
             case .sorted: deck.sorted += 1
             case .skipped: deck.left += 1
-            case .trip(let id, let name, let line):
-                deck.done.append(DoneNote(line: ChatWords.tripDone(name), title: "\(name) \u{00B7} \(line)",
-                                          place: "It\u{2019}s in Cash flow. Change or remove it there, or ask Pearl.",
-                                          link: .trip(id), linkLabel: "See the trip"))
+            case .trip(let id, let name, let dates, let total, let place):
+                deck.done.append(DoneNote(line: ChatWords.tripDone(name), kind: .trip, title: name, sub: dates,
+                                          amount: total, face: place, link: .trip(id), linkLabel: nil,
+                                          note: ChatWords.tripLives, undo: undo))
             case .pattern(let title):
-                deck.done.append(DoneNote(line: ChatWords.patternDone(title), title: title,
-                                          place: "It\u{2019}s in Profile \u{203A} Categories and rules. Change or remove it there, or ask Pearl.",
+                deck.done.append(DoneNote(line: ChatWords.patternDone(title), kind: .rule, title: title, sub: nil,
                                           link: .rules, linkLabel: "See it in Categories and rules"))
             case .nothing, .plan: break
             }
@@ -1072,7 +1236,7 @@ final class ChatEngine: ObservableObject {
             } else if deck.told {
                 screen = .sorted(sorted: deck.sorted, left: deck.left)
             } else if !deck.done.isEmpty {
-                screen = .done(said: said, deck.done)
+                screen = .done(said: deck.said ?? said, deck.done)
             } else {
                 screen = .start
             }

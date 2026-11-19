@@ -62,6 +62,18 @@ final class FakeWriter: ChatWriting {
         writes.append(("PUT", path, body))
         return try decode(replies[path] ?? "{}")
     }
+
+    func delete<T: Decodable>(_ path: String, query: [String: String]) async throws -> T {
+        writes.append(("DELETE", path, query))
+        return try decode(replies[path] ?? "{}")
+    }
+}
+
+/// A server that's down: every read fails.
+final class DownReader: ChatReading {
+    struct Down: Error {}
+    func get<T: Decodable>(_ path: String) async throws -> T { throw Down() }
+    func read<T: Decodable>(_ path: String, _ body: [String: Any]) async throws -> T { throw Down() }
 }
 
 /// A model that calls every tool it has, whatever she said. It still can't
@@ -235,7 +247,9 @@ struct ChatChecks {
             await e.send("went out with friends Saturday")
             guard let d = deck(e) else { expect(false, "told: cards"); return }
             expect(d.cards.count == 3, "one card per transaction")
-            expect(d.position == "A guess for 3 of 5 from Saturday · 1 of 3", "PC-05 line: \(d.position)")
+            expect(d.leadLine == "A guess for 3 of 5 from Saturday.", "PC-05 lead: \(d.leadLine ?? "nil")")
+            expect(d.overline() == "Pearl’s guess · 1 of 3", "PC-05 overline: \(d.overline())")
+            expect(d.said == "went out with friends Saturday", "her words, for her bubble")
             expect(d.echo == "You said “went out with friends Saturday”.", "echo fallback: \(d.echo ?? "nil")")
             expect(w.writes.isEmpty, "nothing changes before she taps")
             expect(r.reads.allSatisfy { $0.0.hasPrefix("api/chat") }, "the model's tools read only /api/chat")
@@ -245,7 +259,9 @@ struct ChatChecks {
             expect(w.writes.first?.path == "api/transactions/a/mark", "Yes marks the transaction")
             expect(w.writes.first?.body["remember"] as? Bool == false, "a told guess saves no rule")
             expect(w.writes.first?.body["category"] as? String == "Dining", "as she said")
-            expect(deck(e)?.position == "2 of 3", "PC-06 line: \(deck(e)?.position ?? "")")
+            expect(deck(e)?.overline() == "Pearl’s guess · 2 of 3", "PC-06 overline: \(deck(e)?.overline() ?? "")")
+            expect(deck(e)?.overline(choice: true) == "Your choice · 2 of 3", "a held answer says Your choice")
+            expect(deck(e)?.leadLine == nil, "the lead is over the first card only")
 
             await e.decide(.skip(deck(e)!.current!), tap: UserTap("skip"))
             expect(w.writes.count == 1, "Skip on a told guess sends nothing: it stays in Needs a look")
@@ -254,8 +270,8 @@ struct ChatChecks {
             if case .sorted(let sorted, let left) = e.screen {
                 expect(sorted == 2 && left == 1, "PC-07 counts")
                 expect(ChatWords.sortedTitle(sorted: sorted, left: left) == "Sorted 2. 1 left for later.", "PC-07 title")
-                expect(ChatWords.sortedBody(left: 2) == "The 2 are in Needs a look. What you told Pearl is forgotten now.",
-                       "PC-07 body")
+                expect(ChatWords.sortedBody(left: 2) == "2 back in Needs a look", "PC-07 row")
+                expect(ChatWords.sortedBody(left: 0) == nil, "no row when none are left")
                 expect(ChatWords.seeThe(2) == "See the 2", "PC-07 link")
             } else {
                 expect(false, "PC-07 after the last card")
@@ -271,8 +287,8 @@ struct ChatChecks {
             guard case .sort(let s) = second else { expect(false, "sort card"); return }
             expect(s.splitWith == ["Jo", "Sam"], "who, as a suggestion")
             expect(ChatWords.maybeSplit(s.splitWith) == "Maybe split with Jo and Sam?", "PC-06 pill")
-            expect(ChatWords.yesSorts("Dining", split: true) == "Yes sorts it as Dining, all yours. To split it, tap Maybe split.",
-                   "PC-06 line")
+            expect(ChatWords.lead("A guess for 7 of the 9 from the weekend.") == "A guess for 7 of the 9 from the weekend.",
+                   "a lead that already ends keeps its stop")
             var sent = false
             await e.decide(.skip(deck(e)!.current!), tap: UserTap("skip"))
             await e.decide(.held(s, label: "Dining, split with Jo and Sam") { sent = true }, tap: UserTap("yes"))
@@ -384,13 +400,19 @@ struct ChatChecks {
             let e = engine(r, w)
             await e.pick(.trips)
             guard let d = deck(e), case .trip(let t)? = d.current else { expect(false, "PC-08"); return }
-            expect(d.position == "Maybe a trip, \(Format.span(t.start, t.end)) · one card for all 23", "PC-08 line")
+            expect(d.overline() == "A trip? · one card for all 23", "PC-08 overline: \(d.overline())")
+            expect(ChatWords.tripQuestion(t) == "Were you in Montréal?", "the trip question names the place")
+            expect(ChatWords.tripAway(t) == "A flight, a hotel, 5 days away.", "PC-08 sub: \(ChatWords.tripAway(t))")
+            expect(d.said == "Was this a trip?", "the starter's words, for her bubble")
             expect(w.writes.isEmpty, "a trip card changes nothing by itself")
             await e.decide(.yes(d.current!), tap: UserTap("yes"))
             expect(w.writes.first?.path == "api/trips/asks/2026-03-04%3A2026-03-09/yes", "Yes: TR-01's endpoint")
             if case .done(_, let notes) = e.screen {
                 expect(notes.first?.line == "Done. Trip to Montréal made.", "trip confirmation")
                 expect(notes.first?.link == .trip("tr1"), "a link to where it lives")
+                expect(notes.first?.sub == Format.span("2026-03-04", "2026-03-09") && notes.first?.amount == "$1,284.60",
+                       "the trip's row: dates and total")
+                expect(notes.first?.undo == .trip(id: "tr1", name: "Trip to Montréal"), "Undo can take it back")
             } else {
                 expect(false, "done after the trip")
             }
@@ -415,7 +437,10 @@ struct ChatChecks {
             await e.open()
             guard let d = deck(e) else { expect(false, "suggestions first"); return }
             expect(d.cards.count == 2, "pattern and trip")
-            expect(d.position == ChatWords.patternLine, "PC-09 line")
+            expect(d.overline() == "A pattern · once for all of them", "PC-09 overline")
+            if case .pattern(let p)? = d.current {
+                expect(ChatWords.patternSub(p) == "Your last 8 were Ana’s share.", "PC-09 sub: \(ChatWords.patternSub(p))")
+            }
             await e.decide(.skip(d.current!), tap: UserTap("skip"))
             expect(w.writes.last?.path == "api/pattern-sort/asks/joint:ana/skip", "Skip: AI-18's own skip")
             await e.decide(.skip(deck(e)!.current!), tap: UserTap("skip"))
@@ -436,6 +461,102 @@ struct ChatChecks {
             } else {
                 expect(false, "done after the pattern")
             }
+        }
+
+
+        // G7 trip question: never "A trip?", and without a place, still a question.
+        do {
+            let noPlace: TripAsk = try! decode("""
+            {"id": "x", "key": "trip:x", "ids": ["t1"], "start": "2026-06-12", "end": "2026-06-16", "days": 4,
+             "flight": true, "count": 18, "totals": [{"currency": "CAD", "amount": 1240}]}
+            """)
+            expect(ChatWords.tripQuestion(noPlace) == "Was this a trip?", "no place: \(ChatWords.tripQuestion(noPlace))")
+            expect(ChatWords.tripAway(noPlace) == "A flight, 4 days away.", "no hotel: \(ChatWords.tripAway(noPlace))")
+            let farm: PatternAsk = try! decode("""
+            {"id": "m:farm", "kind": "merchant", "merchant": "Farm Boy", "answer": "Groceries", "label": "Groceries",
+             "count": 5, "need": 5, "amount": 27, "low": 12, "high": 48, "rhythm": "about every week"}
+            """)
+            expect(ChatWords.patternSub(farm) == "Your last 5 at Farm Boy were Groceries.", "PC-09 sub, a shop")
+            expect(farm.question == "Always Groceries?", "PC-09 question")
+        }
+
+        // G7-Confirm (NEW): Undo on the toast after Set it puts the plan back as it was.
+        do {
+            let r = server(), w = FakeWriter()
+            let e = engine(r, w)
+            e.today = { "2026-11-18" }
+            await e.send("Make me a plan for eating out.")
+            guard case .plan(_, let p) = e.screen else { expect(false, "PC-12 for Undo"); return }
+            let did = await e.decide(.yes(.plan(p)), tap: UserTap("set-it"))
+            let u = did.flatMap { ChatEngine.undo(for: $0, .yes(.plan(p))) }
+            expect(u == .plan(category: "Dining", was: nil), "no row before: Undo removes it")
+            expect(u?.toast == "Dining plan set", "the toast's words: \(u?.toast ?? "")")
+            if case .done(_, let notes) = e.screen {
+                expect(notes.first?.title == "Dining plan · $220 a month", "PC-13 card: \(notes.first?.title ?? "")")
+                expect(notes.first?.sub == "Set \(Format.short("2026-11-18"))", "PC-13 sub: \(notes.first?.sub ?? "")")
+                expect(notes.first?.undo == u, "the note knows its Undo")
+            } else { expect(false, "PC-13 before Undo") }
+            try? await e.undo(u!, tap: UserTap("undo"))
+            expect(w.writes.last?.method == "DELETE" && w.writes.last?.path == "api/your-plan/rows/Dining",
+                   "Undo: Your plan's row goes")
+            if case .noChange = e.screen {} else { expect(false, "after Undo: Okay, nothing changed.") }
+            expect(w.writes.count == 2, "Set it, then Undo: two writes")
+        }
+        do {
+            let r = server(), w = FakeWriter()
+            r.replies["api/chat/plan"] = """
+            {"nothing": false, "category": "Dining", "usual": 214.0, "amount": 220, "months": 3, "current": 180}
+            """
+            let e = engine(r, w)
+            await e.send("Make me a plan for eating out.")
+            guard case .plan(_, let p) = e.screen else { expect(false, "PC-12 with a row"); return }
+            expect(p.current == 180, "the row she had")
+            let did = await e.decide(.yes(.plan(p)), tap: UserTap("set-it"))
+            let u = did.flatMap { ChatEngine.undo(for: $0, .yes(.plan(p))) }
+            expect(u == .plan(category: "Dining", was: 180), "Undo knows the old amount")
+            try? await e.undo(u!, tap: UserTap("undo"))
+            expect(w.writes.last?.method == "PUT" && w.writes.last?.body["amount"] as? Double == 180,
+                   "Undo: the old amount back")
+        }
+        // G7-Confirm (NEW): Undo on "Trip to Montréal made" takes back only that trip.
+        do {
+            let r = server(), w = FakeWriter()
+            w.replies["api/trips/asks/2026-03-04%3A2026-03-09/yes"] = """
+            {"ok": true, "trip": {"id": "tr1", "name": "Trip to Montréal", "ids": ["t1"], "start": "2026-03-04",
+             "end": "2026-03-09", "count": 23, "totals": [{"currency": "CAD", "amount": 1284.6}]}}
+            """
+            let e = engine(r, w)
+            await e.pick(.trips)
+            guard let card = deck(e)?.current else { expect(false, "trip card for Undo"); return }
+            let did = await e.decide(.yes(card), tap: UserTap("yes"))
+            let u = did.flatMap { ChatEngine.undo(for: $0, .yes(card)) }
+            expect(u?.toast == "Trip to Montréal made", "the trip toast")
+            try? await e.undo(u!, tap: UserTap("undo"))
+            expect(w.writes.last?.method == "DELETE" && w.writes.last?.path == "api/trips/tr1"
+                   && w.writes.last?.body["undo"] as? String == "1", "Undo: DELETE the trip, dates not skipped")
+            if case .noChange = e.screen {} else { expect(false, "after the trip's Undo") }
+        }
+        // A skip or a told guess has no Undo on the toast.
+        do {
+            expect(ChatEngine.undo(for: .sorted, .yes(.plan(PlanProposal(category: "x", usual: 1, amount: 1, months: 1)))) == nil,
+                   "a sort has no chat Undo")
+            expect(ChatEngine.undo(for: .skipped, .skip(.plan(PlanProposal(category: "x", usual: 1, amount: 1, months: 1)))) == nil,
+                   "a skip has no Undo")
+        }
+
+        // G7-Unavailable: Pearl couldn't answer · Try again asks the same again.
+        do {
+            let w = FakeWriter()
+            let e = ChatEngine(brain: BrokenBrain(), reader: ChatReader(DownReader()),
+                               executor: ChatExecutor(writer: w), allowsPlans: true)
+            await e.send("What did I spend at Costco this year?")
+            if case .failed(let said) = e.screen {
+                expect(said == "What did I spend at Costco this year?", "her words stay")
+            } else { expect(false, "couldn't answer: \(e.screen)") }
+            expect(ChatWords.failed == "Pearl couldn’t answer that. Try again.", "G7 words")
+            await e.retry()
+            if case .failed = e.screen {} else { expect(false, "Try again asked again") }
+            expect(w.writes.isEmpty, "failing writes nothing")
         }
 
         // Nothing waiting: the starters.

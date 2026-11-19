@@ -15,14 +15,16 @@ import SwiftUI
 // TR-07  Select › Make a trip (TransactionsView)
 // TR-08  Name the trip, for Make a trip and Rename (NameTripSheet)
 // TR-09  Tags: removing a trip's tag ends the trip (CategoriesRulesView)
-// TR-02c By category on the trip's page, and the toasts after Make a trip and Rename
-// TR-03  The trip by category (TripByCategory)
+// TR-02c The toasts after Make a trip and Rename
+// TR-03  The trip by category: By category on the trip's page (TripCategoryCard)
 // TR-11  Add transactions · TR-12 Remove some… (TransactionsView with a TripPick)
 // TR-13  Not a trip? (NotATripSheet)
 // TR-14  Tap TR-01's card: its rows, AI-09's plain list (QuickSortView)
-// TR-17  The Calendar's Trips card (CalendarCard; its rows are TripCardRow)
-// TR-17e The Trips card with no trips yet (CalendarCard)
-// TR-18  All trips (AllTripsPage)
+// TR-17  The Calendar's Trips card (TripsCard; its rows are TripListRow)
+// TR-17e The Trips card with no trips yet (TripsCard)
+// TR-18  Trips, by year (AllTripsPage)
+//
+// A+ (REDESIGN-14): the Claude Design boards G7-Trip and G7-TripCal.
 
 /// GET /api/trips/<id>: the trip, and its rows newest first, each with its
 /// billing currency (TR-02m).
@@ -47,31 +49,32 @@ struct TripDetail: Decodable {
     }
 }
 
-// MARK: - TR-02 / TR-02m / TR-02c
+// MARK: - TR-02 / TR-02m / TR-03 (A+ G7-Trip)
 
-/// TR-02 (`1327:5084` / `1327:5267`): the trip's dates and count, its total,
-/// the month it counts in, its transactions (each opens its page) and
-/// its tag, "Trip to Montréal" (TEXT-01 cut "Counts in March, as usual").
-/// In two currencies
-/// (TR-02m `1332:70213` / `1332:70317`) the total is "$1,240 CAD + $310 USD",
-/// "in 2 currencies" joins the line above it, the Counts in column goes (the
-/// footer still says it) and a row in the other currency carries its code.
-/// TR-02c (`1347:74145` / `1347:74261`): "By category" under the footer opens
-/// TR-03. The toasts (made, renamed, added, removed, not a trip) are the
-/// app's own (`AppModel.say`), since the page may open or close under them.
+/// TR-02 (A+ G7-Trip 1): the glass Back and ••• over the hero (the place's
+/// face in the nacre ring, "Trip to Montréal" in Fraunces, the total, "Mar
+/// 4–9 · 23 transactions · counts in March"), then Transactions · By
+/// category, and the trip's rows under IN THE TRIP (each opens its page).
+/// TR-03 (G7-Trip 2) is the By category side of the same page: each
+/// category's count and total, opening the trip's page for that category
+/// (TR-16, "{Category} · {trip name}", its rows and total only).
+/// In two currencies (TR-02m) the total is "$1,240 CAD + $310 USD", smaller,
+/// and a row in the other currency says its code. The toasts (made,
+/// renamed, added, removed, not a trip) are the app's own (`AppModel.say`),
+/// since the page may open or close under them.
 @MainActor
 struct TripPage: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
     let id: String
-    /// TR-03's category rows (TR-16): the trip's page for one category,
-    /// "{Category} · {trip name}", with only its rows and its total. The
-    /// trip's options and By category act on the whole trip, so they stay
-    /// on the trip's own page.
+    /// TR-16: the trip's page for one category. The trip's options and By
+    /// category act on the whole trip, so they stay on the trip's own page.
     var category: String? = nil
     @State private var detail: TripDetail?
     @State private var error: String?
     @State private var options = false
+    /// Transactions or By category (G7-Trip 1 and 2).
+    @State private var byCategory = false
     /// What was picked on TR-04: it opens once that sheet has gone, since a
     /// sheet raised while one is closing doesn't appear.
     @State private var next: Next?
@@ -87,7 +90,7 @@ struct TripPage: View {
     var body: some View {
         ScrollView {
             if let d = detail {
-                content(d)
+                TripPageContent(detail: d, category: category, byCategory: $byCategory)
                     .padding(.horizontal, Pearl.gutter).padding(.top, 8).padding(.bottom, 32)
             } else {
                 LoadState(error: error) { Task { await load() } }
@@ -95,16 +98,16 @@ struct TripPage: View {
             }
         }
         .nacreScreen()
-        .navigationTitle(title)
+        .navigationBarBackButtonHidden(true)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                TripGlassButton(symbol: "chevron.left", label: "Back") { dismiss() }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 if detail != nil, category == nil {
-                    Button { options = true } label: {
-                        Image(systemName: "ellipsis").font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(Pearl.ink)
-                    }
-                    .accessibilityLabel("Trip options")
+                    TripGlassButton(symbol: "ellipsis", label: "Trip options") { options = true }
                 }
             }
         }
@@ -150,12 +153,6 @@ struct TripPage: View {
         }
     }
 
-    /// "Trip to Montréal", or "Dining · Trip to Montréal" for one category (TR-16).
-    private var title: String {
-        guard let name = detail?.trip.name else { return "" }
-        return category.map { "\($0) · \(name)" } ?? name
-    }
-
     private func pick(_ which: Next) {
         next = which
         options = false
@@ -173,67 +170,6 @@ struct TripPage: View {
         }
     }
 
-    @ViewBuilder private func content(_ d: TripDetail) -> some View {
-        let t = d.trip
-        // One category (TR-16): its rows and what it came to; else the whole trip.
-        let totals = category.flatMap { c in t.categories?.first { $0.category == c }?.money } ?? t.totals
-        let rows = category.map { c in d.rows.filter { ($0.category ?? "Other") == c } } ?? d.rows
-        let mixed = totals.mixed
-        let main = totals.first?.currency
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(t.line + (mixed ? " · in \(totals.count) currencies" : ""))
-                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                    Text(totals.shown)
-                        .font(Pearl.heading(mixed ? 17 : 22, relativeTo: .title2)).foregroundColor(Pearl.ink)
-                        .lineLimit(1).minimumScaleFactor(0.7)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                if !mixed {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("Counts in").font(Nacre.footnote).foregroundColor(Pearl.muted)
-                        Text(t.months).font(Pearl.heading(22, relativeTo: .title2)).foregroundColor(Pearl.ink)
-                            .lineLimit(1).minimumScaleFactor(0.7)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-            .padding(.horizontal, 16).padding(.vertical, 14)
-            .glassCard(radius: 22)
-            .accessibilityElement(children: .combine)
-            if !rows.isEmpty {
-                GlassCard(radius: 22) {
-                    ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
-                        if i > 0 { RowSeparator(inset: 72) }
-                        NavigationLink { TransactionByID(id: row.id, categories: app.categories) } label: {
-                            TransactionRow(t: row, showsTrip: false,
-                                           currency: mixed && d.currencies[row.id] != main ? d.currencies[row.id] : nil)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            // TEXT-01: the tag only; that it still counts in March goes unsaid.
-            Label(t.name, systemImage: "tag")
-                .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 4)
-                .accessibilityLabel("Tag, \(t.name)")
-            // TR-02c (1347:74145): "By category" opens TR-03.
-            if category == nil {
-                NavigationLink { TripByCategory(trip: t) } label: {
-                    Text("By category").font(Nacre.subheadline).foregroundColor(Pearl.ink)
-                        .padding(.horizontal, 24).frame(minHeight: 44)
-                        .background(Capsule().fill(Pearl.control))
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 4)
-            }
-        }
-    }
-
     private func load() async {
         do {
             detail = try await app.api.get("api/trips/\(id)")
@@ -247,6 +183,201 @@ struct TripPage: View {
             }
             self.error = app.handle(error)
         }
+    }
+}
+
+/// The page under the glass buttons: the hero, the switch, and the rows.
+private struct TripPageContent: View {
+    @EnvironmentObject private var app: AppModel
+    let detail: TripDetail
+    let category: String?
+    @Binding var byCategory: Bool
+
+    var body: some View {
+        let t = detail.trip
+        // One category (TR-16): its rows and what it came to; else the whole trip.
+        let totals = category.flatMap { c in t.categories?.first { $0.category == c }?.money } ?? t.totals
+        let rows = category.map { c in detail.rows.filter { ($0.category ?? "Other") == c } } ?? detail.rows
+        VStack(alignment: .leading, spacing: 0) {
+            TripHero(place: TripFace.place(t), name: category.map { "\($0) \u{00B7} \(t.name)" } ?? t.name,
+                     totals: totals, line: heroLine(t, rows: rows.count, mixed: totals.mixed))
+            if category == nil {
+                TripSwitch(byCategory: $byCategory).padding(.top, 16)
+            }
+            if byCategory && category == nil {
+                TripCategoryCard(trip: t).padding(.top, 16)
+            } else if !rows.isEmpty {
+                APSectionLabel(text: "In the trip").padding(.top, 16).padding(.bottom, 8)
+                TripRowsCard(detail: detail, rows: rows, mixed: totals.mixed, main: totals.first?.currency)
+            }
+        }
+    }
+
+    /// "Mar 4–9 · 23 transactions · counts in March" (TEXT-01: no "as usual").
+    /// By category drops "counts in"; two currencies say so instead.
+    private func heroLine(_ t: Trip, rows: Int, mixed: Bool) -> String {
+        let n = category == nil ? t.count : rows
+        let base = "\(Format.span(t.start, t.end)) \u{00B7} \(n) transaction\(n == 1 ? "" : "s")"
+        if mixed { return base + " \u{00B7} in \(t.totals.count) currencies" }
+        if byCategory && category == nil { return base }
+        return base + " \u{00B7} counts in \(t.months)"
+    }
+}
+
+/// G7-Trip's hero: the face in the nacre ring (56), the name in Fraunces 22,
+/// the total in Fraunces 44 (smaller in two currencies), the line under it.
+/// A trip's total is a total: no minus (note 1329:69536, Wording).
+private struct TripHero: View {
+    let place: String
+    let name: String
+    let totals: [MoneyTotal]
+    let line: String
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ChatRing(name: place, size: 56, trip: true)
+            Text(name).font(Nacre.title2).foregroundColor(Pearl.ink)
+                .multilineTextAlignment(.center)
+                .padding(.top, 8)
+                .accessibilityAddTraits(.isHeader)
+            Text(totals.shown)
+                .font(.custom("Fraunces-SemiBold", size: totals.mixed ? 30 : 44, relativeTo: .largeTitle))
+                .tracking(totals.mixed ? 0 : -0.88)
+                .foregroundColor(Pearl.moneyOut)
+                .lineLimit(1).minimumScaleFactor(0.5)
+            Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Transactions · By category: the A+ segmented switch (chip track, 38 high).
+private struct TripSwitch: View {
+    @Binding var byCategory: Bool
+
+    var body: some View {
+        HStack(spacing: 0) {
+            side("Transactions", on: !byCategory) { byCategory = false }
+            side("By category", on: byCategory) { byCategory = true }
+        }
+        .padding(3)
+        .frame(height: 38)
+        .background(Capsule().fill(APlus.chip))
+    }
+
+    private func side(_ title: String, on: Bool, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            Text(title).font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+                .foregroundColor(Pearl.ink)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Group {
+                    if on {
+                        Capsule().fill(Pearl.card)
+                            .shadow(color: Pearl.ink.opacity(0.12), radius: 1.5, y: 1)
+                    }
+                })
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+/// The trip's rows on the A+ card, each opening its page.
+private struct TripRowsCard: View {
+    @EnvironmentObject private var app: AppModel
+    let detail: TripDetail
+    let rows: [Transaction]
+    let mixed: Bool
+    let main: String?
+
+    var body: some View {
+        APCard {
+            ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
+                if i > 0 { APSeparator() }
+                NavigationLink { TransactionByID(id: row.id, categories: app.categories) } label: {
+                    TransactionRow(t: row, showsTrip: false,
+                                   currency: mixed && detail.currencies[row.id] != main ? detail.currencies[row.id] : nil)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+/// TR-03 (G7-Trip 2): what the trip spent in each category, its count, and
+/// the total (plum, no minus), each opening the trip's page for it (TR-16).
+private struct TripCategoryCard: View {
+    let trip: Trip
+
+    var body: some View {
+        let cats = trip.categories ?? []
+        return APCard {
+            ForEach(Array(cats.enumerated()), id: \.element.category) { i, c in
+                if i > 0 { APSeparator(afterFace: false) }
+                NavigationLink { TripPage(id: trip.id, category: c.category) } label: {
+                    HStack(spacing: 12) {
+                        ChatIcon(symbol: CategorySheet.symbol(for: c.category))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(c.category).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                            Text("\(c.count) transaction\(c.count == 1 ? "" : "s")")
+                                .font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(Self.whole(c.money)).font(Nacre.headline).foregroundColor(Pearl.moneyOut)
+                            .monospacedDigit().pearlAmountFit()
+                        ChatChevron()
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 64)
+                    .contentShape(Rectangle())
+                    .accessibilityElement(children: .combine)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    /// "$560"; in several currencies "$1,240 CAD + $310 USD".
+    static func whole(_ parts: [MoneyTotal]) -> String {
+        parts.count <= 1 ? Format.whole(parts.first?.amount ?? 0) : parts.shown
+    }
+}
+
+/// The 44 pt glass circle (kit `glassbtn`): Back and ••• on a trip's page.
+struct TripGlassButton: View {
+    let symbol: String
+    let label: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 17, weight: .semibold))
+                .foregroundColor(Pearl.ink)
+                .frame(width: 44, height: 44)
+                .background(APCardSurface(radius: 22))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+}
+
+/// A trip's face: its place, or the name after "Trip to" ("MO", "LI").
+enum TripFace {
+    static func place(_ t: Trip) -> String { place(name: t.name, place: t.place) }
+
+    static func place(name: String, place: String?) -> String {
+        if let p = place, !p.isEmpty { return p }
+        return name.hasPrefix("Trip to ") ? String(name.dropFirst(8)) : name
+    }
+
+    /// Two letters for one word ("MO"), else the initials.
+    static func letters(_ place: String) -> String {
+        let words = place.split { !$0.isLetter && !$0.isNumber }
+        if words.count == 1, let w = words.first { return String(w.prefix(2)).uppercased() }
+        return APFace.initials(place)
     }
 }
 
@@ -270,85 +401,14 @@ struct TripPick {
     }
 }
 
-// MARK: - TR-03
+// MARK: - TR-04 (A+ G7-Trip 3)
 
-/// TR-03 (`1327:5447` / `1327:5671`), from TR-02c's "By category": the trip as
-/// Cash flow's By category is, "Mar 4–9 · Montréal   23 transactions", the
-/// trip total, then what it spent in each category with its count.
-/// Cash flow's Spent / Saved / Leftover bar and the ⌄ by the dates are left
-/// out: a trip has no Saved or Leftover. Each category row has its chevron
-/// and opens the trip's page for that category, "{Category} · {trip name}"
-/// (TR-16).
-struct TripByCategory: View {
-    let trip: Trip
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text([Format.span(trip.start, trip.end), trip.place].compactMap { $0 }.joined(separator: " · "))
-                            .font(Nacre.headline).foregroundColor(Pearl.ink)
-                        Spacer(minLength: 8)
-                        Text("\(trip.count) transaction\(trip.count == 1 ? "" : "s")")
-                            .font(Nacre.subheadline).foregroundColor(Pearl.muted)
-                    }
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("Trip total").font(Nacre.footnote).foregroundColor(Pearl.muted)
-                        Text(Self.whole(trip.totals))
-                            .font(Pearl.heading(22, relativeTo: .title2)).foregroundColor(Pearl.ink)
-                            .lineLimit(1).minimumScaleFactor(0.7)
-                    }
-                    .accessibilityElement(children: .combine)
-                }
-                .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 14)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .glassCard(radius: 22)
-                let cats = trip.categories ?? []
-                if !cats.isEmpty {
-                    Text("SPENT").font(Nacre.caption1).foregroundColor(Pearl.ink)
-                        .padding(.leading, 16).padding(.top, 4)
-                        .accessibilityAddTraits(.isHeader)
-                    GlassCard(radius: 22) {
-                        ForEach(Array(cats.enumerated()), id: \.element.category) { i, c in
-                            if i > 0 { RowSeparator() }
-                            NavigationLink { TripPage(id: trip.id, category: c.category) } label: {
-                                HStack(spacing: 10) {
-                                    Text(c.category).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
-                                    Text("\(c.count)").font(Nacre.footnote).foregroundColor(Pearl.muted)
-                                    Spacer(minLength: 8)
-                                    Text(Self.whole(c.money)).font(Nacre.body).foregroundColor(Pearl.ink)
-                                        .monospacedDigit().pearlAmountFit()
-                                    RowChevron()
-                                }
-                                .padding(.horizontal, 16).frame(minHeight: 50)
-                                .contentShape(Rectangle())
-                                .accessibilityElement(children: .combine)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, Pearl.gutter).padding(.top, 8).padding(.bottom, 32)
-        }
-        .nacreScreen()
-        .navigationTitle(trip.name)
-        .navigationBarTitleDisplayMode(.large)
-    }
-
-    /// "$1,284", "$930"; in several currencies "$1,240 CAD + $310 USD". No
-    /// minus: a trip's total is a total (note 1329:69536, Wording).
-    static func whole(_ parts: [MoneyTotal]) -> String {
-        parts.count <= 1 ? Format.whole(parts.first?.amount ?? 0) : parts.shown
-    }
-}
-
-// MARK: - TR-04
-
-/// TR-04 (`1327:5894` / `1327:6011`): the trip's options from ••• on its
-/// page: Add transactions and Remove some… on the In the trip card (TR-11,
-/// TR-12), then Rename the trip (TR-08) and It wasn't a trip (TR-13).
+/// TR-04: the trip's options from ••• on its page, on a Pearl sheet: the
+/// trip's name with ✕; Rename the trip, Add transactions, Remove some…;
+/// Leave it as is (approved 2026-11-18: it stays a trip and counts in its
+/// month, like any spending; closes the sheet); then It wasn't a trip, red,
+/// on its own (TR-13 asks first). Pay from a piggy bank is hidden until Save
+/// returns (approved 2026-11-18).
 struct TripOptionsSheet: View {
     let trip: Trip
     let onClose: () -> Void
@@ -359,66 +419,69 @@ struct TripOptionsSheet: View {
 
     var body: some View {
         PearlSheet {
-            PearlSheetHeader(face: trip.place ?? trip.name,
-                             overline: "A trip · \(Format.span(trip.start, trip.end))", title: trip.name,
-                             sub: trip.by == "pearl" ? trip.day.map { "You said yes on \(Format.short($0))" } : nil,
-                             subTone: Pearl.moneyIn, close: onClose)
-            PearlSectionLabel(text: "In the trip")
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 12) {
-                    PearlBubble(symbol: "airplane")
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(countLine).font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                        Text("They still count in \(trip.months) · tagged \(trip.name)")
-                            .font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    Text(trip.totals.shown).font(Pearl.text(.headline, .semibold)).foregroundColor(Pearl.moneyIn)
-                        .pearlAmountFit()
-                }
-                .accessibilityElement(children: .combine)
-                HStack(spacing: 8) {
-                    chip("Add transactions", action: onAdd)
-                    chip("Remove some\u{2026}", action: onRemove)
-                }
+            APSheetTitle(title: trip.name, close: onClose)
+            APCard {
+                TripOptionRow(symbol: "pencil", title: "Rename the trip", sub: "Renames its tag too", action: onRename)
+                APSeparator(afterFace: false)
+                TripOptionRow(symbol: "plus", title: "Add transactions", action: onAdd)
+                APSeparator(afterFace: false)
+                TripOptionRow(symbol: "xmark", title: "Remove some\u{2026}", action: onRemove)
             }
-            .padding(.horizontal, 16).padding(.vertical, 12)
-            .pearlCard(radius: Pearl.radiusTile)
-            PearlSectionLabel(text: "The trip")
-            PearlOptionCard {
-                PearlOptionRow(symbol: "pencil", title: "Rename the trip", sub: "Renames its tag too", action: onRename)
-                // TR-04 (TEXT-01): no second line; TR-09 asks.
-                PearlOptionRow(symbol: "xmark", title: "It wasn\u{2019}t a trip", action: onNotATrip)
+            APCard {
+                TripOptionRow(symbol: "eye", title: "Leave it as is",
+                              sub: "It counts in \(trip.months), like any spending", chevron: false, action: onClose)
+                    .accessibilityIdentifier("trip-leave-it")
+            }
+            APCard {
+                TripOptionRow(symbol: "scissors", title: "It wasn\u{2019}t a trip", danger: true, chevron: false,
+                              action: onNotATrip)
+                    .accessibilityIdentifier("trip-not-a-trip")
             }
         }
-    }
-
-    /// TR-04's chip buttons, side by side.
-    private func chip(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title).font(Nacre.subheadline).foregroundColor(Pearl.ink)
-                .lineLimit(1).minimumScaleFactor(0.8)
-                .padding(.horizontal, 16).frame(maxWidth: .infinity, minHeight: 44)
-                .background(Capsule().fill(Pearl.control))
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-    }
-
-    /// "23 transactions · 5 categories".
-    private var countLine: String {
-        let k = trip.categories?.count ?? 0
-        return "\(trip.count) transaction\(trip.count == 1 ? "" : "s")"
-            + (k > 0 ? " · \(k) categor\(k == 1 ? "y" : "ies")" : "")
     }
 }
 
-// MARK: - TR-13
+/// An option row on the A+ card (kit `srow`): the round icon, the title over
+/// what happens, the chevron. A destructive entry row is red, no chevron.
+struct TripOptionRow: View {
+    let symbol: String
+    let title: String
+    var sub: String? = nil
+    var danger = false
+    var chevron = true
+    let action: () -> Void
 
-/// TR-13 (`1347:75171` / `1347:75224`): It wasn't a trip, asked first. The
-/// trip and its tag go, the rows stay, and Pearl won't ask about those dates
-/// again. Its toast's Undo puts the trip back exactly, dates unskipped too
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                ChatIcon(symbol: symbol, danger: danger)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(Nacre.body).foregroundColor(danger ? Pearl.danger : Pearl.ink)
+                    if let sub = sub {
+                        Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if chevron { ChatChevron() }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 64)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel([title, sub].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
+// MARK: - TR-13 (A+ G7-Trip 4 and 5)
+
+/// TR-13: It wasn't a trip, asked first on a Pearl sheet: "Not a trip?",
+/// "The 23 stay as they are. Only the trip and its tag go.", Not a trip ·
+/// Keep it. Couldn't: the red line, and Try again. The trip and its tag go,
+/// the rows stay, and Pearl won't ask about those dates again. Its toast's
+/// Undo puts the trip back exactly, dates unskipped too
 /// (POST /api/trips/<id>/restore).
 struct NotATripSheet: View {
     @EnvironmentObject private var app: AppModel
@@ -427,20 +490,37 @@ struct NotATripSheet: View {
     /// The trip has ended: its page closes.
     let onDone: () -> Void
 
+    @State private var busy = false
+    @State private var failed = false
+
     var body: some View {
-        PearlConfirmSheet(overline: "\(trip.name) · \(Format.span(trip.start, trip.end))", title: "Not a trip?",
-                          message: "\(Trip.stayLine(trip.count)).",
-                          primary: "Not a trip", busyLabel: "Ending\u{2026}", secondary: "Keep it",
-                          failure: "Couldn\u{2019}t end the trip. Nothing changed. Try again.", onClose: onClose) {
+        PearlSheet(dismissDisabled: busy) {
+            APSheetTitle(title: "Not a trip?", close: onClose).disabled(busy)
+            Text("\(Trip.stayLine(trip.count)). Only the trip and its tag go.")
+                .font(Nacre.body).foregroundColor(Pearl.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            if failed { ChatErrorLine(text: "Couldn\u{2019}t end the trip. Nothing changed. Try again.").padding(.top, -12) }
+        } footer: {
+            PearlSheetButtons(primary: failed ? "Try again" : "Not a trip", busy: busy, busyLabel: "Ending\u{2026}",
+                              secondary: "Keep it", onPrimary: { Task { await end() } }, onSecondary: onClose)
+        }
+    }
+
+    private func end() async {
+        busy = true
+        defer { busy = false }
+        do {
             struct Ended: Decodable { let count: Int? }
             let reply: Ended = try await app.api.delete("api/trips/\(trip.id)")
             let n = reply.count ?? trip.count
             let api = app.api, id = trip.id
-            app.say("Not a trip · \(n) \(n == 1 ? "stays as it is" : "stay as they are")") {
+            app.say("Not a trip \u{00B7} \(n) \(n == 1 ? "stays as it is" : "stay as they are")") {
                 let _: TripReply = try await api.post("api/trips/\(id)/restore", [:])
             }
             app.changed()
             onDone()
+        } catch {
+            failed = true
         }
     }
 }
@@ -481,14 +561,114 @@ struct NameTripSheet: View {
     }
 }
 
-// MARK: - TR-17 / TR-18
+// MARK: - TR-17 / TR-17e / TR-18 (A+ G7-TripCal)
 
-/// One row of the Calendar's Trips card (TR-17 `1362:8403` / `1362:8698`):
-/// "Mar 4–9   Trip to Montréal   $1,284.60". The dates sit in an 84 pt
-/// column that wraps ("Oct 29 –" over "Nov 2"); at accessibility text
-/// sizes the dates go under the name and the total under them, so the row
-/// grows and nothing is cut (note 1329:69536). VoiceOver reads it as one
-/// element: "Trip to Montréal, March 4 to 9, $1,284.60".
+/// TR-17 (G7-TripCal 1): the Calendar's Trips card under the grid and
+/// legend. TRIPS with See all on the right, then up to three trips on the A+
+/// card, each its face, name over dates, the total in plum (no minus) and
+/// the chevron, opening its page (TR-02). TR-17e (G7-TripCal 2): no trips
+/// yet, one line, no See all. Shown once the month has loaded.
+///
+/// Built here for Cash flow's CalendarView (its engBOT places it):
+/// `TripsCard(trips: card.trips)` for `data?.tripCard`.
+struct TripsCard: View {
+    let trips: [CalendarMonth.TripCard.Row]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("TRIPS").font(Nacre.label).tracking(0.78).foregroundColor(Pearl.muted)
+                    .accessibilityLabel("Trips")
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 8)
+                if !trips.isEmpty {
+                    NavigationLink { AllTripsPage() } label: {
+                        Text("See all").font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+                            .foregroundColor(Pearl.link)
+                            .frame(minHeight: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.vertical, -13)
+                    .accessibilityLabel("See all trips")
+                }
+            }
+            .padding(.horizontal, 4)
+            APCard {
+                if trips.isEmpty {
+                    Text("No trips yet. Pearl asks when it spots one.")
+                        .font(Nacre.body).foregroundColor(Pearl.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 16).padding(.vertical, 12)
+                        .frame(minHeight: 52, alignment: .leading)
+                } else {
+                    ForEach(Array(trips.enumerated()), id: \.element.id) { i, trip in
+                        if i > 0 { APSeparator() }
+                        NavigationLink { TripPage(id: trip.id) } label: {
+                            TripListRow(name: trip.name, place: TripFace.place(name: trip.name, place: nil),
+                                        start: trip.start, end: trip.end, totals: trip.totals)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Opens the trip")
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// One trip on the A+ card (G7-TripCal): the face, "Trip to Montréal" over
+/// "Mar 4–9", the total in plum, the chevron. In two currencies (TR-02m) the
+/// other's part joins the dates ("Jun 12–16 · + $310 USD"). VoiceOver reads
+/// "Trip to Montréal, March 4 to 9, $1,284.60". At accessibility sizes the
+/// total goes under the dates, so nothing is cut.
+struct TripListRow: View {
+    @Environment(\.dynamicTypeSize) private var textSize
+    let name: String
+    let place: String
+    let start: String
+    let end: String
+    let totals: [MoneyTotal]
+
+    private var main: String { Format.whole(totals.first?.amount ?? 0) }
+    private var amount: String { totals.count > 1 ? main : totals.shown }
+    private var dates: String {
+        let more = totals.dropFirst().map { "+ \(Format.whole($0.amount)) \($0.currency)" }
+        return ([Format.span(start, end)] + more).joined(separator: " \u{00B7} ")
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(TripFace.letters(place))
+                .font(.custom("Figtree-Medium", size: 14)).foregroundColor(Pearl.ink)
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(APlus.face))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name).font(Nacre.body).foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(dates).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                if textSize.isAccessibilitySize {
+                    Text(amount).font(Nacre.headline).foregroundColor(Pearl.moneyOut).monospacedDigit()
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if !textSize.isAccessibilitySize {
+                Text(amount).font(Nacre.headline).foregroundColor(Pearl.moneyOut).monospacedDigit()
+                    .pearlAmountFit()
+            }
+            ChatChevron()
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(minHeight: 64)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(name), \(Format.spokenSpan(start, end)), \(totals.shown)")
+    }
+}
+
+/// The Calendar's old Trips card row (TR-17 before A+), kept for
+/// CalendarView until it moves onto `TripsCard`.
 struct TripCardRow: View {
     @Environment(\.dynamicTypeSize) private var textSize
     let name: String
@@ -497,40 +677,14 @@ struct TripCardRow: View {
     let totals: [MoneyTotal]
 
     var body: some View {
-        Group {
-            if textSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(name).foregroundColor(Pearl.ink)
-                    Text(Format.span(start, end)).foregroundColor(Pearl.muted)
-                    // A trip's total is a total: no minus (TR-02m; note 1329:69536, Wording).
-                    Text(totals.shown).foregroundColor(Pearl.ink).monospacedDigit()
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                HStack(spacing: 12) {
-                    Text(Format.span(start, end)).foregroundColor(Pearl.muted)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(width: 84, alignment: .leading)
-                    Text(name).foregroundColor(Pearl.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Text(totals.shown).foregroundColor(Pearl.ink).monospacedDigit().pearlAmountFit()
-                }
-            }
-        }
-        .font(Nacre.body)
-        .padding(.vertical, 12)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(name), \(Format.spokenSpan(start, end)), \(totals.shown)")
+        TripListRow(name: name, place: TripFace.place(name: name, place: nil), start: start, end: end, totals: totals)
+            .padding(.horizontal, -16)
     }
 }
 
-/// TR-18 (`1362:9681` / `1362:9848`): All trips, from "See all trips" on
-/// the Calendar's Trips card. Grouped by year ("2026" over its card),
-/// newest first; each row "Trip to Lisbon" over "Oct 29 – Nov 2 · 31" with
-/// its total on the right, opening its page (TR-02). GET /api/trips.
+/// TR-18 (G7-TripCal 3): Trips, from See all on the Calendar's Trips card.
+/// The glass Back, "Trips" large in Fraunces, then each year ("2026") over
+/// its card, newest first; each row opens its page (TR-02). GET /api/trips.
 @MainActor
 struct AllTripsPage: View {
     @EnvironmentObject private var app: AppModel
@@ -540,17 +694,41 @@ struct AllTripsPage: View {
 
     var body: some View {
         ScrollView {
-            if let trips = trips {
-                content(trips)
-                    .padding(.horizontal, Pearl.gutter).padding(.top, 8).padding(.bottom, 32)
-            } else {
-                LoadState(error: error) { Task { await load() } }
-                    .padding(.top, 40)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Trips").font(Nacre.largeTitle).foregroundColor(Pearl.ink)
+                    .accessibilityAddTraits(.isHeader)
+                    .padding(.horizontal, 4)
+                if let trips = trips {
+                    ForEach(years(trips), id: \.year) { group in
+                        APSectionLabel(text: group.year).padding(.top, 20).padding(.bottom, 8)
+                        APCard {
+                            ForEach(Array(group.trips.enumerated()), id: \.element.id) { i, trip in
+                                if i > 0 { APSeparator() }
+                                NavigationLink { TripPage(id: trip.id) } label: {
+                                    TripListRow(name: trip.name, place: TripFace.place(trip), start: trip.start,
+                                                end: trip.end, totals: trip.totals)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityHint("Opens the trip")
+                            }
+                        }
+                    }
+                } else {
+                    LoadState(error: error) { Task { await load() } }
+                        .padding(.top, 40)
+                }
             }
+            .padding(.horizontal, Pearl.gutter).padding(.bottom, 32)
         }
         .nacreScreen()
-        .navigationTitle("All trips")
+        .navigationBarBackButtonHidden(true)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                TripGlassButton(symbol: "chevron.left", label: "Back") { dismiss() }
+            }
+        }
         .reloads { await load() }
     }
 
@@ -565,27 +743,10 @@ struct AllTripsPage: View {
         return out
     }
 
-    private func content(_ trips: [Trip]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(years(trips), id: \.year) { group in
-                Text(group.year).font(Nacre.footnote).foregroundColor(Pearl.ink)
-                    .accessibilityAddTraits(.isHeader)
-                GlassCard {
-                    ForEach(Array(group.trips.enumerated()), id: \.element.id) { i, trip in
-                        if i > 0 { RowSeparator(inset: 68) }
-                        NavigationLink { TripPage(id: trip.id) } label: { AllTripsRow(trip: trip) }
-                            .buttonStyle(.plain)
-                            .accessibilityHint("Opens the trip")
-                    }
-                }
-            }
-        }
-    }
-
     private func load() async {
         do {
             let reply: Reply = try await app.api.get("api/trips")
-            // No frame for an empty All trips: it opens only from a card that
+            // No frame for an empty Trips: it opens only from a card that
             // has trips, so if the last one has gone, go back to that card.
             if reply.trips.isEmpty && trips != nil { dismiss(); return }
             trips = reply.trips
@@ -603,46 +764,5 @@ struct AllTripsPage: View {
             let c = try decoder.container(keyedBy: Keys.self)
             trips = (try? c.decode([Lenient<Trip>].self, forKey: .trips))?.compactMap { $0.value } ?? []
         }
-    }
-}
-
-/// A TR-18 row: the trip's two-letter avatar ("LI", "QC"), "Trip to Lisbon"
-/// over "Oct 29 – Nov 2 · 31", the total on the right. At accessibility
-/// text sizes the total goes under the dates, so nothing is cut.
-private struct AllTripsRow: View {
-    @Environment(\.dynamicTypeSize) private var textSize
-    let trip: Trip
-
-    /// The place for the avatar: Pearl's, or the name after "Trip to".
-    private var place: String {
-        if let p = trip.place, !p.isEmpty { return p }
-        return trip.name.hasPrefix("Trip to ") ? String(trip.name.dropFirst(8)) : trip.name
-    }
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Initials(name: place, size: 40, trip: true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(trip.name).font(Nacre.body).foregroundColor(Pearl.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("\(Format.span(trip.start, trip.end)) · \(trip.count)")
-                    .font(Nacre.subheadline).foregroundColor(Pearl.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-                if textSize.isAccessibilitySize {
-                    Text(trip.totals.shown).font(Nacre.headline).foregroundColor(Pearl.ink).monospacedDigit()
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            if !textSize.isAccessibilitySize {
-                Text(trip.totals.shown).font(Nacre.headline).foregroundColor(Pearl.ink).monospacedDigit()
-                    .pearlAmountFit()
-            }
-        }
-        .padding(.horizontal, 16).padding(.vertical, 11)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(trip.name), \(Format.spokenSpan(trip.start, trip.end)), "
-            + "\(trip.count) transaction\(trip.count == 1 ? "" : "s"), \(trip.totals.shown)")
     }
 }
