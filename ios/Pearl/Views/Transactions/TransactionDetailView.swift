@@ -263,6 +263,10 @@ struct TransactionDetailView: View {
     var siblings: [Transaction] = []
     /// T-96 opened from Needs a look or Quick sort; nil from the list.
     var guessing: GuessActions? = nil
+    /// AP-OwedPerson (REDESIGN-04): what she picked on a person's options
+    /// from Owed to you, run here once the purchase has loaded.
+    var startChoice: StartChoice? = nil
+    @State private var ranStartChoice = false
 
     /// The full detail once it's come back; the list's row until then.
     @State private var detail: Transaction?
@@ -597,7 +601,10 @@ struct TransactionDetailView: View {
         .navigationBarHidden(false)
         .navigationTitle(heroGone ? t.merchant : "")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await load() }
+        .task {
+            await load()
+            runStartChoice()
+        }
         .onAppear {
             // Back on a card's page: what she'd already changed is still there.
             if let draft = guessing?.draft, chosenCategory == nil, newOnes == nil {
@@ -2856,6 +2863,14 @@ struct TransactionDetailView: View {
         } catch {
             showFailed(app.handle(error) ?? "Couldn’t change that. Nothing changed.") { Task { await answerAgain(p, answer) } }
         }
+    }
+
+    /// AP-OwedPerson: the choice from Owed to you, once.
+    private func runStartChoice() {
+        guard let start = startChoice, !ranStartChoice,
+              let p = (detail ?? transaction).splitting?.people.first(where: { $0.name == start.name }) else { return }
+        ranStartChoice = true
+        choose(p, start.choice)
     }
 
     private func choose(_ p: Transaction.Splitting.Person, _ choice: PersonChoice) {

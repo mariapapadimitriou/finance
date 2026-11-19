@@ -746,13 +746,15 @@ struct TransactionByID: View {
     @EnvironmentObject private var app: AppModel
     let id: String
     let categories: [CategoryList.Category]
+    /// AP-OwedPerson: a person's option picked on Owed to you, run on arrival.
+    var startChoice: StartChoice? = nil
     @State private var full: Transaction?
     @State private var error: String?
 
     var body: some View {
         Group {
             if let full = full {
-                TransactionDetailView(transaction: full, categories: categories)
+                TransactionDetailView(transaction: full, categories: categories, startChoice: startChoice)
             } else {
                 LoadState(error: error) { Task { await load() } }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

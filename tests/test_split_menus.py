@@ -388,7 +388,7 @@ class TestLessWords:
         "ios/Pearl/Views/Transactions/PartsFlow.swift": [
             'each owe \\(amount). Tick who sent it.', 'isn’t on a split. \\(tail)', 'could have sent it. Tick who did.',
             '"Paid more than owed"', 'is extra. Make it \\(Format.amount(left)) or less.',
-            '"One Undo puts both back."', '"Not in the total until settled."', 'stays cash in hand.',
+            '"One Undo puts both back."', 'stays cash in hand.',
             'is the most. You’ll sort the other'],
         "ios/Pearl/Views/Transactions/JointSplitViews.swift": [
             '"How to settle?"', '?? "Nobody owes after this."', 'stays yours. Nobody owes for \\(t.merchant).',
@@ -397,9 +397,12 @@ class TestLessWords:
         "ios/Pearl/Views/Transactions/TransactionDetailView.swift": [
             'showSplit("Copied"', '"None of it is yours to split."', 'let title = "\\(p.name) removed"',
             '("Settled up", {', '"Split reopened"'],
+        # A+ (AP-Home, REDESIGN-04): "2 people owe you" with the total on the
+        # right; a Not sure yet split is a Worth a look item now.
         "ios/Pearl/Views/Home/HomeView.swift": [
-            '"\\(count) to sort"', '" Pearl sorted \\(pearlSorted) by itself."', '"3 paycheques in \\(Format.monthName(month.month))"',
-            '"\\(who) you \\(Format.amount(owed.total))"', '· \\(unsettled.count) not settled', 'Allowance.restCaption'],
+            '"\\(count) to sort"', '" \\u{00B7} Pearl sorted \\(pearlSorted)"', '"3 paycheques in \\(Format.monthName(month.month))"',
+            '"\\(owed.people) people owe you"', 'Allowance.restCaption'],
+        "ios/Pearl/Views/Home/OwedViews.swift": ['"Not in the total until settled."'],
         # Account setup (#359) moved O-09b's people picker to AS-02, and its
         # "Only you see this. Nothing is sent." line went with O-09b.
         "ios/Pearl/Views/Onboarding/AccountSetupViews.swift": ['title: "Shared with"',

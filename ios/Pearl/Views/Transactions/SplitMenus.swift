@@ -19,10 +19,11 @@ struct PearlCloseButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "xmark").font(.system(size: 17, weight: .medium))
+            // A+ `.glassbtn`: the 44 pt glass circle.
+            Image(systemName: "xmark").font(.system(size: 15, weight: .semibold))
                 .foregroundColor(Pearl.ink)
                 .frame(width: 44, height: 44)
-                .background(Circle().fill(Pearl.control))
+                .background(APGlassCircle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
@@ -39,7 +40,7 @@ struct PearlMoreButton: View {
             Image(systemName: "ellipsis").font(.system(size: 17, weight: .semibold))
                 .foregroundColor(Pearl.ink)
                 .frame(width: 44, height: 44)
-                .background(Circle().fill(Pearl.control))
+                .background(APGlassCircle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
@@ -63,14 +64,8 @@ struct PearlPrimaryButtonStyle: ButtonStyle {
                 }
             }
         }
-        .font(Pearl.text(.headline, .semibold))
-        .foregroundColor(Pearl.onAction)
-        .multilineTextAlignment(.center)
-        .padding(.horizontal, 24)
-        .frame(maxWidth: .infinity, minHeight: 50)
-        .background(Capsule().fill(Pearl.action))
-        .opacity(isEnabled || busy ? (configuration.isPressed ? 0.85 : 1) : 0.4)
-        .contentShape(Capsule())
+        // A+ `.btn` (APPrimaryLook).
+        .modifier(APPrimaryLook(enabled: isEnabled || busy, pressed: configuration.isPressed))
     }
 }
 
@@ -79,15 +74,9 @@ struct PearlSecondaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
+        // A+ `.btn2` (APSecondaryLook).
         configuration.label
-            .font(Pearl.text(.headline, .semibold))
-            .foregroundColor(Pearl.ink)
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, 24)
-            .frame(maxWidth: .infinity, minHeight: 50)
-            .background(Capsule().fill(Pearl.control))
-            .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.5)
-            .contentShape(Capsule())
+            .modifier(APSecondaryLook(enabled: isEnabled, pressed: configuration.isPressed))
     }
 }
 
@@ -119,7 +108,7 @@ struct PearlBubble: View {
             .font(.system(size: size * 0.42, weight: .regular))
             .foregroundColor(prominent ? Pearl.onAction : tone)
             .frame(width: size, height: size)
-            .background(Circle().fill(prominent ? Pearl.action : Pearl.bubble))
+            .background(Circle().fill(prominent ? Pearl.action : APlus.actionWash))
             .accessibilityHidden(true)
     }
 }
@@ -138,7 +127,7 @@ struct PearlFace: View {
             .padding(.horizontal, size * 0.12)
             .foregroundColor(Pearl.ink)
             .frame(width: size, height: size)
-            .background(Circle().fill(Pearl.bubble))
+            .background(Circle().fill(APlus.face))
             .accessibilityHidden(true)
     }
 
@@ -209,7 +198,7 @@ struct PearlOptionCard<Content: View>: View {
 
 /// The 1 pt line between option rows.
 struct PearlDivider: View {
-    var body: some View { Rectangle().fill(Pearl.border).frame(height: 1) }
+    var body: some View { Rectangle().fill(APlus.separator).frame(height: 0.5) }
 }
 
 /// "CHANGE THE SPLIT", "PAID SO FAR": a section's small caps.
@@ -291,20 +280,21 @@ struct PearlSheetHeader: View {
                     Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
                         .foregroundColor(Pearl.ink)
                         .frame(width: 44, height: 44)
-                        .background(Circle().fill(Pearl.card))
-                        .shadow(color: Pearl.ink.opacity(0.1), radius: 5, y: 3)
+                        .background(APGlassCircle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Back")
             } else if let symbol = symbol {
                 PearlBubble(symbol: symbol, size: 44)
             } else if let face = face {
-                PearlFace(name: face)
+                // A+ `.ring.sm`: the face inside the 1.2 pt nacre ring.
+                PearlFace(name: face, size: 41.6).padding(1.2).background(Circle().fill(APlus.nacreRing))
             }
             VStack(alignment: .leading, spacing: 1) {
                 // TEST-14: the overline wraps, never clipped ("PIZZA NOVA · NOT SURE YET").
+                // A+ `.who .over`: 12/600, tracked 1.2.
                 Text(overline.uppercased())
-                    .font(Pearl.text(.footnote, .medium)).tracking(0.78).foregroundColor(Pearl.muted)
+                    .font(Pearl.text(.caption, .semibold)).tracking(1.2).foregroundColor(Pearl.muted)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(title)
                     .font(Pearl.heading(22, relativeTo: .title2)).foregroundColor(Pearl.ink)
@@ -354,6 +344,7 @@ struct PearlSheet<Content: View, Footer: View>: View {
                 })
         }
         .background(SheetBackground())
+        .toggleStyle(APToggleStyle())
         .onPreferenceChange(HeightKey.self) { h in height = h }
         .presentationDetents([.height(min(height + footerHeight + 16, UIScreen.main.bounds.height * 0.92)), .large])
         .presentationDragIndicator(.visible)
@@ -1057,7 +1048,8 @@ struct PearlToast: View {
         .padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 6)
         .frame(minHeight: 56)
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Pearl.ink))
-        .shadow(color: .black.opacity(0.16), radius: 12, y: 8)
+        // A+ `--shadow-toast`: 0 8 12 black @16%.
+        .shadow(color: .black.opacity(0.16), radius: 6, y: 8)
         .padding(.horizontal, 16)
         .swipeToDismiss(done)
         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -1178,6 +1170,9 @@ struct PersonOptionsSheet: View {
     let p: Transaction.Splitting.Person
     let onClose: () -> Void
     let onChoose: (PersonChoice) -> Void
+    /// AP-OwedPerson (REDESIGN-04): from Owed to you, "Open Loblaws" under
+    /// the options opens the purchase. Nil on the purchase's own page.
+    var onOpen: (() -> Void)? = nil
 
     private var links: [Transaction.LinkInfo] { p.links ?? [] }
     private var letGoAmount: Double { max(0, (p.letGo?.was ?? 0) - p.paid) }
@@ -1214,6 +1209,16 @@ struct PersonOptionsSheet: View {
                         .accessibilityHint(removeSub ?? "")
                 }
             }
+            openPurchase
+        }
+    }
+
+    /// A+ `.quiet`, centred: "Open Loblaws" (AP-OwedPerson).
+    @ViewBuilder private var openPurchase: some View {
+        if let onOpen = onOpen {
+            Button("Open \(t.merchant)", action: onOpen)
+                .buttonStyle(NacreTextButtonStyle())
+                .accessibilityIdentifier("open-purchase")
         }
     }
 
@@ -1286,6 +1291,7 @@ struct PersonOptionsSheet: View {
                 APOptionRow(symbol: "person", title: "Remove \(p.name)") { onChoose(.remove) }
                     .accessibilityHint(removeSub ?? "")
             }
+            openPurchase
         }
     }
 
