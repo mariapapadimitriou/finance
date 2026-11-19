@@ -7,24 +7,32 @@ import UIKit
 
 // MARK: - The look these screens share
 
-/// A line icon from the handoff file in a rose-tinted circle.
+/// A line icon from the handoff file on the A+ 36 pt circle: action wash,
+/// danger for Delete, money-in for a ready download.
 struct DataIcon: View {
     let image: String
-    var size: CGFloat = 34
+    var size: CGFloat = 36
+    var tone: Color = Pearl.action
 
     var body: some View {
         Image(image)
             .resizable()
             .renderingMode(.template)
-            .foregroundColor(Pearl.action)
+            .foregroundColor(tone)
             .frame(width: size / 2, height: size / 2)
             .frame(width: size, height: size)
-            .background(Circle().fill(Pearl.action.opacity(0.1)))
+            .background(Circle().fill(wash))
             .accessibilityHidden(true)
+    }
+
+    private var wash: Color {
+        if tone == Pearl.danger { return ProfileTone.dangerWash }
+        if tone == Pearl.moneyIn { return ProfileTone.goodWash }
+        return ProfileTone.actionWash
     }
 }
 
-/// An icon, a title, a line under it, and a chevron if it opens something.
+/// The A+ row: an icon, a title over its line, a chevron if it opens something.
 struct DataRow: View {
     let icon: String
     let title: String
@@ -32,15 +40,16 @@ struct DataRow: View {
     var tone: Color = Pearl.ink
     var chevron = false
     var busy = false
+    var iconTone: Color? = nil
 
     var body: some View {
         HStack(spacing: 12) {
-            DataIcon(image: icon)
+            DataIcon(image: icon, tone: iconTone ?? (tone == Pearl.danger ? Pearl.danger : Pearl.action))
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(Nacre.body).foregroundColor(tone)
                     .fixedSize(horizontal: false, vertical: true)
                 if let sub = sub {
-                    Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -49,41 +58,35 @@ struct DataRow: View {
             if busy {
                 ProgressView()
             } else if chevron {
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(Pearl.muted)
+                APChevron()
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
+        .frame(minHeight: 64)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
 }
 
-/// "Your data / It's yours.": the title and its one line.
+/// "Your data / It's yours.": the 34 pt title and its `muted` line.
 struct DataHeading: View {
     let title: String
-    let line: String
+    let line: String?
 
     var body: some View {
-        Text(title).font(Nacre.title).tracking(0.4).foregroundColor(Pearl.ink)
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityAddTraits(.isHeader)
-        Text(line).font(Nacre.footnote).foregroundColor(Pearl.ink)
-            .fixedSize(horizontal: false, vertical: true)
+        ProfileHeading(title: title, intro: line)
     }
 }
 
-/// "RIGHT AWAY": the label over a card.
+/// "RIGHT AWAY": the A+ label over a card.
 struct DataCaption: View {
     let text: String
 
     init(_ text: String) { self.text = text }
 
     var body: some View {
-        Text(text.uppercased()).font(Nacre.caption1).foregroundColor(Pearl.ink)
-            .padding(.leading, 16).padding(.top, 4)
-            .accessibilityAddTraits(.isHeader)
+        APSectionLabel(text: text).padding(.top, 12)
     }
 }
 
@@ -92,31 +95,13 @@ struct DataCard<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        GlassCard(radius: 22, content: content)
+        APCard(content: content)
     }
 }
 
-/// A sheet's nacre band along the top, fading into the sheet (D-04, SO-03).
+/// A sheet's surface (D-04, SO-03): the A+ sheet, as every other one.
 struct BandedSheetBackground: View {
-    @Environment(\.colorScheme) private var scheme
-
-    var body: some View {
-        if scheme == .dark {
-            SheetBackground()
-        } else {
-            ZStack(alignment: .top) {
-                Color(hex: 0xFFFBFD)
-                LinearGradient(colors: [Color(hex: 0xFFD6E0).opacity(0.9), Color(hex: 0xE3D4FF).opacity(0.7),
-                                        Color(hex: 0xCFF3EE).opacity(0.5)],
-                               startPoint: .leading, endPoint: .trailing)
-                    .frame(height: 120)
-                LinearGradient(colors: [Color(hex: 0xFFFBFD).opacity(0), Color(hex: 0xFFFBFD)],
-                               startPoint: .top, endPoint: .bottom)
-                    .frame(height: 120)
-            }
-            .ignoresSafeArea()
-        }
-    }
+    var body: some View { SheetBackground() }
 }
 
 // MARK: - D-01 Your data, D-02 the download ready
@@ -151,28 +136,37 @@ struct YourDataView: View {
     var body: some View {
         ProfilePage {
             VStack(alignment: .leading, spacing: 12) {
-                DataHeading(title: "Your data", line: "It’s yours.")
-                if let summary = summary { ready(summary) }
+                DataHeading(title: "Your data", line: "It\u{2019}s yours.")
+                if preparing {
+                    DataCard {
+                        DataRow(icon: "DataDownload", title: "Getting your copy ready\u{2026}", busy: true)
+                    }
+                    .padding(.top, 6)
+                } else if let summary = summary {
+                    ready(summary).padding(.top, 6)
+                }
                 DataCard {
                     Button { Task { await prepare() } } label: {
                         DataRow(icon: "DataDownload", title: "Download a copy", sub: "A spreadsheet of everything",
-                                chevron: true, busy: preparing)
+                                chevron: true)
                     }
                     .buttonStyle(.plain)
                     .disabled(preparing)
-                    RowSeparator()
+                    APSeparator()
                     Button { showStartOver = true } label: {
                         DataRow(icon: "DataStartOver", title: "Start over",
-                                sub: "Sort everything again from scratch", chevron: true)
+                                sub: "Your banks stay. Sorting starts fresh.", chevron: true)
                     }
                     .buttonStyle(.plain)
-                    RowSeparator()
+                    APSeparator()
+                    // Red only on this entry row; the confirmation's button is the rose Primary.
                     Button { showDelete = true } label: {
                         DataRow(icon: "DataTrash", title: "Delete your account", tone: Pearl.danger, chevron: true)
                     }
                     .buttonStyle(.plain)
                 }
-                if let error = error { Hint(text: error).padding(.horizontal, 16) }
+                .padding(.top, 6)
+                if let error = error, summary == nil { APErrorLine(text: error) }
             }
         }
         .toolbar(.hidden, for: .tabBar)
@@ -187,20 +181,18 @@ struct YourDataView: View {
         }
     }
 
-    /// D-02: "Your download is ready", and the button that saves it.
-    private func ready(_ summary: ExportSummary) -> some View {
+    /// D-02 (G5-Data): "Your download is ready", then the button that saves
+    /// it; if it couldn't save, the reason and Try again.
+    @ViewBuilder private func ready(_ summary: ExportSummary) -> some View {
         DataCard {
-            VStack(spacing: 4) {
-                DataRow(icon: "DataDownload", title: "Your download is ready", sub: counts(summary))
-                Button(sizeWords(summary).map { "Download .zip · \($0)" } ?? "Download .zip") {
-                    Task { await download() }
-                }
-                .buttonStyle(NacreButtonStyle(busy: downloading))
-                .disabled(downloading)
-                .padding(.horizontal, 16)
-            }
-            .padding(.bottom, 14)
+            DataRow(icon: "DataDownload", title: "Your download is ready", sub: counts(summary), iconTone: Pearl.moneyIn)
         }
+        if let error = error { APErrorLine(text: error) }
+        Button(error != nil ? "Try again" : (sizeWords(summary).map { "Download .zip \u{00B7} \($0)" } ?? "Download .zip")) {
+            Task { await download() }
+        }
+        .buttonStyle(APPrimaryButtonStyle(busy: downloading))
+        .disabled(downloading)
     }
 
     /// "6 accounts · 1,306 transactions".
@@ -290,30 +282,30 @@ struct DeleteAccountView: View {
 
     var body: some View {
         ProfilePage {
-            VStack(alignment: .leading, spacing: 12) {
-                DataHeading(title: "Delete your account?", line: "Here’s what happens.")
+            VStack(alignment: .leading, spacing: 8) {
+                DataHeading(title: "Delete your account?", line: nil)
                 DataCaption("Right away")
                 DataCard {
-                    DataRow(icon: "DataUnplug", title: "Your banks are disconnected")
-                    RowSeparator()
-                    DataRow(icon: "DataSignOut", title: "You’re signed out everywhere")
+                    APBullet(text: "Your banks are disconnected")
+                    APSeparator(afterFace: false)
+                    APBullet(text: "You\u{2019}re signed out everywhere")
                 }
                 DataCaption("Within 30 days")
                 DataCard {
-                    DataRow(icon: "DataTrash", title: "Everything else is deleted", sub: "Including backups")
+                    APBullet(text: "Everything else is deleted", sub: "Including backups")
                 }
                 DataCaption("What we keep")
                 DataCard {
-                    DataRow(icon: "DataShield", title: "A record your account existed", sub: "The law asks us to")
+                    APBullet(text: "A record your account existed", sub: "The law asks us to")
                 }
-                if let error = error { Hint(text: error).padding(.horizontal, 16) }
+                if let error = error { APErrorLine(text: error).padding(.top, 4) }
             }
         } bottom: {
             Button("Continue") { Task { await open() } }
-                .buttonStyle(NacreButtonStyle(busy: opening))
+                .buttonStyle(APPrimaryButtonStyle(busy: opening))
                 .disabled(opening)
             Button("Download a copy first", action: downloadFirst)
-                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                .buttonStyle(APQuietTextStyle())
         }
         .toolbar(.hidden, for: .tabBar)
         .sheet(isPresented: $confirming, onDismiss: finish) {
@@ -391,56 +383,56 @@ struct DeleteAccountSheet: View {
 
     private var ready: Bool { method == "code" ? code.count == 6 : !password.isEmpty }
 
+    /// G5-Delete D-04: the six code wells (or the password well), then
+    /// Delete my account, the rose Primary, greyed until it's ready.
     var body: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: "Confirm it’s you") { dismiss() }
+            APSheetTitle(title: "Confirm it\u{2019}s you") { dismiss() }
+                .padding(.horizontal, 16).padding(.top, 14)
             ScrollView {
-                VStack(spacing: 10) {
-                    Image(systemName: method == "password" ? "key" : "envelope")
-                        .font(.system(size: 26))
-                        .foregroundColor(Pearl.action)
-                        .frame(width: 64, height: 64)
-                        .background(Circle().fill(Pearl.action.opacity(0.1)))
-                        .accessibilityHidden(true)
-                        .padding(.top, 6)
+                VStack(alignment: .leading, spacing: 14) {
                     Text(line).font(Nacre.body).foregroundColor(Pearl.ink)
-                        .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.bottom, 6)
                     if method == "code" {
-                        CodeBoxes(code: $code, failed: failed).fixedSize()
+                        ProfileCodeWells(code: $code, failed: failed)
+                        if failed {
+                            Text("That code didn\u{2019}t work. Try again or send a new one.")
+                                .font(Nacre.footnote).foregroundColor(Pearl.danger)
+                                .frame(maxWidth: .infinity)
+                        }
                     } else if method == "password" {
-                        DataCard {
-                            FieldRow(label: "Password", text: $password, kind: .secure, content: .password)
-                        }
+                        SecureWell(label: "Password", text: $password, content: .password)
                     }
-                    if let error = error { Hint(text: error).padding(.top, 4) }
-                    // Never on the sixth digit: deleting always takes this press.
-                    Button("Delete my account") { Task { await remove() } }
-                        .buttonStyle(NacreButtonStyle(busy: busy))
-                        .disabled(!ready || busy)
-                        .padding(.top, 6)
-                    if method == "code" {
-                        Button("Send a new code") { Task { await sendCode() } }
-                            .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
-                            .disabled(busy)
-                    }
-                    if let other = other {
-                        Button(other == "code" ? "Use an email code instead" : "Use your password instead") {
-                            choose(other)
-                        }
-                        .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
-                        .disabled(busy)
-                    }
+                    if let error = error, !failed { APErrorLine(text: error) }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 16).padding(.top, 8)
                 .padding(.bottom, 16)
             }
             .scrollDismissesKeyboard(.interactively)
+            VStack(spacing: 0) {
+                // Never on the sixth digit: deleting always takes this press.
+                Button("Delete my account") { Task { await remove() } }
+                    .buttonStyle(APPrimaryButtonStyle(busy: busy, busyLabel: "Deleting\u{2026}"))
+                    .disabled(!ready || busy)
+                    .padding(.bottom, 4)
+                if method == "code" {
+                    Button("Send a new code") { Task { await sendCode() } }
+                        .buttonStyle(APQuietTextStyle())
+                        .disabled(busy)
+                }
+                if let other = other {
+                    Button(other == "code" ? "Use an email code instead" : "Use your password instead") {
+                        choose(other)
+                    }
+                    .buttonStyle(APQuietTextStyle())
+                    .disabled(busy)
+                }
+            }
+            .padding(.horizontal, 16).padding(.bottom, 8)
         }
         .interactiveDismissDisabled(busy)
         .onAppear { if method.isEmpty, let first = options.usable.first { choose(first) } }
-        .onChange(of: code) { _ in failed = false }
+        .onChange(of: code) { c in if !c.isEmpty { failed = false } }
     }
 
     private var line: String {
@@ -501,7 +493,7 @@ struct AccountDeletedView: View {
             EmptyView()
         } actions: {
             Button("Close") { app.phase = .signedOut }
-                .buttonStyle(NacreButtonStyle())
+                .buttonStyle(APPrimaryButtonStyle())
         }
     }
 }
@@ -516,20 +508,22 @@ struct DataResult<Extra: View, Actions: View>: View {
     @ViewBuilder var extra: () -> Extra
     @ViewBuilder var actions: () -> Actions
 
+    /// G5-StartOver SO-04, G5-Delete D-05: the mark, the 34 pt title and a
+    /// `muted` line, centred; the buttons along the bottom.
     var body: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 if showsArt {
-                    Image("LogoMark").resizable().frame(width: 160, height: 133.333)
-                        .accessibilityHidden(true)
+                    APMark(width: 170).padding(.bottom, 28)
                 }
-                Text(title).font(Nacre.title).tracking(0.4).foregroundColor(Pearl.ink)
+                Text(title).font(Nacre.largeTitle).foregroundColor(Pearl.ink)
                     .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)
-                Text(line).font(Nacre.footnote).foregroundColor(Pearl.ink)
+                Text(line).font(Nacre.body).foregroundColor(Pearl.muted)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
                 extra()
             }
             .padding(.horizontal, 16)

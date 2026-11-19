@@ -4,47 +4,20 @@ import SwiftUI
 // linked are Accounts (AccountsViews.swift). Passkeys (S-03) wait for the app's associated domain, so
 // there's no passkey row yet.
 
-/// A settings screen: back, a large title, its sections, and any buttons
-/// along the bottom, all on the nacre.
+/// A settings screen (G5 `nav`): the glass Back, the 34 pt title, its
+/// sections, and any buttons along the bottom.
 private struct SettingsPage<Content: View, Bottom: View>: View {
-    @Environment(\.dismiss) private var dismiss
     let title: String
     @ViewBuilder var content: () -> Content
     @ViewBuilder var bottom: () -> Bottom
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(title).font(Nacre.largeTitle).foregroundColor(Pearl.ink)
-                    .accessibilityAddTraits(.isHeader)
-                    .padding(.bottom, 8)
-                content()
-            }
-            .padding(.horizontal, Pearl.gutter)
-            .padding(.bottom, 32)
+        ProfilePage {
+            ProfileHeading(title: title)
+            content()
+        } bottom: {
+            bottom()
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if Bottom.self != EmptyView.self {
-                VStack(spacing: 6, content: bottom)
-                    .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
-                    .background(.regularMaterial)
-                    .overlay(alignment: .top) { Rectangle().fill(Nacre.separator).frame(height: 0.5) }
-            }
-        }
-        .nacreScreen()
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button { dismiss() } label: {
-                    Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(Pearl.ink)
-                }
-                .accessibilityLabel("Back")
-            }
-        }
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -55,33 +28,20 @@ extension SettingsPage where Bottom == EmptyView {
 }
 
 private func settingsSection(_ text: String) -> some View {
-    Text(text.uppercased()).font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
-        .padding(.horizontal, 16).padding(.top, 12)
-        .accessibilityAddTraits(.isHeader)
+    ProfileSection(text)
 }
 
 private func settingsNote(_ text: String) -> some View {
-    Text(text).font(Nacre.footnote).foregroundColor(Pearl.muted)
-        .padding(.horizontal, 16)
-        .fixedSize(horizontal: false, vertical: true)
+    ProfileNote(text)
 }
 
-/// "Password   Change ›".
+/// "Password   Change ›": G5 `kv`.
 private func settingsRow(_ title: String, value: String? = nil, chevron: Bool = false,
                          tone: Color = Pearl.ink) -> some View {
-    HStack(spacing: 8) {
-        Text(title).font(Nacre.body).foregroundColor(tone)
-        Spacer(minLength: 8)
-        if let value = value {
-            Text(value).font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
-        }
-        if chevron {
-            Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
-        }
+    APKeyValueRow(key: title, chevron: chevron) {
+        if let value = value { Text(value).foregroundColor(Pearl.muted).lineLimit(1) }
     }
-    .padding(.horizontal, 16).frame(minHeight: 52)
-    .contentShape(Rectangle())
-    .accessibilityElement(children: .combine)
+    .foregroundColor(tone)
 }
 
 // MARK: - S-01 Sign-in & security, S-04 Sign out other devices
@@ -114,75 +74,42 @@ struct SignInSecurityView: View {
     }
 
     var body: some View {
-        SettingsPage(title: "Sign-in & security") {
+        SettingsPage(title: "Sign-in and security") {
             settingsSection("Sign-in")
-            GlassCard {
+            APCard {
                 NavigationLink { ChangeEmailView() } label: {
                     settingsRow("Email", value: app.user?.email ?? "Change", chevron: true)
                 }
                 .buttonStyle(.plain)
-                RowSeparator()
+                APSeparator(afterFace: false)
                 NavigationLink { ChangePasswordView() } label: {
                     settingsRow("Password", value: "Change", chevron: true)
                 }
                 .buttonStyle(.plain)
-                RowSeparator()
-                settingsRow("Email code on new devices", value: "On")
+                APSeparator(afterFace: false)
+                settingsRow("Code on new devices", value: "Always on")
             }
-            settingsNote("Two-step sign-in is always on.")
 
-            if AppLock.available || app.faceIDOn {
+            if AppLock.available || app.faceIDOn || AppLock.turnedOff {
                 settingsSection("Face ID")
-                GlassCard {
-                    Toggle(isOn: Binding(get: { faceID }, set: { on in Task { await setFaceID(on) } })) {
-                        Text("Unlock with Face ID").font(Nacre.body).foregroundColor(Pearl.ink)
-                    }
-                    .tint(Pearl.action)
-                    .padding(.horizontal, 16).frame(minHeight: 52)
-                }
-                settingsNote("Asks for Face ID when you come back to Pearl after a minute away.")
+                faceIDCard
             }
 
             // Recovery codes (SEC-08, SEC-09) are left out for now (2026-11-04).
 
             settingsSection("Your devices")
-            GlassCard {
-                ForEach(Array(devices.enumerated()), id: \.element.id) { i, d in
-                    if i > 0 { RowSeparator() }
-                    if d.this == true {
-                        settingsRow("This iPhone", value: "Now")
-                    } else {
-                        // SEC-11 (THL-287): each other device can be removed.
-                        HStack {
-                            Text([d.label ?? "Device", d.lastUsedAt.map(Self.ago)].compactMap { $0 }.joined(separator: " · "))
-                                .font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
-                            Spacer()
-                            Button("Remove") { removingDevice = d }
-                                .font(Nacre.body).foregroundColor(Pearl.action)
-                                .buttonStyle(.plain)
-                                .disabled(busy)
-                        }
-                        .padding(.horizontal, 16).frame(minHeight: 52)
-                    }
-                }
-                if devices.contains(where: { $0.this != true }) {
-                    RowSeparator()
-                    Button { confirming = true } label: {
-                        settingsRow("Sign out other devices", tone: Pearl.action)
-                    }
-                    .buttonStyle(.plain)
+            devicesCard
+            if devices.contains(where: { $0.this != true }) {
+                APQuietButton(title: "Sign out other devices", identifier: "sign-out-others") { confirming = true }
+                    .frame(maxWidth: .infinity)
                     .disabled(busy)
-                }
-                if devices.isEmpty {
-                    settingsRow("This iPhone", value: "Now")
-                }
+                    .padding(.top, 4)
             }
-            if let error = error {
-                Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).padding(.horizontal, 16)
-            }
+            if let error = error { APErrorLine(text: error).padding(.top, 4) }
 
-            // At the bottom of Sign-in & security, not on Profile (2026-11-08).
-            ResetPearlCard().padding(.top, 16)
+            // At the bottom of Sign-in and security, not on Profile (2026-11-08).
+            ResetPearlCard().padding(.top, 20)
+            Color.clear.frame(height: 24)
         }
         .task {
             faceID = app.faceIDOn
@@ -228,6 +155,77 @@ struct SignInSecurityView: View {
                 app.say(n == 1 ? "Signed out of 1 other device." : "Signed out of \(n) other devices.")
             }
         }
+    }
+
+    /// G5-Security: "Unlock with Face ID · After a minute away"; with Face ID
+    /// off for Pearl in iPhone Settings, the switch is greyed and Open Settings
+    /// sits under it.
+    @ViewBuilder private var faceIDCard: some View {
+        APCard {
+            if AppLock.turnedOff && !faceID {
+                APToggleRow(symbol: "faceid", title: "Unlock with Face ID",
+                            sub: "Turn on Face ID for Pearl in iPhone Settings first.",
+                            isOn: .constant(false))
+                    .disabled(true)
+                APSeparator(afterFace: false)
+                Button {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                } label: {
+                    ProfileRow(symbol: "chevron.right", title: "Open Settings", tone: Pearl.link, chevron: false)
+                }
+                .buttonStyle(.plain)
+            } else {
+                APToggleRow(symbol: "faceid", title: "Unlock with Face ID", sub: "After a minute away",
+                            isOn: Binding(get: { faceID }, set: { on in Task { await setFaceID(on) } }),
+                            identifier: "face-id-toggle")
+            }
+        }
+    }
+
+    /// Each device: its icon, its name over when it was last used, and Remove.
+    private var devicesCard: some View {
+        APCard {
+            if devices.isEmpty {
+                deviceRow(name: "This iPhone", when: "Now", symbol: "iphone", remove: nil)
+            }
+            ForEach(Array(devices.enumerated()), id: \.element.id) { i, d in
+                if i > 0 { APSeparator(afterFace: false) }
+                if d.this == true {
+                    deviceRow(name: "This iPhone", when: "Now", symbol: "iphone", remove: nil)
+                } else {
+                    // SEC-11 (THL-287): each other device can be removed.
+                    deviceRow(name: d.label ?? "Device", when: d.lastUsedAt.map(Self.ago) ?? "",
+                              symbol: Self.symbol(d.label), remove: { removingDevice = d })
+                }
+            }
+        }
+    }
+
+    private func deviceRow(name: String, when: String, symbol: String, remove: (() -> Void)?) -> some View {
+        HStack(spacing: 12) {
+            IconBubble(symbol: symbol)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                if !when.isEmpty { Text(when).font(Nacre.subheadline).foregroundColor(Pearl.muted) }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            if let remove = remove {
+                APQuietButton(title: "Remove", identifier: "remove-\(name)", action: remove)
+                    .disabled(busy)
+                    .accessibilityLabel("Remove \(name)")
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(minHeight: 64)
+    }
+
+    /// "Mac · Chrome" → a laptop, "iPad" → a tablet, else a phone.
+    static func symbol(_ label: String?) -> String {
+        let l = (label ?? "").lowercased()
+        if l.contains("ipad") || l.contains("tablet") { return "ipad" }
+        if l.contains("mac") || l.contains("windows") || l.contains("chrome") || l.contains("safari") || l.contains("firefox") { return "laptopcomputer" }
+        return "iphone"
     }
 
     private var others: [Device] { devices.filter { $0.this != true } }
@@ -310,29 +308,22 @@ struct ChangePasswordView: View {
     private var email: String { app.user?.email ?? "" }
     private var matches: Bool { !confirm.isEmpty && confirm == new }
 
+    /// G5-Email "Change password": three wells; a rule ticks green when it's
+    /// met and only a failing one is red; "don't match" under Confirm.
     var body: some View {
-        Group {
-            SettingsPage(title: "Change password") {
-                GlassCard {
-                    FieldRow(label: "Current password", text: $current, kind: .secure, content: .password)
-                    RowSeparator()
-                    FieldRow(label: "New password", text: $new, kind: .secure, content: .newPassword)
-                    RowSeparator()
-                    FieldRow(label: "Confirm", text: $confirm, kind: .secure, content: .newPassword)
-                }
-                if !new.isEmpty {
-                    PasswordMeter(rules: rules).padding(.horizontal, 4).padding(.top, 8)
-                }
-                if !confirm.isEmpty && !matches {
-                    settingsNote("The new passwords don’t match.")
-                }
-                settingsNote("You’ll be signed out on your other devices.").padding(.top, 4)
-                if let error = error { Hint(text: error).padding(.top, 4) }
-            } bottom: {
-                Button("Save password") { Task { await save() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
-                    .disabled(current.isEmpty || !rules.ok || !matches || busy)
-            }
+        SettingsPage(title: "Change password") {
+            SecureWell(label: "Current password", text: $current, content: .password)
+                .padding(.top, 8)
+            SecureWell(label: "New password", text: $new, content: .newPassword)
+            if !new.isEmpty { PasswordRuleLines(rules: rules) }
+            SecureWell(label: "Confirm", text: $confirm, content: .newPassword,
+                       error: !confirm.isEmpty && !matches ? "The new passwords don\u{2019}t match." : nil)
+            settingsNote("You\u{2019}ll be signed out on your other devices.")
+            if let error = error { APErrorLine(text: error).padding(.top, 4) }
+        } bottom: {
+            Button("Save password") { Task { await save() } }
+                .buttonStyle(APPrimaryButtonStyle(busy: busy))
+                .disabled(current.isEmpty || !rules.ok || !matches || busy)
         }
         .onChange(of: new) { value in
             rules = PasswordRules.local(value, email: email)
@@ -386,9 +377,9 @@ struct RecoveryCodesSheet: View {
             Text("Keep them somewhere safe, like a password manager. Each works once. Making new ones turns these off.")
                 .font(Nacre.body).foregroundColor(Pearl.ink)
                 .fixedSize(horizontal: false, vertical: true)
-            GlassCard {
+            APCard {
                 ForEach(Array(stride(from: 0, to: codes.count, by: 2)), id: \.self) { i in
-                    if i > 0 { RowSeparator() }
+                    if i > 0 { APSeparator(afterFace: false) }
                     HStack {
                         Text(codes[i])
                         Spacer()
@@ -404,9 +395,9 @@ struct RecoveryCodesSheet: View {
                 UIPasteboard.general.string = codes.joined(separator: "\n")
                 copied = true
             }
-            .buttonStyle(SecondaryButtonStyle())
+            .buttonStyle(APSecondaryButtonStyle())
             Button("Done") { dismiss() }
-                .buttonStyle(NacreButtonStyle())
+                .buttonStyle(APPrimaryButtonStyle())
         }
         .padding(.horizontal, 16).padding(.bottom, 8)
         .background(SheetBackground())
@@ -427,32 +418,31 @@ struct ResetPearlCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            GlassCard {
-                Button(role: .destructive) { confirming = true } label: {
-                    ProfileRow(symbol: "arrow.counterclockwise", title: resetting ? "Resetting…" : "Reset Pearl",
+            // G5-Security: red only on this entry row; the sheet's button is the rose Primary.
+            APCard {
+                Button { confirming = true } label: {
+                    ProfileRow(symbol: "arrow.counterclockwise", title: resetting ? "Resetting\u{2026}" : "Reset Pearl",
+                               sub: "Unlinks your banks and starts again",
                                tone: Pearl.danger, chevron: false) {
                         if resetting { ProgressView() }
                     }
                 }
                 .buttonStyle(.plain)
                 .disabled(resetting)
+                .accessibilityIdentifier("reset-pearl")
             }
-            ProfileNote("Unlinks your banks and clears your transactions and setup, then starts setup again. You stay signed in.")
-            if let error = error {
-                Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).padding(.horizontal, 16)
-            }
+            if let error = error { APErrorLine(text: error) }
         }
         .sheet(isPresented: $confirming) {
             // SO-06 (TEST-06): WHAT GOES / WHAT STAYS, and Type "reset".
             PearlConfirmSheet(overline: "Reset Pearl", title: "Reset Pearl?",
-                              message: "Pearl goes back to the start, banks included. This can’t be undone.",
-                              field: .init(label: "Type \u{201C}reset\u{201D} to confirm", prompt: "reset",
+                              message: "Pearl goes back to the start, banks included. You stay signed in.",
+                              field: .init(label: "Type \u{201C}reset\u{201D}", prompt: "reset",
                                            note: "Nothing changes until you do.", needs: .words("reset"),
                                            identifier: "reset-confirm"),
                               text: $typed,
-                              goes: [.init(title: "Your bank connections", sub: "Unlinked from Pearl"),
-                                     .init(title: "Your transactions and setup", sub: "Sorting, rules, income, bills, goals")],
-                              stays: [.init(title: "Your email, password and Face ID", sub: "You stay signed in")],
+                              goes: [.init(title: "Your bank connections", sub: ""),
+                                     .init(title: "Your transactions and setup", sub: "")],
                               primary: "Reset Pearl", busyLabel: "Resetting…", secondary: "Keep everything",
                               failure: "Couldn’t reset Pearl. Nothing changed. Try again.",
                               onClose: { confirming = false; typed = "" }) {
@@ -466,4 +456,74 @@ struct ResetPearlCard: View {
         }
     }
 
+}
+
+/// A password well (REDESIGN-09): the 13 pt label, the 44 pt well with the
+/// eye, a 2 pt danger ring and the reason under it when it's wrong.
+struct SecureWell: View {
+    let label: String
+    @Binding var text: String
+    var content: UITextContentType = .password
+    var error: String? = nil
+    @State private var shown = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label).font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 4)
+            HStack(spacing: 8) {
+                Group {
+                    if shown {
+                        TextField("", text: $text)
+                    } else {
+                        SecureField("", text: $text)
+                    }
+                }
+                .font(Nacre.body).foregroundColor(Pearl.ink).tint(Pearl.action)
+                .textContentType(content)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .focused($focused)
+                .accessibilityLabel(label)
+                Button { shown.toggle() } label: {
+                    Image(systemName: shown ? "eye.slash" : "eye").font(.system(size: 16)).foregroundColor(Pearl.muted)
+                        .frame(width: 32, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(shown ? "Hide password" : "Show password")
+            }
+            .padding(.leading, 14).padding(.trailing, 6)
+            .frame(minHeight: 44)
+            .wellStyle(focused: focused, error: error != nil)
+            if let error = error {
+                Text(error).font(Nacre.footnote).foregroundColor(Pearl.danger).padding(.horizontal, 4)
+            }
+        }
+    }
+}
+
+/// The password rules (G6-Create): ✓ green when met, ✕ red only once one
+/// fails ("At least 12 characters · 4 more"), never red before she types.
+struct PasswordRuleLines: View {
+    let rules: PasswordRules
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            line(rules.length ? "At least 12 characters" : "At least 12 characters \u{00B7} \(rules.more) more", rules.length)
+            line("Not a common or leaked password", rules.common)
+            line("Doesn\u{2019}t include your email", rules.email)
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private func line(_ text: String, _ met: Bool) -> some View {
+        HStack(spacing: 8) {
+            Text(met ? "\u{2713}" : "\u{2715}").frame(width: 14)
+            Text(text)
+        }
+        .font(Nacre.subheadline)
+        .foregroundColor(met ? Pearl.moneyIn : Pearl.danger)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(met ? "\(text), met" : "\(text), not yet")
+    }
 }

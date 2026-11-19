@@ -75,12 +75,15 @@ def confirm_recurring_transfer():
 
 @bp.delete("/recurring-transfers/<rule_id>")
 def delete_recurring_transfer(rule_id: str):
-    """Stop treating a series as recurring. What it sorted keeps its category."""
+    """Stop treating a series as recurring. What it sorted keeps its category.
+    The answer carries the `undo` ("No longer recurring" with Undo, A+)."""
+    from .impact import snapshot, undo_payload
     from .transfers import apply_transfer_matches
     st = store()
     rule = next((r for r in st.recurring_transfers() if r["id"] == rule_id), None)
     if rule is None:
         return jsonify({"error": "No such rule."}), 404
+    before = snapshot(st)
     txns = st.all_transactions()
     pays = rt.paydays(txns)
     keep = {t.fingerprint: (t.category, "user") for t in txns
@@ -89,7 +92,9 @@ def delete_recurring_transfer(rule_id: str):
     if keep:
         st.write_categories(keep)
     apply_transfer_matches(st)
-    return jsonify({"ok": True})
+    undo = undo_payload(before, snapshot(st))
+    undo["marks"] = {"recurring_transfers": {rule_id: rule}}
+    return jsonify({"ok": True, "undo": undo})
 
 
 # What each schedule comes to in a month, on average. Every payday goes by

@@ -8,51 +8,38 @@ import UserNotifications
 
 let cardRadius: CGFloat = 22
 
-/// A line icon in a rose-washed circle: 34pt in a row, 72pt over N-01.
+/// A line icon on the action wash (A+ `.icon`, 36).
 private struct RoseBubble: View {
     let symbol: String
-    var size: CGFloat = 34
+    var size: CGFloat = 36
 
     var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: size / 2, weight: .regular))
-            .foregroundColor(Pearl.action)
-            .frame(width: size, height: size)
-            .background(Circle().fill(Nacre.roseWash))
-            .accessibilityHidden(true)
+        IconBubble(symbol: symbol, size: size)
     }
 }
 
-/// "NEEDED FOR PEARL": the caption over a card.
+/// "NEEDED FOR PEARL": A+ `.label` over a card.
 struct CardCaption: View {
     let text: String
 
     init(_ text: String) { self.text = text }
 
     var body: some View {
-        Text(text.uppercased())
-            .font(Nacre.caption1)
-            .foregroundColor(Pearl.ink)
-            .padding(.leading, 16).padding(.top, 4)
-            .accessibilityAddTraits(.isHeader)
+        APSectionLabel(text: text).padding(.top, 12)
     }
 }
 
-/// The page's Fraunces title and the line under it.
+/// The page's 34 pt title and its `muted` lead line.
 struct PageTitle: View {
     let title: String
     let line: String?
 
     var body: some View {
-        Text(title).font(Nacre.title).tracking(0.4).foregroundColor(Pearl.ink)
-            .accessibilityAddTraits(.isHeader)
-        if let line = line {
-            Text(line).font(Nacre.footnote).foregroundColor(Pearl.ink)
-        }
+        ProfileHeading(title: title, intro: line)
     }
 }
 
-/// One row: an optional icon, a title, a line under it, and what sits at the end.
+/// One A+ row: an optional icon, a title over its line, what sits at the end.
 struct PrivacyRow<Trailing: View>: View {
     var symbol: String? = nil
     let title: String
@@ -66,15 +53,15 @@ struct PrivacyRow<Trailing: View>: View {
                 Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 if let sub = sub {
-                    Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             trailing()
         }
-        .padding(.horizontal, 16).padding(.vertical, 10)
-        .frame(minHeight: 50)
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(minHeight: 64)
         .contentShape(Rectangle())
     }
 }
@@ -97,15 +84,12 @@ struct SwitchRow: View {
                 .disabled(disabled)
                 .accessibilityHint(hint ?? sub ?? "")
         }
+        .opacity(disabled ? 0.45 : 1)
     }
 }
 
 struct RowChevron: View {
-    var body: some View {
-        Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-            .foregroundColor(Pearl.muted)
-            .accessibilityHidden(true)
-    }
+    var body: some View { APChevron() }
 }
 
 // MARK: - CN-04 Privacy and consent, CN-05 Turn off AI sorting?
@@ -132,9 +116,9 @@ struct ConsentView: View {
                 if let privacy = privacy {
                     content(privacy)
                 } else if let error = error {
-                    Hint(text: error).padding(.horizontal, 16)
+                    APErrorLine(text: error)
                 } else {
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 16)
+                    APCard { APSkeletonRow(); APSeparator(); APSkeletonRow() }.padding(.top, 12)
                 }
             }
         }
@@ -144,7 +128,7 @@ struct ConsentView: View {
         .sheet(isPresented: $askingAIOff) {
             // CN-05r (TEST-06, reworded for P1a in AI-02b): a Pearl sheet, not a stock alert.
             PearlConfirmSheet(overline: "Pearl sorts for you", title: "Stop Pearl sorting for you?",
-                              message: "New ones wait for you in Quick sort. What Pearl already sorted, and your own rules, stay. You can turn it back on any time.",
+                              message: "New ones wait for you in Quick sort. What’s already sorted, and your rules, stay.",
                               primary: "Turn off", busyLabel: "Turning off…", secondary: "Keep it on",
                               failure: "Couldn’t turn it off. Nothing changed. Try again.",
                               onClose: { askingAIOff = false }) {
@@ -157,13 +141,13 @@ struct ConsentView: View {
     @ViewBuilder
     private func content(_ privacy: Privacy) -> some View {
         CardCaption("Needed for Pearl")
-        GlassCard(radius: cardRadius) {
+        APCard {
             NavigationLink { AccountsView() } label: {
                 PrivacyRow(symbol: "building.columns", title: "Reading your accounts",
                            sub: agreed("read_data")) { RowChevron() }
             }
             .buttonStyle(.plain)
-            RowSeparator()
+            APSeparator(afterFace: false)
             NavigationLink { YourDataView(goHome: goHome) } label: {
                 PrivacyRow(symbol: "chart.line.uptrend.xyaxis", title: "Working out your numbers",
                            sub: agreed("insights")) { RowChevron() }
@@ -173,46 +157,40 @@ struct ConsentView: View {
         }
 
         CardCaption("Your choice")
-        GlassCard(radius: cardRadius) {
+        APCard {
             // AI-08 (1313:4855, AI-03c): Pearl sorts for you, asking first. Ask Pearl's
             // switch becomes "Pearl chat" later (note 1340:8893): not shown yet, and
             // the chat needs no switch of its own until it is.
-            SwitchRow(symbol: "sparkle", title: "Pearl sorts for you",
-                      sub: "Asks you once for each pattern · up to 20 a day",
+            SwitchRow(symbol: "sparkles", title: "Pearl sorts for you",
+                      sub: "Asks you once for each pattern",
                       isOn: isOn("ai_sort"), disabled: busy == "ai_sort") { on in
                 if on { Task { await change("ai_sort", to: true) } } else { askingAIOff = true }
             }
-            RowSeparator()
-            SwitchRow(symbol: "bell", title: "Tips and news by email",
+            APSeparator(afterFace: false)
+            SwitchRow(symbol: "envelope", title: "Tips and news by email",
                       isOn: isOn("tips"), disabled: busy == "tips") { on in
                 Task { await change("tips", to: on) }
             }
-            RowSeparator()
-            SwitchRow(symbol: "heart", title: "Help improve Pearl", sub: "Anonymous usage only",
+            APSeparator(afterFace: false)
+            SwitchRow(symbol: "chart.bar", title: "Help improve Pearl", sub: "Anonymous usage only",
                       isOn: isOn("analytics"), disabled: busy == "analytics") { on in
                 Task { await change("analytics", to: on) }
             }
         }
-        if let error = error {
-            Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).padding(.horizontal, 16)
-        }
+        if let error = error { APErrorLine(text: error) }
 
         CardCaption("Your rights")
-        GlassCard(radius: cardRadius) {
+        APCard {
             if let contact = privacy.contact, !contact.isEmpty, let mail = URL(string: "mailto:\(contact)") {
                 Link(destination: mail) {
-                    PrivacyRow(title: "See or correct what we hold") { RowChevron() }
+                    PrivacyRow(symbol: "eye", title: "See or correct what we hold") { RowChevron() }
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint("Writes to our privacy officer, who replies within 30 days")
-                RowSeparator()
+                APSeparator(afterFace: false)
             }
             Button { doc = .privacy } label: {
-                PrivacyRow(title: "Privacy policy") {
-                    // The design's "v1.0" isn't true yet: the policy is a draft.
-                    Text("Draft").font(Nacre.body).foregroundColor(Pearl.muted)
-                    RowChevron()
-                }
+                PrivacyRow(symbol: "doc.text", title: "Privacy policy") { RowChevron() }
             }
             .buttonStyle(.plain)
         }
@@ -271,13 +249,16 @@ struct NotificationsView: View {
         let sub: String
     }
 
+    /// G5-Notifications: Progress and Milestones are hidden while Save and
+    /// Wins are parked (A+, 2026-11-18); the server keeps their settings.
     private let moments = [
         Moment(id: "payday", symbol: "calendar", title: "Payday", sub: "When your pay lands"),
         Moment(id: "weekly", symbol: "chart.line.uptrend.xyaxis", title: "Weekly check-in", sub: "Sundays at 10 am"),
-        Moment(id: "progress", symbol: "star", title: "Progress", sub: "When your Anchor grows"),
-        Moment(id: "milestones", symbol: "sparkle", title: "Milestones", sub: "When a new step opens"),
         Moment(id: "bank", symbol: "building.columns", title: "Bank needs you", sub: "When a bank needs you"),
     ]
+
+    /// "From" or "To" while she picks a time on the Pearl sheet.
+    @State private var picking: String?
 
     var body: some View {
         ProfilePage {
@@ -286,9 +267,9 @@ struct NotificationsView: View {
                 if let prefs = settings?.prefs {
                     content(prefs)
                 } else if let error = error {
-                    Hint(text: error).padding(.horizontal, 16)
+                    APErrorLine(text: error)
                 } else {
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 16)
+                    APCard { APSkeletonRow(); APSeparator(); APSkeletonRow() }.padding(.top, 12)
                 }
             }
         }
@@ -303,74 +284,50 @@ struct NotificationsView: View {
 
     @ViewBuilder
     private func content(_ prefs: NotificationSettings.Prefs) -> some View {
+        if permission == .denied { blockedBanner.padding(.top, 8) }
         CardCaption("What you get")
-        GlassCard(radius: cardRadius) {
+        APCard {
             ForEach(Array(moments.enumerated()), id: \.element.id) { i, moment in
-                if i > 0 { RowSeparator() }
-                SwitchRow(symbol: moment.symbol, title: moment.title, sub: moment.sub,
-                          isOn: prefs.types[moment.id]?.phone == true) { on in
+                if i > 0 { APSeparator(afterFace: false) }
+                SwitchRow(title: moment.title, sub: moment.sub,
+                          isOn: prefs.types[moment.id]?.phone == true,
+                          disabled: permission == .denied) { on in
                     Task { await setMoment(moment.id, on: on) }
                 }
             }
         }
-        if permission == .denied { blockedNote }
-        if let error = error {
-            Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).padding(.horizontal, 16)
-        }
+        if let error = error { APErrorLine(text: error) }
 
         CardCaption("Quiet hours")
-        GlassCard(radius: cardRadius) {
-            quietRow("From", prefs.quiet.from) { value in
-                Task { await save(["quiet": ["from": value]]) { $0.quiet.from = value } }
-            }
-            RowSeparator()
-            quietRow("To", prefs.quiet.to) { value in
-                Task { await save(["quiet": ["to": value]]) { $0.quiet.to = value } }
-            }
+        APCard {
+            quietRow("From", prefs.quiet.from) { picking = "from" }
+            APSeparator(afterFace: false)
+            quietRow("To", prefs.quiet.to) { picking = "to" }
         }
 
         CardCaption("Lock screen")
-        GlassCard(radius: cardRadius) {
-            SwitchRow(title: "Show amounts",
-                      hint: "Off: “Your pay arrived.” On: “Your pay of $2,140 arrived.”",
-                      isOn: prefs.lockAmounts) { on in
+        APCard {
+            SwitchRow(title: "Show amounts", sub: "\u{201C}Your pay of $2,140 arrived.\u{201D}",
+                      hint: "Off: \u{201C}Your pay arrived.\u{201D} On: \u{201C}Your pay of $2,140 arrived.\u{201D}",
+                      isOn: prefs.lockAmounts, disabled: permission == .denied) { on in
                 Task { await save(["lock_amounts": on]) { $0.lockAmounts = on } }
             }
         }
     }
 
-    /// The switches can't reach her lock screen while iOS is blocking them, so say so.
-    private var blockedNote: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ProfileNote("Notifications are off for Pearl in iPhone Settings.")
-            if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
-                Link("Open Settings", destination: url)
-                    .font(Nacre.footnote)
-                    .foregroundColor(Pearl.action)
-                    .padding(.horizontal, 16)
-            }
+    /// G5-Notifications: off in iPhone Settings, so the banner says so.
+    private var blockedBanner: some View {
+        APBanner(symbol: "bell", text: "Notifications are off for Pearl in iPhone Settings.", action: "Open Settings") {
+            if let url = URL(string: UIApplication.openNotificationSettingsURLString) { UIApplication.shared.open(url) }
         }
     }
 
-    /// "From   9:00 pm  ›", opening every half hour.
-    private func quietRow(_ label: String, _ value: String, chosen: @escaping (String) -> Void) -> some View {
-        Menu {
-            Picker(label, selection: Binding(get: { value }, set: chosen)) {
-                ForEach(QuietTime.all, id: \.self) { time in
-                    Text(QuietTime.words(time)).tag(time)
-                }
-            }
-        } label: {
-            HStack(spacing: 10) {
-                Text(label).font(Nacre.body).foregroundColor(Pearl.ink)
-                Text(QuietTime.words(value)).font(Nacre.body).foregroundColor(Pearl.muted)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                RowChevron()
-            }
-            .padding(.horizontal, 16)
-            .frame(minHeight: 50)
-            .contentShape(Rectangle())
+    /// "From   9:00 pm": the time in `link`; it opens the Pearl sheet.
+    private func quietRow(_ label: String, _ value: String, open: @escaping () -> Void) -> some View {
+        Button(action: open) {
+            APKeyValueRow(key: label, value: QuietTime.words(value), link: true)
         }
+        .buttonStyle(.plain)
         .accessibilityLabel("Quiet hours \(label.lowercased())")
         .accessibilityValue(QuietTime.words(value))
     }
@@ -419,6 +376,33 @@ struct NotificationsView: View {
     }
 }
 
+private struct PickingTime: Identifiable { let id: String }
+
+/// Quiet hours' time, on a Pearl sheet (no stock menu): every half hour,
+/// the one in use picked; a tap picks at once.
+private struct QuietTimeSheet: View {
+    let title: String
+    let value: String
+    let pick: (String) -> Void
+    let close: () -> Void
+
+    var body: some View {
+        PearlSheet {
+            APSheetTitle(title: title, close: close)
+            ScrollViewReader { proxy in
+                APCard {
+                    ForEach(Array(QuietTime.all.enumerated()), id: \.element) { i, time in
+                        if i > 0 { APSeparator(afterFace: false) }
+                        APChoiceRow(title: QuietTime.words(time), selected: time == value) { pick(time) }
+                            .id(time)
+                    }
+                }
+                .onAppear { proxy.scrollTo(value, anchor: .center) }
+            }
+        }
+    }
+}
+
 /// Quiet hours as the server keeps them ("21:00") and as they're said.
 enum QuietTime {
     /// Every half hour of the day.
@@ -454,47 +438,36 @@ struct TurnOnNotificationsView: View {
     let quiet: NotificationSettings.Quiet
     @State private var busy = false
 
+    /// G5-Notifications N-01 "Want a heads-up?": three moments (Progress is
+    /// hidden while Save is parked), then Turn on and Not now.
     var body: some View {
         NacreScreen {
-            VStack(spacing: 12) {
-                VStack(spacing: 10) {
-                    RoseBubble(symbol: "bell", size: 72)
-                    Text("Want a heads-up?").font(Nacre.title).tracking(0.4).foregroundColor(Pearl.ink)
-                        .multilineTextAlignment(.center)
-                        .accessibilityAddTraits(.isHeader)
-                    Text("Only at the right moments.").font(Nacre.footnote).foregroundColor(Pearl.ink)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 4)
-
-                GlassCard(radius: cardRadius) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Want a heads-up?").font(Nacre.headline).foregroundColor(Pearl.ink)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityAddTraits(.isHeader)
+                ProfileNote("Only at the right moments. Never about overspending.", centred: true)
+                APCard {
                     moment("calendar", "Payday", "A nudge to set something aside")
-                    RowSeparator()
+                    APSeparator()
                     moment("chart.line.uptrend.xyaxis", "Weekly check-in", "Your week in one minute")
-                    RowSeparator()
-                    moment("star", "Progress", "When your Anchor grows")
-                    RowSeparator()
+                    APSeparator()
                     moment("building.columns", "Bank needs you", "When a bank asks you to sign in")
                 }
-
-                Text("Never about overspending. Quiet from \(QuietTime.short(quiet.from)) to \(QuietTime.short(quiet.to)).")
-                    .font(Nacre.footnote).foregroundColor(Pearl.ink)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 2)
+                ProfileNote("Quiet from \(QuietTime.short(quiet.from)) to \(QuietTime.short(quiet.to)).", centred: true)
             }
-            .padding(.top, 28)
+            .padding(.top, 20)
         } actions: {
-            BottomActions {
+            VStack(spacing: 12) {
                 Button("Turn on notifications") { Task { await turnOn() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
+                    .buttonStyle(APPrimaryButtonStyle(busy: busy))
                     .disabled(busy)
-            } secondary: {
                 Button("Not now") { Task { await answer("not_now") } }
-                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                    .buttonStyle(APSecondaryButtonStyle())
                     .disabled(busy)
             }
+            .padding(.horizontal, 16).padding(.bottom, 8)
         }
     }
 

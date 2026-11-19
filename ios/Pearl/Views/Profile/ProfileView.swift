@@ -32,102 +32,27 @@ struct ProfileView: View {
     @State private var showConsent = false
     @AppStorage(Appearance.key) private var appearance = Appearance.automatic.rawValue
     @State private var confirmSignOut = false
+    @State private var showAppearance = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
-                backButton.padding(.top, 4)
+                HStack { APBackButton(identifier: "profile-back") { dismiss() }; Spacer() }.frame(height: 52)
                 Text("Profile").font(Nacre.largeTitle).foregroundColor(Pearl.ink)
+                    .padding(.leading, 4)
                     .accessibilityAddTraits(.isHeader)
-                    .padding(.bottom, 8)
 
-                identity.padding(.bottom, 8)
+                identity.padding(.top, 6)
+                moneyCard
+                youCard
+                privacyCard
+                helpCard.padding(.top, 4)
 
-                ProfileSection("Money")
-                GlassCard {
-                    NavigationLink { AccountsView() } label: {
-                        ProfileRow(symbol: "building.columns", title: "Accounts",
-                                   pill: summary?.needsYou.flatMap { $0 > 0 ? StatusPill(text: "\($0) needs you", tone: .needsALook) : nil })
-                    }
-                    .buttonStyle(.plain)
-                    RowSeparator(inset: 62)
-                    NavigationLink { IncomeBillsView() } label: {
-                        ProfileRow(symbol: "dollarsign.square", title: "Income and bills")
-                    }
-                    .buttonStyle(.plain)
-                    RowSeparator(inset: 62)
-                    NavigationLink { RecurringTransfersView() } label: {
-                        ProfileRow(symbol: "arrow.triangle.2.circlepath", title: "Recurring transfers")
-                    }
-                    .buttonStyle(.plain)
-                    RowSeparator(inset: 62)
-                    // THL-128: Debts has its own row, not only Set Pearl up again's step.
-                    NavigationLink { DebtsView() } label: {
-                        ProfileRow(symbol: "creditcard", title: "Debts")
-                    }
-                    .buttonStyle(.plain)
-                    RowSeparator(inset: 62)
-                    NavigationLink { CategoriesRulesView() } label: {
-                        ProfileRow(symbol: "square.on.circle", title: "Categories and rules")
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                ProfileSection("You")
-                GlassCard {
-                    NavigationLink { SignInSecurityView() } label: {
-                        ProfileRow(symbol: "lock", title: "Sign-in and security")
-                    }
-                    .buttonStyle(.plain)
-                    RowSeparator(inset: 62)
-                    NavigationLink { NotificationsView() } label: {
-                        ProfileRow(symbol: "bell", title: "Notifications")
-                    }
-                    .buttonStyle(.plain)
-                    RowSeparator(inset: 62)
-                    appearanceRow
-                }
-
-                ProfileSection("Privacy")
-                GlassCard {
-                    Button { showConsent = true } label: {
-                        ProfileRow(symbol: "eye", title: "Privacy and consent")
-                    }
-                    .buttonStyle(.plain)
-                    RowSeparator(inset: 62)
-                    Button { showYourData = true } label: {
-                        ProfileRow(symbol: "tray.and.arrow.down", title: "Your data")
-                    }
-                    .buttonStyle(.plain)
-                    RowSeparator(inset: 62)
-                    NavigationLink { ProtectView() } label: {
-                        ProfileRow(symbol: "checkmark.shield", title: "How we protect you")
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                GlassCard {
-                    Button { doc = .help } label: {
-                        ProfileRow(symbol: "questionmark.circle", title: "Help and support")
-                    }
-                    .buttonStyle(.plain)
-                    RowSeparator(inset: 62)
-                    // THL-118: the Terms, after sign-up too.
-                    Button { doc = .terms } label: {
-                        ProfileRow(symbol: "doc.text", title: "Terms")
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.top, 12)
-
-                Button("Sign out") { confirmSignOut = true }
-                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                APQuietButton(title: "Sign out", identifier: "profile-sign-out") { confirmSignOut = true }
                     .frame(maxWidth: .infinity)
+                    .padding(.top, 14)
+                ProfileNote("Pearl for iPhone \u{00B7} \(version)", centred: true)
                     .padding(.top, 8)
-
-
-                ProfileNote("Pearl for iPhone · \(version)", centred: true)
-                    .padding(.top, 12)
             }
             .padding(.horizontal, Pearl.gutter)
             .padding(.bottom, 32)
@@ -190,10 +115,13 @@ struct ProfileView: View {
                     .id(toast.id)
             }
         }
+        .sheet(isPresented: $showAppearance) {
+            AppearanceSheet(selection: $appearance) { showAppearance = false }
+        }
         .sheet(isPresented: $confirmSignOut) {
             // P-05 (TEST-06): a Pearl sheet, not an action sheet.
             PearlConfirmSheet(overline: "Sign out", title: "Sign out on this iPhone?",
-                              message: "Pearl stays as it is. To come back, you’ll sign in again.",
+                              message: "Pearl stays as it is. You’ll sign in again to come back.",
                               primary: "Sign out", busyLabel: "Signing out…", secondary: "Stay signed in",
                               failure: "Couldn’t sign out. Try again.",
                               onClose: { confirmSignOut = false }) {
@@ -203,22 +131,101 @@ struct ProfileView: View {
         }
     }
 
-    // MARK: Parts
 
-    /// The 44 pt glass Back circle on a pushed page.
-    private var backButton: some View {
-        Button { dismiss() } label: {
-            Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
-                .foregroundColor(Pearl.ink)
-                .frame(width: 44, height: 44)
-                .background(Circle().fill(Nacre.glass))
-                .overlay(Circle().strokeBorder(Nacre.glassEdge, lineWidth: 1))
-                .shadow(color: Color(hex: 0x1C1A33).opacity(0.1), radius: 5, y: 6)
+    // MARK: Cards (G5-Profile)
+
+    private var moneyCard: some View {
+        Group {
+            ProfileSection("Money")
+            APCard {
+                NavigationLink { AccountsView() } label: {
+                    ProfileRow(symbol: "building.columns", title: "Accounts",
+                               pill: summary?.needsYou.flatMap { $0 > 0 ? StatusPill(text: "\($0) needs you", tone: .needsALook) : nil },
+                               pillTrailing: true)
+                }
+                .buttonStyle(.plain)
+                APSeparator()
+                NavigationLink { IncomeBillsView() } label: {
+                    ProfileRow(symbol: "dollarsign.square", title: "Income and bills")
+                }
+                .buttonStyle(.plain)
+                APSeparator()
+                NavigationLink { RecurringTransfersView() } label: {
+                    ProfileRow(symbol: "arrow.triangle.2.circlepath", title: "Recurring transfers")
+                }
+                .buttonStyle(.plain)
+                APSeparator()
+                // THL-128: Debts has its own row, not only Set Pearl up again's step.
+                NavigationLink { DebtsView() } label: {
+                    ProfileRow(symbol: "creditcard", title: "Debts")
+                }
+                .buttonStyle(.plain)
+                APSeparator()
+                NavigationLink { CategoriesRulesView() } label: {
+                    ProfileRow(symbol: "square.on.circle", title: "Categories and rules")
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Back")
-        .accessibilityIdentifier("profile-back")
     }
+
+    private var youCard: some View {
+        Group {
+            ProfileSection("You")
+            APCard {
+                NavigationLink { SignInSecurityView() } label: {
+                    ProfileRow(symbol: "lock", title: "Sign-in and security")
+                }
+                .buttonStyle(.plain)
+                APSeparator()
+                NavigationLink { NotificationsView() } label: {
+                    ProfileRow(symbol: "bell", title: "Notifications")
+                }
+                .buttonStyle(.plain)
+                APSeparator()
+                appearanceRow
+            }
+        }
+    }
+
+    private var privacyCard: some View {
+        Group {
+            ProfileSection("Privacy")
+            APCard {
+                Button { showConsent = true } label: {
+                    ProfileRow(symbol: "eye", title: "Privacy and consent")
+                }
+                .buttonStyle(.plain)
+                APSeparator()
+                Button { showYourData = true } label: {
+                    ProfileRow(symbol: "tray.and.arrow.down", title: "Your data")
+                }
+                .buttonStyle(.plain)
+                APSeparator()
+                NavigationLink { ProtectView() } label: {
+                    ProfileRow(symbol: "checkmark.shield", title: "How we protect you")
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var helpCard: some View {
+        APCard {
+            Button { doc = .help } label: {
+                ProfileRow(symbol: "questionmark.circle", title: "Help and support")
+            }
+            .buttonStyle(.plain)
+            APSeparator()
+            // THL-118: the Terms, after sign-up too.
+            Button { doc = .terms } label: {
+                ProfileRow(symbol: "doc.text", title: "Terms")
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: Parts
 
     /// AP-Profile: the avatar (92, nacre ring; initials or her photo), Add
     /// photo / Change photo (G5-Photo: "Saving…" with the ring filling), her
@@ -299,22 +306,21 @@ struct ProfileView: View {
         toast = PearlToast.Model(text: text, failed: failed)
     }
 
-    /// "Appearance   Automatic ›": Automatic, Light or Dark, on this iPhone.
+    /// "Appearance   Automatic ›" (G5-SignOut): opens the Pearl sheet, never
+    /// the stock iOS menu.
     private var appearanceRow: some View {
-        Menu {
-            Picker("Appearance", selection: $appearance) {
-                ForEach(Appearance.allCases) { Text($0.title).tag($0.rawValue) }
-            }
-        } label: {
+        Button { showAppearance = true } label: {
             ProfileRow(symbol: "moon", title: "Appearance") {
-                Text(Appearance(rawValue: appearance)?.title ?? Appearance.automatic.title)
-                    .font(Nacre.body).foregroundColor(Pearl.muted)
+                Text(currentAppearance.title).font(Nacre.body).foregroundColor(Pearl.muted)
             }
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Appearance")
-        .accessibilityValue(Appearance(rawValue: appearance)?.title ?? Appearance.automatic.title)
+        .accessibilityValue(currentAppearance.title)
+        .accessibilityIdentifier("profile-appearance")
     }
+
+    private var currentAppearance: Appearance { Appearance(rawValue: appearance) ?? .automatic }
 
     /// Reset Pearl: back to the start of setup, keeping the sign-in.
     // MARK: Words
@@ -340,6 +346,29 @@ struct ProfileView: View {
         }
     }
 
+}
+
+/// G5-SignOut "Appearance": a Pearl sheet of three choices that picks at once.
+struct AppearanceSheet: View {
+    @Binding var selection: String
+    let close: () -> Void
+
+    var body: some View {
+        PearlSheet {
+            APSheetTitle(title: "Appearance", close: close)
+            APCard {
+                ForEach(Array(Appearance.allCases.enumerated()), id: \.element) { i, a in
+                    if i > 0 { APSeparator(afterFace: false) }
+                    APChoiceRow(title: a.title, sub: a == .automatic ? "Matches your iPhone" : nil,
+                                selected: selection == a.rawValue) {
+                        selection = a.rawValue
+                        close()
+                    }
+                    .accessibilityIdentifier("appearance-\(a.rawValue)")
+                }
+            }
+        }
+    }
 }
 
 /// A photo waiting for Move and scale.

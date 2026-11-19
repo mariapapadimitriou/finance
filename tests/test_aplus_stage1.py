@@ -184,7 +184,43 @@ class TestProfileCircleAndPhoto(unittest.TestCase):
         p = code(read("Views", "Profile", "ProfileView.swift"))
         self.assertIn("let goHome: () -> Void", p)
         self.assertNotIn("MainTabs.Tab", p)
-        self.assertIn('accessibilityLabel("Back")', p)
+        # A+ G5-Profile: the glass Back from the Profile kit, labelled there.
+        self.assertIn('APBackButton(identifier: "profile-back") { dismiss() }', p)
+        # One shared A+ Back (APlus.swift), labelled there; no second copy in Profile.
+        theme = code(read("Theme", "APlus.swift"))
+        self.assertIn('accessibilityLabel("Back")', theme)
+        kit = code(read("Views", "Profile", "ProfileParts.swift"))
+        for name in ("APBackButton", "APChevron", "APGlassButton", "APRadio", "APTickBox", "APRingFace"):
+            self.assertNotIn("struct %s" % name, kit)
+
+    def test_appearance_is_a_pearl_sheet_not_a_menu(self):
+        """G5-SignOut: Appearance picks at once on a Pearl sheet."""
+        p = code(read("Views", "Profile", "ProfileView.swift"))
+        self.assertNotIn("Menu {", p)
+        self.assertIn("AppearanceSheet(selection: $appearance)", p)
+        self.assertIn('"Matches your iPhone"', p)
+
+    def test_profile_rows_and_notifications_parked_moments(self):
+        p = code(read("Views", "Profile", "PrivacyViews.swift"))
+        self.assertNotIn('"progress"', p)
+        self.assertNotIn('"milestones"', p)
+        self.assertNotIn("Menu {", p)
+        a = code(read("Views", "Profile", "AccountsViews.swift"))
+        self.assertIn('"Not in your budget now"', a)
+        self.assertIn("AddAccountSheet", a)
+        i = code(read("Views", "Profile", "IncomeBillsView.swift"))
+        # Your plan is parked with Save (product owner, 2026-11-18): one flag, off,
+        # and the only way into it from Profile sits behind it.
+        self.assertIn("static let shown = false", i)
+        gate = i.index("if YourPlanGate.shown {")
+        self.assertGreater(i.index("YourPlanView()"), gate)
+        self.assertEqual(i.count("YourPlanView()"), 1)
+        for folder in (("Views", "Profile"), ("Views", "Onboarding")):
+            for f in os.listdir(os.path.join(APP, *folder)):
+                if f.endswith(".swift") and f not in ("IncomeBillsView.swift", "YourPlanView.swift"):
+                    self.assertNotIn("YourPlanView(", read(*folder, f), f)
+        self.assertIn('"answer": yes ? "yes" : "no"', i)
+        self.assertIn('body["answer"] = "no"', i)
 
 
 class TestWords(unittest.TestCase):

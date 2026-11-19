@@ -28,52 +28,60 @@ struct ChangeEmailView: View {
         return parts.count == 2 && parts[1].contains(".") && !parts[0].isEmpty
     }
 
+    /// G5-Email: Current as a key-value card, then the New email well, Send
+    /// code riding above the keyboard; then the six code wells, Confirm
+    /// greyed until all six are in, and the two quiet ways out.
     var body: some View {
         ProfilePage {
             if let sentTo = sentTo {
-                ProfileHeading(title: "Check your email",
-                               intro: "We sent a 6-digit code to \(sentTo). It works for 10 minutes.")
-                CodeBoxes(code: $code, failed: failed) { Task { await verify() } }
-                    .padding(.top, 8)
-                if let error = error { Hint(text: error).padding(.top, 4) }
-                Button("Send a new code") { Task { await start() } }
-                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
-                    .disabled(busy)
-                    .padding(.top, 4)
-            } else {
-                ProfileHeading(title: "Change your email", intro: "We’ll send a code to the new address.")
-                VStack(alignment: .leading, spacing: 14) {
-                    EmailField(label: "Current email", text: $current, readOnly: true)
-                    EmailField(label: "New email", text: $email,
-                               hint: "You’ll sign in with this from now on.") {
-                        if looksLikeEmail { Task { await start() } }
-                    }
+                ProfileHeading(title: "Check your email", intro: "We sent a 6-digit code to \(sentTo).")
+                ProfileCodeWells(code: $code, failed: failed) { Task { await verify() } }
+                    .padding(.top, 10)
+                if failed {
+                    Text("That code didn\u{2019}t work. Check it and try again.")
+                        .font(Nacre.footnote).foregroundColor(Pearl.danger)
+                        .frame(maxWidth: .infinity)
+                } else if let error = error {
+                    APErrorLine(text: error).padding(.top, 4)
                 }
-                .padding(.top, 4)
-                if let error = error { Hint(text: error).padding(.top, 4) }
+            } else {
+                ProfileHeading(title: "Change your email")
+                APCard {
+                    APKeyValueRow(key: "Current", value: current)
+                }
+                .padding(.top, 8)
+                EmailField(label: "New email", text: $email) {
+                    if looksLikeEmail { Task { await start() } }
+                }
+                .padding(.top, 8)
+                if let error = error { APErrorLine(text: error).padding(.top, 4) }
             }
         } bottom: {
             if sentTo == nil {
                 Button("Send code") { Task { await start() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
+                    .buttonStyle(APPrimaryButtonStyle(busy: busy))
                     .disabled(!looksLikeEmail || busy)
-                Button("Cancel") { dismiss() }
-                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
             } else {
                 Button("Confirm") { Task { await verify() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
+                    .buttonStyle(APPrimaryButtonStyle(busy: busy))
                     .disabled(code.count < 6 || busy)
-                Button("Use a different email") {
-                    sentTo = nil
-                    code = ""
-                    error = nil
+                VStack(spacing: 0) {
+                    Button("Send a new code") { Task { await start() } }
+                        .buttonStyle(APQuietTextStyle())
+                        .disabled(busy)
+                    Button("Use a different email") {
+                        sentTo = nil
+                        code = ""
+                        error = nil
+                        failed = false
+                    }
+                    .buttonStyle(APQuietTextStyle())
                 }
-                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
             }
         }
         .onAppear { current = app.user?.email ?? "" }
         .onChange(of: email) { _ in error = nil }
-        .onChange(of: code) { _ in failed = false }
+        .onChange(of: code) { c in if !c.isEmpty { failed = false } }
     }
 
     private func start() async {

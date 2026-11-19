@@ -172,7 +172,7 @@ extension View {
     }
 }
 
-// MARK: - AM-01 / C-01 Accounts
+// MARK: - AM-01 / C-01 Accounts (G5-Accounts, G5-Load)
 
 @MainActor
 struct AccountsView: View {
@@ -182,67 +182,21 @@ struct AccountsView: View {
     @State private var added: [AccountsOverview.Account] = []
     @State private var loaded = false
     @State private var adding = false
+    /// G5-Accounts "Add an account": a Pearl sheet, not the stock menu.
+    @State private var choosingAdd = false
+    @State private var afterAdd: AddChoice?
     @State private var reconnecting: AccountsOverview.Account?
     @State private var busy = false
     @State private var toast: String?
     @State private var error: String?
 
+    enum AddChoice { case link, hand }
+
     var body: some View {
-        ProfilePage {
-            ProfileHeading(title: "Accounts", intro: states ? nil : updatedLine)
-            if let first = linked.first(where: { $0.needsReconnect }) {
-                ConnectionBanner(account: first) { reconnecting = first }
-            }
-            if !loaded && error == nil {
-                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
-            }
-            if !linked.isEmpty {
-                ProfileSection("Linked")
-                GlassCard {
-                    ForEach(Array(linked.enumerated()), id: \.element.id) { i, a in
-                        if i > 0 { RowSeparator(inset: 62) }
-                        NavigationLink {
-                            if a.status == "disconnected" {
-                                DisconnectedAccountView(account: a)
-                            } else {
-                                AccountDetailView(account: a)
-                            }
-                        } label: { row(a) }
-                        .buttonStyle(.plain)
-                    }
-                }
-                if states { ProfileNote("If a bank isn’t responding, Pearl keeps trying.") }
-            }
-            if !added.isEmpty {
-                ProfileSection("Added by you")
-                GlassCard {
-                    ForEach(Array(added.enumerated()), id: \.element.id) { i, a in
-                        if i > 0 { RowSeparator(inset: 62) }
-                        NavigationLink {
-                            if a.isHand {
-                                ManualAccountView(account: a)
-                            } else {
-                                AccountDetailView(account: a)
-                            }
-                        } label: { row(a) }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            if let error = error { Hint(text: error).padding(.top, 4) }
-        } bottom: {
-            if states {
-                // C-01: Reconnect is the one primary action on the page.
-                Button("Link another bank") { Task { await link() } }
-                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
-                    .disabled(busy)
-            } else {
-                Button("Link another bank") { Task { await link() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
-                    .disabled(busy)
-                Button("Add a balance by hand") { adding = true }
-                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
-            }
+        ProfilePage(navTrailing: AnyView(APGlassButton(symbol: "plus", label: "Add an account") { choosingAdd = true }
+            .accessibilityIdentifier("accounts-add"))) {
+            ProfileHeading(title: "Accounts")
+            content
         }
         .overlay(alignment: .bottom) {
             // UN-01: the toast sits at the bottom.
@@ -255,10 +209,16 @@ struct AccountsView: View {
         .reloads { await load() }
         .onAppear(perform: showNotice)
         .onChange(of: app.accountsNotice) { _ in showNotice() }
+        .sheet(isPresented: $choosingAdd, onDismiss: runAdd) {
+            AddAccountSheet { choice in
+                afterAdd = choice
+                choosingAdd = false
+            } close: { choosingAdd = false }
+        }
         .sheet(isPresented: $adding) {
             AddHandBalanceSheet { await load() }
                 .background(SheetBackground())
-                .presentationDetents([.height(450), .large])
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
         .sheet(item: $reconnecting) { a in
@@ -266,9 +226,90 @@ struct AccountsView: View {
                 reconnecting = nil
                 if ok { Task { await afterReconnect(a) } }
             }
-            .background(SheetBackground())
-            .presentationDetents([.medium])
-            .presentationDragIndicator(.visible)
+        }
+    }
+
+    @ViewBuilder private var content: some View {
+        if !loaded && error == nil {
+            // G5-Load: rows hold their place.
+            ProfileSection(" ")
+            APCard { APSkeletonRow(); APSeparator(); APSkeletonRow() }
+            ProfileSection(" ")
+            APCard { APSkeletonRow(); APSeparator(); APSkeletonRow() }
+        } else if let error = error, linked.isEmpty && added.isEmpty {
+            APEmptyState(title: "Couldn\u{2019}t load your accounts", line: error, top: 120) {
+                IconBubble(symbol: "exclamationmark.triangle", kind: .warn)
+            } actions: {
+                Button("Try again") { Task { await load() } }.buttonStyle(APSecondaryButtonStyle())
+            }
+        } else if linked.isEmpty && added.isEmpty {
+            APEmptyState(title: "No accounts yet", line: "Link a bank and Pearl does the sorting.", top: 90) {
+                APMark(width: 120)
+            } actions: {
+                VStack(spacing: 4) {
+                    Button("Link a bank") { Task { await link() } }
+                        .buttonStyle(APPrimaryButtonStyle(busy: busy))
+                        .disabled(busy)
+                    APQuietButton(title: "Add a balance by hand") { adding = true }
+                }
+            }
+        } else {
+            if let first = linked.first(where: { $0.needsReconnect }) {
+                ConnectionBanner(account: first) { reconnecting = first }
+                    .padding(.top, 8)
+            }
+            ForEach(banks, id: \.self) { bank in
+                ProfileSection(bank)
+                APCard {
+                    let rows = linked.filter { AccountWords.bank($0) == bank }
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { i, a in
+                        if i > 0 { APSeparator() }
+                        NavigationLink {
+                            if a.status == "disconnected" {
+                                DisconnectedAccountView(account: a)
+                            } else {
+                                AccountDetailView(account: a)
+                            }
+                        } label: { row(a) }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            if !added.isEmpty {
+                ProfileSection("Added by you")
+                APCard {
+                    ForEach(Array(added.enumerated()), id: \.element.id) { i, a in
+                        if i > 0 { APSeparator() }
+                        NavigationLink {
+                            if a.isHand {
+                                ManualAccountView(account: a)
+                            } else {
+                                AccountDetailView(account: a)
+                            }
+                        } label: { row(a) }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            if let error = error { APErrorLine(text: error).padding(.top, 8) }
+            Color.clear.frame(height: 40)
+        }
+    }
+
+    /// Each bank once, in the order the server lists them.
+    private var banks: [String] {
+        var seen: [String] = []
+        for a in linked where !seen.contains(AccountWords.bank(a)) { seen.append(AccountWords.bank(a)) }
+        return seen
+    }
+
+    /// The Add an account sheet has gone: now Plaid, or the hand-added balance.
+    private func runAdd() {
+        guard let choice = afterAdd else { return }
+        afterAdd = nil
+        switch choice {
+        case .link: Task { await link() }
+        case .hand: adding = true
         }
     }
 
@@ -279,27 +320,17 @@ struct AccountsView: View {
         withAnimation { toast = notice }
     }
 
-    /// C-01: a bank needs her or isn't responding, so the rows say how each
-    /// is doing instead of their balances.
-    private var states: Bool { linked.contains(where: AccountWords.trouble) }
-
+    /// G5-Accounts: face, name over "••2210" (and its pill), the balance on
+    /// the right edge; a disconnected account's balance is muted.
     private func row(_ a: AccountsOverview.Account) -> some View {
-        ProfileRow(initials: AccountWords.bank(a), title: a.name, sub: AccountWords.line(a, states: states),
+        ProfileRow(initials: AccountWords.bank(a), title: a.name, sub: AccountWords.line(a),
                    pill: AccountWords.listPill(a)) {
-            if !states, let b = a.balance {
-                Text(Format.amount(abs(b))).font(Nacre.body).foregroundColor(Pearl.ink)
+            if let b = a.balance {
+                Text(Format.amount(abs(b))).font(Nacre.headline)
+                    .foregroundColor(a.status == "disconnected" ? Pearl.muted : Pearl.ink)
                     .monospacedDigit().lineLimit(1).fixedSize()
             }
         }
-    }
-
-    /// "Updated 5 minutes ago": when the banks were last read.
-    private var updatedLine: String? {
-        let stamps = linked.compactMap { $0.updatedAt }.compactMap { s in ProtectView.parse(s).map { (s, $0) } }
-        guard let latest = stamps.max(by: { $0.1 < $1.1 }) else {
-            return loaded && linked.isEmpty ? "Link a bank, or add a balance by hand." : nil
-        }
-        return "Updated \(AccountWords.when(latest.0))"
     }
 
     private func load() async {
@@ -321,8 +352,9 @@ struct AccountsView: View {
             if case .linked(let l) = try await plaid.open(api: app.api) {
                 let _: LinkedItem = try await app.api.post("api/plaid/exchange",
                                                            ["public_token": l.publicToken, "institution": l.institution])
-                withAnimation { toast = "Linked \(l.institution). Your transactions are on their way." }
+                withAnimation { toast = "\(l.institution) is linked." }
                 app.changed()
+                await load()
             }
         } catch {
             self.error = app.handle(error)
@@ -330,30 +362,45 @@ struct AccountsView: View {
     }
 
     private func afterReconnect(_ a: AccountsOverview.Account) async {
-        withAnimation { toast = "\(a.name) is up to date again." }
+        withAnimation { toast = "\(a.name) is up to date." }
         app.changed()
     }
 }
 
-/// C-01's card for a bank that needs her: what's wrong, and Reconnect.
+/// G5-Accounts "Add an account": Link a bank, or add a balance by hand.
+struct AddAccountSheet: View {
+    let pick: (AccountsView.AddChoice) -> Void
+    let close: () -> Void
+
+    var body: some View {
+        PearlSheet {
+            APSheetTitle(title: "Add an account", close: close)
+            APCard {
+                Button { pick(.link) } label: {
+                    ProfileRow(symbol: "building.columns", title: "Link a bank", sub: "Read-only, through Plaid")
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("add-link-bank")
+                APSeparator()
+                Button { pick(.hand) } label: {
+                    ProfileRow(symbol: "square.and.pencil", title: "Add a balance by hand",
+                               sub: "For a bank Pearl can\u{2019}t link yet")
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("add-by-hand")
+            }
+        }
+    }
+}
+
+/// C-01's banner for a bank that needs her, with Reconnect at its end.
 struct ConnectionBanner: View {
     let account: AccountsOverview.Account
     let reconnect: () -> Void
 
     var body: some View {
-        GlassCard {
-            VStack(spacing: 14) {
-                HStack(spacing: 12) {
-                    IconBubble(symbol: "arrow.triangle.2.circlepath")
-                    Text(text).font(Nacre.body).foregroundColor(Pearl.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                Button("Reconnect", action: reconnect)
-                    .buttonStyle(NacreButtonStyle())
-            }
-            .padding(16)
-        }
+        APBanner(text: text, action: "Reconnect", act: reconnect)
+            .accessibilityIdentifier("accounts-reconnect")
     }
 
     private var text: String {
@@ -397,24 +444,20 @@ struct ReconnectSheet: View {
     @State private var error: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            ProfileHeading(title: "Sign in to \(bank) again",
-                           intro: "Banks ask you to sign in again every so often. It’s routine, and nothing is wrong with your account.")
-                .padding(.top, 28)
-            GlassCard {
-                ProfileRow(initials: bank, title: label,
-                           sub: updatedAt.map { "Last updated \(AccountWords.when($0))" }, chevron: false)
+        PearlSheet {
+            APSheetTitle(title: "Sign in to \(bank) again") { finished(false) }
+            APWho(face: bank, name: label, line: updatedAt.map { "Last updated \(AccountWords.when($0))" })
+            Text("Banks ask for this every so often. Nothing is wrong with your account.")
+                .font(Nacre.body).foregroundColor(Pearl.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            if let error = error { APErrorLine(text: error) }
+        } footer: {
+            VStack(spacing: 0) {
+                PearlSheetButtons(primary: "Continue to \(bank)", busy: busy, secondary: "Not now",
+                                  onPrimary: { Task { await go() } }, onSecondary: { finished(false) })
+                ProfileNote("Read-only, through Plaid", centred: true).padding(.bottom, 8)
             }
-            if let error = error { Hint(text: error) }
-            Spacer(minLength: 0)
-            Button("Continue to \(bank)") { Task { await go() } }
-                .buttonStyle(NacreButtonStyle(busy: busy))
-                .disabled(busy)
-            Button("Not now") { finished(false) }
-                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
-            ProfileNote("You’ll sign in through Plaid. Pearl stays read-only.", centred: true)
         }
-        .padding(.horizontal, 16).padding(.bottom, 8)
     }
 
     private func go() async {
@@ -452,40 +495,27 @@ struct AccountHero: View {
     var facts = true
 
     var body: some View {
-        VStack(spacing: 6) {
-            RowAvatar(name: AccountWords.bank(account), size: 52, font: Nacre.headline)
-                .padding(.bottom, 4)
-            Text(account.name).font(Nacre.title2).foregroundColor(Pearl.ink)
-                .multilineTextAlignment(.center)
-            Text(account.balance.map { Format.amount(abs($0)) } ?? "—")
-                .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle)).foregroundColor(Pearl.ink)
-                .lineLimit(1).minimumScaleFactor(0.6)
-            Text(note).font(Nacre.footnote).foregroundColor(Pearl.ink)
-                .multilineTextAlignment(.center)
-            let pill = AccountWords.pill(account)
-            StatusPill(text: pill.text, tone: pill.tone).padding(.top, 4)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 4).padding(.bottom, 8)
-        .accessibilityElement(children: .combine)
+        APHero(face: AccountWords.bank(account), name: account.name,
+               amount: account.balance.map { Format.amount(abs($0)) } ?? "\u{2014}",
+               amountTone: account.status == "disconnected" ? Pearl.muted : Pearl.ink,
+               lines: [note], pill: heroPill)
+            .padding(.top, 8)
 
         if facts && !account.isHand {
-            GlassCard {
-                fact("History from", account.historyFrom.map { Format.month(String($0.prefix(7))) } ?? "—")
-                RowSeparator()
-                fact("Transactions", "\(account.transactions ?? 0)")
+            APCard {
+                APKeyValueRow(key: "History from", value: account.historyFrom.map { Format.month(String($0.prefix(7))) } ?? "\u{2014}")
+                APSeparator(afterFace: false)
+                APKeyValueRow(key: "Transactions", value: "\(account.transactions ?? 0)")
             }
+            .padding(.top, 10)
         }
     }
 
-    private func fact(_ label: String, _ value: String) -> some View {
-        HStack {
-            Text(label).font(Nacre.body).foregroundColor(Pearl.ink)
-            Spacer()
-            Text(value).font(Nacre.body).foregroundColor(Pearl.muted)
-        }
-        .padding(.horizontal, 16).frame(minHeight: 50)
-        .accessibilityElement(children: .combine)
+    /// G5-Account: "Up to date" when it counts, "Not in your budget" when it doesn't.
+    private var heroPill: StatusPill {
+        if account.counted == false && !account.isHand { return StatusPill(text: "Not in your budget", tone: .neutral) }
+        let p = AccountWords.pill(account)
+        return StatusPill(text: p.text, tone: p.tone)
     }
 }
 
@@ -525,7 +555,7 @@ struct AccountDetailView: View {
             }
             if joint {
                 // AM-04: who it's shared with, under the balance.
-                GlassCard {
+                APCard {
                     NavigationLink { JointAccountView(account: account) } label: {
                         ProfileRow(title: "Shared with") {
                             Text(people).font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
@@ -536,32 +566,30 @@ struct AccountDetailView: View {
             }
 
             ProfileSection("Settings")
-            GlassCard {
+            APCard {
                 toggleRow(title: "Include in my budget",
-                          sub: isInvestment ? "Spending doesn’t happen from an investment account."
-                              : "Its spending, bills and balance count toward Allowance and your totals on Home.",
+                          sub: isInvestment ? "Not for an investment account" : "Counts toward your Allowance",
                           on: $counted, disabled: isInvestment) { on in Task { await setCounted(on) } }
                 if !isInvestment {
-                    RowSeparator()
-                    toggleRow(title: "Joint account",
-                              sub: "Only your share counts. You choose the share.",
+                    APSeparator(afterFace: false)
+                    toggleRow(title: "Shared with someone",
+                              sub: "Only your share counts",
                               on: $joint) { on in Task { await setJoint(on) } }
                 }
                 if account.canAnchor == true {
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     toggleRow(title: "Part of my Anchor",
                               sub: "Savings accounts only", on: $anchor) { on in Task { await setAnchor(on) } }
                 }
-                RowSeparator()
+                APSeparator(afterFace: false)
                 Button { nickname = account.nickname ?? ""; renaming = true } label: {
-                    ProfileRow(title: "Nickname", sub: nil) {
-                        Text((account.nickname ?? "").isEmpty ? "Add" : account.nickname!)
-                            .font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
-                    }
+                    APKeyValueRow(key: "Nickname", value: (account.nickname ?? "").isEmpty ? "Add" : account.nickname!,
+                                  link: (account.nickname ?? "").isEmpty)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("account-nickname")
                 if !account.copies(among: all).isEmpty {
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     NavigationLink {
                         SameAccountView(account: account, all: all) { text, goneId in
                             if goneId == account.id {
@@ -577,24 +605,27 @@ struct AccountDetailView: View {
                 }
             }
 
-            GlassCard {
+            // G5-Account: the destructive rows are the only red on the way.
+            APCard {
                 Button { removing = true } label: {
-                    ProfileRow(title: "Remove this account", tone: Pearl.danger, chevron: false)
+                    ProfileRow(symbol: "trash", title: "Remove this account", tone: Pearl.danger, chevron: false)
                 }
                 .buttonStyle(.plain)
                 if sameBank.count > 1 {
                     // AM-11 (THL-262): every account on this bank login at once.
-                    RowSeparator()
+                    APSeparator()
                     Button { removingBank = true } label: {
-                        ProfileRow(title: "Remove \(AccountWords.bank(account)) entirely · \(sameBank.count == 2 ? "both accounts" : "all \(sameBank.count) accounts")",
+                        ProfileRow(symbol: "minus.circle", title: "Remove \(AccountWords.bank(account)) entirely",
+                                   sub: sameBank.count == 2 ? "Both accounts" : "All \(sameBank.count) accounts",
                                    tone: Pearl.danger, chevron: false)
                     }
                     .buttonStyle(.plain)
                     .disabled(busy)
                 }
             }
-            .padding(.top, 12)
-            if let error = error { Hint(text: error).padding(.top, 4) }
+            .padding(.top, 16)
+            if let error = error { APErrorLine(text: error).padding(.top, 4) }
+            Color.clear.frame(height: 40)
         }
         .sheet(isPresented: Binding(get: { notJoint != nil }, set: { if !$0 { notJoint = nil; syncState() } })) {
             if let changes = notJoint {
@@ -625,9 +656,6 @@ struct AccountDetailView: View {
                 removingBank = false
                 if removed { app.changed(); dismiss() }
             }
-            .background(SheetBackground())
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
         }
         .overlay(alignment: .bottom) {
             // AM-03: the toast sits at the bottom, with Undo.
@@ -662,9 +690,6 @@ struct AccountDetailView: View {
                 removing = false
                 if removed { app.changed(); dismiss() }
             }
-            .background(SheetBackground())
-            .presentationDetents([.medium])
-            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $reconnecting) {
             ReconnectSheet(account: account) { ok in
@@ -674,9 +699,6 @@ struct AccountDetailView: View {
                     app.changed()
                 }
             }
-            .background(SheetBackground())
-            .presentationDetents([.medium])
-            .presentationDragIndicator(.visible)
         }
     }
 
@@ -711,13 +733,9 @@ struct AccountDetailView: View {
     /// A setting and its switch; what it does is VoiceOver's hint.
     private func toggleRow(title: String, sub: String, on: Binding<Bool>, disabled: Bool = false,
                            changed: @escaping (Bool) -> Void) -> some View {
-        Toggle(isOn: Binding(get: { on.wrappedValue }, set: { v in on.wrappedValue = v; changed(v) })) {
-            Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
-        }
-        .tint(Pearl.action)
-        .disabled(disabled || busy)
-        .accessibilityHint(sub)
-        .padding(.horizontal, 16).frame(minHeight: 50)
+        APToggleRow(title: title, sub: sub,
+                    isOn: Binding(get: { on.wrappedValue }, set: { v in on.wrappedValue = v; changed(v) }))
+            .disabled(disabled || busy)
     }
 
     // MARK: Saving (on tap: there's no Save button)
@@ -760,11 +778,11 @@ struct AccountDetailView: View {
 
     /// AM-03: no confirmation; the toast says what changed, with Undo.
     private func setCounted(_ on: Bool) async {
-        let name = account.name
         guard await save(["counted": on], saying: nil) != nil else { return }
-        let text = on ? "\(name) is back in your budget." : "\(name) left your budget."
+        // G5-Account (AM-03): the short toast, with Undo.
+        let text = on ? "In your budget now" : "Not in your budget now"
         withAnimation {
-            toast = (text, { Task { await save(["counted": !on], saying: on ? "\(name) left your budget." : "\(name) is back in your budget.") } })
+            toast = (text, { Task { await save(["counted": !on], saying: on ? "Not in your budget now" : "In your budget now") } })
         }
     }
 
@@ -814,42 +832,29 @@ struct RemoveAccountSheet: View {
     @State private var error: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Spacer()
-                Text("Remove \(account.name)?").font(Nacre.headline).foregroundColor(Pearl.ink)
-                    .lineLimit(1).accessibilityAddTraits(.isHeader)
-                Spacer()
-            }
-            .overlay(alignment: .trailing) { CloseButton { finished(false) } }
-            .padding(.top, 20)
-            HStack(spacing: 12) {
-                RowAvatar(name: AccountWords.bank(account), size: 48, font: Nacre.headline)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(account.name).font(Nacre.title2).foregroundColor(Pearl.ink)
-                    Text(detail).font(Nacre.footnote).foregroundColor(Pearl.ink)
-                }
-                Spacer(minLength: 0)
-            }
-            .accessibilityElement(children: .combine)
+        PearlSheet(dismissDisabled: busy) {
+            APSheetTitle(title: "Remove \(account.name)?") { finished(false) }
+            APWho(face: AccountWords.bank(account), name: account.name, line: detail)
             if account.isHand {
-                ProfileNote("Its balance comes off Home. This can’t be undone.")
+                Text("Its balance comes off Home. This can\u{2019}t be undone.")
+                    .font(Nacre.body).foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
-                GlassCard {
+                APCard {
                     ChoiceLine(title: "Keep its transactions", sub: "Past months stay the same",
                                selected: !deleteHistory) { deleteHistory = false }
-                    RowSeparator()
-                    ChoiceLine(title: "Delete them too", sub: "This can’t be undone",
+                    APSeparator(afterFace: false)
+                    ChoiceLine(title: "Delete them too", sub: "This can\u{2019}t be undone",
                                selected: deleteHistory) { deleteHistory = true }
                 }
             }
-            if let error = error { Hint(text: error) }
-            Spacer(minLength: 0)
-            Button("Remove account") { Task { await remove() } }
-                .buttonStyle(NacreButtonStyle(busy: busy))
-                .disabled(busy)
+            if let error = error { APErrorLine(text: error) }
+        } footer: {
+            // The final button is the rose Primary naming the action; no red here.
+            PearlSheetButtons(primary: error == nil ? "Remove account" : "Try again", busy: busy,
+                              busyLabel: "Removing\u{2026}", secondary: "Keep it",
+                              onPrimary: { Task { await remove() } }, onSecondary: { finished(false) })
         }
-        .padding(.horizontal, 16).padding(.bottom, 8)
         .onAppear { deleteHistory = deleting }
     }
 
@@ -897,26 +902,29 @@ struct DisconnectedAccountView: View {
     var body: some View {
         ProfilePage {
             AccountHero(account: account, note: note, facts: false)
-            GlassCard {
-                fact("In Pearl", "\((account.transactions ?? 0).formatted()) transactions")
-                RowSeparator()
-                fact("History from", account.historyFrom.map { Format.month(String($0.prefix(7))) } ?? "—")
+            APCard {
+                APKeyValueRow(key: "In Pearl", value: "\((account.transactions ?? 0).formatted()) transactions")
+                APSeparator(afterFace: false)
+                APKeyValueRow(key: "History from", value: account.historyFrom.map { Format.month(String($0.prefix(7))) } ?? "\u{2014}")
             }
-            GlassCard {
+            .padding(.top, 10)
+            VStack(spacing: 12) {
+                Button("Reconnect") { reconnecting = true }
+                    .buttonStyle(APPrimaryButtonStyle())
+                    .disabled(busy)
+                Button("Keep as a manual account") { Task { await keepAsManual() } }
+                    .buttonStyle(APSecondaryButtonStyle())
+                    .disabled(busy)
+            }
+            .padding(.top, 10)
+            APCard {
                 Button { removing = true } label: {
-                    ProfileRow(title: "Remove it and its history", tone: Pearl.danger, chevron: false)
+                    ProfileRow(symbol: "trash", title: "Remove it and its history", tone: Pearl.danger, chevron: false)
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.top, 4)
-            if let error = error { Hint(text: error).padding(.top, 4) }
-        } bottom: {
-            Button("Reconnect") { reconnecting = true }
-                .buttonStyle(NacreButtonStyle())
-                .disabled(busy)
-            Button("Keep as a manual account") { Task { await keepAsManual() } }
-                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
-                .disabled(busy)
+            .padding(.top, 16)
+            if let error = error { APErrorLine(text: error).padding(.top, 4) }
         }
         .task {
             if let o: AccountsOverview = try? await app.api.get("api/accounts/overview"), let item = account.itemId {
@@ -928,18 +936,12 @@ struct DisconnectedAccountView: View {
                 reconnecting = false
                 if ok { app.changed(); dismiss() }
             }
-            .background(SheetBackground())
-            .presentationDetents([.medium])
-            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $removing) {
             RemoveAccountSheet(account: account, deleting: true, lastAtBank: lastAtBank) { removed in
                 removing = false
                 if removed { app.changed(); dismiss() }
             }
-            .background(SheetBackground())
-            .presentationDetents([.medium])
-            .presentationDragIndicator(.visible)
         }
     }
 
@@ -948,16 +950,6 @@ struct DisconnectedAccountView: View {
         let mask = (account.mask ?? "").isEmpty ? nil : "••\(account.mask!)"
         let on = (account.disconnectedOn ?? account.updatedAt).map { "Balance on \(Format.short($0))" }
         return [on ?? "Balance when it disconnected", mask].compactMap { $0 }.joined(separator: " · ")
-    }
-
-    private func fact(_ label: String, _ value: String) -> some View {
-        HStack {
-            Text(label).font(Nacre.body).foregroundColor(Pearl.ink)
-            Spacer()
-            Text(value).font(Nacre.body).foregroundColor(Pearl.muted)
-        }
-        .padding(.horizontal, 16).frame(minHeight: 50)
-        .accessibilityElement(children: .combine)
     }
 
     private func keepAsManual() async {
@@ -973,8 +965,7 @@ struct DisconnectedAccountView: View {
     }
 }
 
-/// A choice with a line under it and a tick when it's the one (iOS has no
-/// radio buttons; the Choice component's Radio type).
+/// A choice with a line under it: the A+ radio row (G5-Remove).
 struct ChoiceLine: View {
     let title: String
     var sub: String? = nil
@@ -982,25 +973,7 @@ struct ChoiceLine: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
-                    if let sub = sub {
-                        Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                if selected {
-                    Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold)).foregroundColor(Pearl.action)
-                }
-            }
-            .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 52)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        APChoiceRow(title: title, sub: sub, selected: selected, action: action)
     }
 }
 
@@ -1026,34 +999,32 @@ struct ManualAccountView: View {
             AccountHero(account: account,
                         note: account.updatedAt.map { "Added by you · \(AccountWords.updatedLine($0))" } ?? "Added by you")
             Button("Update balance") { updating = true }
-                .buttonStyle(SecondaryButtonStyle())
-                .padding(.top, 4)
+                .buttonStyle(APSecondaryButtonStyle())
+                .padding(.top, 10)
 
             ProfileSection("Settings")
-            GlassCard {
+            APCard {
                 toggle(title: "Show on Home", sub: "Counts in your balances and totals",
                        on: $counted) { on in Task { await save(["counted": on], saying: on ? "\(account.name) shows on Home." : "\(account.name) is off Home.") } }
                 if account.canAnchor == true {
-                    RowSeparator()
+                    APSeparator(afterFace: false)
                     toggle(title: "Part of my Anchor", sub: "Savings accounts only",
                            on: $anchor) { on in Task { await save(["anchor": on], saying: on ? "\(account.name) counts toward your Anchor." : "\(account.name) no longer counts toward your Anchor.") } }
                 }
-                RowSeparator()
+                APSeparator(afterFace: false)
                 Button { name = account.name; renaming = true } label: {
-                    ProfileRow(title: "Name") {
-                        Text(account.name).font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
-                    }
+                    APKeyValueRow(key: "Name", value: account.name)
                 }
                 .buttonStyle(.plain)
             }
-            GlassCard {
+            APCard {
                 Button { removing = true } label: {
-                    ProfileRow(title: "Remove this account", tone: Pearl.danger, chevron: false)
+                    ProfileRow(symbol: "trash", title: "Remove this account", tone: Pearl.danger, chevron: false)
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.top, 12)
-            if let error = error { Hint(text: error).padding(.top, 4) }
+            .padding(.top, 16)
+            if let error = error { APErrorLine(text: error).padding(.top, 4) }
         }
         .overlay(alignment: .bottom) {
             // UN-01: the toast sits at the bottom.
@@ -1086,29 +1057,20 @@ struct ManualAccountView: View {
                     app.changed()
                 }
             }
-            .background(SheetBackground())
-            .presentationDetents([.medium])
-            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $removing) {
             RemoveAccountSheet(account: account) { removed in
                 removing = false
                 if removed { app.changed(); dismiss() }
             }
-            .background(SheetBackground())
-            .presentationDetents([.medium])
-            .presentationDragIndicator(.visible)
         }
     }
 
     private func toggle(title: String, sub: String, on: Binding<Bool>,
                         changed: @escaping (Bool) -> Void) -> some View {
-        Toggle(isOn: Binding(get: { on.wrappedValue }, set: { v in on.wrappedValue = v; changed(v) })) {
-            Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
-        }
-        .tint(Pearl.action).disabled(busy)
-        .accessibilityHint(sub)
-        .padding(.horizontal, 16).frame(minHeight: 50)
+        APToggleRow(title: title, sub: sub,
+                    isOn: Binding(get: { on.wrappedValue }, set: { v in on.wrappedValue = v; changed(v) }))
+            .disabled(busy)
     }
 
     private func save(_ body: [String: Any], saying: String?) async {
@@ -1143,19 +1105,16 @@ struct UpdateBalanceSheet: View {
     private struct Reply: Decodable { let account: AccountsOverview.Account? }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            ProfileHeading(title: "Update \(account.name)", intro: "What it holds today. Pearl shows it on Home from now on.")
-                .padding(.top, 28)
-            AmountField(label: "Balance today", text: $balance)
-            if let error = error { Hint(text: error) }
-            Spacer(minLength: 0)
-            Button("Save balance") { Task { await save() } }
-                .buttonStyle(NacreButtonStyle(busy: busy))
-                .disabled(balance.isEmpty || busy)
-            Button("Cancel") { finished(nil) }
-                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+        PearlSheet(dismissDisabled: busy) {
+            APSheetTitle(title: "Update \(account.name)") { finished(nil) }
+            PearlField(label: "Balance today", placeholder: "0.00", text: $balance, kind: .amount,
+                       identifier: "balance-today")
+            if let error = error { APErrorLine(text: error) }
+        } footer: {
+            PearlSheetButtons(primary: error == nil ? "Save" : "Try again", busy: busy, busyLabel: "Saving\u{2026}",
+                              onPrimary: { Task { await save() } })
+                .disabled(balance.isEmpty)
         }
-        .padding(.horizontal, 16).padding(.bottom, 8)
         .onAppear { balance = account.balance.map { String(format: "%.2f", abs($0)) } ?? "" }
     }
 
@@ -1171,27 +1130,13 @@ struct UpdateBalanceSheet: View {
     }
 }
 
-/// "$ 3,000.00": a money field with the design system's Input look.
+/// "$ 3,000.00": a money field, the A+ well (REDESIGN-09).
 struct AmountField: View {
     let label: String
     @Binding var text: String
-    @FocusState private var focused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label).font(Nacre.footnote).foregroundColor(Pearl.ink)
-            HStack(spacing: 4) {
-                Text("$").foregroundColor(Pearl.muted)
-                TextField("0.00", text: $text).keyboardType(.decimalPad).focused($focused)
-                    .foregroundColor(Pearl.ink)
-            }
-            .font(Nacre.body)
-            .padding(.horizontal, 16).frame(height: 52)
-            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Nacre.glass))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(focused ? Pearl.action : Nacre.edge, lineWidth: focused ? 1.5 : 1))
-            .accessibilityLabel(label)
-        }
+        PearlField(label: label, placeholder: "0.00", text: $text, kind: .amount)
     }
 }
 
@@ -1214,50 +1159,30 @@ struct RemoveBankSheet: View {
     private struct Reply: Decodable { let accounts: Int? }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Spacer()
-                Text("Remove \(bank) entirely?").font(Nacre.headline).foregroundColor(Pearl.ink)
-                    .lineLimit(1).accessibilityAddTraits(.isHeader)
-                Spacer()
-            }
-            .overlay(alignment: .trailing) { CloseButton { finished(false) } }
-            .padding(.top, 20)
-            HStack(spacing: 12) {
-                RowAvatar(name: bank, size: 48, font: Nacre.headline)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(bank).font(Nacre.title2).foregroundColor(Pearl.ink)
-                    Text("\(accounts.count) accounts · Pearl disconnects \(bank) so it can be linked again from scratch")
-                        .font(Nacre.footnote).foregroundColor(Pearl.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
-            }
-            .accessibilityElement(children: .combine)
-            ScrollView {
-                VStack(spacing: 12) {
-                    GlassCard {
-                        ForEach(Array(accounts.enumerated()), id: \.element.id) { i, a in
-                            if i > 0 { RowSeparator(inset: 62) }
-                            ProfileRow(initials: bank, title: a.name,
-                                       sub: (a.mask ?? "").isEmpty ? AccountWords.kind(a) : "••\(a.mask!)", chevron: false)
-                        }
-                    }
-                    GlassCard {
-                        ChoiceLine(title: "Keep their transactions", sub: "Past months stay the same",
-                                   selected: !deleteHistory) { deleteHistory = false }
-                        RowSeparator()
-                        ChoiceLine(title: "Delete them too", sub: "This can’t be undone",
-                                   selected: deleteHistory) { deleteHistory = true }
-                    }
+        PearlSheet(dismissDisabled: busy) {
+            APSheetTitle(title: "Remove \(bank) entirely?") { finished(false) }
+            APWho(face: bank, name: bank, line: "\(accounts.count) accounts \u{00B7} you can link \(bank) again later")
+            APCard {
+                ForEach(Array(accounts.enumerated()), id: \.element.id) { i, a in
+                    if i > 0 { APSeparator() }
+                    ProfileRow(initials: bank, title: a.name,
+                               sub: (a.mask ?? "").isEmpty ? AccountWords.kind(a) : "\u{2022}\u{2022}\(a.mask!)", chevron: false)
                 }
             }
-            if let error = error { Hint(text: error) }
-            Button("Remove \(bank)") { Task { await remove() } }
-                .buttonStyle(NacreButtonStyle(busy: busy))
-                .disabled(busy || itemId.isEmpty)
+            APCard {
+                ChoiceLine(title: "Keep their transactions", sub: "Past months stay the same",
+                           selected: !deleteHistory) { deleteHistory = false }
+                APSeparator(afterFace: false)
+                ChoiceLine(title: "Delete them too", sub: "This can\u{2019}t be undone",
+                           selected: deleteHistory) { deleteHistory = true }
+            }
+            if let error = error { APErrorLine(text: error) }
+        } footer: {
+            PearlSheetButtons(primary: error == nil ? "Remove \(bank)" : "Try again", busy: busy,
+                              busyLabel: "Removing\u{2026}", secondary: "Keep it",
+                              onPrimary: { Task { await remove() } }, onSecondary: { finished(false) })
+                .disabled(itemId.isEmpty)
         }
-        .padding(.horizontal, 16).padding(.bottom, 8)
     }
 
     private func remove() async {

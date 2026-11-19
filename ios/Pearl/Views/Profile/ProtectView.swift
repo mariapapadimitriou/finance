@@ -10,79 +10,78 @@ struct ProtectView: View {
     @State private var doc: PearlDoc?
     @State private var error: String?
 
+    /// G5-Protect P-03: what Pearl can't do, the data pills and the two
+    /// docs, the live connections with their pills, and Contact a person.
     var body: some View {
         ProfilePage {
-            VStack(spacing: 12) {
-                IconBubble(symbol: "checkmark.shield", size: 72)
-                ProfileHeading(title: "How we protect you", intro: "What Pearl can and can’t do.",
-                               centred: true)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 8).padding(.bottom, 4)
-
-            GlassCard {
+            ProfileHeading(title: "How we protect you")
+            APCard {
                 ProfileRow(symbol: "eye", title: "Read-only", sub: "Sees balances and transactions", chevron: false)
-                RowSeparator(inset: 62)
-                ProfileRow(symbol: "nosign", title: "Can’t move money", sub: "No payments or transfers, ever",
+                APSeparator()
+                ProfileRow(symbol: "nosign", title: "Can\u{2019}t move money", sub: "No payments or transfers, ever",
                            chevron: false)
-                RowSeparator(inset: 62)
+                APSeparator()
                 ProfileRow(symbol: "key", title: "Never sees your bank password", sub: "You sign in through Plaid",
                            chevron: false)
-                RowSeparator()
-                docRow("How Plaid sign-in works", .plaid)
+                APSeparator()
+                docRow("doc.text", "How Plaid sign-in works", .plaid)
             }
+            .padding(.top, 10)
 
             ProfileSection("Your data")
-            GlassCard {
-                ProfileRow(symbol: "cpu", title: "Kept in Canada", sub: "Encrypted", chevron: false)
-                RowSeparator(inset: 62)
-                ProfileRow(symbol: "heart", title: "Never sold", chevron: false)
-                RowSeparator()
-                docRow("See what we store", .store)
-                RowSeparator()
-                docRow("See who we share with", .share)
+            HStack(spacing: 8) {
+                StatusPill(text: "Kept in Canada", tone: .neutral)
+                StatusPill(text: "Encrypted", tone: .neutral)
+                StatusPill(text: "Never sold", tone: .neutral)
             }
+            APCard {
+                docRow("doc.text", "See what we store", .store)
+                APSeparator()
+                docRow("person.2", "See who we share with", .share)
+            }
+            .padding(.top, 4)
 
             ProfileSection("Connections")
             if let privacy = privacy {
-                if privacy.connections.isEmpty {
-                    ProfileNote("No banks are linked, so Pearl can’t see any.")
-                } else {
-                    GlassCard {
-                        ForEach(Array(privacy.connections.enumerated()), id: \.element.id) { i, c in
-                            if i > 0 { RowSeparator(inset: 62) }
-                            NavigationLink { AccountsView() } label: {
-                                ProfileRow(initials: c.institution, title: c.institution, sub: connectionLine(c),
-                                           pill: StatusPill(text: pill(c).text, tone: pill(c).tone))
-                            }
-                            .buttonStyle(.plain)
+                APCard {
+                    if privacy.connections.isEmpty {
+                        Text("No banks linked, so Pearl can\u{2019}t see any.")
+                            .font(Nacre.body).foregroundColor(Pearl.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 16).padding(.vertical, 12)
+                            .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+                    }
+                    ForEach(Array(privacy.connections.enumerated()), id: \.element.id) { i, c in
+                        if i > 0 { APSeparator() }
+                        NavigationLink { AccountsView() } label: {
+                            ProfileRow(initials: c.institution, title: c.institution, sub: connectionLine(c),
+                                       pill: StatusPill(text: pill(c).text, tone: pill(c).tone),
+                                       chevron: false, pillTrailing: true)
                         }
+                        .buttonStyle(.plain)
                     }
                 }
                 if let contact = privacy.contact, !contact.isEmpty,
                    let mail = URL(string: "mailto:\(contact)") {
-                    GlassCard {
-                        Link(destination: mail) {
-                            ProfileRow(symbol: "questionmark.circle", title: "Contact a person", tone: Pearl.action)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.top, 8)
+                    Link("Contact a person", destination: mail)
+                        .buttonStyle(APSecondaryButtonStyle())
+                        .padding(.top, 10)
                 }
             } else if let error = error {
-                Hint(text: error).padding(.horizontal, 16)
+                APErrorLine(text: error)
             } else {
-                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 16)
+                APCard { APSkeletonRow(); APSeparator(); APSkeletonRow() }
             }
+            Color.clear.frame(height: 24)
         }
         .refreshable { await load() }
         .reloads { await load() }
         .docSheet($doc)
     }
 
-    private func docRow(_ title: String, _ which: PearlDoc) -> some View {
+    private func docRow(_ symbol: String, _ title: String, _ which: PearlDoc) -> some View {
         Button { doc = which } label: {
-            ProfileRow(title: title, tone: Pearl.action)
+            ProfileRow(symbol: symbol, title: title)
         }
         .buttonStyle(.plain)
     }

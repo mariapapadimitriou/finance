@@ -755,40 +755,115 @@ def _split(rule_id: str) -> tuple[str, str]:
     return kind, key
 
 
+def _earlier(st, rule_id: str, category: str) -> list:
+    """G5b-Rule (A+, 2026-11-18): the rows a change of a sorting rule to
+    `category` would move. What the rule files, or could, that she didn't
+    set by hand or confirm, and that isn't in `category` already."""
+    kind, key = _split(rule_id)
+    txns = st.all_transactions()
+    if kind == "merchant":
+        confirmed = set(st.confirmed_categories())
+        return [t for t in txns if (t.merchant or "").strip().lower() == key
+                and t.category_source not in ("user", "range")
+                and t.fingerprint not in confirmed and t.category != category]
+    if kind == "destination":
+        from .transfers import RULED, destination
+        return [t for t in txns if t.category_source == RULED
+                and (destination(t) or ("",))[0] == key and t.category != category]
+    if kind == "recurring":
+        from . import recurring_transfers as rt
+        rule = next((r for r in st.recurring_transfers() if r["id"] == key), None)
+        if rule is None:
+            return []
+        pays = rt.paydays(txns)
+        return [t for t in txns if rt.matches(t, rule, pays)
+                and t.category_source not in ("user", "range", "merchant_override")
+                and t.category != category]
+    return []
+
+
+@bp.get("/rules/earlier")
+def rule_earlier():
+    """How many earlier transactions a rule edit would move: "Also moves the
+    14 earlier ones." (?id=<rule id>&category=<new category>)."""
+    from .categorize import CATEGORIES
+    st = store()
+    rule_id = str(request.args.get("id") or "")
+    category = request.args.get("category")
+    if category not in CATEGORIES:
+        return jsonify({"error": "Choose a category."}), 400
+    if not any(r["id"] == rule_id for r in _rules(st)):
+        return jsonify({"error": "No such rule."}), 404
+    return jsonify({"count": len(_earlier(st, rule_id, category))})
+
+
 @bp.put("/rules/<path:rule_id>")
 def edit_rule(rule_id: str):
-    """Change what a sorting rule files things under. Rows it sorted follow."""
+    """Change what a sorting rule files things under. With `earlier` (the
+    default) the rows it sorted follow; `earlier: false` ("Only new ones")
+    keeps every earlier row where it is. The answer says how many `moved`
+    and carries the `undo` for POST /api/transactions/undo."""
     from .categorize import CATEGORIES
+    from .impact import snapshot, undo_payload
     from .transfers import apply_transfer_matches
     st = store()
     kind, key = _split(rule_id)
-    category = (request.get_json(silent=True) or {}).get("category")
+    body = request.get_json(silent=True) or {}
+    category = body.get("category")
+    move = body.get("earlier", True) is not False
     if category not in CATEGORIES:
         return jsonify({"error": "Choose a category."}), 400
-    if kind == "merchant" and key in st.overrides():
-        st.set_override(key, category)
-    elif kind == "destination" and key in st.destinations():
+    if kind == "pay":
+        return jsonify({"error": "Pay is always income. Remove the rule to sort them yourself."}), 400
+    known = ((kind == "merchant" and key in st.overrides())
+             or (kind == "destination" and key in st.destinations())
+             or (kind == "recurring" and any(r["id"] == key for r in st.recurring_transfers())))
+    if not known:
+        return jsonify({"error": "No such rule."}), 404
+    before = snapshot(st)
+    if not move:
+        # The earlier ones stay as they are, as hers, so no later pass moves them.
+        keep = {t.fingerprint: (t.category, "user") for t in _earlier(st, rule_id, category)}
+        if keep:
+            st.write_categories(keep)
+    marks = {}
+    if kind == "merchant":
+        st.set_override(key, category, move_rows=move)
+    elif kind == "destination":
         st.set_destination(key, category, st.destination_labels().get(key, ""))
         apply_transfer_matches(st)
-    elif kind == "pay":
-        return jsonify({"error": "Pay is always income. Remove the rule to sort them yourself."}), 400
-    elif kind == "recurring" and any(r["id"] == key for r in st.recurring_transfers()):
+    else:
         rule = next(r for r in st.recurring_transfers() if r["id"] == key)
+        marks = {"recurring_transfers": {key: rule}}
         st.set_recurring_transfer({**rule, "category": category})
         apply_transfer_matches(st)
-    else:
-        return jsonify({"error": "No such rule."}), 404
+    after = snapshot(st)
+    moved = sum(1 for i, (c, _) in after["rows"].items()
+                if before["rows"].get(i, (c, None))[0] != c)
+    undo = undo_payload(before, after)
+    if marks:
+        undo["marks"] = marks
     rule = next((r for r in _rules(st) if r["id"] == rule_id), None)
-    return jsonify({"ok": True, "rule": rule})
+    return jsonify({"ok": True, "rule": rule, "moved": moved, "undo": undo})
 
 
 @bp.delete("/rules/<path:rule_id>")
 def delete_rule(rule_id: str):
     """Delete a rule (S-03). Transactions already sorted keep their category;
     a leave-out rule puts what it left out back."""
+    from .impact import snapshot, undo_payload
     from .transfers import RULED, apply_transfer_matches, destination
     st = store()
     kind, key = _split(rule_id)
+    # "Rule deleted" with Undo (G5b-Rules, A+): what to put back.
+    before = snapshot(st)
+    marks: dict = {}
+    if kind == "recurring":
+        was = next((r for r in st.recurring_transfers() if r["id"] == key), None)
+        if was is not None:
+            marks["recurring_transfers"] = {key: was}
+    elif kind == "pay" and key in st.pay_rules():
+        marks["pay_rules"] = {key: st.pay_rules()[key]}
     if kind == "merchant":
         if not st.delete_override(key):
             return jsonify({"error": "No such rule."}), 404
@@ -837,4 +912,10 @@ def delete_rule(rule_id: str):
                 st.set_income_type(t.fingerprint, "salary", "user")
     else:
         return jsonify({"error": "No such rule."}), 404
-    return jsonify({"ok": True, "count": len(_rules(st))})
+    out = {"ok": True, "count": len(_rules(st))}
+    if kind in ("merchant", "destination", "recurring", "pay"):
+        undo = undo_payload(before, snapshot(st))
+        if marks:
+            undo["marks"] = marks
+        out["undo"] = undo
+    return jsonify(out)

@@ -19,73 +19,70 @@ struct SavingShareView: View {
     private static let shares: [Double] = [5, 10, 15, 20]
 
     var body: some View {
-        NacreScreen {
-            ShellProgress(part: 3, name: "Your money")
-            Text("How much do you want to save?").font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
-            Text("A share of each paycheque. Change it anytime.").font(Nacre.body)
-            VStack(spacing: 2) {
-                Text("\(Int(pct))%").font(.custom("Fraunces-SemiBold", size: 64, relativeTo: .largeTitle))
-                    .foregroundColor(Pearl.ink)
-                Text("of your pay").font(Nacre.subheadline).foregroundColor(Pearl.muted)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .accessibilityElement(children: .combine)
-            HStack(spacing: 8) {
-                ForEach(Self.shares, id: \.self) { s in
-                    chip("\(Int(s))%", on: !custom && pct == s) { custom = false; pct = s }
+        // G6-Saving O-10s: part 3, the share big, the chips, what it comes to;
+        // Custom puts her share in a well instead.
+        OnbScreen(part: 3, partName: "Your money") {
+            OnbTitle(title: "How much do you want to save?", line: "A share of each paycheque. Change it anytime.")
+            if !custom {
+                VStack(spacing: 0) {
+                    Text("\(Int(pct))%").font(.custom("Fraunces-SemiBold", size: 56, relativeTo: .largeTitle))
+                        .tracking(-1).foregroundColor(Pearl.ink)
+                    Text("of your pay").font(Nacre.footnote).foregroundColor(Pearl.muted)
                 }
-                chip("Custom", on: custom) { custom = true; customText = "\(Int(pct))" }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 16)
+                .accessibilityElement(children: .combine)
             }
-            .frame(maxWidth: .infinity)
+            chips.padding(.top, custom ? 6 : 4)
             if custom {
-                FieldRow(label: "Your share", text: $customText, prompt: "12%")
-                    .keyboardType(.numberPad)
-                    .sheetCard()
+                ShareWell(text: $customText).padding(.top, 6)
                     .onChange(of: customText) { v in
                         if let n = Double(v.replacingOccurrences(of: "%", with: "")), (0...50).contains(n) { pct = n }
                     }
-            }
-            GlassCard {
-                if let pay = pay {
-                    row("Each paycheque", sub: cadence(pay.cadence), value: pay.amount * pct / 100, exact: true)
-                    RowSeparator()
+                ProfileNote(customNote)
+            } else {
+                APCard {
+                    if let pay = pay {
+                        APKeyValueRow(key: "Each paycheque", value: Format.whole(pay.amount * pct / 100))
+                        APSeparator(afterFace: false)
+                    }
+                    APKeyValueRow(key: "Each month", value: "\u{2248} " + Format.whole(monthlyIncome * pct / 100))
                 }
-                row("Each month", sub: nil, value: monthlyIncome * pct / 100, exact: false)
+                .padding(.top, 8)
             }
-            if let error = error { Hint(text: error) }
+            if let error = error { APErrorLine(text: error) }
         } actions: {
-            BottomActions {
-                Button("Continue") { Task { await save() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
-                    .disabled(busy)
-            }
+            OnbPrimary(title: "Continue", busy: busy) { Task { await save() } }
         }
         .task { await load() }
     }
 
+    private var chips: some View {
+        HStack(spacing: 8) {
+            ForEach(Self.shares, id: \.self) { s in
+                chip("\(Int(s))%", on: !custom && pct == s) { custom = false; pct = s }
+            }
+            chip("Custom", on: custom) { custom = true; customText = "\(Int(pct))" }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// "$258 each paycheque · ≈ $559 a month".
+    private var customNote: String {
+        let month = "\u{2248} " + Format.whole(monthlyIncome * pct / 100) + " a month"
+        guard let pay = pay else { return month }
+        return Format.whole(pay.amount * pct / 100) + " each paycheque \u{00B7} " + month
+    }
+
+    /// `.chip`: 34 high on `chip`; the one picked is `action`.
     private func chip(_ label: String, on: Bool, _ tap: @escaping () -> Void) -> some View {
         Button(action: tap) {
-            Text(label).font(Nacre.footnote).foregroundColor(on ? .white : Pearl.ink)
+            Text(label).font(Nacre.subheadline).foregroundColor(on ? Pearl.onAction : Pearl.ink)
                 .padding(.horizontal, 14).frame(height: 34)
-                .background(Capsule().fill(on ? Pearl.action : Nacre.glass))
-                .overlay(Capsule().strokeBorder(on ? Pearl.action : Nacre.glassEdge, lineWidth: 1))
+                .background(Capsule().fill(on ? Pearl.action : APlus.chip))
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(on ? .isSelected : [])
-    }
-
-    private func row(_ title: String, sub: String?, value: Double, exact: Bool) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
-                if let sub = sub { Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted) }
-            }
-            Spacer()
-            Text((exact ? "" : "≈ ") + Format.whole(value)).font(Nacre.headline).foregroundColor(Pearl.moneyIn)
-        }
-        .padding(.horizontal, 16).frame(minHeight: 56)
-        .accessibilityElement(children: .combine)
     }
 
     private struct Saving: Decodable { let pct: Double? }

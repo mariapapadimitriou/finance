@@ -132,7 +132,8 @@ class TestLightIridescent:
         assert "size: calm ? AllowanceOrb.full : AllowanceOrb.small" in home, "188 with cards, 232 calm"
         assert "Allowance.restCaption" in home, "the hidden caption stays as the VoiceOver hint"
         onboarding = code(src("ios/Pearl/Views/Onboarding/AllowanceView.swift"))
-        assert "AllowanceOrb(progress: progress" in onboarding, "O-11b draws the same orb"
+        # A+ G6-Allowance (REDESIGN-13): set-up shows the Allowance on its card, not the orb.
+        assert "AllowanceCard(month:" in onboarding and "AllowanceOrb(" not in onboarding
         assert '"left in \\(Format.monthName(month))"' in onboarding
         for path in swift_files():
             assert "AllowanceRing" not in code(path.read_text(encoding="utf-8")), path

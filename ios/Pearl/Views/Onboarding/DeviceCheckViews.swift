@@ -29,31 +29,23 @@ struct ConfirmDeviceView: View {
     }
 
     var body: some View {
-        NacreScreen {
-            IconOrb(symbol: "envelope")
-            Text("Confirm it’s you").font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
-            Text("This iPhone is new to your account. Approve it from a device you’re signed in on.")
-                .font(Nacre.body)
-            GlassCard {
+        OnbScreen {
+            OnbTitle(title: "Confirm it’s you",
+                     line: "This iPhone is new to your account. Approve it from a device you’re signed in on.")
+            APCard {
                 if let approve = choices.approve {
-                    ChoiceLine(title: "Approve on my other device", sub: deviceLine(approve),
-                               selected: how == "approve") { how = "approve" }
+                    APChoiceRow(title: "Approve on my other device", sub: deviceLine(approve),
+                                selected: how == "approve") { how = "approve" }
                 }
                 // Recovery codes are left out for now (2026-11-04).
             }
             if choices.approve == nil {
-                Hint(text: "There’s no other device to confirm this iPhone with. Contact support to get back in.")
+                APErrorLine(text: "There’s no other device to confirm this iPhone with. Contact support to get back in.")
             }
-            if let error = error { Hint(text: error) }
+            if let error = error { APErrorLine(text: error) }
         } actions: {
-            BottomActions {
-                Button("Continue") { Task { await go() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
-                    .disabled(busy || choices.approve == nil)
-            } secondary: {
-                Button("Use a different email") { Task { await startOver() } }
-                    .buttonStyle(NacreTextButtonStyle())
-            }
+            OnbPrimary(title: "Continue", busy: busy, enabled: choices.approve != nil) { Task { await go() } }
+            APQuietButton(title: "Use a different email") { Task { await startOver() } }
         }
     }
 
@@ -106,26 +98,24 @@ struct WaitingApprovalView: View {
     }
 
     var body: some View {
-        NacreScreen {
-            IconOrb(symbol: "iphone")
-            Text("Check your other device").font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
-            Text("Open Pearl there and approve this sign-in\(from.map { " from \($0)" } ?? ""). This page carries on by itself.")
-                .font(Nacre.body)
+        OnbScreen(back: false) {
+            OnbMessage(title: "Check your other device",
+                       line: "Open Pearl there and approve this sign-in\(from.map { " from \($0)" } ?? "").", top: 98) {
+                OnbOrb(symbol: "iphone")
+            }
             if let said = said {
-                Hint(text: said)
+                APErrorLine(text: said)
             } else {
                 // A-11b: "Waiting for your answer…".
                 HStack(spacing: 8) {
-                    ProgressView()
-                    Text("Waiting for your answer…").font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    ProgressView().tint(Pearl.muted)
+                    Text("Waiting for your answer…").font(Nacre.footnote).foregroundColor(Pearl.muted)
                 }
+                .frame(maxWidth: .infinity)
                 .padding(.top, 8)
             }
         } actions: {
-            BottomActions {
-                Button("Cancel") { Task { await cancel() } }
-                    .buttonStyle(NacreTextButtonStyle())
-            }
+            Button("Cancel") { Task { await cancel() } }.buttonStyle(APSecondaryButtonStyle())
         }
         .task { await wait() }
     }
@@ -169,29 +159,20 @@ struct RecoveryCodeView: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        NacreScreen {
-            IconOrb(symbol: "key")
-            Text("Enter a recovery code").font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
-            Text("One of the ten codes you saved. Each works once.").font(Nacre.body)
+        OnbScreen {
+            OnbTitle(title: "Enter a recovery code", line: "One of the ten codes you saved. Each works once.")
             TextField("", text: $code, prompt: Text("K7QF-2M9D").foregroundColor(Pearl.muted))
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()
                 .font(.system(size: 17, design: .monospaced)).foregroundColor(Pearl.ink)
                 .focused($focused)
-                .padding(.horizontal, 16).frame(height: 52)
-                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Nacre.glass))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(focused ? Pearl.action : Nacre.edge, lineWidth: focused ? 1.5 : 1))
+                .padding(.horizontal, 14).frame(minHeight: 44)
+                .wellStyle(focused: focused)
                 .accessibilityLabel("Recovery code")
-            if let error = error { Hint(text: error) }
+            if let error = error { APErrorLine(text: error) }
         } actions: {
-            BottomActions {
-                Button("Sign in") { Task { await signIn() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
-                    .disabled(busy || code.trimmingCharacters(in: .whitespaces).count < 6)
-            } secondary: {
-                Button("Back") { path.removeLast() }
-                    .buttonStyle(NacreTextButtonStyle())
+            OnbPrimary(title: "Sign in", busy: busy, enabled: code.trimmingCharacters(in: .whitespaces).count >= 6) {
+                Task { await signIn() }
             }
         }
         .onAppear { focused = true }
@@ -232,9 +213,9 @@ struct ApprovalPrompt: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
             Button("Approve") { answer(true) }
-                .buttonStyle(NacreButtonStyle())
+                .buttonStyle(APPrimaryButtonStyle())
             Button("No, it wasn’t me") { answer(false) }
-                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                .buttonStyle(APSecondaryButtonStyle())
         }
         .padding(.horizontal, 20).padding(.bottom, 8)
         .background(SheetBackground())

@@ -154,6 +154,8 @@ struct APGlassCircle: View {
 
 /// A+ Back on a pushed page: the chevron in the 44 pt glass circle.
 struct APBackButton: View {
+    /// The UI tests' handle ("profile-back", "onboarding-back"); optional.
+    var identifier: String? = nil
     let action: () -> Void
 
     var body: some View {
@@ -165,6 +167,7 @@ struct APBackButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Back")
+        .accessibilityIdentifier(identifier ?? "back")
     }
 }
 
