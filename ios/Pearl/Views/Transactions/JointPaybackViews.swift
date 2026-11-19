@@ -17,9 +17,13 @@ import SwiftUI
 //        shares ticked to the amount, and what happens to the pair
 //        (PartsFlow.swift, `joint`).
 // TP-04 1407:7328 (dark 1407:7487): the money in afterwards; Undo puts the
-//        transfer back (finance/joint.py).
-// TP-05 1406:6361 (dark 1406:6494): two accounts only hers: no Paid back,
-//        and why (`NoPaidBackCallout`).
+//        transfer back (finance/joint.py). G2b-JointIn, rethought: the
+//        hero is "From Mom" over "Joint ••1123 · Fri, Nov 14", and the
+//        toast is "Mom paid back $240.00" (`JointPaybackFlow.shortTitle`).
+// TP-05 1406:6361 (dark 1406:6494): two accounts only hers: no Paid back.
+//        G2b-JointIn, rethought: no options list, the legs on one line,
+//        one line why (`NoPaidBackCallout`) and This isn't a transfer as
+//        the one quiet link (TransactionDetailView `mineLegs`).
 //
 // Every step is a Pearl sheet, never a stock alert or confirmation dialog.
 
@@ -40,8 +44,7 @@ struct JointPaybackStart: Identifiable, Hashable {
 
 /// TP-01 / TP-02 › Paid back: with one other owner, straight to PB-30 with
 /// them picked (TP-03); with more, PP-01 asks who first. Saved, `onSaved`
-/// gets the reply with its toast ("Mom paid back 3 purchases · $240.00")
-/// and Undo.
+/// gets the reply with TP-04's toast ("Mom paid back $240.00") and Undo.
 struct JointPaybackFlow: ViewModifier {
     @Binding var start: JointPaybackStart?
     let api: APIClient
@@ -82,9 +85,21 @@ struct JointPaybackFlow: ViewModifier {
                 // TP-03: PB-30 with them picked; PB-11 is skipped.
                 PartsSheet(deposit: s.deposit, api: api, paidBack: true, payer: s.person, joint: s) { reply in
                     linking = nil
-                    onSaved(reply)
+                    onSaved(MarkReply(title: Self.shortTitle(reply.title), detail: reply.detail,
+                                      undo: reply.undo, extra: reply.extra))
                 }
             }
+    }
+
+    /// TP-04 (G2b-JointIn, rethought): the toast says who and how much,
+    /// not how many purchases. "Mom paid back 3 purchases · $240.00" is
+    /// "Mom paid back $240.00"; any other title stays as the server said.
+    static func shortTitle(_ title: String?) -> String? {
+        guard let title = title,
+              title.range(of: #"^.+ paid back \d+ purchases · \$[\d,]+\.\d{2}$"#, options: .regularExpression) != nil,
+              let mid = title.range(of: " paid back "), let dot = title.range(of: " · ", options: .backwards)
+        else { return title }
+        return "\(title[..<mid.lowerBound]) paid back \(title[dot.upperBound...])"
     }
 }
 
@@ -123,6 +138,9 @@ struct WhoPaidPicker: View {
     @State private var query = ""
     @State private var recent: [Past]?
     @State private var typing = false
+    /// PP-01 (G2-ALink): /api/people/recent didn't come back.
+    @State private var loadFailed = false
+    @State private var loading = false
 
     /// GET /api/people/recent, with PP-01's "4 splits" and joint flag.
     struct Past: Decodable, Hashable {
@@ -141,46 +159,10 @@ struct WhoPaidPicker: View {
             APSheetHeader(heading: "Who paid you back?", line: sub, close: onClose)
                 .accessibilityHint("Paid back · Who paid")
             searchField
-            let shown = top.filter { matches($0.name) }
-            if !shown.isEmpty {
-                if let label = topLabel { APSheetLabel(text: label) }
-                card(shown)
-            }
-            if let only = onlyPast {
-                let past = only.filter { matches($0.name) }.map { r in
-                    r.fixed ? r : (recent ?? []).first { $0.name == r.name }.map { Row(name: r.name, sub: pastLine($0)) } ?? r
-                }
-                if !past.isEmpty {
-                    APSheetLabel(text: "From past splits")
-                    card(past)
-                }
-            } else if pastSplits, let recent = recent {
-                // Anyone already on this split shows once (the same name match).
-                let past = recent.filter { p in matches(p.name) && !top.contains { samePerson($0.name, p.name) } }
-                    .map { Row(name: $0.name, sub: pastLine($0)) }
-                if !past.isEmpty {
-                    APSheetLabel(text: "From past splits")
-                    card(past)
-                }
-            }
-            if someoneNew {
-                APOptionCard {
-                    Button { typing = true } label: {
-                        HStack(spacing: 12) {
-                            Text("+").font(.custom("Figtree-Medium", size: 14, relativeTo: .footnote))
-                                .foregroundColor(Pearl.ink)
-                                .frame(width: 40, height: 40).background(Circle().fill(APlus.face))
-                                .accessibilityHidden(true)
-                            texts("Someone new", "Type their name")
-                            Spacer(minLength: 8)
-                        }
-                        .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 60).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Someone new, type their name")
-                    .accessibilityAddTraits(.isButton)
-                }
+            if loadFailed {
+                loadError
+            } else {
+                lists
             }
         }
         .task { if pastSplits || onlyPast != nil { await load() } }
@@ -191,6 +173,64 @@ struct WhoPaidPicker: View {
                          onClose: { typing = false }) { names in
                 typing = false
                 if let name = names.first { onPick(name) }
+            }
+        }
+    }
+
+    /// PP-01's load error (G2-ALink): under the search, the kit `.errline`
+    /// and a Try again Secondary; nothing else until the people come back.
+    private var loadError: some View {
+        VStack(spacing: 12) {
+            APErrorLine(text: "Couldn’t load who owes you. Try again.")
+            Button("Try again") { Task { await load() } }
+                .buttonStyle(APSecondaryButtonStyle())
+                .disabled(loading)
+                .accessibilityIdentifier("who-paid-try-again")
+        }
+        .padding(.top, 12)
+    }
+
+    /// ON THIS SPLIT, FROM PAST SPLITS and Someone new.
+    @ViewBuilder private var lists: some View {
+        let shown = top.filter { matches($0.name) }
+        if !shown.isEmpty {
+            if let label = topLabel { APSheetLabel(text: label) }
+            card(shown)
+        }
+        if let only = onlyPast {
+            let past = only.filter { matches($0.name) }.map { r in
+                r.fixed ? r : (recent ?? []).first { $0.name == r.name }.map { Row(name: r.name, sub: pastLine($0)) } ?? r
+            }
+            if !past.isEmpty {
+                APSheetLabel(text: "From past splits")
+                card(past)
+            }
+        } else if pastSplits, let recent = recent {
+            // Anyone already on this split shows once (the same name match).
+            let past = recent.filter { p in matches(p.name) && !top.contains { samePerson($0.name, p.name) } }
+                .map { Row(name: $0.name, sub: pastLine($0)) }
+            if !past.isEmpty {
+                APSheetLabel(text: "From past splits")
+                card(past)
+            }
+        }
+        if someoneNew {
+            APOptionCard {
+                Button { typing = true } label: {
+                    HStack(spacing: 12) {
+                        Text("+").font(.custom("Figtree-Medium", size: 14, relativeTo: .footnote))
+                            .foregroundColor(Pearl.ink)
+                            .frame(width: 40, height: 40).background(Circle().fill(APlus.face))
+                            .accessibilityHidden(true)
+                        texts("Someone new", "Type their name")
+                        Spacer(minLength: 8)
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 60).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Someone new, type their name")
+                .accessibilityAddTraits(.isButton)
             }
         }
     }
@@ -243,10 +283,21 @@ struct WhoPaidPicker: View {
         return "Last split \(Format.short(p.date))"
     }
 
+    /// GET /api/people/recent. A failure is PP-01's load error (G2-ALink)
+    /// with Try again, not an empty list that reads as nobody.
     private func load() async {
         struct Reply: Decodable { let people: [Lenient<Past>] }
-        let r: Reply? = try? await api.get("api/people/recent")
-        recent = (r?.people ?? []).compactMap { $0.value }
+        loading = true
+        defer { loading = false }
+        do {
+            let r: Reply = try await api.get("api/people/recent")
+            recent = r.people.compactMap { $0.value }
+            loadFailed = false
+        } catch is CancellationError {
+            // The sheet closed while it loaded.
+        } catch {
+            loadFailed = true
+        }
     }
 
     /// PB-42's ON THIS SPLIT: who's on it, and what each has done.
