@@ -249,8 +249,14 @@ def income_bills_confirm():
     if not isinstance(ticked, dict):
         return _error("Say which bills to count.")
     st = store()
+    confirm_bills(st, ticked, date.fromisoformat(_today_iso()))
+    return jsonify(_payload(st))
+
+
+def confirm_bills(st, ticked: dict, today: date) -> None:
+    """I-04's answers, {bill key: counts?}: what Home's Worth a look Yes on
+    a new subscription (finance/worth_a_look.py) saves too."""
     state = ib.load(st)
-    today = date.fromisoformat(_today_iso())
     known = {r["key"]: r for r in ib.bills(st.all_transactions(), today, state)}
     for key, on in ticked.items():
         row = known.get(key)
@@ -260,7 +266,6 @@ def income_bills_confirm():
         entry["state"] = "yes" if on else "no"
     state["bills_on"] = state["bills_on"] or today.isoformat()
     ib.save(st, state)
-    return jsonify(_payload(st))
 
 
 @bp.post("/income-bills/bills")
