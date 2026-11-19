@@ -1,9 +1,8 @@
-"""REFRESH-05 (THL-291 and the Home tickets, "Light mode colour: C‴ with the
-darker grey"): by source, the iPhone app's light mode is the Iridescent/Light
-gradient with the Pearl dust on every screen and sheet, its cards are glass
-with the nacre edge, its muted grey is #514D67, the Allowance orb is one
-shared view that Home draws, and nothing is left of the pearl-paper page.
-Dark values are untouched."""
+"""REFRESH-05, then A+ (REDESIGN-08, the chosen redesign, 2026-11-18): by
+source, the iPhone app's page is the A+ ground (the nacre under a white veil
+in light, the night in dark), its cards are the one A+ card, its muted grey
+is #514D67, the Allowance orb is one shared view that Home draws, and
+nothing is left of the pearl-paper page."""
 
 from __future__ import annotations
 
@@ -59,94 +58,78 @@ class TestLightIridescent:
             if "0xFBF8F6" in line:
                 assert "static let ink" in line or "static let onInk" in line, line
 
-    def test_sheets_sit_on_the_iridescent_background(self):
+    def test_sheets_sit_on_the_a_plus_sheet_surface(self):
         menus = code(src("ios/Pearl/Views/Transactions/SplitMenus.swift"))
         assert ".background(SheetBackground())" in menus
         assert "presentationBackground { SheetBackground() }" in menus
         tx = code(src("ios/Pearl/Views/Transactions/TransactionsView.swift"))
         sheet = tx[tx.index("struct SheetBackground"):]
         sheet = sheet[:sheet.index("\n}\n") + 3]
-        assert "NacreBackground()" in sheet, "a light sheet is the page's own background"
-        assert "0x1C2F73" in sheet and "0x12163F" in sheet, "the dark sheet gradient is unchanged"
+        assert "APSheetGround()" in sheet, "a sheet is the A+ `.sheet` surface"
+        aplus = code(src("ios/Pearl/Theme/APlus.swift"))
+        ground = aplus[aplus.index("struct APSheetGround"):aplus.index("struct APGlassCircle")]
+        assert "0x1C2F73" in ground and "0x12163F" in ground, "the dark sheet gradient"
+        assert ".white.opacity(0.66), .white.opacity(0.44)" in ground, "light: the nacre under a white veil"
 
-    def test_card_tokens_are_glass(self):
+    def test_card_tokens_are_a_plus(self):
         theme = code(src(self.THEME))
-        assert "UIColor(white: 1, alpha: 0.72)" in theme, "color/surface/card light is white @72%"
-        assert "UIColor(hex: 0x151B44)" in theme, "color/surface/card dark is unchanged"
-        assert "UIColor(white: 1, alpha: 0.8)" in theme, "color/border/subtle light is white @80%"
-        assert "UIColor(hex: 0x252C5E)" in theme, "color/border/subtle dark is unchanged"
+        assert "static let card = APlus.card" in theme
+        assert "static let border = APlus.cardLine" in theme
         assert "static let cardShadow = Color(hex: 0x664D99)" in theme
+        aplus = code(src("ios/Pearl/Theme/APlus.swift"))
+        assert "static let card = rgba(light: (255, 255, 255, 0.80), dark: (21, 27, 68, 0.72))" in aplus
+        assert "static let cardLine = rgba(light: (255, 255, 255, 0.95), dark: (255, 255, 255, 0.08))" in aplus
         nacre = code(src(self.NACRE))
         surface = nacre[nacre.index("struct GlassSurface"):nacre.index("struct GlassCard")]
-        assert ".background(.ultraThinMaterial, in: shape)" in surface, "one blur per card"
-        assert "shape.strokeBorder(Nacre.horizontal, lineWidth: 1.2)" in surface, "Nacre/Horizontal 1.2 pt edge"
-        assert "Pearl.cardShadow.opacity(scheme == .dark ? 0.12 : 0.10)" in surface
-        assert "radius: scheme == .dark ? 12 : 20, y: 8" in surface
-        assert "static let separator = Pearl.border" in nacre, "in-card dividers are color/border/subtle"
+        assert "APCardSurface(radius: radius)" in surface, "GlassCard draws the one A+ card"
+        assert "static let separator = APlus.separator" in nacre, "in-card dividers are the A+ separator"
+        assert "Nacre.horizontal, lineWidth: 1.2" not in nacre, "no nacre edge on cards in A+"
 
-    def test_solid_cards_became_glass_in_light(self):
-        """The split sheets' white cards (S-03*, S-04*, S-40*, S-06r*, S-07r*,
-        S-34*) and the Home cards go through one modifier, which keeps the
-        dark look and blurs once per card."""
-        # A+ restyle (G2): the split and payback sheets moved to the A+ card
-        # (`.apCard()` / APCard), which also blurs once per card.
-        for path in ("ios/Pearl/Views/Transactions/SplitFlow.swift",
-                     "ios/Pearl/Views/Transactions/JointSplitViews.swift",
-                     "ios/Pearl/Views/Transactions/PaybackOptions.swift"):
-            assert ".apCard(" in code(src(path)), path
+    def test_every_card_modifier_draws_the_a_plus_card(self):
+        """The split sheets' cards and the Home cards go through one modifier."""
         for path in ("ios/Pearl/Views/Components/Components.swift",
                      "ios/Pearl/Views/Transactions/SplitMenus.swift",
                      "ios/Pearl/Views/Transactions/SplitFlow.swift",
                      "ios/Pearl/Views/Transactions/JointSplitViews.swift",
                      "ios/Pearl/Views/Transactions/PaybackOptions.swift"):
             text = code(src(path))
-            if path.endswith("Components.swift") or path.endswith("SplitMenus.swift"):
-                assert ".pearlCard(radius:" in text, path
-            # A card-sized solid fill followed by the 1 pt border on the next
-            # line: the old card. (A field or an answer, radiusChoice, is not a card.)
-            by_hand = re.search(r"cornerRadius: Pearl\.radius(?:Tile|Row|Card), style: \.continuous\)\.fill\(Pearl\.card\)\)\n"
-                                r"\s*\.overlay\(RoundedRectangle\([^\n]*\n?\s*\.stroke\(Pearl\.border, lineWidth: 1\)\)", text)
-            assert not by_hand, f"{path} still draws a solid card with a 1 pt border by hand"
+            assert ".pearlCard(radius:" in text or ".apCard(" in text, path
         nacre = code(src(self.NACRE))
-        style = nacre[nacre.index("private struct PearlCardStyle"):]
-        assert "if scheme == .dark" in style and ".background(shape.fill(Pearl.card))" in style
-        assert "content.glassCard(radius: radius)" in style
+        mods = nacre[nacre.index("func glassCard("):nacre.index("struct RowSeparator")]
+        assert mods.count("apCard(radius: radius)") == 2, "glassCard and pearlCard are the A+ card"
 
-    def test_pearl_dust_is_one_view_under_every_light_page(self):
+    def test_the_page_is_the_a_plus_ground(self):
         dust = src(self.DUST)
-        assert "struct PearlDust: View" in dust
-        bubbles = re.findall(r"Bubble\(x: (\d+), y: (\d+), size: (\d+)\)", dust)
-        assert [tuple(map(int, b)) for b in bubbles] == [
-            (338, 60, 9), (360, 76, 5), (324, 80, 4), (348, 89, 6), (367, 58, 4), (333, 96, 3),
-            (4, 337, 4), (4, 551, 4), (2, 584, 6), (382, 624, 6)]
-        assert "aura(size: 360, opacity: 0.5)" in dust and "aura(size: 280, opacity: 0.4)" in dust
-        assert ".blur(radius: 90)" in dust
-        assert ".accessibilityHidden(true)" in dust and ".allowsHitTesting(false)" in dust
+        assert "struct PearlDust: View" in dust, "kept, but no page draws it in A+"
         nacre = code(src(self.NACRE))
         background = nacre[nacre.index("struct NacreBackground"):nacre.index("extension View")]
-        light = background[background.index("} else {"):]
-        assert "PearlDust(width: w)" in light, "light draws the Pearl dust over the gradient"
-        assert 'Image("Bubbles")' not in light, "the old bubble picture is dark mode's only"
-        assert "Nacre.rose, Nacre.lilac, Nacre.seaglass" in light, "Iridescent/Light is unchanged"
+        assert "APGround()" in background and "PearlDust" not in background
+        assert 'Image("Bubbles")' not in background
+        aplus = code(src("ios/Pearl/Theme/APlus.swift"))
+        ground = aplus[aplus.index("struct APGround"):aplus.index("struct APSheetGround")]
+        assert "0xFFB6CC" in ground and "0xCDB9FF" in ground and "0xA8E9DF" in ground
+        assert ".white.opacity(0.50)" in ground and ".white.opacity(0.22)" in ground and ".white.opacity(0.34)" in ground
+        assert "0x12163F" in ground and "0x172566" in ground and "0x1D4A7D" in ground
+        assert ".accessibilityHidden(true)" in ground
 
     def test_allowance_orb_is_shared_and_home_uses_it(self):
         orb = src(self.ORB)
         assert "struct AllowanceOrb: View" in orb
-        for layer in ("Circle().fill(Self.nacre)", ".blur(radius: 60)", ".opacity(0.45)",          # halo
-                      "strokeBorder(.white.opacity(0.55), lineWidth: Self.ring)",                  # track
-                      "Color(hex: 0xD999FF).opacity(0.45), radius: 18",                            # arc glow
-                      "Circle().fill(Nacre.glass)", ".background(.ultraThinMaterial, in: Circle())",
-                      "strokeBorder(Nacre.horizontal, lineWidth: 1)",                              # disc
-                      "Color(hex: 0x734D99).opacity(0.15), radius: 30, y: 10",
-                      "Color(hex: 0xFFD9F2).opacity(0.95), radius: 14",                            # thumb
-                      'font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle)).tracking(-0.88)'):
+        for layer in ("static let full: CGFloat = 232", "static let small: CGFloat = 188",
+                      ".blur(radius: 46)", "scheme == .dark ? 0.22 : 0.30",                       # halo
+                      "Color.white.opacity(scheme == .dark ? 0.12 : 0.55)",                         # track
+                      "small ? 9 : 11",                                                            # ring
+                      "Color.white.opacity(0.78)",                                                 # disc
+                      "Color(hex: 0xFFD9F2).opacity(0.95)",                                        # thumb
+                      '.custom("Fraunces-SemiBold", size: small ? 38 : 44, relativeTo: .largeTitle)'):
             assert layer in orb, layer
-        assert "0xFF8FB1" in orb and "0xC9A8FF" in orb and "0x8FE0D4" in orb and "0xFFD6E0" in orb
+        assert "0xFF8FB1" in orb and "0xC9A8FF" in orb and "0x8FE0D4" in orb
         assert ".accessibilityElement(children: .ignore)" in orb
         assert "withAnimation" not in orb and ".animation(" not in orb, "no motion yet"
         home = code(src(self.HOME))
         assert "AllowanceOrb(progress:" in home
         assert 'label: "Allowance"' in home
+        assert "size: calm ? AllowanceOrb.full : AllowanceOrb.small" in home, "188 with cards, 232 calm"
         assert "Allowance.restCaption" in home, "the hidden caption stays as the VoiceOver hint"
         onboarding = code(src("ios/Pearl/Views/Onboarding/AllowanceView.swift"))
         assert "AllowanceOrb(progress: progress" in onboarding, "O-11b draws the same orb"
@@ -158,5 +141,5 @@ class TestLightIridescent:
         for path in swift_files():
             text = path.read_text(encoding="utf-8")
             assert "safe to spend" not in text.lower(), f"{path.relative_to(ROOT)} says safe to spend"
-        for path in (self.ORB, self.DUST):
-            assert "REFRESH-05" in src(path)
+        assert "REFRESH-05" in src(self.DUST)
+        assert "A+" in src(self.ORB)

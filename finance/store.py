@@ -676,6 +676,16 @@ CREATE TABLE IF NOT EXISTS sorted_range_rows (
     source   TEXT,
     PRIMARY KEY (range_id, txn_id)
 );
+-- Worth a look on Home (finance/worth_a_look.py): the day each item was
+-- first shown (it drops off 7 days later) and what she did with it (NULL
+-- shown, seen, not_now, cleared, yes). `undo` is what Undo on a Yes puts back.
+CREATE TABLE IF NOT EXISTS worth_a_look_state (
+    item_id     TEXT PRIMARY KEY,
+    first_shown TEXT NOT NULL,
+    state       TEXT,
+    at          TEXT,
+    undo        TEXT
+);
 """
 
 
@@ -2525,6 +2535,7 @@ class Store:
         ("dismissed_insights", "dismissed findings"),
         ("review_dismissed", "settled review items"),
         ("review_skipped", "skipped review items"),
+        ("worth_a_look_state", "dismissed findings"),
         # Rules.
         ("merchant_overrides", "rules"),
         ("transfer_destinations", "rules"),

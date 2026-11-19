@@ -2090,8 +2090,7 @@ struct SheetTitle: View {
                     Image(systemName: "xmark").font(.system(size: 16, weight: .semibold))
                         .foregroundColor(Pearl.ink)
                         .frame(width: 44, height: 44)
-                        .background(Circle().fill(Nacre.glass))
-                        .overlay(Circle().strokeBorder(Nacre.glassEdge, lineWidth: 1))
+                        .background(APGlassCircle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Close")
@@ -2101,19 +2100,11 @@ struct SheetTitle: View {
     }
 }
 
-/// A sheet's surface: in light, Iridescent/Light with the Pearl dust, like
-/// every page (REFRESH-05: the sheet surface is color/surface/page; it was a
-/// pale wash); in dark, the moonlit gradient as before.
+/// A sheet's surface, A+ `.sheet` (APSheetGround): the nacre under a
+/// white veil in light, #1C2F73 → #12163F in dark.
 struct SheetBackground: View {
-    @Environment(\.colorScheme) private var scheme
-
     var body: some View {
-        if scheme == .dark {
-            LinearGradient(colors: [Color(hex: 0x1C2F73), Color(hex: 0x12163F)], startPoint: .top, endPoint: .bottom)
-                .ignoresSafeArea()
-        } else {
-            NacreBackground()
-        }
+        APSheetGround()
     }
 }
 

@@ -28,10 +28,20 @@ struct PearlApp: App {
             }
             return tabs
         }
+        // A+ (REDESIGN-08, AP-TabCompare): on iOS 26 the bar is see-through
+        // Liquid Glass everywhere, so the page shows through it, with a
+        // lilac-tinted lozenge under the selected tab (`tab-lozenge`).
+        // Before iOS 26 the bar keeps its usual frosted background.
         let tabs = UITabBarAppearance()
-        tabs.configureWithDefaultBackground()
+        if #available(iOS 26, *) {
+            tabs.configureWithTransparentBackground()
+            tabs.selectionIndicatorTintColor = UIColor(APlus.tabLozenge)
+        } else {
+            tabs.configureWithDefaultBackground()
+        }
         let edge = UITabBarAppearance()
         edge.configureWithTransparentBackground()
+        if #available(iOS 26, *) { edge.selectionIndicatorTintColor = UIColor(APlus.tabLozenge) }
         UITabBar.appearance().standardAppearance = badged(tabs)
         UITabBar.appearance().scrollEdgeAppearance = badged(edge)
     }
@@ -59,16 +69,8 @@ struct RootView: View {
             case .starting:
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity).nacreScreen()
             case .offline:
-                VStack(spacing: 16) {
-                    Text("Pearl can't reach the server").font(Nacre.title).multilineTextAlignment(.center)
-                    Text("Check your connection and try again.").font(Nacre.body)
-                    Button("Try again") { Task { await app.start() } }
-                        .buttonStyle(NacreButtonStyle())
-                        .frame(maxWidth: 240)
-                }
-                .padding(24)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .nacreScreen()
+                // G6-Offline (REDESIGN-14, new function): Can't reach Pearl at launch.
+                CantReachPearlView { await app.start() }
             case .signedOut:
                 AuthFlow()
             case .deleted(let sentTo):

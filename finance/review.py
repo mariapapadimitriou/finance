@@ -610,6 +610,8 @@ def for_store(st, today: str | None = None) -> dict:
     review["sorted_today"] = sorted_log.count_today(st, day)
     review["pearl_sorted"] = len(sorted_log.pearl_rows(st, review, day, ids_in)) \
         + len(pattern_sort.records(st))
+    # REDESIGN-18: Home's streak counts her own answers too.
+    review["you_sorted"] = sorted_log.her_count(st, review, day, ids_in)
     return review
 
 

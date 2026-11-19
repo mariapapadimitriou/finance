@@ -394,6 +394,9 @@ struct Home: Decodable {
     let reviewCount: Int
     /// How many Pearl sorted without asking, shown so it isn't silent.
     var pearlSorted: Int? = nil
+    /// REDESIGN-18: her answers plus what Pearl sorted, over the same window
+    /// as `reviewCount`; the streak's "sorted".
+    var sorted: Int? = nil
     /// AI-01: how many Pearl sorted from her own answers in the last 7 days.
     var patternWeek: Int? = nil
     /// A month with a third paycheque: a note, nothing to do.
@@ -403,7 +406,7 @@ struct Home: Decodable {
     let connections: [Connection]?
 
     enum CodingKeys: String, CodingKey {
-        case today, month, snapshot, connections
+        case today, month, snapshot, connections, sorted
         case reviewCount = "review_count"
         case pearlSorted = "pearl_sorted"
         case patternWeek = "pattern_week"

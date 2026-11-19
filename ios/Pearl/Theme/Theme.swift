@@ -10,10 +10,10 @@ enum Pearl {
     // Pearl dust (NacreBackground / SheetBackground); color/surface/card is
     // glass/light (white @72%) and color/border/subtle is glass/edge-light
     // (white @80%). Dark values are unchanged.
-    static let card = Color(UIColor { $0.userInterfaceStyle == .dark
-        ? UIColor(hex: 0x151B44) : UIColor(white: 1, alpha: 0.72) })      // color/surface/card
-    static let border = Color(UIColor { $0.userInterfaceStyle == .dark
-        ? UIColor(hex: 0x252C5E) : UIColor(white: 1, alpha: 0.8) })       // color/border/subtle
+    // A+ (REDESIGN-08, kit.css `card` / `card-line`): one card everywhere,
+    // white glass @80% in light, ocean @72% in dark, with a 1 pt line inside.
+    static let card = APlus.card                                     // color/surface/card (A+ `card`)
+    static let border = APlus.cardLine                               // color/border/subtle (A+ `card-line`)
     /// A toast's words on its ink fill (what the page colour used to be).
     static let onInk = dynamic(light: 0xFBF8F6, dark: 0x0B1030)
     static let track = dynamic(light: 0xF1E9EE, dark: 0x252C5E)     // --track
@@ -48,8 +48,8 @@ enum Pearl {
     static let danger = dynamic(light: 0xBE2634, dark: 0xFF7B72)
     static let rose = Color(hex: 0xE2557F)                          // --rose-500 (icons, badges)
     static let suggested = Color(hex: 0xFF8FB1)                     // --rose-300, a guess's dashed outline
-    static let rule = Color(UIColor { $0.userInterfaceStyle == .dark
-        ? UIColor(hex: 0x252C5E) : UIColor(white: 1, alpha: 0.8) })       // lines between rows in a card (REFRESH-05)
+    /// The 0.5 pt line between rows in a card (A+ `separator`).
+    static let rule = APlus.separator
     /// The glass card's shadow colour, #664D99 (REFRESH-05: @10%, y 8, blur 20).
     static let cardShadow = Color(hex: 0x664D99)
     static let onBlush = Color(hex: 0x1C1A33)                       // --on-nacre
@@ -105,9 +105,10 @@ enum Pearl {
         case .title2: size = 22
         case .title3: size = 20
         case .headline: size = 17
-        case .body: size = 16         // .text-body-large
-        case .callout: size = 15      // .pk-row-name
-        case .subheadline: size = 14
+        // A+ (kit.css): rows 17, lines under them 15, labels 13.
+        case .body: size = 17         // .t, a row's name
+        case .callout: size = 15      // .s, the line under it
+        case .subheadline: size = 15
         case .footnote: size = 13     // .pk-row-meta
         case .caption: size = 12      // .pk-overline
         default: size = 11

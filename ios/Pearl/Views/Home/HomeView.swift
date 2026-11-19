@@ -1,8 +1,15 @@
 import SwiftUI
+import UIKit
 import UserNotifications
 
-/// Home (SC-40, H-00r): the Allowance orb (REFRESH-05), what needs you, and
-/// a way to Cash flow.
+/// Home, A+ (AP-Home, AP-HomeCalm, AP-PhotoHome; REDESIGN-04 to -06): the
+/// date and the profile circle, the Allowance orb, then only cards with
+/// something in them: a bank to reconnect (H-01, its own card), Set Pearl up
+/// again, NEEDS A LOOK (8 to sort, the streak, Sort now; See the list on the
+/// label), "2 people owe you" (opens Owed to you) and WORTH A LOOK. Nothing
+/// there: the orb at full size and "You're all caught up." "November so
+/// far" (MonthCard) and AI-01's "Pearl sorted this week" are gone; Pearl's
+/// sorting shows in the streak line.
 @MainActor
 struct HomeView: View {
     @EnvironmentObject private var app: AppModel
@@ -10,73 +17,51 @@ struct HomeView: View {
 
     @State private var home: Home?
     @State private var setup: SetupAgain?
-    /// Who owes her on splits, for the owes-you card (H-00n).
+    /// Who owes her on splits, for "2 people owe you".
     @State private var owed: OwedOverview?
+    @State private var worth: [WorthItem] = []
     @State private var error: String?
+    /// G6-Offline: when Home last came back, and whether the last try failed.
+    @State private var loadedAt: Date?
+    @State private var offline = false
     /// N-01's quiet hours, while it's showing.
     @State private var askingToNotify: NotificationSettings.Quiet?
     @State private var checkedNotify = false
     /// H-01's Reconnect.
     @State private var reconnecting: Home.Connection?
-    /// H-01's "See accounts" for a disconnected bank.
-    @State private var openAccounts = false
-    /// H-00r's Sort now: Quick sort, straight from Home (TEST-04).
-    @State private var quickSort: [Ask] = []
-    @State private var quickSortNames: [String] = []
-    /// AI-18: patterns Pearl asks about once, first in Quick sort.
-    @State private var quickSortPatterns: [PatternAsk] = []
-    /// TR-01: likely trips, after the patterns.
-    @State private var quickSortTrips: [TripAsk] = []
+    /// Where a tap goes: Accounts, the list, Owed to you, a Worth a look item.
+    @State private var route: HomeRoute?
+    /// H-00r's Sort now: Quick sort, straight from Home (TEST-04); a trip
+    /// item opens just its trip question.
+    @State private var quickSort: QuickSortDeck?
     @State private var opening = false
+    /// The new-month item scrolls Home back to its Allowance.
+    @State private var toOrb = 0
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if let home = home {
-                    // For now (2026-11-07): O-11b's Allowance ring heads Home.
-                    allowanceHeader(home)
-                    // H-02 (THL-120): every bank in trouble, worst first.
-                    ForEach((home.connections ?? []).filter { ["needs_sign_in", "disconnected"].contains($0.state ?? "") }) { c in
-                        BankAlertCard(connection: c, today: home.today) { openAccounts = true } reconnect: {
-                            reconnecting = c
-                        }
-                    }
-                    if let setup = setup, setup.active {
-                        SetupAgainCard(setup: setup, onChanged: { Task { await load() } })
-                    }
-                    if home.reviewCount > 0 {
-                        NeedsALookCard(count: home.reviewCount, pearlSorted: home.pearlSorted ?? 0,
-                                       busy: opening) { Task { await sortNow() } }
-                    }
-                    if let week = home.patternWeek, week > 0 {
-                        // AI-01: what Pearl sorted from her own answers this week.
-                        PearlSortedCard(count: week)
-                    }
-                    // H-00n (SPLIT-13, THL-291): under Needs a look, once a share is a week old.
-                    if let owed = owed, let line = OwedNudgeCard.line(owed, today: home.today) {
-                        OwedNudgeCard(line: line)
-                    }
-                    if let note = home.paychequeNote {
-                        PaychequeNoteCard(month: note) { Task { await dismissNote(note) } }
-                    }
-                    MonthCard(month: home.month, onTransactions: { tab = .cashFlow })
-                } else {
+            if let home = home {
+                HomeFeed(home: home, setup: setup, owed: owed, worth: worth,
+                         offlineSince: offline ? loadedAt : nil, sorting: opening,
+                         actions: actions)
+            } else {
+                VStack(spacing: 0) {
+                    HomeTopBar(today: nil)
                     LoadState(error: error) { Task { await load() } }
                 }
+                .padding(.horizontal, Pearl.gutter)
             }
-            .padding(.horizontal, Pearl.gutter)
-            .padding(.vertical, 24)
-            // A+ (AP-Home, AP-PhotoHome): the profile circle top right, level
-            // with the date line; it pushes Profile in this tab.
-            .overlay(alignment: .topTrailing) {
-                ProfileCircle().padding(.top, 9).padding(.trailing, Pearl.gutter - 4)
-            }
+        }
+        .onChange(of: toOrb) { _ in withAnimation { proxy.scrollTo(HomeOrb.anchor, anchor: .top) } }
         }
         .nacreScreen()
         .navigationBarHidden(true)
         .refreshable { await load() }
         .reloads { await load() }
-        .navigationDestination(isPresented: $openAccounts) { AccountsView() }
+        .navigationDestination(isPresented: Binding(get: { route != nil }, set: { if !$0 { route = nil } })) {
+            if let route = route { HomeDestination(route: route) }
+        }
         .sheet(item: $reconnecting) { c in
             ReconnectSheet(bank: c.institution ?? "your bank", label: c.institution ?? "Your bank",
                            itemId: c.itemId, updatedAt: c.lastSynced) { ok in
@@ -90,69 +75,31 @@ struct HomeView: View {
         .fullScreenCover(item: $askingToNotify) { quiet in
             TurnOnNotificationsView(quiet: quiet)
         }
-        .fullScreenCover(isPresented: Binding(get: { !quickSort.isEmpty || !quickSortPatterns.isEmpty
-                                                     || !quickSortTrips.isEmpty },
-                                              set: { if !$0 { quickSort = []; quickSortPatterns = []; quickSortTrips = [] } })) {
-            QuickSortView(asks: quickSort, categories: app.categories, names: quickSortNames,
-                          patterns: quickSortPatterns, trips: quickSortTrips) {
-                quickSort = []
-                quickSortPatterns = []
-                quickSortTrips = []
+        .fullScreenCover(item: $quickSort) { deck in
+            QuickSortView(asks: deck.asks, categories: app.categories, names: deck.names,
+                          patterns: deck.patterns, trips: deck.trips) {
+                quickSort = nil
                 Task { await load() }
             }
         }
     }
 
-    /// H-00r (REFRESH-00 decision 2): Sort now opens Quick sort with every
-    /// open question, not only today's new ones.
-    private func sortNow() async {
-        guard !opening else { return }
-        opening = true
-        defer { opening = false }
-        do {
-            let prompt: QuickSortPrompt = try await app.api.get("api/quick-sort", query: ["all": "1"])
-            quickSortNames = prompt.review?.people ?? []
-            quickSortPatterns = prompt.patterns
-            quickSortTrips = prompt.trips
-            quickSort = prompt.asks
-        } catch {
-            self.error = app.handle(error)
-        }
+    private var actions: HomeActions {
+        HomeActions(
+            sortNow: { Task { await sortNow() } },
+            seeList: { route = .review },
+            seeOwed: { route = .owed },
+            accounts: { route = .accounts },
+            reconnect: { reconnecting = $0 },
+            reload: { Task { await load() } },
+            clear: { Task { await clearWorth() } },
+            open: { item in Task { await open(item) } },
+            yes: { item in Task { await answer(item, yes: true) } },
+            notNow: { item in Task { await answer(item, yes: false) } },
+            gotIt: { item in Task { await gotIt(item) } })
     }
 
-    /// H-00 / H-00r (REFRESH-05): the date, then the Allowance orb with
-    /// "Allowance" / the amount / "left in November" inside it (the orb's
-    /// label is the heading, so there is no title above it), and the line
-    /// under it when there is one.
-    private func allowanceHeader(_ home: Home) -> some View {
-        VStack(spacing: 6) {
-            Text((home.today.map { Format.day($0) } ?? "").uppercased()).font(Nacre.caption2).tracking(1.4)
-                .foregroundColor(Pearl.ink)
-            AllowanceOrb(progress: home.safeToSpend?.ringProgress ?? 0,
-                         label: "Allowance",
-                         amount: home.safeToSpend?.ringAmount ?? "—",
-                         sub: home.safeToSpend?.orbSub(month: home.month) ?? Allowance.orbSub(forMonth: home.month))
-                .accessibilityAddTraits(.isHeader)
-                .accessibilityHint(home.safeToSpend?.ringCaption == Allowance.restCaption ? Allowance.restCaption : "")
-                .padding(.vertical, 12)
-            // REFRESH-03 (H-00n, H-00u): the usual "Left to spend or save…" line
-            // is gone, since the ring says Allowance; it stays as the ring's
-            // VoiceOver hint. The other states (estimate, over, no income) keep theirs.
-            if let caption = home.safeToSpend?.ringCaption, !caption.isEmpty, caption != Allowance.restCaption {
-                Text(caption).font(Nacre.subheadline).foregroundColor(Pearl.ink)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.bottom, 8)
-    }
-
-    /// Got it: the note doesn't come back.
-    private func dismissNote(_ note: Review.PayMonth) async {
-        let _: OK? = try? await app.api.post("api/review/dismiss", ["key": note.key])
-        await load()
-    }
+    // MARK: Loading
 
     private func load() async {
         // Pearl sorts for you (P1a): what can be sorted from her own answers,
@@ -161,12 +108,24 @@ struct HomeView: View {
         _ = try? await app.api.post("api/pattern-sort/run", [:]) as Ran
         do {
             home = try await app.api.get("api/home")
-            setup = try? await app.api.get("api/setup-again")
-            owed = try? await app.api.get("api/owed")
+            async let setupReply: SetupAgain? = try? app.api.get("api/setup-again")
+            async let owedReply: OwedOverview? = try? app.api.get("api/owed")
+            async let worthReply: WorthReply? = try? app.api.get("api/worth-a-look")
+            let (s, o, w) = await (setupReply, owedReply, worthReply)
+            setup = s
+            owed = o
+            worth = w?.items ?? []
             error = nil
+            offline = false
+            loadedAt = Date()
             await offerNotifications()
         } catch {
-            self.error = app.handle(error)
+            // G6-Offline: Home stays as it was, under the banner.
+            if home != nil, (error as? APIError) == .offline {
+                offline = true
+            } else {
+                self.error = app.handle(error)
+            }
         }
     }
 
@@ -181,147 +140,365 @@ struct HomeView: View {
               settings.prefs.prompt?.answer == nil else { return }
         askingToNotify = settings.prefs.quiet
     }
+
+    /// H-00r (REFRESH-00 decision 2): Sort now opens Quick sort with every
+    /// open question, not only today's new ones.
+    private func sortNow() async {
+        guard !opening else { return }
+        opening = true
+        defer { opening = false }
+        do {
+            let prompt: QuickSortPrompt = try await app.api.get("api/quick-sort", query: ["all": "1"])
+            quickSort = QuickSortDeck(asks: prompt.asks, names: prompt.review?.people ?? [],
+                                      patterns: prompt.patterns, trips: prompt.trips)
+        } catch {
+            if let words = app.handle(error) { app.say(words) }
+        }
+    }
+
+    // MARK: Worth a look
+
+    /// Clear hides every item; Undo on the ink toast brings them back.
+    private func clearWorth() async {
+        let ids = worth.map(\.id)
+        guard !ids.isEmpty else { return }
+        do {
+            let reply: WorthReply = try await app.api.post("api/worth-a-look", ["action": "clear", "ids": ids])
+            withAnimation { worth = reply.items }
+            app.say("Cleared", undo: { [api = app.api] in
+                let _: WorthReply = try await api.post("api/worth-a-look", ["action": "undo_clear", "ids": ids])
+            })
+        } catch {
+            if let words = app.handle(error) { app.say(words) }
+        }
+    }
+
+    /// Yes (or Update the bill) does it, the row leaves and the next slides
+    /// up; only the toast says what happened, with Undo. Not now: for good.
+    private func answer(_ item: WorthItem, yes: Bool) async {
+        do {
+            let reply: WorthReply = try await app.api.post("api/worth-a-look",
+                                                          ["action": yes ? "yes" : "not_now", "id": item.id])
+            withAnimation { worth = reply.items }
+            guard yes else { return }
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            app.say(reply.toast ?? "Done", undo: { [api = app.api] in
+                let _: WorthReply = try await api.post("api/worth-a-look", ["action": "undo_yes", "id": item.id])
+            })
+            app.changed()
+        } catch {
+            if let words = app.handle(error) { app.say(words) }
+        }
+    }
+
+    /// T-74's Got it (the old note's): it doesn't come back, here or anywhere.
+    private func gotIt(_ item: WorthItem) async {
+        do {
+            let reply: WorthReply = try await app.api.post("api/worth-a-look", ["action": "got_it", "id": item.id])
+            withAnimation { worth = reply.items }
+        } catch {
+            if let words = app.handle(error) { app.say(words) }
+        }
+    }
+
+    /// A one-tap item: seen, then where it lives.
+    private func open(_ item: WorthItem) async {
+        let _: WorthReply? = try? await app.api.post("api/worth-a-look", ["action": "seen", "id": item.id])
+        guard let target = item.target, let screen = target.screen else { return }
+        switch screen {
+        case "trip":
+            // TR-01: just this trip's question, as Quick sort asks it.
+            if let prompt: QuickSortPrompt = try? await app.api.get("api/quick-sort", query: ["all": "1"]) {
+                let trips = prompt.trips.filter { $0.id == target.id || $0.key == target.id }
+                if !trips.isEmpty {
+                    quickSort = QuickSortDeck(asks: [], names: prompt.review?.people ?? [], patterns: [], trips: trips)
+                }
+            }
+        case "category":
+            // Cash flow, where categories live (filtering it from here waits for Cash flow).
+            tab = .cashFlow
+        case "allowance":
+            // The new month: Home's own Allowance, the orb at the top.
+            toOrb += 1
+        default:
+            if let r = HomeRoute(target) { route = r }
+        }
+        if let w: WorthReply = try? await app.api.get("api/worth-a-look") { worth = w.items }
+    }
 }
 
-/// H-00r (TEST-04, REFRESH-00 decision 2): "8 to sort", about how long,
-/// what Pearl sorted itself and a bar of how far along; Sort now opens Quick
-/// sort, See the list opens Needs a look.
+/// What Quick sort opens with.
+struct QuickSortDeck: Identifiable {
+    let id = UUID()
+    var asks: [Ask]
+    var names: [String]
+    var patterns: [PatternAsk]
+    var trips: [TripAsk]
+}
+
+/// Where Home goes.
+enum HomeRoute: Hashable {
+    case review, owed, accounts
+    case owedPerson(String)
+    case transaction(String)
+    case bills, debts
+
+    init?(_ t: WorthItem.Target) {
+        switch t.screen {
+        case "transaction": guard let id = t.id else { return nil }; self = .transaction(id)
+        case "owed_person": guard let name = t.name else { return nil }; self = .owedPerson(name)
+        case "owed": self = .owed
+        case "bill": self = .bills
+        case "debt": self = .debts
+        case "income": self = .bills
+        case "review": self = .review
+        default: return nil
+        }
+    }
+}
+
+private struct HomeDestination: View {
+    @EnvironmentObject private var app: AppModel
+    let route: HomeRoute
+
+    var body: some View {
+        switch route {
+        case .review: ReviewView()
+        case .owed: OwedView()
+        case .accounts: AccountsView()
+        case .owedPerson(let name): OwedPersonView(name: name)
+        case .transaction(let id): TransactionByID(id: id, categories: app.categories)
+        case .bills: IncomeBillsView()
+        case .debts: DebtsView()
+        }
+    }
+}
+
+/// Everything Home's cards can ask for.
+struct HomeActions {
+    let sortNow: () -> Void
+    let seeList: () -> Void
+    let seeOwed: () -> Void
+    let accounts: () -> Void
+    let reconnect: (Home.Connection) -> Void
+    let reload: () -> Void
+    let clear: () -> Void
+    let open: (WorthItem) -> Void
+    let yes: (WorthItem) -> Void
+    let notNow: (WorthItem) -> Void
+    let gotIt: (WorthItem) -> Void
+}
+
+// MARK: - The feed
+
+/// The page under the orb: only what has something in it.
+private struct HomeFeed: View {
+    let home: Home
+    let setup: SetupAgain?
+    let owed: OwedOverview?
+    let worth: [WorthItem]
+    let offlineSince: Date?
+    let sorting: Bool
+    let actions: HomeActions
+
+    private var troubled: [Home.Connection] {
+        (home.connections ?? []).filter { ["needs_sign_in", "disconnected"].contains($0.state ?? "") }
+    }
+
+    private var owes: Bool { (owed?.people ?? 0) > 0 && (owed?.total ?? 0) >= 0.005 }
+
+    /// AP-HomeCalm: nothing needs her.
+    private var calm: Bool {
+        troubled.isEmpty && !(setup?.active ?? false) && home.reviewCount == 0 && !owes
+            && worth.isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let since = offlineSince {
+                OfflineBanner(since: since).padding(.top, 8).padding(.bottom, 8)
+            }
+            HomeTopBar(today: home.today)
+            HomeOrb(home: home, calm: calm)
+            if calm {
+                CalmState().padding(.top, 12)
+            } else {
+                HomeCards(home: home, setup: setup, owed: owes ? owed : nil, troubled: troubled,
+                          sorting: sorting, actions: actions)
+                if !worth.isEmpty {
+                    WorthALookSection(items: worth, onClear: actions.clear, onOpen: actions.open,
+                                      onYes: actions.yes, onNotNow: actions.notNow, onGotIt: actions.gotIt)
+                        .padding(.top, 20)
+                }
+            }
+        }
+        .padding(.horizontal, Pearl.gutter)
+        .padding(.bottom, 32)
+    }
+}
+
+/// The date (12/500, tracked 1.4, `muted`), centred, and the profile circle
+/// on the right, 44 high.
+struct HomeTopBar: View {
+    let today: String?
+
+    var body: some View {
+        HStack {
+            Color.clear.frame(width: 44, height: 44)
+            Spacer(minLength: 0)
+            Text((today.map { Format.day($0) } ?? "").uppercased())
+                .font(.custom("Figtree-Medium", size: 12, relativeTo: .caption)).tracking(1.4)
+                .foregroundColor(Pearl.muted)
+                .lineLimit(1).minimumScaleFactor(0.8)
+            Spacer(minLength: 0)
+            // A+ (AP-Home, AP-PhotoHome): it pushes Profile in this tab.
+            ProfileCircle()
+        }
+        .frame(height: 44)
+        .padding(.top, 2)
+        .padding(.trailing, -4)
+    }
+}
+
+/// The orb: 188 with cards under it, 232 and 48 lower when calm. The
+/// estimate, over and no-income states keep their line under it.
+private struct HomeOrb: View {
+    static let anchor = "home-orb"
+    let home: Home
+    let calm: Bool
+
+    var body: some View {
+        VStack(spacing: 10) {
+            AllowanceOrb(progress: home.safeToSpend?.ringProgress ?? 0,
+                         label: "Allowance",
+                         amount: home.safeToSpend?.ringAmount ?? "—",
+                         sub: home.safeToSpend?.orbSub(month: home.month) ?? Allowance.orbSub(forMonth: home.month),
+                         size: calm ? AllowanceOrb.full : AllowanceOrb.small)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityHint(home.safeToSpend?.ringCaption == Allowance.restCaption ? Allowance.restCaption : "")
+            if let caption = home.safeToSpend?.ringCaption, !caption.isEmpty, caption != Allowance.restCaption {
+                Text(caption).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .id(HomeOrb.anchor)
+        .padding(.top, calm ? 48 : 0)
+        .padding(.bottom, calm ? 24 : 0)
+    }
+}
+
+/// The bank cards, Set Pearl up again, Needs a look, who owes her, a note.
+private struct HomeCards: View {
+    let home: Home
+    let setup: SetupAgain?
+    let owed: OwedOverview?
+    let troubled: [Home.Connection]
+    let sorting: Bool
+    let actions: HomeActions
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // H-02 (THL-120): every bank in trouble, worst first, each its own card.
+            ForEach(troubled) { c in
+                BankAlertCard(connection: c, today: home.today, openAccounts: actions.accounts) {
+                    actions.reconnect(c)
+                }
+                .padding(.top, 18)
+            }
+            if let setup = setup, setup.active {
+                SetupAgainCard(setup: setup, onChanged: actions.reload).padding(.top, 18)
+            }
+            if home.reviewCount > 0 {
+                APSectionLabel(text: "Needs a look", action: "See the list", act: actions.seeList)
+                    .padding(.top, 18).padding(.bottom, 8)
+                NeedsALookCard(count: home.reviewCount, pearlSorted: home.pearlSorted ?? 0,
+                               sorted: home.sorted ?? home.pearlSorted ?? 0,
+                               busy: sorting, onSort: actions.sortNow)
+            }
+            if let owed = owed {
+                OwedCard(owed: owed, open: actions.seeOwed).padding(.top, 12)
+            }
+        }
+    }
+}
+
+/// H-00r (TEST-04; AP-Home): "8 to sort", "About a minute · Pearl sorted 40",
+/// the 12-dash streak (B's, REDESIGN-02) and Sort now. See the list sits on
+/// the label above.
 struct NeedsALookCard: View {
     let count: Int
     var pearlSorted = 0
+    /// REDESIGN-18: her answers plus Pearl's, over the same window as `count`.
+    var sorted = 0
     var busy = false
     let onSort: () -> Void
 
     /// About ten seconds a card.
     private var howLong: String {
         let minutes = Int((Double(count) * 10 / 60).rounded())
-        return minutes <= 1 ? "About a minute." : "About \(minutes) minutes."
+        return minutes <= 1 ? "About a minute" : "About \(minutes) minutes"
     }
 
     var body: some View {
-        PearlCard(spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "rectangle.stack").font(.system(size: 20)).foregroundColor(Pearl.action)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                Image(systemName: "square.on.square").font(.system(size: 18)).foregroundColor(Pearl.action)
                     .frame(width: 44, height: 44)
                     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Pearl.bubble))
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(count) to sort").font(Pearl.text(.headline, .semibold)).foregroundColor(Pearl.ink)
-                    Text(howLong + (pearlSorted > 0 ? " Pearl sorted \(pearlSorted) by itself." : ""))
-                        .font(Pearl.text(.subheadline)).foregroundColor(Pearl.ink)
+                    Text("\(count) to sort").font(Nacre.headline).foregroundColor(Pearl.ink)
+                    Text(howLong + (pearlSorted > 0 ? " \u{00B7} Pearl sorted \(pearlSorted)" : ""))
+                        .font(Nacre.subheadline).foregroundColor(Pearl.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .accessibilityElement(children: .combine)
-            if pearlSorted > 0 {
-                PaidBar(paid: Double(pearlSorted), of: Double(pearlSorted + count))
-                    .accessibilityHidden(true)
+            // REDESIGN-18: lit = sorted ÷ (sorted + to sort), in twelfths;
+            // VoiceOver "N of M sorted". The words still say Pearl sorted N.
+            if sorted > 0 {
+                SortStreak(sorted: sorted, toSort: count)
             }
             Button("Sort now", action: onSort)
                 .buttonStyle(PearlPrimaryButtonStyle(busy: busy, busyLabel: "Opening…"))
                 .disabled(busy)
-            NavigationLink {
-                ReviewView()
-            } label: {
-                Text("See the list").font(Nacre.textButton).foregroundColor(Pearl.link)
-                    .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
         }
+        .padding(18)
+        .apCard()
     }
 }
 
-/// H-00n (SPLIT-13, THL-291 "the Home owes-you nudge"; REFRESH-03 words):
-/// "Sam and Priya owe you $70.10". It shows once the oldest share is a week
-/// old, so a split made today doesn't nag, and goes when nothing is owed.
-/// No dismiss, like Needs a look.
-struct OwedNudgeCard: View {
-    let line: String
+/// AP-Home (REDESIGN-04): "2 people owe you" with the total on the right
+/// edge, one row on its own card; it opens Owed to you.
+struct OwedCard: View {
+    let owed: OwedOverview
+    let open: () -> Void
 
     var body: some View {
-        PearlCard(spacing: 8) {
-            Text(line).font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.ink)
-                .fixedSize(horizontal: false, vertical: true)
-            NavigationLink {
-                OwedView()
-            } label: {
-                // UI audit: tapped across 44 pt, drawn as before.
-                LinkLabel(text: "See who owes you").tapTarget(vertical: 12)
+        Button(action: open) {
+            HStack(spacing: 12) {
+                APIcon(symbol: "person.2")
+                Text(OwedCard.words(owed)).font(Nacre.body).foregroundColor(Pearl.ink)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text(Format.amount(owed.total)).font(Nacre.headline).monospacedDigit()
+                    .foregroundColor(Pearl.ink).pearlAmountFit().fixedSize()
             }
-            .padding(.top, 4)
-        }
-    }
-
-    /// The card's words, or nil when it shouldn't show.
-    static func line(_ owed: OwedOverview, today: String?) -> String? {
-        let items = owed.owesYou.flatMap(\.items)
-        let now = today.flatMap { Format.localDay($0) } ?? Date()
-        func aWeek(_ day: String) -> Bool {
-            guard let first = Format.localDay(day),
-                  let days = Calendar.current.dateComponents([.day], from: first, to: now).day else { return false }
-            return days >= 7
-        }
-        // H-00u (SPLIT-C decision 5): a Not sure yet split is never money
-        // owed, so it adds no amount; once it's a week old, the same timing
-        // as owes-you, a quiet "· 1 not settled" joins the line (REFRESH-03).
-        let unsettled = (owed.notSettled ?? []).filter { aWeek($0.date) }
-        guard owed.total >= 0.005, let oldest = items.map(\.date).min(), aWeek(oldest) else {
-            // H-00u0: only a Not sure yet split: "Pizza Nova isn’t settled yet".
-            guard !unsettled.isEmpty else { return nil }
-            return unsettled.count == 1 ? "\(unsettled[0].merchant) isn’t settled yet"
-                : "\(unsettled.count) splits aren’t settled yet"
-        }
-        // Up to two names, then "and N others".
-        let names = owed.owesYou.map { $0.name.components(separatedBy: " ").first ?? $0.name }
-        let who: String
-        switch names.count {
-        case 1: who = "\(names[0]) owes"
-        case 2: who = "\(names[0]) and \(names[1]) owe"
-        default:
-            let others = names.count - 2
-            who = "\(names[0]), \(names[1]) and \(others) other\(others == 1 ? "" : "s") owe"
-        }
-        // "Sam and Priya owe you $70.10"; H-00u adds " · 1 not settled".
-        let line = "\(who) you \(Format.amount(owed.total))"
-        return unsettled.isEmpty ? line : "\(line) · \(unsettled.count) not settled"
-    }
-}
-
-/// A month with a third paycheque: why it looks bigger, and nothing to do.
-struct PaychequeNoteCard: View {
-    let month: Review.PayMonth
-    let onDismiss: () -> Void
-
-    var body: some View {
-        PearlCard(spacing: 8) {
-            // REFRESH-03 (H-00n), PC-01 (TEXT-01): "3 paycheques in October".
-            Text("3 paycheques in \(Format.monthName(month.month))")
-                .font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.ink)
-                .fixedSize(horizontal: false, vertical: true)
-            Button(action: onDismiss) {
-                // UI audit: tapped across 44 × 44 pt, drawn as before.
-                Text("Got it").font(Nacre.textButton).foregroundColor(Pearl.link)
-                    .tapTarget(vertical: 12, horizontal: 6)
-            }
-            .padding(.top, 4)
-        }
-    }
-}
-
-/// "October so far", a way to Cash flow (REFRESH-03 took its footnote out).
-struct MonthCard: View {
-    let month: String
-    let onTransactions: () -> Void
-
-    var body: some View {
-        Button(action: onTransactions) {
-            PearlCard(spacing: 8) {
-                Text("\(Format.monthName(month)) so far").font(Pearl.cardTitle).foregroundColor(Pearl.ink)
-                LinkLabel(text: "Transactions").padding(.top, 4)
-            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .frame(minHeight: 64)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .apCard()
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens Owed to you")
+    }
+
+    /// "2 people owe you", "1 person owes you".
+    static func words(_ owed: OwedOverview) -> String {
+        owed.people == 1 ? "1 person owes you" : "\(owed.people) people owe you"
     }
 }
 
@@ -340,16 +517,16 @@ struct SetupAgainCard: View {
     let onChanged: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Set Pearl up again").font(Nacre.title2).foregroundColor(Pearl.ink)
-                .accessibilityAddTraits(.isHeader)
+        VStack(alignment: .leading, spacing: 8) {
+            APSectionLabel(text: "Set Pearl up again")
             Text(setup.left == 1 ? "Start over cleared what only you can tell Pearl. 1 thing left to set again."
                  : "Start over cleared what only you can tell Pearl. \(setup.left) things left to set again.")
-                .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                .padding(.horizontal, 4)
                 .fixedSize(horizontal: false, vertical: true)
-            GlassCard {
+            APCard {
                 ForEach(Array(setup.steps.enumerated()), id: \.element.id) { index, step in
-                    if index > 0 { RowSeparator(inset: 62) }
+                    if index > 0 { APSeparator(afterFace: false) }
                     NavigationLink { destination(step) } label: {
                         ProfileRow(symbol: symbol(step.key), title: step.title,
                                    sub: step.done ? "Done" : step.sub)
@@ -359,13 +536,13 @@ struct SetupAgainCard: View {
                 }
             }
             if hideable {
-            Button("Hide this list") {
-                Task {
-                    let _: SetupAgain? = try? await app.api.post("api/setup-again", ["hide": true])
-                    onChanged()
+                Button("Hide this list") {
+                    Task {
+                        let _: SetupAgain? = try? await app.api.post("api/setup-again", ["hide": true])
+                        onChanged()
+                    }
                 }
-            }
-            .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                .buttonStyle(NacreTextButtonStyle())
             }
         }
     }
@@ -396,9 +573,9 @@ struct SetupAgainCard: View {
     }
 }
 
-/// H-01 (THL-120, THL-123): a bank that needs her, at the top of Home: the
-/// same card as Accounts' C-01. Disconnected opens Accounts; a bank that
-/// isn't responding needs nothing from her.
+/// H-01 (THL-120, THL-123): a bank that needs her, at the top of Home, on
+/// its own A+ card: the same words as Accounts' C-01. Disconnected opens
+/// Accounts; a bank that isn't responding needs nothing from her.
 struct BankAlertCard: View {
     let connection: Home.Connection
     let today: String?
@@ -406,25 +583,24 @@ struct BankAlertCard: View {
     let reconnect: () -> Void
 
     var body: some View {
-        GlassCard {
-            VStack(spacing: 14) {
-                HStack(spacing: 12) {
-                    IconBubble(symbol: connection.state == "bank_down" ? "clock" : "arrow.triangle.2.circlepath")
-                    Text(text).font(Nacre.body).foregroundColor(Pearl.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                switch connection.state {
-                case "needs_sign_in":
-                    Button("Reconnect", action: reconnect).buttonStyle(NacreButtonStyle())
-                case "disconnected":
-                    Button("See accounts", action: openAccounts).buttonStyle(NacreButtonStyle())
-                default:
-                    EmptyView()
-                }
+        VStack(spacing: 14) {
+            HStack(spacing: 12) {
+                APIcon.warn(connection.state == "bank_down" ? "clock" : "arrow.triangle.2.circlepath")
+                Text(text).font(Nacre.body).foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(16)
+            switch connection.state {
+            case "needs_sign_in":
+                Button("Reconnect", action: reconnect).buttonStyle(NacreButtonStyle())
+            case "disconnected":
+                Button("See accounts", action: openAccounts).buttonStyle(NacreButtonStyle())
+            default:
+                EmptyView()
+            }
         }
+        .padding(18)
+        .apCard()
     }
 
     private var text: String {
