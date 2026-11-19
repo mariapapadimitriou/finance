@@ -92,8 +92,10 @@ struct TripPage: View {
             if let d = detail {
                 TripPageContent(detail: d, category: category, byCategory: $byCategory)
                     .padding(.horizontal, Pearl.gutter).padding(.top, 8).padding(.bottom, 32)
+            } else if error != nil {
+                TripLoadFailed { Task { await load() } }.padding(.top, 120)
             } else {
-                LoadState(error: error) { Task { await load() } }
+                LoadState(error: nil) { Task { await load() } }
                     .padding(.top, 40)
             }
         }
@@ -545,19 +547,63 @@ struct NameTripSheet: View {
     /// Makes or renames it with the name she typed.
     let save: (String) async throws -> Void
 
+    @State private var busy = false
+    @State private var failed: String?
+
+    private var typed: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// G7-TripRename TR-08: the title, "Adds the tag to all 23.", the Trip
+    /// name well, and the one Primary above the keyboard, greyed until typed.
     var body: some View {
-        PearlConfirmSheet(overline: "\(count) transaction\(count == 1 ? "" : "s") · \(dates) · \(total)",
-                          title: "Name the trip",
-                          message: count == 1 ? "Adds the tag." : "Adds the tag to all \(count).",
-                          field: .init(label: "Trip name", identifier: "trip-name"), text: $name,
-                          primary: primary, secondary: "Cancel", onClose: onClose) {
-            do {
-                try await save(name.trimmingCharacters(in: .whitespacesAndNewlines))
-            } catch let e as APIError {
-                if case .server = e { throw SplitMenuError(words: e.localizedDescription) }
-                throw e
+        PearlSheet(dismissDisabled: busy) {
+            APSheetTitle(title: "Name the trip", close: onClose)
+            Text(count == 1 ? "Adds the tag." : "Adds the tag to all \(count).")
+                .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                .frame(maxWidth: .infinity).padding(.top, -8)
+            PearlField(label: "Trip name", placeholder: "Trip to …", text: $name, identifier: "trip-name") {
+                if !typed.isEmpty { Task { await go() } }
             }
+            if let failed = failed { APErrorLine(text: failed) }
+        } footer: {
+            Button(failed != nil ? "Try again" : primary) { Task { await go() } }
+                .buttonStyle(APPrimaryButtonStyle(busy: busy))
+                .disabled(busy || typed.isEmpty)
+                .accessibilityIdentifier("trip-name-save")
         }
+    }
+
+    private func go() async {
+        busy = true
+        defer { busy = false }
+        do {
+            try await save(typed)
+            failed = nil
+        } catch let e as APIError {
+            // The server's words ("You already have a trip with that name.").
+            if case .server = e { failed = e.localizedDescription } else { failed = "Couldn’t save. Nothing changed. Try again." }
+        } catch {
+            failed = "Couldn’t save. Nothing changed. Try again."
+        }
+    }
+}
+
+/// G7-TripRename TR-02: Couldn't load the trip, with Try again.
+struct TripLoadFailed: View {
+    let retry: () -> Void
+
+    var body: some View {
+        VStack(spacing: 6) {
+            APIcon.warn("exclamationmark.triangle")
+            Text("Couldn’t load the trip").font(Nacre.title2).foregroundColor(Pearl.ink)
+                .padding(.top, 10)
+            Text("Check your connection.").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+            Button("Try again", action: retry)
+                .buttonStyle(APSecondaryButtonStyle())
+                .padding(.top, 14)
+                .accessibilityIdentifier("trip-retry")
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 8)
     }
 }
 

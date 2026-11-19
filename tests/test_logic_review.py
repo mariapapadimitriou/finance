@@ -382,7 +382,36 @@ def test_a_card_refund_isnt_pay():
     assert categorize("Canada Computers Refund", "CANADA COMPUTERS REFUND")[0] != "Income"
 
 
+def test_parked_plan_questions_are_not_asked_or_counted(w, monkeypatch):
+    """Your plan is parked (checks.PARKED): Still paid by Acme? isn't asked,
+    so Home's review_count, the tab badge (/api/review open) and Quick
+    sort's prompt all leave it out, the same as the app's shownAsks."""
+    from finance import checks
+    w.load(*[row(-2000, f"P{m}", f"{m}-01", merchant="Acme", issuer="income_wages")
+             for m in ("2026-06", "2026-07", "2026-08")])
+    w.c.post("/api/income-bills/pay", json={"name": "Acme", "payer": "Acme", "amount": 2000,
+                                           "cadence": "monthly", "next": f"{MONTH}-01"})
+    monkeypatch.setattr(checks, "PARKED", False)
+    asked = w.c.get("/api/review").get_json()
+    assert asked["checks"], "the question exists when Your plan is on"
+    monkeypatch.setattr(checks, "PARKED", True)
+    parked = w.c.get("/api/review").get_json()
+    assert parked["checks"] == []
+    assert parked["count"] == asked["count"] - len(asked["checks"])
+    assert parked["open"] == asked["open"] - sum(1 for c in asked["checks"] if not c["skipped"])
+    assert w.c.get("/api/home").get_json()["review_count"] == parked["count"]
+    prompt = w.c.get("/api/quick-sort").get_json()
+    assert prompt["count"] == parked["count"]
+    assert not {c["key"] for c in asked["checks"]} & set(prompt["keys"])
+
+
 class TestPlanQuestions:
+    @pytest.fixture(autouse=True)
+    def _plan_on(self, monkeypatch):
+        # These ask the plan questions, so they run with Your plan on.
+        from finance import checks
+        monkeypatch.setattr(checks, "PARKED", False)
+
     def _savings(self, w):
         w.st.record_account_default("sav", "TD Savings ••2210", "item", False, "depository", "savings") \
             if hasattr(w.st, "record_account_default") else None

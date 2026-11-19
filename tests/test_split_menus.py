@@ -391,7 +391,9 @@ class TestLessWords:
             '"One Undo puts both back."', 'stays cash in hand.',
             'is the most. You’ll sort the other'],
         "ios/Pearl/Views/Transactions/JointSplitViews.swift": [
-            '"How to settle?"', '?? "Nobody owes after this."', 'stays yours. Nobody owes for \\(t.merchant).',
+            # G2-BSettle (S-45a, round 2): "Settle up" and one line under the ways.
+            'APSheetHeader(heading: "Settle up"', '"Your Allowance doesn’t change now."',
+            'stays yours. Nobody owes for \\(t.merchant).',
             '"Typed amounts stay. Even, % and shares update."', '"Six is the most."',
             '"Pick from your splits, or type a name."', 'part is already off.'],
         "ios/Pearl/Views/Transactions/TransactionDetailView.swift": [
