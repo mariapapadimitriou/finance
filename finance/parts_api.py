@@ -682,6 +682,7 @@ def unsplit_candidates(st, deposit, target: float, q: str = "", also: str = "",
     when = date.fromisoformat(deposit.date[:10])
     names = st.merchant_names()
     from .categorize import merchant_key
+    from .tidy_names import of as tidy_of
     needle = " ".join((q or "").lower().split())
     try:
         wanted = cents(needle.replace("$", "").replace(",", "")) if needle else None
@@ -692,7 +693,7 @@ def unsplit_candidates(st, deposit, target: float, q: str = "", also: str = "",
         if c.fingerprint == deposit.fingerprint or not _splittable(st, c, splits):
             continue
         gap = (when - date.fromisoformat(c.date[:10])).days
-        shown = names.get(merchant_key(c.merchant)) or c.merchant
+        shown = names.get(merchant_key(c.merchant)) or tidy_of(c) or c.merchant
         found = False
         if needle:
             hay = " ".join(x for x in (shown, c.merchant, c.description or "", c.category or "") if x).lower()
@@ -1704,7 +1705,13 @@ def owing(txn_id: str):
         return len(s.get("people") or []) + (1 if s.get("me", True) else 0) if s else None
 
     # S-32 (2026-11-04): a purchase that hasn't posted yet says so.
-    items = [{"id": i["charge_id"], "merchant": i["merchant"], "date": i["date"], "owes": i["owes"],
+    # TEST-46: tidy names, her renames first.
+    from .tidy_names import display as tidy_display
+    shown_names = st.merchant_names()
+    items = [{"id": i["charge_id"],
+              "merchant": (tidy_display(txns[i["charge_id"]], shown_names) if i["charge_id"] in txns
+                           else i["merchant"]),
+              "date": i["date"], "owes": i["owes"],
               "share": i["amount"], "paid": i["paid"], "person": r["name"], "theirs": r in mine,
               "ways": ways(i["charge_id"]),
               "pending": bool(((getattr(txns.get(i["charge_id"]), "raw", None)) or {}).get("pending"))}

@@ -121,7 +121,9 @@ enum AccountWords {
     /// hand keeps its date, so a stale one still shows.
     static func listLine(_ a: AccountsOverview.Account) -> String {
         let bank = (a.institution ?? "").trimmingCharacters(in: .whitespaces)
-        let detail = (listPill(a) == nil || a.isHand) ? line(a) : ""
+        // TEST-43: a statement account is "manual" too, not only one added by
+        // hand, and keeps its digits beside the Manual pill.
+        let detail = (listPill(a) == nil || a.isHand || a.status == "manual") ? line(a) : ""
         let parts = [bank, detail].filter { !$0.isEmpty }
         let joined = parts.joined(separator: " \u{00B7} ")
         return listPill(a) != nil && !joined.isEmpty ? joined + " \u{00B7}" : joined

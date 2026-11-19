@@ -57,7 +57,8 @@ def test_every_date_field_opens_the_sheet():
     pay = read("Views", "Onboarding", "PayAndBillsView.swift")
     assert pay.count('title: "When is it due next?"') == 2 and pay.count("range: .todayOnward") == 2
     cal = read("Views", "Transactions", "CalendarView.swift")
-    assert 'title: "Last day", date: $to,\n                                     range: PearlDateRange(earliest: from))' in cal
+    assert 'title: "Last day", date: $to,\n                                     range: PearlDateRange(earliest: from, latest: Date()))' in cal
+    assert 'title: "First day", date: $from, range: .pastOnly)' in cal
 
 
 # ── The minors ──────────────────────────────────────────────────────────────
@@ -70,7 +71,7 @@ def test_35_one_number():
 
 def test_41_months_say_their_result():
     tv = read("Views", "Transactions", "TransactionsView.swift")
-    assert 'app.api.get("api/transactions/months")' in tv
+    assert 'api.get("api/transactions/months")' in tv
 
 
 def test_42_edit_split_opens_on_edit_split():
@@ -112,3 +113,27 @@ def test_46_smaller_things():
     assert 'CFGlassButton(label: "Add a transaction", action: { adding = true })' in tv
     answer = read("Views", "Review", "AnswerSheet.swift")
     assert "leadsWithLikely: !(fromPage && ask.kind == .category) || otherGuess" in answer
+
+
+# ── Round 6 follow-ups ──────────────────────────────────────────────────────
+
+def test_r6_needs_a_look_card_counts_the_rows():
+    rv = read("Views", "Review", "ReviewView.swift")
+    assert "+ (review?.tripAsks.count ?? 0) : quick.count," in rv
+    assert "QuickSortCard(count: quick.count + (review?.patternAsks" not in rv
+
+
+def test_r6_statement_accounts_keep_their_digits():
+    acc = read("Views", "Profile", "AccountsViews.swift")
+    assert '(listPill(a) == nil || a.isHand || a.status == "manual") ? line(a) : ""' in acc
+
+
+def test_r6_other_guess_leads_with_yes():
+    answer = read("Views", "Review", "AnswerSheet.swift")
+    assert '(ask.item.guess?.text ?? (otherGuess ? "Other" : nil))' in answer
+
+
+def test_r6_months_are_prefetched():
+    tv = read("Views", "Transactions", "TransactionsView.swift")
+    assert "Task { await MonthSheet.prefetch(app.api) }" in tv
+    assert "_left = State(initialValue: Self.remembered)" in tv

@@ -940,11 +940,12 @@ struct SortDaysSheet: View {
                         .font(Nacre.footnote).foregroundColor(Pearl.ink).padding(.horizontal, 4)
                     heading("Dates")
                     APCard {
-                        PearlDateRow(label: "From", title: "First day", date: $from)
+                        // TEST-50: nothing after today has anything to sort.
+                        PearlDateRow(label: "From", title: "First day", date: $from, range: .pastOnly)
                         APSeparator(afterFace: false)
                         // G0-DateSheet: the last day can't be before the first.
                         PearlDateRow(label: "To", title: "Last day", date: $to,
-                                     range: PearlDateRange(earliest: from))
+                                     range: PearlDateRange(earliest: from, latest: Date()))
                     }
                     .onChange(of: from) { f in if f > to { to = f } }
                     heading("Sort as")

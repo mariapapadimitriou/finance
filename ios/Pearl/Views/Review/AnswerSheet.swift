@@ -221,7 +221,10 @@ struct AnswerSheet: View {
                               // four likeliest; every other answer under Something else….
                               // TEST-46: an "Other?" guess opens What was this? from the page too.
                               leadsWithLikely: !(fromPage && ask.kind == .category) || otherGuess,
-                              guess: ask.kind == .category && pageCategory == nil ? ask.item.guess?.text : nil) { name, remember in
+                              // TEST-46: the page's own ask carries no guess, so an
+                              // "Other?" guess is said here, with its Yes on top.
+                              guess: ask.kind == .category && pageCategory == nil
+                                  ? (ask.item.guess?.text ?? (otherGuess ? "Other" : nil)) : nil) { name, remember in
                     saveSpending(name, remember)
                 }
             } else if step == .into {

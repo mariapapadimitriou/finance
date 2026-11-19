@@ -1259,6 +1259,8 @@ struct TransactionsView: View {
             self.error = app.handle(error)
         }
         if let review = await reviewReply { took(review) }
+        // TEST-50: Choose a month opens with each month's result already here.
+        Task { await MonthSheet.prefetch(app.api) }
     }
 
     /// "8 need a look" and its mini streak (REDESIGN-18): lit = sorted ÷
@@ -2110,16 +2112,30 @@ struct MonthSheet: View {
 
     /// TEST-41: every month's result in one call (GET /api/transactions/months),
     /// remembered between opens so the lines show at once the next time.
+    /// TEST-50: Cash flow fetches them as it loads (`prefetch`), so the
+    /// sheet opens with them; this only refreshes.
     private func loadTotals() async {
         if left.isEmpty { left = Self.remembered }
-        guard let reply: MonthResults = try? await app.api.get("api/transactions/months") else { return }
-        var out: [String: Double] = [:]
-        for m in reply.months { out[m.month] = m.left }
-        left = out
-        Self.remembered = out
+        await Self.prefetch(app.api)
+        if !Self.remembered.isEmpty { left = Self.remembered }
     }
 
-    @MainActor private static var remembered: [String: Double] = [:]
+    private static var remembered: [String: Double] = [:]
+
+    /// Every month's Leftover (negative: Over), kept for the next open.
+    @MainActor static func prefetch(_ api: APIClient) async {
+        guard let reply: MonthResults = try? await api.get("api/transactions/months") else { return }
+        var out: [String: Double] = [:]
+        for m in reply.months { out[m.month] = m.left }
+        remembered = out
+    }
+
+    init(months: [String], current: String?, onDone: @escaping (String?) -> Void) {
+        self.months = months
+        self.current = current
+        self.onDone = onDone
+        _left = State(initialValue: Self.remembered)
+    }
 
     private struct MonthResults: Decodable {
         struct Month: Decodable { let month: String; let left: Double }
