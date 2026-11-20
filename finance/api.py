@@ -11,7 +11,7 @@ from datetime import timedelta
 
 import json
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, g, has_request_context, jsonify, request
 
 from .analytics import (
     share_amount,
@@ -132,7 +132,7 @@ def transactions():
 
 
 def _txlist_rows(st, excluded: bool = False, joint: bool = False, everything: bool = False,
-                 only: str | None = None):
+                 only: str | set | None = None):
     """Every row of yours, described for the transactions list — or, with
     `excluded`, only the rows you left out; with `joint`, only the rows on a
     joint account that are someone else's."""
@@ -166,11 +166,13 @@ def _txlist_rows(st, excluded: bool = False, joint: bool = False, everything: bo
                          "count": len(trip.get("ids") or [])}
         return r
     if only is not None:
-        # One transaction's page (2026-11-08): describing every row to show
-        # one was most of the time it took to open. The rest are described
-        # when asked for (the other end of a transfer).
-        return [(t, _Lazy(t, ctx) if t.fingerprint != only else _with_trip(t, txlist.describe(t, ctx)))
-                for t in rows]
+        # One transaction's page (2026-11-08), or the rows a write touched:
+        # describing every row to show one was most of the time it took to
+        # open. The rest are described when asked for (the other end of a
+        # transfer).
+        wanted = {only} if isinstance(only, str) else set(only)
+        return [(t, _Lazy(t, ctx) if t.fingerprint not in wanted
+                 else _with_trip(t, txlist.describe(t, ctx))) for t in rows]
     return [(t, _with_trip(t, txlist.describe(t, ctx))) for t in rows]
 
 
@@ -3106,7 +3108,14 @@ def home():
 
 def _home_sts(st, txns, today, debts: dict | None = None) -> dict:
     """Safe to spend this month, from the ledger and what she told us, with
-    debt minimums among the bills (THL-49 D1, D2)."""
+    debt minimums among the bills (THL-49 D1, D2). Remembered for the request
+    (finance/memo.py): the list, Quick sort and a change's impact ask too."""
+    from .memo import remember_for
+    return remember_for(txns, ("sts", st.path, st.url, st.schema, today, debts is None),
+                        lambda: _compute_home_sts(st, txns, today, debts))
+
+
+def _compute_home_sts(st, txns, today, debts: dict | None = None) -> dict:
     from . import debts as debt_math, income_bills, safe_to_spend, savings, your_plan
     debts = debts if debts is not None else _debts(st, txns, today)
     return safe_to_spend.compute(
@@ -3179,6 +3188,13 @@ def _hidden_until(on: str) -> str:
 
 
 def _debts(st, txns, today) -> dict:
+    """Remembered for the request (finance/memo.py); see `_compute_debts`."""
+    from .memo import remember_for
+    return remember_for(txns, ("debts", st.path, st.url, st.schema, today),
+                        lambda: _compute_debts(st, txns, today))
+
+
+def _compute_debts(st, txns, today) -> dict:
     """Every debt (THL-49), with the rate and minimum she added (D-03)."""
     from . import debts as debt_math
     return debt_math.build(_counted_rules(st), _counted_balances(st), st.first_balances(),
@@ -3313,8 +3329,18 @@ def _focus(st) -> list[str] | None:
 # back. See finance/exclusions.py.
 
 def _reclassify(st) -> None:
+    """Sort the ledger again after a change. Once per request unless
+    something was written since (2026-11-19): a mark could run it twice."""
     from .pipeline import classify_ledger
+    from .store import dirty_seq
+    key = (st.path, st.url, st.schema)
+    done = g.get("_classified", {}) if has_request_context() else {}
+    if done.get(key) == dirty_seq():
+        return
     classify_ledger(st)
+    if has_request_context():
+        done[key] = dirty_seq()
+        g._classified = done
 
 
 @bp.put("/transactions/<txn_id>/exclude")
@@ -3461,6 +3487,45 @@ def review_sorted():
     return jsonify({"rows": sorted_view(store(), view, _today_iso())})
 
 
+@bp.before_request
+def _already_have_it():
+    """A read the phone already holds this version of is a 304; a write the
+    phone already made gets its earlier answer (finance/changed.py)."""
+    from . import changed
+    if not changed.concerns(request.path, request.method):
+        return None
+    try:
+        st = store()
+    except Exception:                                            # noqa: BLE001
+        return None
+    if request.method == "GET":
+        return changed.not_modified(st, _today_iso())
+    return changed.claim(st)
+
+
+@bp.after_request
+def _remember_the_answer(response):
+    """Registered first, so it runs last: the answer kept for a repeated
+    write is the one the phone saw, envelope and Undo entry included."""
+    from . import changed
+    if g.get("_op_id") is None:
+        return response
+    try:
+        st = store()
+    except Exception:                                            # noqa: BLE001
+        return response
+    return changed.record(st, response)
+
+
+def _changed_rows(st, ids: set[str]) -> dict[str, dict]:
+    """The rows a write touched, as the transactions list describes them."""
+    from . import txlist
+    looking, mark = _needs_a_look(st)
+    rows = _txlist_rows(st, everything=True, only=ids)
+    picked = [(t, mark(r)) for t, r in rows if t.fingerprint in ids]
+    return {t.fingerprint: r for t, r in zip((t for t, _ in picked), _with_rules(st, picked))}
+
+
 @bp.after_request
 def _note_an_answer(response):
     """Every answer lands in Sorted today, whichever way it was given."""
@@ -3486,6 +3551,36 @@ def _note_an_answer(response):
         # The log keeps the Undo as sent, entry included.
         sorted_log.record_undo(store(), _today_iso(), entry, reply["undo"])
     return response
+
+
+@bp.after_request
+def _say_what_changed(response):
+    """Writes carry what they changed; reads carry their ETag (finance/changed.py).
+    Registered after `_note_an_answer`, so it runs first: what changed is
+    worked out before the Sorted-today log is written."""
+    from . import changed
+    from datetime import date as _date
+    if not changed.concerns(request.path, request.method) or response.status_code >= 400:
+        return response
+    try:
+        st = store()
+    except Exception:                                            # noqa: BLE001
+        return response
+    today = _today_iso()
+
+    def allowance():
+        txns = st.all_transactions()
+        return _home_sts(st, txns, _date.fromisoformat(today))
+
+    def review_count():
+        from .review import for_store
+        review = for_store(st, today)
+        return review.get("open", review.get("count", 0))
+
+    response = changed.envelope(st, today, response, lambda ids: _changed_rows(st, ids),
+                                allowance, review_count)
+    return changed.tag_response(st, today, response)
+
 
 
 @bp.post("/review/dismiss")

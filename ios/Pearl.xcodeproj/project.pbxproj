@@ -9,11 +9,14 @@
 /* Begin PBXBuildFile section */
 		AEEA3ED321BEA8B167EC2950 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B9447FB87C39BED247C466A /* APIClient.swift */; };
 		20C346BE1C39DB7E6555AFD8 /* Boxed.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6C3358EC82EA6FE19393BFD /* Boxed.swift */; };
+		C4C3FF2F890F0CB6EA4D97A3 /* Changed.swift in Sources */ = {isa = PBXBuildFile; fileRef = D937AF3D8734AD35208C6866 /* Changed.swift */; };
 		B83A9DA9B4B837A8966C5B1C /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEC593419BBFC2C02400C055 /* Models.swift */; };
 		02EC269BDD5517098201BC45 /* RequestURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FAE5AA895154E1A5EE6C74C /* RequestURL.swift */; };
 		447CDE89543B103ACD878613 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C5660576F12049C54E11ECA /* AppModel.swift */; };
 		320A0024BC90E91C1C716012 /* Format.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95910E98ECA767C288B13D6F /* Format.swift */; };
+		66E41A3E5E360919B07AC2D8 /* Outbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF48220EB3AFD0472A9CCB8D /* Outbox.swift */; };
 		D10AA7E5417A8A26C680693D /* PearlApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 955CF69FC7C7C7429408F5FF /* PearlApp.swift */; };
+		56A01A7EC04AF1CC683C4DAF /* ScreenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B670A9594CD7E9CE94448CBD /* ScreenStore.swift */; };
 		A96C766E6CE8931AFDC871B6 /* ChatCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85A9D07F156259B0B94A3CAB /* ChatCards.swift */; };
 		FF32C180C18201A202569156 /* ChatCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20A0D0FD5A01727DA3F07F48 /* ChatCore.swift */; };
 		03C5BD12B46EE6A1ED619D64 /* ChatParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51E7BD21699BBA2E21E6CE64 /* ChatParts.swift */; };
@@ -134,11 +137,14 @@
 		1B06563AFFD524886417B556 /* Test31UITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Test31UITests.swift; sourceTree = "<group>"; };
 		9B9447FB87C39BED247C466A /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		E6C3358EC82EA6FE19393BFD /* Boxed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Boxed.swift; sourceTree = "<group>"; };
+		D937AF3D8734AD35208C6866 /* Changed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Changed.swift; sourceTree = "<group>"; };
 		CEC593419BBFC2C02400C055 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		3FAE5AA895154E1A5EE6C74C /* RequestURL.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RequestURL.swift; sourceTree = "<group>"; };
 		9C5660576F12049C54E11ECA /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		95910E98ECA767C288B13D6F /* Format.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Format.swift; sourceTree = "<group>"; };
+		BF48220EB3AFD0472A9CCB8D /* Outbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Outbox.swift; sourceTree = "<group>"; };
 		955CF69FC7C7C7429408F5FF /* PearlApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlApp.swift; sourceTree = "<group>"; };
+		B670A9594CD7E9CE94448CBD /* ScreenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenStore.swift; sourceTree = "<group>"; };
 		85A9D07F156259B0B94A3CAB /* ChatCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatCards.swift; sourceTree = "<group>"; };
 		20A0D0FD5A01727DA3F07F48 /* ChatCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatCore.swift; sourceTree = "<group>"; };
 		51E7BD21699BBA2E21E6CE64 /* ChatParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatParts.swift; sourceTree = "<group>"; };
@@ -301,6 +307,7 @@
 			children = (
 				9B9447FB87C39BED247C466A /* APIClient.swift */,
 				E6C3358EC82EA6FE19393BFD /* Boxed.swift */,
+				D937AF3D8734AD35208C6866 /* Changed.swift */,
 				CEC593419BBFC2C02400C055 /* Models.swift */,
 				3FAE5AA895154E1A5EE6C74C /* RequestURL.swift */,
 			);
@@ -312,7 +319,9 @@
 			children = (
 				9C5660576F12049C54E11ECA /* AppModel.swift */,
 				95910E98ECA767C288B13D6F /* Format.swift */,
+				BF48220EB3AFD0472A9CCB8D /* Outbox.swift */,
 				955CF69FC7C7C7429408F5FF /* PearlApp.swift */,
+				B670A9594CD7E9CE94448CBD /* ScreenStore.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -585,11 +594,14 @@
 			files = (
 				AEEA3ED321BEA8B167EC2950 /* APIClient.swift in Sources */,
 				20C346BE1C39DB7E6555AFD8 /* Boxed.swift in Sources */,
+				C4C3FF2F890F0CB6EA4D97A3 /* Changed.swift in Sources */,
 				B83A9DA9B4B837A8966C5B1C /* Models.swift in Sources */,
 				02EC269BDD5517098201BC45 /* RequestURL.swift in Sources */,
 				447CDE89543B103ACD878613 /* AppModel.swift in Sources */,
 				320A0024BC90E91C1C716012 /* Format.swift in Sources */,
+				66E41A3E5E360919B07AC2D8 /* Outbox.swift in Sources */,
 				D10AA7E5417A8A26C680693D /* PearlApp.swift in Sources */,
+				56A01A7EC04AF1CC683C4DAF /* ScreenStore.swift in Sources */,
 				A96C766E6CE8931AFDC871B6 /* ChatCards.swift in Sources */,
 				FF32C180C18201A202569156 /* ChatCore.swift in Sources */,
 				03C5BD12B46EE6A1ED619D64 /* ChatParts.swift in Sources */,

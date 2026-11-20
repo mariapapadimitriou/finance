@@ -372,8 +372,11 @@ struct AnswerSheet: View {
     private func loadOptions() async {
         guard step == .out || step == .into, full == nil else { return }
         struct Cases: Decodable { let learnable: Bool? }
-        if let c: Cases = try? await api.get("api/transactions/\(t.id)/cases") { learnable = c.learnable ?? true }
-        if let f: Transaction = try? await api.get("api/transactions/\(t.id)") { full = f }
+        // Both at once (perf rehaul, 2026-11-19).
+        async let casesReply: Cases? = try? api.get("api/transactions/\(t.id)/cases")
+        async let fullReply: Transaction? = try? api.get("api/transactions/\(t.id)")
+        if let c = await casesReply { learnable = c.learnable ?? true }
+        if let f = await fullReply { full = f }
     }
 
     /// What Spending saves: the caller's way, or the answer for this question.

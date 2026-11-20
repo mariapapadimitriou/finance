@@ -554,7 +554,9 @@ struct Transaction: Decodable, Identifiable, Hashable {
     /// Always positive; `inflow` says which way it went. A split's is her share.
     let amount: Double
     let inflow: Bool
-    let category: String?
+    /// Settable (perf rehaul, 2026-11-19) so a screen can show a change
+    /// the moment she makes it, before the server's row replaces this one.
+    var category: String?
     let account: String?
     let accountId: String?
     let note: String?
@@ -563,7 +565,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
     let countsToward: String?
     /// "spending", "income" or "none".
     let counts: String
-    let chip: Chip?
+    var chip: Chip?
     /// TC-A (THL-122): a Transfer that pays off a card, which reads as an
     /// amount; a move between her own accounts reads "⇄ $500.00"
     /// (`movedBetweenAccounts`).
@@ -585,7 +587,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         enum CodingKeys: String, CodingKey { case learnable, mixed; case hasRule = "has_rule" }
     }
     /// Pearl's guess at the category, waiting for her yes (a dashed chip).
-    let suggested: Bool
+    var suggested: Bool
     let myNote: String
     let split: Bool
     let fullAmount: Double?
@@ -1124,6 +1126,27 @@ struct Transaction: Decodable, Identifiable, Hashable {
     /// The category the row shows: Pearl's chip, else the stored one.
     var label: String { chip?.label ?? category ?? "Other" }
 
+    /// The row as it will read once the server has sorted it as `name`
+    /// (perf rehaul, 2026-11-19): shown at once, replaced by the server's
+    /// own row when the write's `changed` comes back.
+    func sorted(as name: String) -> Transaction {
+        var t = self
+        t.category = name
+        t.chip = Chip(label: name, suggested: false)
+        t.suggested = false
+        return t
+    }
+
+    /// The row with Pearl's guess taken as right: the same chip, no longer dashed.
+    func guessConfirmed() -> Transaction {
+        var t = self
+        let name = label
+        t.category = name
+        t.chip = Chip(label: name, suggested: false)
+        t.suggested = false
+        return t
+    }
+
     /// Needs a look asking a question ("Not sorted yet", "Whose?"), not
     /// Pearl guessing at a category.
     var asks: Bool { suggested && ["Not sorted yet", "Possible duplicate", "Whose?"].contains(label) }
@@ -1386,6 +1409,8 @@ struct CategoryChange: Decodable {
     let category: String?
     /// What Undo sends back (T-38b).
     var undo: JSONValue? = nil
+    /// What the write changed (perf rehaul, 2026-11-19).
+    var changed: Changed? = nil
 }
 
 // MARK: - Categories and rules
@@ -2204,6 +2229,8 @@ struct MarkReply: Decodable {
     let undo: JSONValue?
     /// TEST-31 S-11w: more than her share came in; what's extra, asked next.
     var extra: ShareExtra? = nil
+    /// What the write changed (perf rehaul, 2026-11-19).
+    var changed: Changed? = nil
 
     struct ShareExtra: Decodable, Hashable {
         let amount: Double

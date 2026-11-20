@@ -270,6 +270,11 @@ struct TransactionDetailView: View {
 
     /// The full detail once it's come back; the list's row until then.
     @State private var detail: Transaction?
+    /// The screen this page was pushed from (`app.changed(by:)`): its edits
+    /// are that screen's own (perf rehaul, 2026-11-19).
+    @Environment(\.screenKey) private var screenKey
+    /// What the last write changed, applied once the page has reloaded.
+    @State private var lastChanged: Changed?
     /// S-04ue (G2-BCard2): the full detail didn't come back.
     @State private var loadFailed = false
     /// What was this?: the page sorting happens on, shared with Needs a look and Quick sort.
@@ -494,9 +499,7 @@ struct TransactionDetailView: View {
                 depositUnlink = nil
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
                 Task {
-                    await load()
-                    app.changed()
-                    showSplit(title, undo: undo.map { u in { try await postUndo(u); return "Linked again" } })
+                    await settled(title, undo: undo.map { u in { try await postUndo(u); return "Linked again" } })
                 }
             }
         }
@@ -752,9 +755,7 @@ struct TransactionDetailView: View {
                                }) { title, undo in
                     settingShare = false
                     Task {
-                        await load()
-                        app.changed()
-                        showSplit(title, undo: undo.map { u in { try await postUndo(u); return "Not sure yet again" } })
+                        await settled(title, undo: undo.map { u in { try await postUndo(u); return "Not sure yet again" } })
                     }
                 }
             }
@@ -768,9 +769,7 @@ struct TransactionDetailView: View {
                 }, run: {
                     let (title, undo) = try await settleWithWhatEachPaid(split)
                     settlingUp = false
-                    await load()
-                    app.changed()
-                    showSplit(title, undo: undo)
+                    await settled(title, undo: undo)
                 }, onLeftTo: { last, left in
                     // S-45a2 (TEST-18): payers at what they paid, the last one the rest.
                     var people: [[String: Any]] = split.people.filter { $0.paid >= 0.005 }
@@ -782,9 +781,7 @@ struct TransactionDetailView: View {
                                                                  ["mode": "amount", "include_me": false, "watch": true,
                                                                   "people": people])
                         settlingUp = false
-                        await load()
-                        app.changed()
-                        showSplit("\(last.name) owes you \(Format.amount(left))",
+                        await settled("\(last.name) owes you \(Format.amount(left))",
                                   undo: reply.undo.map { u in { try await postUndo(u); return "Not sure yet again" } })
                     } catch let e as APIError {
                         if case .server = e { throw SplitMenuError(words: e.localizedDescription) }
@@ -820,9 +817,7 @@ struct TransactionDetailView: View {
                     let r: Reply = try await app.api.post("api/transactions/\(t.id)/split/close")
                     closingSplit = false
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
-                    await load()
-                    app.changed()
-                    showSplit(r.toast ?? "Closed", undo: r.undo.map { u in { try await postUndo(u); return "Open again" } })
+                    await settled(r.toast ?? "Closed", undo: r.undo.map { u in { try await postUndo(u); return "Open again" } })
                 }
             }
         }
@@ -834,9 +829,7 @@ struct TransactionDetailView: View {
                     do {
                         let r: Reply = try await app.api.delete("api/transactions/\(t.id)/split")
                         removingSplit = false
-                        await load()
-                        app.changed()
-                        showSplit(r.toast ?? "Split removed", undo: r.undo.map { u in { try await postUndo(u); return nil } })
+                        await settled(r.toast ?? "Split removed", undo: r.undo.map { u in { try await postUndo(u); return nil } })
                     } catch let e as APIError {
                         if case .server = e { throw SplitMenuError(words: e.localizedDescription) }
                         throw e
@@ -858,17 +851,18 @@ struct TransactionDetailView: View {
                     await run { nil }
                     showSplit(title, undo: undo.map { u in { try await postUndo(u); return nil } })
                 }
-            }, onLinked: { title, undos in
+            }, onLinked: { title, undos, changed in
                 // S-44b: "Priya paid back $30.00 · Undo" takes back every link it made.
                 marking = nil
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
-                Task {
-                    await run { nil }
-                    showSplit(title, undo: undos.isEmpty ? nil : {
-                        for u in undos.reversed() { try await postUndo(u) }
-                        return nil
-                    })
-                }
+                // The toast at once (perf rehaul); the page reloads under it
+                // and the rest of the app takes the write's `changed`.
+                showSplit(title, undo: undos.isEmpty ? nil : {
+                    for u in undos.reversed() { try await postUndo(u) }
+                    return nil
+                })
+                lastChanged = changed
+                Task { await run { nil } }
             }) { done in
                 marking = nil
                 Task { await run { done } }
@@ -880,9 +874,7 @@ struct TransactionDetailView: View {
                 let said = try await letGo(person)
                 lettingGo = nil
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
-                await load()
-                app.changed()
-                showSplit(said, undo: { try await undoLetGo(person) })
+                await settled(said, undo: { try await undoLetGo(person) })
             }
         }
         .sheet(item: $reminding) { person in
@@ -927,9 +919,7 @@ struct TransactionDetailView: View {
                               onClose: { removingPerson = nil }) {
                 let (title, undo) = try await removeFromSplit(person)
                 removingPerson = nil
-                await load()
-                app.changed()
-                showSplit(title, undo: undo)
+                await settled(title, undo: undo)
             }
             .onlyPerson(t.splitting?.people.count == 1)  // G2-BRemove S-03fu1 (splits engBOT)
         }
@@ -2182,9 +2172,7 @@ struct TransactionDetailView: View {
     /// PB-42's change saved: the page again, and UN-01's toast with Undo.
     private func linkChanged(_ title: String, _ undo: JSONValue?) {
         Task {
-            await load()
-            app.changed()
-            showSplit(title, undo: undo.map { u in { try await postUndo(u); return nil } })
+            await settled(title, undo: undo.map { u in { try await postUndo(u); return nil } })
         }
     }
 
@@ -2914,10 +2902,32 @@ struct TransactionDetailView: View {
             }
             error = nil
             await load()
-            app.changed()
+            // What it changed goes to the rest of the app (rows swapped into
+            // lists, the Allowance, the badge); with no envelope, a reload.
+            app.apply(lastChanged, by: screenKey)
+            lastChanged = nil
         } catch {
             self.error = app.handle(error)
         }
+    }
+
+    /// A write through the outbox (perf rehaul, 2026-11-19): sent once with
+    /// an op id, or queued when the server can't be reached (nil, and what
+    /// the page shows stays). Its `changed` is noted for `run`/`settled`.
+    private func write<T: Decodable>(_ method: String, _ path: String, query: [String: String] = [:],
+                                     _ body: [String: Any]? = nil) async throws -> T? {
+        guard let sent: Outbox.Sent<T> = try await app.outbox.send(method, path, query: query, body) else { return nil }
+        lastChanged = sent.changed
+        return sent.body
+    }
+
+    /// After a split change: the toast at once, the page's own reload under
+    /// it, and what the write changed applied to the rest of the app.
+    private func settled(_ text: String, undo: (() async throws -> String?)?) async {
+        showSplit(text, undo: undo)
+        await load()
+        app.apply(lastChanged, by: screenKey)
+        lastChanged = nil
     }
 
     /// An answer from What was this? (or its other questions): the toast
@@ -2981,11 +2991,40 @@ struct TransactionDetailView: View {
     /// Yes: Pearl's guess was right. T-38b: "Dining out · Undo".
     private func confirm(said: String? = nil) async {
         let label = t.label
-        await run {
-            let reply: CategoryChange = try await app.api.put("api/transactions/\(t.id)/confirm")
-            withAnimation { toast = (said ?? reply.category ?? label, undoing(reply.undo)) }
-            return nil
+        // The chip reads as hers at once (perf rehaul); back if refused.
+        let before = detail
+        withAnimation(.easeInOut(duration: 0.2)) { detail = t.guessConfirmed() }
+        busy = true
+        defer { busy = false }
+        do {
+            let sent: Outbox.Sent<CategoryChange>? = try await app.outbox.send(
+                "PUT", "api/transactions/\(t.id)/confirm", rollback: { detail = before })
+            withAnimation { toast = (said ?? sent?.body.category ?? label, undoing(sent?.body.undo)) }
+            error = nil
+            if let sent = sent { take(sent.changed) }
+        } catch {
+            withAnimation { detail = before }
+            self.error = app.handle(error)
         }
+    }
+
+    /// A category write's `changed` taken in: this row's sorting from the
+    /// server's own row (the page keeps its split and the rest), the app
+    /// told. No envelope: the page and everything else reload.
+    private func take(_ changed: Changed?) {
+        guard let changed = changed else {
+            Task { await load() }
+            app.changed()
+            return
+        }
+        if let row = changed.rows.first(where: { $0.id == t.id }), var now = detail {
+            now.category = row.category
+            now.chip = row.chip
+            now.suggested = row.suggested
+            now.rule = row.rule
+            withAnimation(.easeInOut(duration: 0.2)) { detail = now }
+        }
+        app.apply(changed, by: screenKey)
     }
 
     /// Yes from the list: every open guess from the merchant, and a rule.
@@ -3005,10 +3044,24 @@ struct TransactionDetailView: View {
     /// from the merchant stay as they are.
     private func change(to name: String, remember: Bool) async {
         let merchant = t.merchant
-        await run {
-            let _: QuickSortStep = try await app.api.put("api/quick-sort/\(t.id)",
-                ["action": "category", "category": name, "every": false, "rows": [String](), "new_ones": remember])
-            return remember ? "Always \(name) for \(merchant)." : "Moved to \(name)."
+        // Shown at once (perf rehaul): the page as it reads once sorted;
+        // the server's row settles it, a refusal puts it back.
+        let before = detail
+        withAnimation(.easeInOut(duration: 0.2)) { detail = t.sorted(as: name) }
+        busy = true
+        defer { busy = false }
+        do {
+            let sent: Outbox.Sent<QuickSortStep>? = try await app.outbox.send(
+                "PUT", "api/quick-sort/\(t.id)",
+                ["action": "category", "category": name, "every": false, "rows": [String](), "new_ones": remember],
+                rollback: { detail = before })
+            let said = remember ? "Always \(name) for \(merchant)." : "Moved to \(name)."
+            withAnimation { splitToast = nil; toast = (said, nil) }
+            error = nil
+            if let sent = sent { take(sent.changed) }
+        } catch {
+            withAnimation { detail = before }
+            self.error = app.handle(error)
         }
     }
 
@@ -3074,9 +3127,7 @@ struct TransactionDetailView: View {
         do {
             let reply: Reply = try await app.api.post("api/transactions/\(t.id)/split/answer",
                                                        ["name": p.name, "answer": word])
-            await load()
-            app.changed()
-            showSplit(reply.toast ?? "Changed", undo: nil)
+            await settled(reply.toast ?? "Changed", undo: nil)
         } catch {
             showFailed(app.handle(error) ?? "Couldn’t change that. Nothing changed.") { Task { await answerAgain(p, answer) } }
         }
@@ -3107,9 +3158,7 @@ struct TransactionDetailView: View {
             Task {
                 do {
                     let said = try await undoLetGo(p)
-                    await load()
-                    app.changed()
-                    showSplit(said ?? "\(p.name) owes you again", undo: { _ = try await letGo(p); return nil })
+                    await settled(said ?? "\(p.name) owes you again", undo: { _ = try await letGo(p); return nil })
                 } catch {
                     showFailed("Couldn’t undo that. Nothing changed.") { choose(p, .undoLetGo) }
                 }
@@ -3120,9 +3169,7 @@ struct TransactionDetailView: View {
             Task {
                 do {
                     let (title, undo) = try await removeFromSplit(p)
-                    await load()
-                    app.changed()
-                    showSplit(title, undo: undo)
+                    await settled(title, undo: undo)
                 } catch {
                     showFailed("Couldn’t remove \(p.name). Nothing changed.") { choose(p, .remove) }
                 }
@@ -3172,13 +3219,13 @@ struct TransactionDetailView: View {
 
     @discardableResult
     private func letGo(_ p: Transaction.Splitting.Person) async throws -> String {
-        let reply: Toasted = try await app.api.post("api/transactions/\(t.id)/split/let-go", ["name": p.name])
-        return reply.toast ?? reply.title ?? "Let go"
+        let reply: Toasted? = try await write("POST", "api/transactions/\(t.id)/split/let-go", ["name": p.name])
+        return reply?.toast ?? reply?.title ?? "Let go"
     }
 
     private func undoLetGo(_ p: Transaction.Splitting.Person) async throws -> String? {
-        let reply: Toasted = try await app.api.delete("api/transactions/\(t.id)/split/let-go", query: ["name": p.name])
-        return reply.toast ?? reply.title
+        let reply: Toasted? = try await write("DELETE", "api/transactions/\(t.id)/split/let-go", query: ["name": p.name])
+        return reply?.toast ?? reply?.title
     }
 
     /// S-40's Remove (handoff 1096:4498): PUT …/split without them, their
@@ -3203,21 +3250,21 @@ struct TransactionDetailView: View {
         do {
             if kept.isEmpty {
                 struct Gone: Decodable { let undo: JSONValue? }
-                let gone: Gone = try await app.api.delete("api/transactions/\(t.id)/split")
+                let gone: Gone? = try await write("DELETE", "api/transactions/\(t.id)/split")
                 let old = body(split.people)
                 let id = t.id
                 return (title, {
                     // The server's Undo when it sent one (JOINT-B), else the split again.
-                    if let undo = gone.undo { try await postUndo(undo) } else {
+                    if let undo = gone?.undo { try await postUndo(undo) } else {
                         let _: OK = try await app.api.put("api/transactions/\(id)/split", old)
                     }
                     return nil
                 })
             }
             struct Reply: Decodable { let toast: String?; let undo: JSONValue? }
-            let reply: Reply = try await app.api.put("api/transactions/\(t.id)/split", body(kept))
-            let undo = reply.undo
-            return (reply.toast ?? title, {
+            let reply: Reply? = try await write("PUT", "api/transactions/\(t.id)/split", body(kept))
+            let undo = reply?.undo
+            return (reply?.toast ?? title, {
                 if let undo = undo { try await postUndo(undo) }
                 return nil
             })
@@ -3234,9 +3281,9 @@ struct TransactionDetailView: View {
         let you = max(0, ((t.splitBase - split.people.map(\.paid).reduce(0, +)) * 100).rounded() / 100)
         struct Reply: Decodable { let undo: JSONValue? }
         do {
-            let r: Reply = try await app.api.put("api/transactions/\(t.id)/split",
-                                                 ["mode": "amount", "include_me": true, "you": you, "people": people])
-            let undo = r.undo
+            let r: Reply? = try await write("PUT", "api/transactions/\(t.id)/split",
+                                            ["mode": "amount", "include_me": true, "you": you, "people": people])
+            let undo = r?.undo
             // S-45g (REFRESH-03).
             return ("Settled up", {
                 if let undo = undo { try await postUndo(undo) }
@@ -3252,10 +3299,8 @@ struct TransactionDetailView: View {
     private func reopenSplit() async {
         struct Reply: Decodable { let toast: String?; let undo: JSONValue? }
         do {
-            let r: Reply = try await app.api.delete("api/transactions/\(t.id)/split/close")
-            await load()
-            app.changed()
-            showSplit(r.toast ?? "Split reopened", undo: r.undo.map { u in { try await postUndo(u); return "Closed again" } })
+            let r: Reply? = try await write("DELETE", "api/transactions/\(t.id)/split/close")
+            await settled(r?.toast ?? "Split reopened", undo: r?.undo.map { u in { try await postUndo(u); return "Closed again" } })
         } catch {
             showFailed("Couldn’t reopen it. Nothing changed.") { Task { await reopenSplit() } }
         }
@@ -3275,8 +3320,8 @@ struct TransactionDetailView: View {
     /// (`whole`); from a purchase, UnlinkLinkSheet unlinks only that one.
     private func unlinkPayback(_ link: PaybackLink) async {
         await run {
-            let _: OK = try await app.api.delete("api/transactions/\(link.charge)/paybacks/\(link.inflow)",
-                                                 query: link.inflow == t.id ? ["whole": "1"] : [:])
+            let _: OK? = try await write("DELETE", "api/transactions/\(link.charge)/paybacks/\(link.inflow)",
+                                         query: link.inflow == t.id ? ["whole": "1"] : [:])
             return "Unlinked. \(link.who) owes you \(Format.amount(link.amount)) again."
         }
     }

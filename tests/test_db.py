@@ -295,25 +295,55 @@ class TestOneConnectionPerThread:
         db, made = pg
         with db.connect("", "postgres://x", "public") as c:
             c.execute("SELECT 1")
-        raw, url, last = db._local.pg
-        db._local.pg = (raw, url, last - db.IDLE_PING_AFTER - 1)
+        key = ("pg", "postgres://x", "public")
+        raw, last = db._local.raws[key]
+        db._local.raws[key] = (raw, last - db.IDLE_PING_AFTER - 1)
         with db.connect("", "postgres://x", "public") as c:
             c.execute("SELECT 2")
         assert len(made) == 1 and "SELECT 1" in made[0].sql[-3:]      # the ping, then the work
         # A ping that fails means a new connection.
-        raw, url, last = db._local.pg
-        db._local.pg = (raw, url, last - db.IDLE_PING_AFTER - 1)
+        raw, last = db._local.raws[key]
+        db._local.raws[key] = (raw, last - db.IDLE_PING_AFTER - 1)
         raw.fail_next = True
         with db.connect("", "postgres://x", "public") as c:
             c.execute("SELECT 3")
         assert len(made) == 2
 
     def test_another_schema_inside_a_transaction_gets_its_own_connection(self, pg):
+        """Kept, like the first (2026-11-19): an account's requests read the
+        accounts table and its own ledger every time, so both stay open."""
         db, made = pg
         with db.connect("", "postgres://x", "u_1") as outer:
             outer.execute("SELECT 1")
             with db.connect("", "postgres://x", "u_2") as other:
                 assert other is not outer
                 other.execute("SELECT 2")
-            assert made[1].closed and made[1].commits == 1
+            assert made[1].commits == 1 and not made[1].closed
         assert made[0].commits == 1 and not made[0].closed
+        with db.connect("", "postgres://x", "u_2") as again:
+            again.execute("SELECT 3")
+        assert len(made) == 2 and made[1].commits == 2
+
+    def test_a_request_scoped_transaction_stays_open_until_finished(self, pg):
+        """One transaction per request (2026-11-19): the `with` ends, the
+        transaction doesn't; the next `with` joins it; finish commits once."""
+        db, made = pg
+        with db.connect("", "postgres://x", "u_1", request_scope=True) as c:
+            c.execute("SELECT 1")
+        assert made[0].commits == 0
+        with db.connect("", "postgres://x", "u_1") as c:
+            c.execute("SELECT 2")
+        assert made[0].commits == 0 and len(made) == 1
+        db.finish_request()
+        assert made[0].commits == 1 and not made[0].closed
+        assert sum(1 for s in made[0].sql if s.startswith("SET LOCAL")) == 1
+
+    def test_a_failed_request_rolls_its_transaction_back(self, pg):
+        db, made = pg
+        with db.connect("", "postgres://x", "u_1", request_scope=True) as c:
+            c.execute("UPDATE x SET a = 1")
+        db.abandon_request()
+        assert made[0].rollbacks == 1 and made[0].commits == 0
+        with db.connect("", "postgres://x", "u_1") as c:
+            c.execute("SELECT 1")
+        assert made[0].commits == 1

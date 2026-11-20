@@ -35,10 +35,24 @@ def _database(monkeypatch):
     # DATABASE_URL is what `finance.db` looks for, so setting it here redirects
     # every Store the tests build — including the ones inside create_app.
     monkeypatch.setenv("DATABASE_URL", PG_URL)
+    from finance import db
+    db.close_cached()                   # a kept connection into the dropped schema
+    try:
+        from finance import memo
+        memo.forget_across()            # and what was remembered about it
+    except ImportError:                 # pragma: no cover - older trees
+        pass
     with psycopg.connect(PG_URL) as c:
+        # Every account's schema too (2026-11-20): a test's second account
+        # used to find the rows an earlier test's second account left.
+        others = [r[0] for r in c.execute(
+            "SELECT nspname FROM pg_namespace WHERE nspname LIKE 'u\\_%'").fetchall()]
+        for name in others:
+            c.execute(f'DROP SCHEMA "{name}" CASCADE')
         c.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
         c.commit()
     yield
+    db.close_cached()
 
 
 @pytest.fixture(autouse=True)

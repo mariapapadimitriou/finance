@@ -126,6 +126,9 @@ struct ConfirmStartOverSheet: View {
         defer { busy = false }
         do {
             let _: OK = try await app.api.post("api/data/start-over", ["confirm": "start over"])
+            // The ledger is new: nothing kept from the old one is shown again.
+            app.screens.clear()
+            app.outbox.clear()
             done()
         } catch {
             self.error = app.handle(error).map { _ in "Couldn\u{2019}t start over. Nothing changed. Try again." }

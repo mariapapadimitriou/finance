@@ -25,6 +25,11 @@ struct TransactionsView: View {
     @State private var loadGen = 0
     /// The folding bar and the pin's position, apart from this view's state.
     @State private var tracker = CFScrollTracker()
+    /// `shown`, the blocks, the paid-back names and the filter's accounts,
+    /// worked out once per change of what they're made from, not on every
+    /// read (perf rehaul, 2026-11-19): one body pass read `shown` half a
+    /// dozen times, each a filter and a sort of every row.
+    @State private var memo = CFMemo()
     /// Arrivals merged into a transfer line in `rows`, for a filter that
     /// keeps only that end (TransferEnds, 2026-11-15).
     @State private var merged: [Transaction] = []
@@ -80,6 +85,10 @@ struct TransactionsView: View {
     @State private var tripName = ""
     @State private var busy = false
     @State private var toast: Toast?
+    /// Cash flow's name in `app.changed(by:)` (perf rehaul, 2026-11-19): an
+    /// edit made here, or on a page pushed from here, is shown here already,
+    /// so this screen isn't fetched again for it.
+    static let screenKey = "cashflow"
     /// T-23: adding one by hand.
     @State private var adding = false
 
@@ -258,8 +267,13 @@ struct TransactionsView: View {
             if !inTrip { await runSync(force: true) }
             await reload()
         }
-        .reloads { await start() }
+        .reloads(key: Self.screenKey) { await start() }
         .task(id: query) { await search() }
+        .onReceive(app.$changedRows) { changed in
+            // The rows a write touched, wherever it was made (a detail page,
+            // Needs a look): swapped in here, no fetch.
+            if let changed = changed { absorb(changed) }
+        }
         .onReceive(CashFlowFocus.shared.$request) { request in
             guard let request = request, !inTrip else { return }
             CashFlowFocus.shared.request = nil
@@ -291,6 +305,8 @@ struct TransactionsView: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+        // Detail pages pushed from here count their edits as Cash flow's own.
+        .environment(\.screenKey, Self.screenKey)
     }
 
     /// CashFlowFocus: Cash flow filtered to one category, every month, as if
@@ -401,10 +417,15 @@ struct TransactionsView: View {
         // card above already names it (AP-CashFlow, G1-Category). A search
         // shows every month's (G1-Search), and so does a month picked in
         // Filters: its rows sit under its divider.
+        let shown = self.shown
         let first = shown.first.map { String($0.date.prefix(7)) }
-        return CFBlock.build(shown, sort: filters.sort, byDay: byDay, byCategory: byCategory,
-                             hideFirst: !inSearch && filters.month == nil && first == Format.thisMonth(),
-                             select: !selecting && !inTrip && !inSearch && (!byCategory || owedLine == nil))
+        let key = CFMemo.BlocksKey(shown: shown, sort: filters.sort, byDay: byDay, byCategory: byCategory,
+                                   hideFirst: !inSearch && filters.month == nil && first == Format.thisMonth(),
+                                   select: !selecting && !inTrip && !inSearch && (!byCategory || owedLine == nil))
+        return memo.blocks(key) {
+            CFBlock.build(key.shown, sort: key.sort, byDay: key.byDay, byCategory: key.byCategory,
+                          hideFirst: key.hideFirst, select: key.select)
+        }
     }
 
     @ViewBuilder private func blockView(_ block: CFBlock) -> some View {
@@ -1032,16 +1053,39 @@ struct TransactionsView: View {
         busy = true
         defer { busy = false }
         var payload = body
-        payload["ids"] = Array(picked)
+        let ids = (body["ids"] as? [String]) ?? Array(picked)
+        payload["ids"] = ids
+        // Shown at once (perf rehaul, 2026-11-19): a category or a Yes reads
+        // on the rows the moment she picks it. The server's own rows replace
+        // them when its answer comes; a refusal puts them back.
+        let before = (rows, results, cardRows)
+        let chosen = Set(ids)
+        let name = path.hasSuffix("/category") ? body["category"] as? String : nil
+        if name != nil || path.hasSuffix("/confirm") {
+            func patched(_ t: Transaction) -> Transaction {
+                guard chosen.contains(t.id) else { return t }
+                return name.map { t.sorted(as: $0) } ?? t.guessConfirmed()
+            }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                rows = rows.map(patched)
+                results = results?.map(patched)
+                cardRows = cardRows?.map(patched)
+            }
+        }
+        func restore() { withAnimation { (rows, results, cardRows) = before } }
         do {
-            let reply: MarkReply = try await app.api.post(path, payload)
+            // Through the outbox: sent once with an op id, or queued when the
+            // server can't be reached (nil), with what she sees kept.
+            let sent: Outbox.Sent<MarkReply>? = try await app.outbox.send("POST", path, payload, rollback: restore)
             endSelecting()
-            let title = say.map { [$0, reply.detail ?? ""].filter { !$0.isEmpty }.joined(separator: " ") }
-                ?? reply.title ?? "Changed."
-            withAnimation { toast = Toast(title: title, undo: reply.undo) }
+            let reply = sent?.body
+            let title = say.map { [$0, reply?.detail ?? ""].filter { !$0.isEmpty }.joined(separator: " ") }
+                ?? reply?.title ?? "Changed."
+            withAnimation { toast = Toast(title: title, undo: reply?.undo) }
             error = nil
-            app.changed()
+            if let sent = sent { settle(sent.changed) }
         } catch {
+            restore()
             self.error = app.handle(error)
         }
     }
@@ -1051,14 +1095,50 @@ struct TransactionsView: View {
         guard !busy else { return }
         busy = true
         defer { busy = false }
+        // The chip reads as hers at once (perf rehaul); back if refused.
+        let before = (rows, results, cardRows)
+        func patched(_ row: Transaction) -> Transaction { row.id == t.id ? row.guessConfirmed() : row }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            rows = rows.map(patched)
+            results = results?.map(patched)
+            cardRows = cardRows?.map(patched)
+        }
+        func restore() { withAnimation { (rows, results, cardRows) = before } }
         do {
-            let reply: MarkReply = try await app.api.post("api/transactions/batch/confirm", ["ids": [t.id]])
-            withAnimation { toast = Toast(title: reply.title ?? "\(t.merchant) · \(t.label)", undo: reply.undo) }
+            let sent: Outbox.Sent<MarkReply>? = try await app.outbox.send(
+                "POST", "api/transactions/batch/confirm", ["ids": [t.id]], rollback: restore)
+            withAnimation {
+                toast = Toast(title: sent?.body.title ?? "\(t.merchant) · \(t.label)", undo: sent?.body.undo)
+            }
             error = nil
-            app.changed()
+            if let sent = sent { settle(sent.changed) }
         } catch {
+            restore()
             self.error = app.handle(error)
         }
+    }
+
+    /// A write's `changed` taken in: its rows swapped into the lists here,
+    /// the app told (the Allowance, the badge, the other screens' ETag
+    /// checks), and this screen left as it is rather than fetched again.
+    /// With no envelope, everything reloads as before.
+    private func settle(_ changed: Changed?) {
+        if let changed = changed { absorb(changed) }
+        app.apply(changed, by: Self.screenKey)
+    }
+
+    /// Rows a write touched, swapped into every list here. The month card's
+    /// totals can move with them: asked again, one small read (304 when
+    /// nothing there changed).
+    private func absorb(_ changed: Changed) {
+        var moved = false
+        withAnimation(.easeInOut(duration: 0.2)) {
+            if rows.merge(changed) { moved = true }
+            if merged.merge(changed) { moved = true }
+            if results?.merge(changed) == true { moved = true }
+            if cardRows?.merge(changed) == true { moved = true }
+        }
+        if moved { Task { await loadCard() } }
     }
 
     private func undo() async {
@@ -1114,7 +1194,12 @@ struct TransactionsView: View {
 
     private var noTransactionsYet: Bool { !inTrip && loadedOnce && months.isEmpty && rows.isEmpty && error == nil }
 
-    private var shown: [Transaction] { visible(applying: filters) }
+    private var shown: [Transaction] {
+        let key = CFMemo.ShownKey(rows: rows, merged: merged, results: results, resultsMerged: resultsMerged,
+                                  cardRows: cardRows, cardFilter: cardFilter, inSearch: inSearch,
+                                  filters: filters, owed: owed)
+        return memo.shown(key) { visible(applying: filters) }
+    }
 
     /// The rows the list shows under these filters and the card's chip:
     /// the search's or every month's, narrowed, then sorted. Grouped by
@@ -1149,19 +1234,24 @@ struct TransactionsView: View {
     private func paidBack(for t: Transaction) -> String? {
         // TEST-31 Money back: her share's refund reads "Refund · <shop>".
         guard let id = t.repays, t.refundOf == nil else { return nil }
-        return (rows + (results ?? [])).first { $0.id == id }?.merchant
+        // The list's rows first, then the search's, as the scan was.
+        return memo.merchants(rows: rows, results: results) {
+            Dictionary((rows + (results ?? [])).map { ($0.id, $0.merchant) }, uniquingKeysWith: { first, _ in first })
+        }[id]
     }
 
     /// Every account in the list, named as Accounts names them when it can.
     private var filterAccounts: [FilterAccount] {
-        var out: [FilterAccount] = []
-        for t in rows {
-            guard let id = t.accountId, !id.isEmpty, !out.contains(where: { $0.id == id }) else { continue }
-            let linked = accounts.first { $0.id == id }
-            out.append(FilterAccount(id: id, label: linked?.label ?? t.account ?? "Account",
-                                     joint: linked?.joint == true || !t.joint.isEmpty))
+        memo.filterAccounts(rows: rows, accounts: accounts) {
+            var out: [FilterAccount] = []
+            for t in rows {
+                guard let id = t.accountId, !id.isEmpty, !out.contains(where: { $0.id == id }) else { continue }
+                let linked = accounts.first { $0.id == id }
+                out.append(FilterAccount(id: id, label: linked?.label ?? t.account ?? "Account",
+                                         joint: linked?.joint == true || !t.joint.isEmpty))
+            }
+            return out.sorted { $0.label < $1.label }
         }
-        return out.sorted { $0.label < $1.label }
     }
 
     /// Every category in the list, most used first.
@@ -1180,20 +1270,23 @@ struct TransactionsView: View {
             await reload()
             return
         }
-        let api = app.api
-        async let summaryReply: Summary? = try? api.get("api/summary")
-        async let reviewReply: Review? = try? api.get("api/review")
-        async let accountsReply: AccountsOverview? = try? api.get("api/accounts/overview")
-        // CF-SCROLL: the list is every month's, so it needn't wait for them.
-        async let listed: Void = reload()
-        if let summary = await summaryReply {
+        // Each from its kept answer at once, then the server's if it changed
+        // (ScreenStore, perf rehaul 2026-11-19).
+        let screens = app.screens
+        async let summaryLoad: Bool? = try? screens.load("api/summary", as: Summary.self) { summary in
             months = summary.months ?? []
             if month == nil || !months.contains(month!) { month = summary.latestMonth ?? months.last }
         }
+        async let reviewLoad: Bool? = try? screens.load("api/review", as: Review.self) { took($0) }
+        async let accountsLoad: Bool? = try? screens.load("api/accounts/overview", as: AccountsOverview.self) {
+            accounts = $0.linked
+        }
+        // CF-SCROLL: the list is every month's, so it needn't wait for them.
+        async let listed: Void = reload()
+        _ = await summaryLoad
         await loadCard()
         _ = await listed
-        if let review = await reviewReply { took(review) }
-        if let overview = await accountsReply { accounts = overview.linked }
+        _ = await (reviewLoad, accountsLoad)
         if !syncedOnce {
             syncedOnce = true
             await runSync(force: false)
@@ -1236,7 +1329,20 @@ struct TransactionsView: View {
                 var p = listQuery
                 p["offset"] = String(got.count)
                 p["limit"] = String(min(1000, want - got.count))
-                let list: TransactionList = try await app.api.get("api/transactions/list", query: p)
+                let list: TransactionList
+                if got.isEmpty {
+                    // The first page is kept (ScreenStore): an empty list
+                    // shows it the moment the screen opens, and the server
+                    // is asked with its ETag.
+                    if rows.isEmpty,
+                       let kept = await app.screens.cached(TransactionList.self, "api/transactions/list", query: p) {
+                        guard gen == loadGen else { return }
+                        show(kept)
+                    }
+                    list = try await app.screens.fetch(TransactionList.self, "api/transactions/list", query: p).value
+                } else {
+                    list = try await app.api.get("api/transactions/list", query: p)
+                }
                 guard gen == loadGen else { return }
                 if got.isEmpty {
                     owed = Set(list.owedIds)
@@ -1249,8 +1355,10 @@ struct TransactionsView: View {
                 total = list.total
                 if list.transactions.isEmpty { break }
             } while got.count < min(want, total)
-            rows = got
-            merged = arrivals
+            withAnimation(.easeInOut(duration: 0.2)) {
+                rows = got
+                merged = arrivals
+            }
             error = nil
         } catch {
             guard gen == loadGen else { return }
@@ -1258,6 +1366,21 @@ struct TransactionsView: View {
         }
         if needsEverything { await loadRest() }
         if cardFilter != nil { await loadCardRows() }
+    }
+
+    /// The kept first page, as it was, without animation.
+    private func show(_ kept: TransactionList) {
+        var quiet = SwiftUI.Transaction()
+        quiet.disablesAnimations = true
+        withTransaction(quiet) {
+            rows = kept.transactions
+            merged = kept.merged
+            total = kept.total
+            owed = Set(kept.owedIds)
+            owedLine = kept.owedTotal > 0.005
+                ? OwedLine(names: kept.owedNames, count: kept.owedCount, total: kept.owedTotal) : nil
+            tags = kept.tags
+        }
     }
 
     /// A card chip's rows: what the card's Spent, Saved or Came in adds up
@@ -1319,10 +1442,9 @@ struct TransactionsView: View {
     /// The cards are the month's, whatever the list is narrowed to.
     private func loadCard() async {
         guard !inTrip, let m = month else { return }
-        if let plain: TransactionList = try? await app.api.get("api/transactions/list",
-                                                               query: ["month": m, "limit": "1"]),
-           m == month {
-            monthTotals = plain.monthTotals
+        try? await app.screens.load("api/transactions/list", query: ["month": m, "limit": "1"],
+                                    as: TransactionList.self) { plain in
+            if m == month { monthTotals = plain.monthTotals }
         }
     }
 
@@ -1348,14 +1470,15 @@ struct TransactionsView: View {
                     m = String(Format.shiftDay(m + "-01", by: 31).prefix(7))
                 }
                 let own = Set(p.trip.ids)
-                rows = all.filter {
+                let kept = all.filter {
                     let day = String($0.date.prefix(10))
                     return day >= w.start && day <= w.end && !own.contains($0.id) && $0.trip == nil
                 }
                 .sorted { $0.date > $1.date }
+                withAnimation(.easeInOut(duration: 0.2)) { rows = kept }
             case .remove:
                 let d: TripDetail = try await api.get("api/trips/\(p.trip.id)")
-                rows = d.rows
+                withAnimation(.easeInOut(duration: 0.2)) { rows = d.rows }
                 if let month = month {
                     let list: TransactionList? = try? await api.get("api/transactions/list",
                                                                     query: ["month": month, "limit": "1"])
@@ -2526,6 +2649,71 @@ private struct HidesTabBar: ViewModifier {
 /// flow tab; Cash flow takes it (once), shows that month if one is given,
 /// and puts the category in Filters with its chip, so one tap takes it off.
 ///
+/// Cash flow's derived lists, each kept with the inputs it was made from
+/// and remade only when they change (perf rehaul, 2026-11-19). A plain
+/// class in `@State`: reading it in `body` never triggers a redraw, and an
+/// unchanged `@State` array compares to its copy by storage, not row by row.
+@MainActor
+final class CFMemo {
+    struct ShownKey: Equatable {
+        let rows: [Transaction]
+        let merged: [Transaction]
+        let results: [Transaction]?
+        let resultsMerged: [Transaction]
+        let cardRows: [Transaction]?
+        let cardFilter: CardFilter?
+        let inSearch: Bool
+        let filters: TxFilters
+        let owed: Set<String>
+    }
+
+    struct BlocksKey: Equatable {
+        let shown: [Transaction]
+        let sort: TxFilters.Sort
+        let byDay: Bool
+        let byCategory: Bool
+        let hideFirst: Bool
+        let select: Bool
+    }
+
+    private var shownKey: ShownKey?
+    private var shownValue: [Transaction] = []
+    private var blocksKey: BlocksKey?
+    private var blocksValue: [CFBlock] = []
+    private var merchantsKey: (rows: [Transaction], results: [Transaction]?)?
+    private var merchantsValue: [String: String] = [:]
+    private var accountsKey: (rows: [Transaction], accounts: [AccountsOverview.Account])?
+    private var accountsValue: [FilterAccount] = []
+
+    func shown(_ key: ShownKey, make: () -> [Transaction]) -> [Transaction] {
+        if shownKey != key { shownValue = make(); shownKey = key }
+        return shownValue
+    }
+
+    func blocks(_ key: BlocksKey, make: () -> [CFBlock]) -> [CFBlock] {
+        if blocksKey != key { blocksValue = make(); blocksKey = key }
+        return blocksValue
+    }
+
+    /// Each row's merchant by id, for "Paid back · <shop>".
+    func merchants(rows: [Transaction], results: [Transaction]?, make: () -> [String: String]) -> [String: String] {
+        if merchantsKey?.rows != rows || merchantsKey?.results != results {
+            merchantsValue = make()
+            merchantsKey = (rows, results)
+        }
+        return merchantsValue
+    }
+
+    func filterAccounts(rows: [Transaction], accounts: [AccountsOverview.Account],
+                        make: () -> [FilterAccount]) -> [FilterAccount] {
+        if accountsKey?.rows != rows || accountsKey?.accounts != accounts {
+            accountsValue = make()
+            accountsKey = (rows, accounts)
+        }
+        return accountsValue
+    }
+}
+
 ///     CashFlowFocus.shared.show(category: "Takeout", month: "2026-11")
 ///     tab = .cashFlow
 @MainActor

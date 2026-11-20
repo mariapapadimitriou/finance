@@ -21,6 +21,13 @@ final class AppModel: ObservableObject {
                 // Her categories aren't the next account's.
                 categories = []
                 categoriesError = nil
+                allowance = nil
+                reviewCount = nil
+                ledgerVersion = nil
+            case .signedIn(let user):
+                // Her kept answers and queued edits are her own folder's.
+                screens.use(account: user?.id.map(String.init))
+                outbox.use(directory: screens.directory)
             default: break
             }
         }
@@ -34,6 +41,24 @@ final class AppModel: ObservableObject {
     private var loadingCategories = false
     /// Bumped after any change, so every screen reloads what it shows.
     @Published var version = 0
+    /// Perf rehaul (2026-11-19): the screen that made a change already
+    /// shows it (`changed(by:)`), so it needn't ask for itself again. Each
+    /// key names the version that screen is good for; `ReloadsOnChange`
+    /// with the same key skips that one bump.
+    private(set) var caughtUp: [String: Int] = [:]
+    /// The Allowance as Home shows it: seeded by api/home, moved by every
+    /// write's `changed.allowance`, so Home is right without a fetch.
+    @Published var allowance: Allowance?
+    /// How many rows Needs a look has, from the last write's `changed`;
+    /// the badge takes it instead of asking api/review.
+    @Published var reviewCount: Int?
+    /// The `version` that `reviewCount` was set for.
+    private(set) var reviewCountAt: Int?
+    /// The ledger's version the phone last saw (ETags and `changed`), sent
+    /// with every write as `X-Base-Version`.
+    private(set) var ledgerVersion: Int?
+    /// The rows the last write touched, for any list that holds them.
+    @Published var changedRows: Changed?
     /// AM-13: said on Accounts once it's back on screen ("TD is removed…").
     @Published var accountsNotice: String?
     /// The account was made just now: setup starts at Face ID (O-04), not at
@@ -69,7 +94,20 @@ final class AppModel: ObservableObject {
     }
 
     let api = APIClient()
+    /// The last answer to every read, kept on the iPhone (ScreenStore).
+    let screens: ScreenStore
+    /// Writes that are safe to send twice, queued when offline (Outbox).
+    let outbox: Outbox
     private var leftAt: Date?
+
+    init() {
+        screens = ScreenStore(api: api)
+        outbox = Outbox(api: api)
+        outbox.app = self
+        api.sawETag = { [weak self] tag in
+            Task { @MainActor in self?.noteETag(tag) }
+        }
+    }
 
     private static let faceIDKey = "pearl.faceID"
 
@@ -119,7 +157,8 @@ final class AppModel: ObservableObject {
         defer { loadingCategories = false }
         categoriesError = nil
         do {
-            use(try await api.get("api/categories"))
+            // The kept list at once, then the server's if it changed.
+            try await screens.load("api/categories", as: CategoryList.self) { self.use($0) }
         } catch is CancellationError {
             return
         } catch {
@@ -165,8 +204,44 @@ final class AppModel: ObservableObject {
         if categories.isEmpty { Task { await loadCategories() } }
     }
 
-    func changed() {
+    /// Something changed: every screen checks its answer again (an ETag
+    /// each). `by` names the screen that made the change and already shows
+    /// it, so that one doesn't.
+    func changed(by origin: String? = nil) {
         version += 1
+        if let origin = origin { caughtUp[origin] = version }
+    }
+
+    /// A write's `changed` envelope applied: the Allowance, the review
+    /// count and the ledger version move at once, lists get the rows, and
+    /// the other screens are told. With no envelope (an older answer, an
+    /// undo) everything reloads as before.
+    func apply(_ changed: Changed?, by origin: String? = nil, bump: Bool = true) {
+        guard let changed = changed else {
+            if bump { self.changed() }
+            return
+        }
+        ledgerVersion = max(ledgerVersion ?? 0, changed.version)
+        if let allowance = changed.allowance {
+            withAnimation(.easeInOut(duration: 0.3)) { self.allowance = allowance }
+        }
+        changedRows = changed
+        if bump { self.changed(by: origin) }
+        if let count = changed.reviewCount {
+            reviewCount = count
+            reviewCountAt = version
+        }
+    }
+
+    /// Home's answer came: the Allowance it shows is the app's.
+    func seed(_ home: Home) {
+        if let sts = home.safeToSpend { allowance = sts }
+    }
+
+    private func noteETag(_ tag: String) {
+        if let v = Changed.version(inETag: tag) { ledgerVersion = max(ledgerVersion ?? 0, v) }
+        // A read got through: edits waiting for the network can go now.
+        if !outbox.isEmpty { Task { await outbox.replay() } }
     }
 
     /// Any call that comes back "signed out" lands here.
@@ -187,6 +262,8 @@ final class AppModel: ObservableObject {
     func signOut() async {
         let _: OK? = try? await api.post("api/auth/logout", ["forget_device": true])
         api.clearCookies()
+        screens.clear()
+        outbox.clear()
         // Signing out on purpose means Face ID shouldn't sign her straight back in.
         SavedSignIn.clear()
         lastSignIn = nil
@@ -201,6 +278,8 @@ final class AppModel: ObservableObject {
         // Her photo was on this iPhone only; the account is gone, so it goes too.
         if let id = user?.id { ProfilePhotoStore.shared.forget(account: String(id)) }
         api.clearCookies()
+        screens.clear()
+        outbox.clear()
         justCreated = false
         locked = false
         lastSignIn = nil
@@ -215,6 +294,8 @@ final class AppModel: ObservableObject {
     }
 
     func cameBack() {
+        // Edits made while the network was away go now (Outbox).
+        if case .signedIn = phase, !outbox.isEmpty { Task { await outbox.replay() } }
         guard case .signedIn = phase, faceIDOn, let left = leftAt else { return }
         if Date().timeIntervalSince(left) >= AppLock.after { locked = true }
         leftAt = nil
@@ -247,31 +328,68 @@ final class AppModel: ObservableObject {
 struct ReloadsOnChange: ViewModifier {
     @EnvironmentObject private var app: AppModel
     let load: () async -> Void
+    /// The screen's name in `app.changed(by:)`: a bump it made itself,
+    /// already shown, doesn't reload it (perf rehaul, 2026-11-19).
+    var key: String? = nil
     @State private var loaded: Int?
     @State private var loadedAt = Date.distantPast
     @State private var visible = false
+    /// The load under way: a change while it runs cancels it before the
+    /// next starts (perf rehaul, 2026-11-19), so quick `version` bumps
+    /// don't leave overlapping loads where the last to finish wins. The
+    /// APIClient turns a cancelled request into `CancellationError`, which
+    /// `app.handle` ignores.
+    @State private var running: Task<Void, Never>?
     static let stale: TimeInterval = 300
 
     func body(content: Content) -> some View {
         content
             .onAppear {
                 visible = true
-                if loaded != app.version || Date().timeIntervalSince(loadedAt) > Self.stale { go() }
+                let ok = current
+                if ok { loaded = app.version }
+                if !ok || Date().timeIntervalSince(loadedAt) > Self.stale { go() }
             }
             .onDisappear { visible = false }
-            .onChange(of: app.version) { _ in if visible { go() } }
+            .onChange(of: app.version) { _ in
+                guard visible else { return }
+                if current { loaded = app.version } else { go() }
+            }
+    }
+
+    /// Whether what's shown is good for `app.version`: loaded at it, or
+    /// one behind it with this screen the one that made the bump.
+    private var current: Bool {
+        guard let loaded = loaded else { return false }
+        if loaded == app.version { return true }
+        if let key = key, app.caughtUp[key] == app.version, loaded == app.version - 1 { return true }
+        return false
     }
 
     private func go() {
         loaded = app.version
         loadedAt = Date()
-        Task { await load() }
+        running?.cancel()
+        running = Task { await load() }
     }
 }
 
 extension View {
-    func reloads(_ load: @escaping () async -> Void) -> some View {
-        modifier(ReloadsOnChange(load: load))
+    func reloads(key: String? = nil, _ load: @escaping () async -> Void) -> some View {
+        modifier(ReloadsOnChange(load: load, key: key))
+    }
+}
+
+/// The screen a pushed page belongs to (`app.changed(by:)`): Cash flow sets
+/// it for its detail pages, so an edit made there counts as Cash flow's own.
+struct ScreenKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+
+extension EnvironmentValues {
+    var screenKey: String? {
+        get { self[ScreenKey.self] }
+        set { self[ScreenKey.self] = newValue }
     }
 }
 

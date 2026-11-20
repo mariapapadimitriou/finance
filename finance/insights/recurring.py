@@ -80,23 +80,14 @@ def _amounts_consistent(amounts: list[float]) -> bool:
     return False
 
 
-# The last few answers, keyed by the very list asked about (2026-10-16): a
-# page like Home asks this a dozen times about the one ledger it loaded.
-# The lists are held so their ids stay theirs; records come back as copies.
-_MEMO: list[tuple[list, str | None, list[dict]]] = []
-_MEMO_SIZE = 4
-
-
 def detect_recurring(transactions: list[Transaction],
                      as_of: str | None = None) -> list[dict]:
-    """Return one record per detected recurring charge, priciest first."""
-    for held, when, out in _MEMO:
-        if held is transactions and when == as_of and len(held) == len(transactions):
-            return [dict(r) for r in out]
-    out = _detect_recurring(transactions, as_of)
-    _MEMO.append((transactions, as_of, out))
-    del _MEMO[:-_MEMO_SIZE]
-    return [dict(r) for r in out]
+    """Return one record per detected recurring charge, priciest first.
+    Remembered for the request (finance/memo.py): a page like Home asks
+    this a dozen times about the one ledger it loaded."""
+    from ..memo import remember_for
+    return remember_for(transactions, ("recurring", as_of),
+                        lambda: _detect_recurring(transactions, as_of))
 
 
 def _detect_recurring(transactions: list[Transaction],

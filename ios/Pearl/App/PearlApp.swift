@@ -147,6 +147,11 @@ struct MainTabs: View {
     @EnvironmentObject private var app: AppModel
     @State private var tab: Tab = .home
     @State private var reviewCount = 0
+    /// The server's own open count the last time api/review was read, so a
+    /// write's `changed.review_count` moves the badge by the difference:
+    /// the badge counts rows only (TEST-35), the server's count has the
+    /// trip and pattern cards too.
+    @State private var serverOpen: Int?
     /// Quick sort on return (THL-254): offered at most once a day, when
     /// something new needs a look; it walks only the new questions.
     @State private var quickSort: [Ask] = []
@@ -195,6 +200,12 @@ struct MainTabs: View {
             await loadCount()
             await lookForSuggestions()
             await lookAtProfile()
+        }
+        .onReceive(app.$reviewCount) { count in
+            // A write said how many are left: the badge moves at once.
+            guard let count = count, let was = serverOpen, count != was else { return }
+            serverOpen = count
+            reviewCount = max(0, reviewCount + (count - was))
         }
         .task(id: app.user?.id) {
             // Her photo is on this iPhone only, one per account.
@@ -251,8 +262,11 @@ struct MainTabs: View {
         }
     }
 
-    /// While Pearl is open, every 15 seconds: is another device waiting for
-    /// this one to approve it? (The web looks as often.)
+    /// Once as Pearl comes to the front, then every 60 seconds while it's
+    /// active, never in the background (`.task(id: scenePhase)` ends the
+    /// loop as the phase changes): is another device waiting for this one to
+    /// approve it? Was every 15 seconds, a paid call each (perf rehaul,
+    /// 2026-11-19).
     private func lookForApprovals() async {
         struct Waiting: Decodable { let approvals: [Lenient<Approval>] }
         while scenePhase == .active && !Task.isCancelled {
@@ -261,7 +275,7 @@ struct MainTabs: View {
                 seenApprovals.insert(next.id)
                 approval = next
             }
-            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            try? await Task.sleep(nanoseconds: 60_000_000_000)
         }
     }
 
@@ -314,9 +328,14 @@ struct MainTabs: View {
     }
 
     private func loadCount() async {
-        if let review: Review = try? await app.api.get("api/review") {
+        // The last write already said how many are left (changed.review_count,
+        // applied above): no fetch for this bump.
+        if app.reviewCount != nil, app.reviewCountAt == app.version, serverOpen != nil { return }
+        // Else the kept answer at once, and the server's with its ETag.
+        try? await app.screens.load("api/review", as: Review.self) { review in
             // TEST-35: the rows Needs a look lists, as its "All" chip.
             reviewCount = review.listedOpen
+            serverOpen = review.open ?? review.count
         }
     }
 }

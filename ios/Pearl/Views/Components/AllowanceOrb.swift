@@ -95,6 +95,7 @@ struct AllowanceOrb: View {
                 .tracking(small ? -0.8 : -0.88)
                 .foregroundColor(Pearl.ink)
                 .lineLimit(1).minimumScaleFactor(0.6)
+                // The digits roll to a new number (a write's `changed.allowance`).
             if let sub = sub, !sub.isEmpty {
                 Text(sub).font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
                     .lineLimit(2).minimumScaleFactor(0.8)

@@ -522,7 +522,14 @@ def mixed_merchants(transactions: list[Transaction], confirmed: dict[str, str]) 
 
 
 def for_store(st, today: str | None = None) -> dict:
-    """The review as every screen sees it: one call, so one number."""
+    """The review as every screen sees it: one call, so one number.
+    Remembered for the request (finance/memo.py): the list, Home and Quick
+    sort each asked again."""
+    from .memo import remember_across
+    return remember_across(st, ("review", today, _me()), lambda: _for_store(st, today))
+
+
+def _for_store(st, today: str | None = None) -> dict:
     found_on = {k: v["found_on"] for k, v in st.duplicates().items()}
     # AI only detects; she confirms (2026-11-15): once, rows P1a sorted
     # before it asked come back here to be asked about.
