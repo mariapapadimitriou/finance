@@ -213,7 +213,8 @@ def test_quick_sort_circles_keep_their_voiceover_words():
     assert ".font(.system(size: 22, weight: .semibold))" in buttons
     assert ".frame(minWidth: 68, minHeight: 44)" in buttons
     assert "APSecondaryButtonStyle" not in buttons
-    assert re.search(r"\.padding\(\.bottom, Self\.toastLift\)", QS)
+    # No toast in Quick sort since 2026-11-20: Undo is at the card's top right.
+    assert "toastLift" not in QS and 'accessibilityIdentifier("quick-sort-undo")' in QS
 
 
 def test_card_chips_use_the_servers_rows_for_the_card_figures():

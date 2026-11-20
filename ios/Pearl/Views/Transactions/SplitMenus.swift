@@ -1030,20 +1030,24 @@ struct PearlToast: View {
         Group {
             if typeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: 2) {
-                    words.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
+                    HStack(alignment: .top, spacing: 0) {
+                        words.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
+                        closeButton
+                    }
                     actionButton.padding(.leading, -14)
                 }
             } else {
-                HStack(spacing: 12) {
+                HStack(spacing: 4) {
                     words
                     Spacer(minLength: 8)
                     actionButton
+                    closeButton
                 }
             }
         }
         .fixedSize(horizontal: false, vertical: true)
         .foregroundColor(Pearl.onInk)
-        .padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 6)
+        .padding(.leading, 16).padding(.trailing, 4).padding(.vertical, 6)
         .frame(minHeight: 56)
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Pearl.ink))
         // A+ `--shadow-toast`: 0 8 12 black @16%.
@@ -1082,6 +1086,17 @@ struct PearlToast: View {
                 .contentShape(Rectangle())
                 .buttonStyle(.plain)
         }
+    }
+
+    /// The ✕ at the far right (product owner, 2026-11-20): a tap closes the
+    /// toast, for anyone who'd rather not swipe it away or wait.
+    private var closeButton: some View {
+        Button { withAnimation(.easeOut(duration: 0.2)) { done() } } label: {
+            Image(systemName: "xmark").font(.system(size: 13, weight: .semibold))
+                .frame(width: 44, height: 44).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Dismiss")
     }
 }
 
