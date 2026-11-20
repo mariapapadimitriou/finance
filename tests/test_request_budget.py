@@ -70,7 +70,9 @@ def test_category_change_stays_within_budget(client):
     tid = _a_purchase(client)
     t = _cost(client, "post", "/api/transactions/batch/category",
               json={"ids": [tid], "category": "Groceries"})
-    assert t["tx"] <= 1 and t["stmts"] <= 67, (t["tx"], t["stmts"])
+    # +8 since 2026-11-20: the answer's review count builds "Is X where you
+    # save?" (finance/checks.py), which reads her accounts and rules.
+    assert t["tx"] <= 1 and t["stmts"] <= 75, (t["tx"], t["stmts"])
 
 
 def test_mark_stays_within_budget(client):
@@ -80,7 +82,7 @@ def test_mark_stays_within_budget(client):
     tid = _a_purchase(client)
     t = _cost(client, "post", f"/api/transactions/{tid}/mark",
               json={"case": "spending", "category": "Groceries"})
-    assert t["tx"] <= 1 and t["stmts"] <= 70, (t["tx"], t["stmts"])
+    assert t["tx"] <= 1 and t["stmts"] <= 78, (t["tx"], t["stmts"])
 
 
 def test_header_says_what_the_request_spent(client):

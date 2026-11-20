@@ -73,9 +73,9 @@ def test_the_card_providers_category_comes_first():
                       confidence="LOW") == ("Streaming", "issuer")
     assert categorize("ZXQ WIDGETS", "", "GENERAL_MERCHANDISE",
                       confidence="LOW") == ("Shopping", "issuer")
-    # A label that only says "transfer" or "other" isn't an answer: Pearl
-    # knows Questrade is money put away.
-    assert categorize("QUESTRADE", "QUESTRADE TFR", "TRANSFER_OUT")[0] == "Saved"
+    # A label that only says "transfer" or "other" isn't an answer. Questrade
+    # is a transfer until she says it's where she saves (2026-11-20).
+    assert categorize("QUESTRADE", "QUESTRADE TFR", "TRANSFER_OUT")[0] == "Transfers"
     assert categorize("ROGERS", "ROGERS WIRELESS", "GENERAL_SERVICES")[0] == "Phone & Internet"
     assert categorize("ZXQ WIDGETS", "", "TRANSFER_OUT") == ("Transfers", "issuer")
 
