@@ -98,6 +98,11 @@ def _ids_in(reply: dict, body: dict) -> set[str]:
         t = d.get("transaction")
         if isinstance(t, dict) and isinstance(t.get("id"), str):
             ids.add(t["id"])
+        # A deposit's parts are rows of their own (finance/parts.py): new
+        # ones the list must gain.
+        for p in d.get("parts") or []:
+            if isinstance(p, dict) and isinstance(p.get("id"), str):
+                ids.add(p["id"])
     undo = reply.get("undo")
     if isinstance(undo, dict):
         for r in undo.get("rows") or []:

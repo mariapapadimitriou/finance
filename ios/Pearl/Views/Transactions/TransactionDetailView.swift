@@ -1478,8 +1478,10 @@ struct TransactionDetailView: View {
 
     /// Money in that could be her pay: not a refund, a payback or a transfer.
     private var couldBePay: Bool {
+        // A deposit sorted into parts, or a part of one, isn't pay (2026-11-20:
+        // "This is my regular pay" sat under a payback's own Options).
         t.inflow && t.transfer == nil && t.refundOf == nil && t.repays == nil && t.excluded.isEmpty
-            && t.jointFrom != "them"
+            && t.jointFrom != "them" && t.parts.isEmpty && t.partOf == nil
     }
 
     /// The app's income kinds, as Income and bills names them.
