@@ -6,6 +6,9 @@ import SwiftUI
 struct QuickSortPrompt: Decodable {
     let show: Bool
     let review: Review?
+    /// The keys of the questions not offered before (nil from an older
+    /// server): on open, Quick sort deals only these.
+    let new: [String]?
 
     /// The open questions, skipped ones left where they are.
     var asks: [Ask] { review?.shownAsks.filter { !$0.skipped } ?? [] }
@@ -14,12 +17,26 @@ struct QuickSortPrompt: Decodable {
     /// TR-01: likely trips Pearl asks about, after the patterns.
     var trips: [TripAsk] { review?.tripAsks ?? [] }
 
+    /// THL-254, on open: only what's new since her last visit. The rest
+    /// stays in Needs a look (and Home's Sort now deals everything).
+    var newAsks: [Ask] { asks.filter { isNew($0.item.key) } }
+    var newPatterns: [PatternAsk] { patterns.filter { isNew($0.key) } }
+    var newTrips: [TripAsk] { trips.filter { isNew($0.key) } }
+
+    private func isNew(_ key: String) -> Bool { new.map { $0.contains(key) } ?? true }
+
     init(from decoder: Decoder) throws {
-        enum Keys: String, CodingKey { case show, review }
+        enum Keys: String, CodingKey { case show, review, new }
         let c = try decoder.container(keyedBy: Keys.self)
         show = (try? c.decodeIfPresent(Bool.self, forKey: .show)) ?? false
         review = (try? c.decodeIfPresent(Review.self, forKey: .review)) ?? nil
+        new = (try? c.decodeIfPresent([String].self, forKey: .new)) ?? nil
     }
+}
+
+extension PatternAsk {
+    /// Its question's key, as GET /api/quick-sort lists it (pattern_sort.py).
+    var key: String { "pat:" + id }
 }
 
 /// What PUT /api/quick-sort/<id> says: the others sorted with it (T-86)
@@ -709,7 +726,9 @@ struct QuickSortView: View {
 
     private func begin() async {
         // Started: today's offer is used, and these questions aren't new any more.
-        let _: OK? = try? await app.api.post("api/quick-sort/seen", ["ids": asks.map(\.item.key), "start": true])
+        // The pattern and trip cards too, or they'd count as new on every open.
+        let keys = asks.map(\.item.key) + patterns.map(\.key) + trips.map(\.key)
+        let _: OK? = try? await app.api.post("api/quick-sort/seen", ["ids": keys, "start": true])
         if accounts.isEmpty, let overview: AccountsOverview = try? await app.api.get("api/accounts/overview") {
             accounts = overview.linked
         }

@@ -75,6 +75,32 @@ class TestThePrompt:
         body = client.get("/api/quick-sort").get_json()
         assert body["show"] and [i["merchant"] for i in body["items"]] == ["Dollarama"]
 
+    def test_on_open_only_what_is_new_since_last_visit(self, client):
+        """After #398: the open prompt lists the keys not offered before
+        (`new`); the app deals only those. Once offered, nothing is new, so
+        it doesn't pop up again until something new comes in."""
+        ledger(client, [unsure("2026-10-08", "Shoppers Drug Mart", 18.47, "Personal Care")])
+        first = client.get("/api/quick-sort").get_json()
+        assert first["show"] and set(first["new"]) == set(first["keys"])
+        client.post("/api/quick-sort/seen", json={"ids": first["keys"], "start": True})
+        tomorrow = TODAY + timedelta(days=1)
+        client.api._today_iso = lambda: tomorrow.isoformat()
+        body = client.get("/api/quick-sort").get_json()
+        assert not body["show"] and body["new"] == [] and body["count"] == first["count"]
+        client.st.add_transactions([unsure("2026-10-10", "Dollarama", 9.50, "Shopping")])
+        body = client.get("/api/quick-sort").get_json()
+        dollarama = [k for k in body["keys"] if k not in first["keys"]]
+        assert body["show"] and body["new"] == dollarama and len(dollarama) == 1
+        # Home's Sort now still has every question.
+        assert set(client.get("/api/quick-sort?all=1").get_json()["keys"]) >= set(first["keys"])
+
+    def test_a_seen_pattern_or_trip_key_is_not_new_again(self, client):
+        """The app marks pattern (pat:) and trip (trip:) cards seen too, or
+        an unanswered one made the prompt pop up every day."""
+        ledger(client)
+        quick_sort.mark_offered(client.st, ["pat:abc", "trip:2026-10-01:2026-10-05"])
+        assert {"pat:abc", "trip:2026-10-01:2026-10-05"} <= set(quick_sort.offered(client.st))
+
     def test_suggested_and_recent_categories(self, client):
         ledger(client, [
             tx("2026-10-02", "Shoppers Drug Mart", 22.00, "Health", category_source="user"),

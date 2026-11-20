@@ -125,9 +125,10 @@ def test_the_month_pins_under_a_folding_bar_with_filters_and_add():
 
 
 def test_card_figures_filter_by_month_and_kind():
-    assert "case spent, saved, cameIn, look" in SCROLL
+    # "need a look" isn't a card filter any more: it opens Needs a look.
+    assert "case spent, saved, cameIn\n" in SCROLL
     assert 'var label: String { "\\(kind.label) \\u{00B7} \\(Format.monthName(month))" }' in SCROLL
-    assert "kind.server != nil || (t.date.hasPrefix(month) && look.contains(t.id))" in SCROLL
+    assert "look.contains(t.id)" not in SCROLL and "lookIds" not in TV
     legend = TV[TV.index("    private var legend: some View {"):TV.index("    private func dot(")]
     assert "figure(.spent," in legend and "figure(.saved," in legend
     assert "figure(.leftover" not in legend
