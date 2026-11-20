@@ -396,7 +396,7 @@ private struct HomeOrb: View {
                          sub: sts?.orbSub(month: home.month) ?? Allowance.orbSub(forMonth: home.month),
                          size: calm ? AllowanceOrb.full : AllowanceOrb.small)
                 .accessibilityAddTraits(.isHeader)
-                .accessibilityHint(sts?.ringCaption == Allowance.restCaption ? Allowance.restCaption : "")
+                .accessibilityHint(home.safeToSpend?.ringCaption == Allowance.restCaption ? Allowance.restCaption : "")
             if let caption = sts?.ringCaption, !caption.isEmpty, caption != Allowance.restCaption {
                 Text(caption).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     .multilineTextAlignment(.center)
