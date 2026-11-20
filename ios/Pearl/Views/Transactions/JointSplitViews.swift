@@ -1,4 +1,5 @@
 import Contacts
+import ContactsUI
 import SwiftUI
 import UIKit
 
@@ -70,6 +71,8 @@ struct PeoplePicker: View {
     @State private var recent: [RecentPerson]?
     @State private var contacts: [String] = []
     @State private var contactsState: ContactsState = .asking
+    /// iOS 18 "limited access": Pearl only sees the contacts she chose.
+    @State private var contactsLimited = false
     @State private var query = ""
     @State private var picked: [String] = []
     @State private var busy = false
@@ -178,9 +181,10 @@ struct PeoplePicker: View {
     /// One list: her splits first ("You split Loblaws"), then her contacts.
     private var suggested: [(name: String, sub: String)] {
         let mine = (recent ?? []).map { (name: $0.name, sub: "You split \($0.merchant)") }
+        // Search every contact first, then cap: the cap only trims the
+        // browse list, never what she types.
         let others = contactsState == .on
-            ? contacts.filter { c in !(recent ?? []).contains { samePerson($0.name, c) } }.prefix(60)
-                .map { (name: $0, sub: "In your contacts") }
+            ? contactMatches(recent ?? []).map { (name: $0, sub: "In your contacts") }
             : []
         return (mine + others).filter { p in
             matches(p.name) && !isRefused(p.name)
@@ -230,6 +234,7 @@ struct PeoplePicker: View {
                 }
             }
         }
+        if contactsState == .on { moreContactsLine }
         if contactsState == .off {
             // AM-08p2: Contacts off is one quiet line.
             HStack {
@@ -304,15 +309,40 @@ struct PeoplePicker: View {
             EmptyView()
         case .on:
             // Anyone already in the first list shows once (same name match).
-            let shown = contacts.filter { c in matches(c) && !isRefused(c) && !recent.contains { samePerson($0.name, c) } }
+            let shown = contactMatches(recent).filter { !isRefused($0) }
             if !shown.isEmpty {
                 APSheetLabel(text: "Contacts")
                 APOptionCard {
-                    ForEach(Array(shown.prefix(60).enumerated()), id: \.element) { i, name in
+                    ForEach(Array(shown.enumerated()), id: \.element) { i, name in
                         if i > 0 { APSeparator() }
                         row(name, sub: "Contact")
                     }
                 }
+            }
+            moreContactsLine
+        }
+    }
+
+    /// Browsing shows the first 60 contacts; searching looks through all of them.
+    private static let browseCap = 60
+
+    private func contactMatches(_ recent: [RecentPerson]) -> [String] {
+        let all = contacts.filter { c in matches(c) && !recent.contains { samePerson($0.name, c) } }
+        return q.isEmpty ? Array(all.prefix(Self.browseCap)) : all
+    }
+
+    /// Under the browse list: say that search reaches everyone, and with
+    /// iOS's limited access let her share more contacts with Pearl.
+    @ViewBuilder private var moreContactsLine: some View {
+        if q.isEmpty && contacts.count > Self.browseCap {
+            Text("Search to find anyone in your contacts.")
+                .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 4)
+        }
+        if contactsLimited, !q.isEmpty {
+            if #available(iOS 18.0, *) {
+                ContactAccessButton(queryString: q) { _ in Task { await loadContacts() } }
+                    .frame(minHeight: 52)
             }
         }
     }
@@ -480,15 +510,20 @@ struct PeoplePicker: View {
             contactsState = .off
             return
         }
+        if #available(iOS 18.0, *) { contactsLimited = status == .limited }
         let found: [String] = await Task.detached {
-            let keys = [CNContactGivenNameKey, CNContactFamilyNameKey] as [CNKeyDescriptor]
+            let keys = [CNContactGivenNameKey, CNContactFamilyNameKey,
+                        CNContactNicknameKey, CNContactOrganizationNameKey] as [CNKeyDescriptor]
             var out: [String] = []
             let request = CNContactFetchRequest(keysToFetch: keys)
             request.sortOrder = .givenName
-            try? store.enumerateContacts(with: request) { c, stop in
-                let name = "\(c.givenName) \(c.familyName)".trimmingCharacters(in: .whitespaces)
+            // Every contact (names only, never sent anywhere). A contact with
+            // no first or last name falls back to its nickname, then company.
+            try? store.enumerateContacts(with: request) { c, _ in
+                var name = "\(c.givenName) \(c.familyName)".trimmingCharacters(in: .whitespaces)
+                if name.isEmpty { name = c.nickname.trimmingCharacters(in: .whitespaces) }
+                if name.isEmpty { name = c.organizationName.trimmingCharacters(in: .whitespaces) }
                 if !name.isEmpty { out.append(name) }
-                if out.count >= 500 { stop.pointee = true }
             }
             return out
         }.value
