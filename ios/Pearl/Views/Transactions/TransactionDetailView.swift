@@ -292,6 +292,12 @@ struct TransactionDetailView: View {
     /// row's own question shows, so the card never changes shape as the
     /// page loads (2026-11-20).
     @State private var paybackChecked = false
+    /// The payback question as the page shows it: the settled one, or the
+    /// row's until then. Every reader uses this, so the Counts pill and
+    /// "Name them" are right on the first frame too, not only the card.
+    private var shownPaybackAsk: PaybackQuestion? {
+        paybackAsk ?? (paybackChecked ? nil : t.paybackQuestion)
+    }
 
     struct Asking: Identifiable {
         let step: AnswerSheet.Step
@@ -1114,7 +1120,7 @@ struct TransactionDetailView: View {
 
     /// PQ-03p: the payback question's sender has no name of hers yet.
     private var namesSender: Bool {
-        guard let q = paybackAsk else { return false }
+        guard let q = shownPaybackAsk else { return false }
         return !q.named && t.asks && t.transfer == nil
     }
 
@@ -1537,7 +1543,7 @@ struct TransactionDetailView: View {
     /// and Not this, in place of the flat Not sorted yet card. Not this
     /// opens Needs a look's question with every answer.
     @ViewBuilder private var askingOrPayback: some View {
-        if let q = paybackAsk ?? (paybackChecked ? nil : t.paybackQuestion) {
+        if let q = shownPaybackAsk {
             PaybackQuestionCard(question: q, onYes: { Task { await answerPaybackGuess(q) } },
                                 onNot: { Task { await openQuestion() } })
                 .disabled(busy)
