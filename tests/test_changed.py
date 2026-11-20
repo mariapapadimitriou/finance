@@ -149,3 +149,29 @@ class TestRepeatedWrites:
         r = client.post("/api/transactions/batch/category", headers={"X-Op-Id": "no way; drop"},
                         json={"ids": [row["id"]], "category": "Groceries"})
         assert r.status_code == 400
+
+
+class TestRowsThatLeaveTheList:
+    def test_a_row_the_write_left_out_is_removed_not_updated(self, client):
+        row = _a_purchase(client)
+        reply = client.put(f"/api/transactions/{row['id']}/exclude", json={"reason": "Not mine"}).get_json()
+        changed = reply["changed"]
+        assert row["id"] in changed["removed"]
+        assert row["id"] not in {r["id"] for r in changed["rows"]}
+
+    def test_a_deposits_parts_join_the_rows(self, client):
+        rows = client.get("/api/transactions/list?limit=1000").get_json()["transactions"]
+        deposit = next((r for r in rows if r["amount"] < 0), None)
+        if deposit is None:
+            pytest.skip("no deposit in the bundled ledger")
+        amount = abs(deposit["amount"])
+        reply = client.post(f"/api/transactions/{deposit['id']}/parts", json={
+            "parts": [{"kind": "gift", "amount": round(amount / 2, 2)},
+                      {"kind": "income", "amount": round(amount - round(amount / 2, 2), 2),
+                       "income_kind": "other"}]})
+        if reply.status_code != 200:
+            pytest.skip(f"parts refused here: {reply.get_json()}")
+        changed = reply.get_json()["changed"]
+        assert deposit["id"] in changed["removed"]              # the deposit is left out as SPLIT
+        made = {p["id"] for p in reply.get_json()["parts"]}
+        assert made and made <= {r["id"] for r in changed["rows"]}

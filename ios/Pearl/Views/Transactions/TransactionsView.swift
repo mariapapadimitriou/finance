@@ -1139,6 +1139,13 @@ struct TransactionsView: View {
         var moved = false
         withAnimation(.easeInOut(duration: 0.2)) {
             if rows.merge(changed) { moved = true }
+            // Rows the write made (a deposit's parts, 2026-11-20) join the
+            // list too, when it is the plain list; `shown` puts them in place.
+            if !inTrip && listQuery.isEmpty {
+                let known = Set(rows.map(\.id))
+                let new = changed.rows.filter { !known.contains($0.id) }
+                if !new.isEmpty { rows.append(contentsOf: new); moved = true }
+            }
             if merged.merge(changed) { moved = true }
             if results?.merge(changed) == true { moved = true }
             if cardRows?.merge(changed) == true { moved = true }

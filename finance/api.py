@@ -3527,11 +3527,15 @@ def _remember_the_answer(response):
 
 
 def _changed_rows(st, ids: set[str]) -> dict[str, dict]:
-    """The rows a write touched, as the transactions list describes them."""
+    """The rows a write touched, as the transactions list describes them.
+    Only the rows the list shows (2026-11-20): one that the write left out
+    (a deposit split into parts, a row she excluded) is reported removed,
+    so the phone drops it instead of keeping a stale copy."""
     from . import txlist
     looking, mark = _needs_a_look(st)
     rows = _txlist_rows(st, everything=True, only=ids)
-    picked = [(t, mark(r)) for t, r in rows if t.fingerprint in ids]
+    shown = {t.fingerprint for t in txlist.visible([t for t, _ in rows])}
+    picked = [(t, mark(r)) for t, r in rows if t.fingerprint in ids and t.fingerprint in shown]
     return {t.fingerprint: r for t, r in zip((t for t, _ in picked), _with_rules(st, picked))}
 
 
