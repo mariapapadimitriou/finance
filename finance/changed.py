@@ -54,8 +54,26 @@ def concerns(path: str, method: str) -> bool:
 
 # Which build of the server answered (2026-11-20): a deploy that changes
 # what a row carries must make the phone's kept copies stale even though
-# the ledger's version hasn't moved. Vercel sets the commit; locally "dev".
-BUILD = (os.environ.get("VERCEL_GIT_COMMIT_SHA") or "dev")[:7]
+# the ledger's version hasn't moved. Vercel's commit when it is in the
+# environment; otherwise a fingerprint of the code that shapes rows, so it
+# changes with the code wherever it runs and never silently stays "dev".
+def _build() -> str:
+    sha = os.environ.get("VERCEL_GIT_COMMIT_SHA") or os.environ.get("VERCEL_DEPLOYMENT_ID")
+    if sha:
+        return sha[:7]
+    import hashlib
+    h = hashlib.sha1()
+    here = os.path.dirname(__file__)
+    for name in ("api.py", "txlist.py", "changed.py", "review.py", "models.py", "transfers.py"):
+        try:
+            with open(os.path.join(here, name), "rb") as f:
+                h.update(f.read())
+        except OSError:
+            continue
+    return h.hexdigest()[:7]
+
+
+BUILD = _build()
 
 
 def etag(st, today: str) -> str:

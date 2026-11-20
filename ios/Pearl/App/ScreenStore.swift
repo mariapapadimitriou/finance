@@ -42,6 +42,23 @@ final class ScreenStore {
 
     init(api: APIClient) {
         self.api = api
+        Self.forgetOtherBuilds()
+    }
+
+    /// A new build of the app forgets every kept answer (2026-11-20): what
+    /// a row carries can change between builds, and a kept copy from the
+    /// old one showed a deposit the list no longer has. The build number
+    /// is written beside the cache; a different one clears it.
+    private static func forgetOtherBuilds() {
+        let build = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "")
+            + "/" + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
+        let stamp = root.appendingPathComponent("build.txt")
+        let was = (try? String(contentsOf: stamp, encoding: .utf8)) ?? ""
+        guard was != build else { return }
+        try? FileManager.default.removeItem(at: root)
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true,
+                                                 attributes: [.protectionKey: FileProtectionType.complete])
+        try? build.write(to: stamp, atomically: true, encoding: .utf8)
     }
 
     // MARK: Where
