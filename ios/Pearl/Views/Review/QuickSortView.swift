@@ -44,6 +44,8 @@ extension PatternAsk {
 struct QuickSortStep: Decodable {
     let also: [String]?
     let undo: JSONValue?
+    /// What the write changed (perf rehaul, 2026-11-19).
+    var changed: Changed? = nil
 
     /// T-91: "Always Dining out".
     static func always(_ label: String, sorted: Int) -> String {

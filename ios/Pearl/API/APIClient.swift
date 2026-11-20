@@ -41,34 +41,93 @@ final class APIClient {
 
     // MARK: Requests
 
+    /// Every ETag a read came back with (perf rehaul, 2026-11-19): the
+    /// ledger's version is in it, and AppModel keeps the latest for the
+    /// outbox's `X-Base-Version`. Called off the main thread.
+    var sawETag: ((String) -> Void)?
+
     func get<T: Decodable>(_ path: String, query: [String: String] = [:]) async throws -> T {
         try await send("GET", path, query: query, body: nil)
     }
 
-    func post<T: Decodable>(_ path: String, _ body: [String: Any] = [:]) async throws -> T {
-        try await send("POST", path, query: [:], body: body)
+    /// A read the screen already has an answer to (ScreenStore): with the
+    /// answer's ETag as `If-None-Match`, the server says `304` after one
+    /// statement when nothing changed, and nothing is decoded or redrawn.
+    func get<T: Decodable>(_ path: String, query: [String: String] = [:],
+                           ifNoneMatch: String?) async throws -> Cached<T> {
+        guard let raw = try await getRaw(path, query: query, ifNoneMatch: ifNoneMatch) else { return .unchanged }
+        return .fresh(try decode(raw.data, path: path), etag: raw.etag)
     }
 
-    func put<T: Decodable>(_ path: String, _ body: [String: Any] = [:]) async throws -> T {
-        try await send("PUT", path, query: [:], body: body)
+    /// The bytes of a read, with its ETag, for the on-device cache to keep;
+    /// nil when the server said `304 Not Modified`.
+    func getRaw(_ path: String, query: [String: String] = [:], ifNoneMatch: String?) async throws -> RawReply? {
+        var headers: [String: String] = [:]
+        if let tag = ifNoneMatch, !tag.isEmpty { headers["If-None-Match"] = tag }
+        let reply = try await request("GET", path, query: query, body: nil, headers: headers)
+        if reply.status == 304 { return nil }
+        return RawReply(data: reply.data, etag: reply.etag)
     }
 
-    func patch<T: Decodable>(_ path: String, _ body: [String: Any] = [:]) async throws -> T {
-        try await send("PATCH", path, query: [:], body: body)
+    func post<T: Decodable>(_ path: String, _ body: [String: Any] = [:],
+                            opId: String? = nil, baseVersion: Int? = nil) async throws -> T {
+        try await send("POST", path, query: [:], body: body, opId: opId, baseVersion: baseVersion)
     }
 
-    func delete<T: Decodable>(_ path: String, query: [String: String] = [:]) async throws -> T {
-        try await send("DELETE", path, query: query, body: nil)
+    func put<T: Decodable>(_ path: String, _ body: [String: Any] = [:],
+                           opId: String? = nil, baseVersion: Int? = nil) async throws -> T {
+        try await send("PUT", path, query: [:], body: body, opId: opId, baseVersion: baseVersion)
+    }
+
+    func patch<T: Decodable>(_ path: String, _ body: [String: Any] = [:],
+                             opId: String? = nil, baseVersion: Int? = nil) async throws -> T {
+        try await send("PATCH", path, query: [:], body: body, opId: opId, baseVersion: baseVersion)
+    }
+
+    func delete<T: Decodable>(_ path: String, query: [String: String] = [:],
+                              opId: String? = nil, baseVersion: Int? = nil) async throws -> T {
+        try await send("DELETE", path, query: query, body: nil, opId: opId, baseVersion: baseVersion)
     }
 
     /// A file's bytes rather than an answer to read (Your data's .zip).
     func download(_ path: String) async throws -> Data {
-        try await fetch("GET", path, query: [:], body: nil)
+        try await request("GET", path, query: [:], body: nil, headers: [:]).data
+    }
+
+    /// What a request came back with, before it's read.
+    struct Reply {
+        let data: Data
+        let status: Int
+        let etag: String?
+        /// `X-Replayed: 1`: the server had already done this op (Outbox).
+        let replayed: Bool
+    }
+
+    struct RawReply {
+        let data: Data
+        let etag: String?
+    }
+
+    /// Headers the outbox puts on a write (finance/changed.py): the op's id,
+    /// so a repeat is answered from the first attempt and done once, and the
+    /// ledger version the phone had.
+    static func writeHeaders(opId: String?, baseVersion: Int?) -> [String: String] {
+        var h: [String: String] = [:]
+        if let id = opId { h["X-Op-Id"] = id }
+        if let v = baseVersion { h["X-Base-Version"] = String(v) }
+        return h
     }
 
     private func send<T: Decodable>(_ method: String, _ path: String, query: [String: String],
-                                    body: [String: Any]?) async throws -> T {
-        let data = try await fetch(method, path, query: query, body: body)
+                                    body: [String: Any]?, opId: String? = nil, baseVersion: Int? = nil) async throws -> T {
+        let data = try JSONBody.data(body)
+        let reply = try await request(method, path, query: query, body: data,
+                                      headers: Self.writeHeaders(opId: opId, baseVersion: baseVersion))
+        return try decode(reply.data, path: path)
+    }
+
+    /// An answer's JSON as `T`; a reply that can't be read says so once.
+    func decode<T: Decodable>(_ data: Data, path: String) throws -> T {
         do {
             return try decoder.decode(T.self, from: data)
         } catch {
@@ -79,8 +138,10 @@ final class APIClient {
         }
     }
 
-    private func fetch(_ method: String, _ path: String, query: [String: String],
-                       body: [String: Any]?) async throws -> Data {
+    /// One request, with the answer's status and headers: everything above
+    /// and the outbox go through here. Throws for anything but 2xx and 304.
+    func request(_ method: String, _ path: String, query: [String: String],
+                 body: Data?, headers: [String: String]) async throws -> Reply {
         // Paths come in plain; RequestURL encodes them once (TEST-33).
         guard let url = RequestURL.make(base: baseURL, path: path, query: query) else {
             throw APIError.message("That server address doesn't look right.")
@@ -89,8 +150,9 @@ final class APIClient {
         request.httpMethod = method
         if let body = body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            request.httpBody = body
         }
+        for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
         let data: Data
         let response: URLResponse
         #if DEBUG
@@ -101,7 +163,7 @@ final class APIClient {
             // the difference from the wall time is the network and the phone.
             let ms = Int(Date().timeIntervalSince(began) * 1000)
             let server = timed?.value(forHTTPHeaderField: "Server-Timing") ?? "-"
-            print("Pearl: \(method) \(path) \(ms) ms wall; server \(server)")
+            print("Pearl: \(method) \(path) \(timed?.statusCode ?? 0) \(ms) ms wall; server \(server)")
         }
         #endif
         do {
@@ -117,7 +179,10 @@ final class APIClient {
             }
             throw APIError.offline
         }
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let http = response as? HTTPURLResponse
+        let status = http?.statusCode ?? 0
+        let etag = http?.value(forHTTPHeaderField: "ETag")
+        if let etag = etag { sawETag?(etag) }
         if status == 401 {
             // Signing in with a wrong password is a 401 too: say what the
             // server said rather than "signed out".
@@ -129,14 +194,15 @@ final class APIClient {
             }
             throw APIError.signedOut
         }
-        if !(200..<300).contains(status) {
+        if status != 304 && !(200..<300).contains(status) {
             if let problem = try? decoder.decode(ServerProblem.self, from: data),
-               problem.error != nil || problem.needsConfirmation == true {
+               problem.error != nil || problem.needsConfirmation == true || problem.retry == true {
                 throw APIError.server(problem)
             }
             throw APIError.message("Something went wrong (\(status)). Try again.")
         }
-        return data
+        return Reply(data: data, status: status, etag: etag,
+                     replayed: http?.value(forHTTPHeaderField: "X-Replayed") == "1")
     }
 
     /// Forget the session and the device, as signing out does.
@@ -184,6 +250,9 @@ struct ServerProblem: Decodable, Equatable {
     var needsConfirmation: Bool? = nil
     var duplicate: Bool? = nil
     var matches: [Match]? = nil
+    /// 409 from the outbox's op id: the first attempt is still running;
+    /// send the same op again in 2 s (finance/changed.py `claim`).
+    var retry: Bool? = nil
     /// A payback onto a split she set up, from a sender Pearl can't place on
     /// it (409, finance/marks_api.py `_who_paid`): ask who with PP-01.
     var whoPaid: WhoPaidAsk? = nil
@@ -196,7 +265,7 @@ struct ServerProblem: Decodable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case error, taken, weak, wrong, left, paused, expired, duplicate, matches
+        case error, taken, weak, wrong, left, paused, expired, duplicate, matches, retry
         case retryIn = "retry_in"
         case whoPaid = "who_paid"
         case needsConfirmation = "needs_confirmation"
@@ -245,4 +314,19 @@ extension Error {
 /// For calls whose answer we don't need beyond "it worked".
 struct OK: Decodable {
     let ok: Bool?
+}
+
+/// A conditional read's answer (perf rehaul, 2026-11-19).
+enum Cached<T> {
+    case fresh(T, etag: String?)
+    /// `304 Not Modified`: what the screen shows is still right.
+    case unchanged
+}
+
+/// A request body as bytes, once, so the outbox can keep it for a retry.
+enum JSONBody {
+    static func data(_ body: [String: Any]?) throws -> Data? {
+        guard let body = body else { return nil }
+        return try JSONSerialization.data(withJSONObject: body)
+    }
 }
