@@ -728,14 +728,15 @@ CREATE TABLE IF NOT EXISTS txn_tags (
 
 -- Which ledger this is (2026-11-19): bumped once by every request that
 -- changed something. Answers carry it as their ETag, so the phone can ask
--- "anything new since version N?" for the cost of one statement, and keep
--- what it has when the answer is no.
+-- whether anything is new since version N for the cost of one statement,
+-- and keep what it has when the answer is no. Its one row is seeded by
+-- `_init`: the schema script is one statement to Postgres, and the
+-- translator's ON CONFLICT would land on the script's last line.
 CREATE TABLE IF NOT EXISTS ledger_meta (
     id        INTEGER PRIMARY KEY,
     version   INTEGER NOT NULL DEFAULT 0,
     bumped_at TEXT
 );
-INSERT OR IGNORE INTO ledger_meta (id, version) VALUES (1, 0);
 
 -- Writes the phone has already made (2026-11-19). The phone queues an edit
 -- while offline and sends it with an id of its own; a send that reaches
@@ -1031,6 +1032,8 @@ class Store:
                 c.execute(f'CREATE SCHEMA IF NOT EXISTS "{self.schema}"')
         with self.conn() as c:
             c.executescript(SCHEMA)
+        with self.conn() as c:
+            c.execute_quietly("INSERT OR IGNORE INTO ledger_meta (id, version) VALUES (1, 0)")
         self._migrate_buckets()
         self._migrate_allocation_amounts()
         self._migrate_exclusion_whole_name()
