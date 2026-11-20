@@ -288,6 +288,10 @@ struct TransactionDetailView: View {
     @State private var whoPaid: WhoPaidAsk?
     /// PQ-03p (Payback question): Pearl's guess on an unsorted deposit, in words.
     @State private var paybackAsk: PaybackQuestion?
+    /// Whether `paybackAsk` has been settled for this page; until then the
+    /// row's own question shows, so the card never changes shape as the
+    /// page loads (2026-11-20).
+    @State private var paybackChecked = false
 
     struct Asking: Identifiable {
         let step: AnswerSheet.Step
@@ -1533,7 +1537,7 @@ struct TransactionDetailView: View {
     /// and Not this, in place of the flat Not sorted yet card. Not this
     /// opens Needs a look's question with every answer.
     @ViewBuilder private var askingOrPayback: some View {
-        if let q = paybackAsk {
+        if let q = paybackAsk ?? (paybackChecked ? nil : t.paybackQuestion) {
             PaybackQuestionCard(question: q, onYes: { Task { await answerPaybackGuess(q) } },
                                 onNot: { Task { await openQuestion() } })
                 .disabled(busy)
@@ -1564,10 +1568,17 @@ struct TransactionDetailView: View {
     /// asking about it (GET payback-question).
     @inline(never)
     private func loadPaybackQuestion() async {
-        guard guessing == nil, t.asks, t.inflow else { paybackAsk = nil; return }
+        guard guessing == nil, t.asks, t.inflow else { paybackAsk = nil; paybackChecked = true; return }
+        if t.paybackKnown {
+            // The row brought it (2026-11-20): nothing to ask.
+            paybackAsk = t.paybackQuestion
+            paybackChecked = true
+            return
+        }
         struct Reply: Decodable { let question: PaybackQuestion? }
         let reply: Reply? = try? await app.api.get("api/transactions/\(t.id)/payback-question")
         paybackAsk = reply?.question
+        paybackChecked = true
     }
 
     /// "Not sorted yet · Paid back or income? Tell us": the question Needs a

@@ -311,12 +311,21 @@ def _needs_a_look(st):
     from .review import for_store, ids_in
     rev = for_store(st)
     looking = ids_in(rev)
-    asking_in = {it["txn"]["id"] for it in rev.get("money_in") or []}
+    asking = {it["txn"]["id"]: it for it in rev.get("money_in") or []}
+    asking_in = set(asking)
 
     def mark(r: dict) -> dict:
         r = txlist.still_asking(r, asking_in)
         if r.get("suggested") and r["id"] not in looking:
             r = {**r, "suggested": False, "chip": {**(r.get("chip") or {}), "suggested": False}}
+        it = asking.get(r["id"])
+        if it is not None:
+            # PQ-03p on the row itself (2026-11-20): the deposit's page opened
+            # as a plain "Not sorted yet" card and turned into "Paying you
+            # back for Añejo?" when its own call came back. The review has
+            # already worked the question out (payback_question.annotate);
+            # the key is there, null or not, so the phone needn't ask again.
+            r = {**r, "payback_question": it.get("payback")}
         return r
     return looking, mark
 

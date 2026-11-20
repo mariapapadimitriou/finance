@@ -107,6 +107,18 @@ class TestNotOnASplit:
             "title": "Paying you back for Añejo?",
             "line": "Pearl’s guess · about a third"}
 
+    def test_the_row_carries_the_question_so_the_page_opens_on_it(self, c):
+        """2026-11-20: the page opened on the list's row ("Not sorted yet")
+        and switched to the question when its own call came back. The list
+        row and the detail row carry the same question the GET answers."""
+        deposit = ids(c)["deposit"]
+        asked = c.get(f"/api/transactions/{deposit}/payback-question").get_json()["question"]
+        rows = c.get("/api/transactions/list?limit=1000").get_json()["transactions"]
+        row = next(r for r in rows if r["id"] == deposit)
+        assert row["payback_question"] == asked
+        detail = c.get(f"/api/transactions/{deposit}").get_json()
+        assert detail["payback_question"] == asked
+
 
 class TestOnTheSplit:
     """PQ-03b (1418:88874): mPg is on the Añejo split and pays part of what
