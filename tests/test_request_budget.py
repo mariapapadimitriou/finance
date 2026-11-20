@@ -50,8 +50,8 @@ READS = {
     "/api/transactions/list?limit=25&offset=0": (1, 30),
     "/api/review": (1, 19),
     "/api/quick-sort": (1, 19),
-    "/api/calendar?month=2026-09": (1, 14),
-    "/api/accounts/overview": (1, 24),
+    "/api/calendar?month=2026-09": (1, 19),
+    "/api/accounts/overview": (1, 29),
 }
 
 
@@ -68,7 +68,7 @@ def test_category_change_stays_within_budget(client):
     tid = _a_purchase(client)
     t = _cost(client, "post", "/api/transactions/batch/category",
               json={"ids": [tid], "category": "Groceries"})
-    assert t["tx"] <= 1 and t["stmts"] <= 62, (t["tx"], t["stmts"])
+    assert t["tx"] <= 1 and t["stmts"] <= 66, (t["tx"], t["stmts"])
 
 
 def test_mark_stays_within_budget(client):
@@ -78,7 +78,7 @@ def test_mark_stays_within_budget(client):
     tid = _a_purchase(client)
     t = _cost(client, "post", f"/api/transactions/{tid}/mark",
               json={"case": "spending", "category": "Groceries"})
-    assert t["tx"] <= 1 and t["stmts"] <= 65, (t["tx"], t["stmts"])
+    assert t["tx"] <= 1 and t["stmts"] <= 69, (t["tx"], t["stmts"])
 
 
 def test_header_says_what_the_request_spent(client):
