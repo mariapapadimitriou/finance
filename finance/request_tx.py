@@ -20,14 +20,28 @@ from flask import g, request
 
 from . import db
 
-NO_TRANSACTION_PREFIXES = ("/api/plaid/", "/api/data/", "/api/account/", "/api/setup-again")
+# Plaid talks to the network mid-request; an export streams; these keep
+# their own short transactions whatever the method.
+NO_TRANSACTION_PREFIXES = ("/api/plaid/", "/api/data/")
+# Resetting or deleting an account drops its whole ledger: not inside a
+# transaction this request holds on that same ledger. Reading about them
+# (Home asks /api/setup-again) is an ordinary read.
+NO_TRANSACTION_WRITE_PREFIXES = ("/api/account/", "/api/setup-again")
+
+
+def one_transaction(path: str, method: str) -> bool:
+    if path.startswith(NO_TRANSACTION_PREFIXES):
+        return False
+    if method != "GET" and path.startswith(NO_TRANSACTION_WRITE_PREFIXES):
+        return False
+    return True
 
 
 def install(app) -> None:
     @app.before_request
     def _scope():
         db.abandon_request()            # nothing should be open; make sure
-        g._tx_enabled = not request.path.startswith(NO_TRANSACTION_PREFIXES)
+        g._tx_enabled = one_transaction(request.path, request.method)
         g._dirty_seq = 0
 
     @app.after_request
