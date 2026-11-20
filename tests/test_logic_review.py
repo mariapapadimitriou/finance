@@ -349,9 +349,15 @@ def test_unlinking_a_reimbursement_waits_for_one_again(w):
     assert w.t(ids["HOTEL"]).excluded == WORK_REASON
 
 
-def test_money_into_an_investment_account_is_saved_either_way(w):
+def test_money_into_an_investment_account_is_a_transfer_until_she_says_she_saves_there(w):
+    """Gap 15 revisited (2026-11-20): the account's type no longer decides
+    Saved; her Yes to "Is it where you save?" does."""
+    from finance import checks
     w.load(*pay(), row(500, "TFR TO INVEST", f"{MONTH}-03", issuer="TRANSFER_OUT"),
            row(-500, "TFR FROM CHQ", f"{MONTH}-03", account="inv", kind="investment", issuer="TRANSFER_IN"))
+    out = next(t for t in w.st.all_transactions() if t.description == "TFR TO INVEST")
+    assert out.category == "Transfers"
+    checks.answer(w.st, "chk:saver:inv", True, TODAY.isoformat())
     out = next(t for t in w.st.all_transactions() if t.description == "TFR TO INVEST")
     assert out.category == "Saved"
 

@@ -323,10 +323,13 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
                     best = (gap, other)
             if best:
                 used.add(best[1].fingerprint)
-                # Money arriving in an investment account is put away, as her
-                # rules say, whether or not Pearl can see it arrive (gap 15);
-                # so is money into savings she keeps out of her budget (gap 21).
-                out[t.fingerprint] = "Saved" if (_put_away(best[1]) or _investment(best[1])) else NEUTRAL
+                # A transfer, until she says the account is where she saves
+                # (product owner, 2026-11-20: "assume Transfer rather than
+                # Saved"). The account's type used to decide it (gaps 15 and
+                # 21: investment, or savings kept out of the budget); now
+                # Needs a look asks "Is X where you save?" once per account
+                # (finance/checks.py), and her Yes is what makes it Saved.
+                out[t.fingerprint] = NEUTRAL
                 # Into an account she saves in: put away. Out of one: taken out
                 # of savings, on the side the money arrives (decision 2). The
                 # saver's own side stays a transfer, so the two don't cancel.
@@ -414,10 +417,18 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
                 continue
             mine = own_account(t, accounts)
             if mine:
-                out[t.fingerprint] = "Saved" if mine[1] == "investment" else NEUTRAL
+                # Named by its digits or its name, with no other end to match:
+                # Saved once she has said it's where she saves (2026-11-20),
+                # a transfer until then.
+                keep = (accounts or {}).get("savers") or set()
+                out[t.fingerprint] = "Saved" if mine[0] in keep else NEUTRAL
                 continue
             recent = date.fromisoformat(t.date[:10]) >= cutoff
-            out[t.fingerprint] = UNSORTED if recent else NEUTRAL
+            # Money to an investment firm by name is a transfer, not "Not
+            # sorted yet": the one question about it is "Is Questrade where
+            # you save?" (finance/checks.py, 2026-11-20).
+            from .categorize import looks_like_saving
+            out[t.fingerprint] = NEUTRAL if not recent or looks_like_saving(t.merchant, t.description) else UNSORTED
     if used_out is not None:
         # Which arrivals were the other end of something: the rest is money
         # that came from somewhere you can't see, and worth asking about.

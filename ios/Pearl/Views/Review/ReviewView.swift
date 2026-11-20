@@ -823,7 +823,9 @@ extension Review {
     /// (T-101, T-102, T-109), parked with Save (product owner, 2026-11-18)
     /// until `YourPlanGate.shown`. Quick sort and Needs a look use this.
     var shownAsks: [Ask] {
-        YourPlanGate.shown ? asks : asks.filter { $0.kind != .check }
+        // "Is X where you save?" is asked whatever happens to Your plan
+        // (2026-11-20): it is what makes a transfer Saved.
+        YourPlanGate.shown ? asks : asks.filter { $0.kind != .check || $0.item.key.hasPrefix("chk:saver:") }
     }
 
     /// TEST-35: what Needs a look lists and its "All" chip counts, the one
@@ -836,6 +838,6 @@ extension Review {
     /// The open Your plan questions the server counted but the app parks;
     /// taken off Cash flow's "need a look" count.
     var parkedPlanQuestions: Int {
-        YourPlanGate.shown ? 0 : checks.filter { $0.skipped != true }.count
+        YourPlanGate.shown ? 0 : checks.filter { $0.skipped != true && !$0.key.hasPrefix("chk:saver:") }.count
     }
 }
