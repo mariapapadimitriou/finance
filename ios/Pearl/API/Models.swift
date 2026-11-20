@@ -594,6 +594,11 @@ struct Transaction: Decodable, Identifiable, Hashable {
     @Boxed var refundOf: Linked?
     let refundedBy: [Linked]
     let repays: String?
+    /// PQ-03p: the payback question the review asks about this deposit, on
+    /// the row itself (2026-11-20), so the page opens on it. `paybackKnown`
+    /// says the server answered at all (null means "no question").
+    let paybackQuestion: PaybackQuestion?
+    let paybackKnown: Bool
     let oneOff: Bool
     let canOneOff: Bool
     /// The piggy bank that paid for it, in whole or part.
@@ -1047,6 +1052,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         case mergedInto = "merged_into"
         case trip, cost
         case jointPayback = "joint_payback"
+        case paybackQuestion = "payback_question"
     }
 
     init(from decoder: Decoder) throws {
@@ -1081,6 +1087,8 @@ struct Transaction: Decodable, Identifiable, Hashable {
         refundOf = opt(Linked.self, .refundOf)
         refundedBy = opt([Linked].self, .refundedBy) ?? []
         repays = opt(String.self, .repays)
+        paybackQuestion = opt(PaybackQuestion.self, .paybackQuestion)
+        paybackKnown = c.contains(.paybackQuestion)
         oneOff = opt(Bool.self, .oneOff) ?? false
         canOneOff = opt(Bool.self, .canOneOff) ?? false
         bankId = opt(Int.self, .bankId)
