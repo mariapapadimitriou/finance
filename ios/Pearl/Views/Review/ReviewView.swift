@@ -535,7 +535,8 @@ struct ReviewView: View {
         let wantAccounts = accounts.isEmpty
         async let overviewReply: AccountsOverview? = loadOverview(wantAccounts)
         do {
-            review = try await app.api.get("api/review")
+            let loaded: Review = try await app.api.get("api/review")
+            withAnimation(.easeInOut(duration: 0.2)) { review = loaded }
             if let overview = await overviewReply {
                 accounts = overview.linked
             }

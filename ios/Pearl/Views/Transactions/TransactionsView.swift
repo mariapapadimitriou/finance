@@ -1269,8 +1269,10 @@ struct TransactionsView: View {
                 total = list.total
                 if list.transactions.isEmpty { break }
             } while got.count < min(want, total)
-            rows = got
-            merged = arrivals
+            withAnimation(.easeInOut(duration: 0.2)) {
+                rows = got
+                merged = arrivals
+            }
             error = nil
         } catch {
             guard gen == loadGen else { return }
@@ -1368,14 +1370,15 @@ struct TransactionsView: View {
                     m = String(Format.shiftDay(m + "-01", by: 31).prefix(7))
                 }
                 let own = Set(p.trip.ids)
-                rows = all.filter {
+                let kept = all.filter {
                     let day = String($0.date.prefix(10))
                     return day >= w.start && day <= w.end && !own.contains($0.id) && $0.trip == nil
                 }
                 .sorted { $0.date > $1.date }
+                withAnimation(.easeInOut(duration: 0.2)) { rows = kept }
             case .remove:
                 let d: TripDetail = try await api.get("api/trips/\(p.trip.id)")
-                rows = d.rows
+                withAnimation(.easeInOut(duration: 0.2)) { rows = d.rows }
                 if let month = month {
                     let list: TransactionList? = try? await api.get("api/transactions/list",
                                                                     query: ["month": month, "limit": "1"])
