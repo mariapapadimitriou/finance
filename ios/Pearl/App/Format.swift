@@ -206,6 +206,19 @@ enum Format {
         (t.inflow ? "+" : "\u{2212}") + amount(t.amount)
     }
 
+    /// "anastasia papadimitriou" → "Anastasia": the first name, capitalised.
+    /// The people she shares an account with are named once per page, and
+    /// by first name (less text, 2026-11-20).
+    static func shortName(_ name: String) -> String {
+        let first = name.split(separator: " ").first.map(String.init) ?? name
+        return first.prefix(1).uppercased() + first.dropFirst()
+    }
+
+    /// "Anastasia", "Anastasia and Sam": `andList` of `shortName`s.
+    static func shortList(_ names: [String]) -> String {
+        andList(names.map(shortName))
+    }
+
     /// "Loblaws", "Loblaws and Pizza Nova", "Loblaws, Costco and Pizza Nova".
     static func andList(_ names: [String]) -> String {
         names.count <= 2 ? names.joined(separator: " and ")
