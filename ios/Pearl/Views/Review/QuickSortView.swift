@@ -71,7 +71,8 @@ extension Review {
 
 /// Quick sort (THL-254; T-85, T-86, T-72): Needs a look's questions as
 /// a stack of cards, one transaction each. A guess has two answers: swipe right
-/// or ✓ for Yes, with Undo on the toast, or swipe left or Skip. Tapping the card
+/// or ✓ for Yes, or swipe left or Skip; Undo at the card's top right takes
+/// the last answer back. Tapping the card
 /// opens its page, like Slack's catch up: edits are held, she goes back, and the
 /// card asks about them. A merchant sorted different ways gets no rule from
 /// Yes (T-97). A question with no guess has Answer in place of Yes. Leaving early
@@ -98,11 +99,22 @@ struct QuickSortView: View {
     @State private var tripAt = 0
     /// TR-14: the trip card was tapped; its rows, before she answers.
     @State private var seeingTrip: TripAsk?
-    /// AI-18y: the pattern just said Yes to, for the toast's Undo.
-    @State private var undoPattern: PatternAsk?
-    /// G7-TripAsk (TEST-48): the trip just made, for "Trip to Montréal
-    /// made" and its Undo.
-    @State private var madeTrip: MadeTrip?
+    /// The last answer in this sitting, for Undo at the card's top right
+    /// (product owner, 2026-11-20): no toasts in Quick sort, where one sat
+    /// over Skip and Yes on every card when sorting quickly. Cleared by the
+    /// next answer, so Undo only ever goes one card back.
+    @State private var lastAnswer: LastAnswer?
+
+    enum LastAnswer {
+        /// T-86: a Yes, with the ledger's Undo and the deck as it was.
+        case sorted(Sorted)
+        /// A Skip: the deck as it was; the batch forgets it.
+        case skipped(Sorted)
+        /// G7-TripAsk: the trip just made.
+        case trip(MadeTrip)
+        /// AI-18y: the pattern just said Yes to.
+        case pattern(PatternAsk)
+    }
 
     struct MadeTrip: Identifiable, Equatable {
         let id = UUID()
@@ -113,9 +125,7 @@ struct QuickSortView: View {
     @State private var drag: CGSize = .zero
     /// The card flying off, and which way.
     @State private var leaving: Bool?
-    /// T-86: "Sorted 4 from Uber Eats", with Undo.
-    @State private var toast: Sorted?
-
+    /// What a Yes or a Skip did, for Undo: the deck as it was, to put back.
     struct Sorted: Identifiable {
         let id = UUID()
         let text: String
@@ -161,14 +171,15 @@ struct QuickSortView: View {
             } else {
                 // A+ (G1-QuickSort, G1-QuickSort2): ✕ and "9 left", the
                 // streak across the top, the card, and Skip / Yes at the
-                // bottom. No notes under the card (A+ decision): the toast
-                // says what Yes did.
+                // bottom. No notes under the card (A+ decision), and no
+                // toast (2026-11-20): Undo sits at the card's top right.
                 header
                 // QS-SAME (G1-QuickSame, approved r7): every card one size
                 // (358 × 420 on the board, never taller than the room here),
                 // centred between the progress and the circles. It never grows.
                 GeometryReader { g in
                     stack.padding(.horizontal, 16)
+                        .overlay(alignment: .topTrailing) { undoButton.padding(.top, 10).padding(.trailing, 26) }
                         .environment(\.quickSortCardHeight, Self.cardHeight(room: g.size.height))
                         .frame(width: g.size.width, height: g.size.height)
                 }
@@ -179,9 +190,6 @@ struct QuickSortView: View {
             }
         }
         .nacreScreen()
-        // Its own view, so body stays a small frame (check_stack). QS-SAME:
-        // the toast sits between the card and the circles.
-        .overlay(alignment: .bottom) { toastView }
         .task { await begin() }
         .sheet(item: $seeingTrip) { t in
             // TR-14 (G7-TripMore): "In the trip · 23" as a sheet over the
@@ -691,8 +699,37 @@ struct QuickSortView: View {
     /// QS-SAME: the circles' size.
     static let circle: CGFloat = 56
 
-    /// The toast's lift: over the circles and their words, 12 above them.
-    static let toastLift: CGFloat = 26 + circle + 8 + 18 + 12
+    /// Undo at the card's top right (2026-11-20): "↶ Undo" in `link`, there
+    /// after an answer and until the next one, still while a card is moving.
+    @ViewBuilder private var undoButton: some View {
+        if lastAnswer != nil, done == nil, leaving == nil, drag == .zero {
+            Button { Task { await undoLast() } } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.uturn.backward").font(.system(size: 12, weight: .semibold))
+                    Text("Undo").font(.custom("Figtree-Medium", size: 14, relativeTo: .subheadline))
+                }
+                .foregroundColor(Pearl.link)
+                .padding(.horizontal, 8).frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(busy)
+            .accessibilityLabel("Undo the last answer")
+            .accessibilityIdentifier("quick-sort-undo")
+            .transition(.opacity)
+        }
+    }
+
+    /// Undo: the last answer is taken back and its card comes back on top.
+    private func undoLast() async {
+        guard let last = lastAnswer, !busy else { return }
+        switch last {
+        case .sorted(let s): await undo(s)
+        case .skipped(let s): await undoSkip(s)
+        case .trip(let made): await undoTrip(made)
+        case .pattern(let p): await undoYes(p)
+        }
+    }
 
     /// The card's one height: 420 where it fits, less on a small iPhone.
     static func cardHeight(room: CGFloat) -> CGFloat { min(420, max(room - 24, 280)) }
@@ -818,8 +855,7 @@ struct QuickSortView: View {
     }
 
     private func answerPattern(_ p: PatternAsk, _ answer: String) async {
-        undoPattern = nil
-        madeTrip = nil
+        lastAnswer = nil
         busy = true
         defer { busy = false }
         do {
@@ -827,9 +863,8 @@ struct QuickSortView: View {
                                                answer == "yes" ? ["how": "ai18"] : [:])
             error = nil
             withAnimation {
-                toast = nil
-                // AI-18y: Yes says so, with Undo; Skip says nothing.
-                undoPattern = answer == "yes" ? p : nil
+                // AI-18y: a Yes can be undone; a Skip can't (Pearl asks again later).
+                lastAnswer = answer == "yes" ? .pattern(p) : nil
             }
             drag = .zero
             leaving = nil
@@ -842,45 +877,23 @@ struct QuickSortView: View {
     }
 
     /// AI-18y's Undo: the Yes is taken back and the pattern's card comes
-    /// back on top. The toast goes at the next answer, so nothing after it
-    /// has been answered yet.
+    /// back on top. Undo goes at the next answer, so nothing after it has
+    /// been answered yet.
     private func undoYes(_ p: PatternAsk) async {
         guard !busy else { return }
         busy = true
         defer { busy = false }
-        withAnimation { undoPattern = nil; madeTrip = nil }
+        let after = patternAt
+        withAnimation(Self.undoEase) {
+            lastAnswer = nil
+            if let at = patterns.firstIndex(of: p), at < patternAt { patternAt = at }
+        }
         do {
             let _: OK = try await app.api.post("api/pattern-sort/asks/\(p.id)/undo", [:])
             error = nil
-            if let at = patterns.firstIndex(of: p), at < patternAt {
-                withAnimation(.spring()) { patternAt = at }
-            }
         } catch {
             self.error = app.handle(error)
-        }
-    }
-
-    /// The one toast at a time: T-86's, a trip made (G7-TripAsk), or AI-18y's.
-    @ViewBuilder private var toastView: some View {
-        if let toast = toast, done == nil {
-            // Stays until the next answer, so a mis-tap can still be taken back.
-            UndoToast(text: toast.text, undo: toast.undo == nil ? nil : { Task { await undo(toast) } }, stays: true) {
-                withAnimation { if self.toast?.id == toast.id { self.toast = nil } }
-            }
-            .padding(.bottom, Self.toastLift)
-        } else if let made = madeTrip, done == nil {
-            // G7-TripAsk (TEST-48): "Trip to Montréal made", with Undo,
-            // the same toast as the chat's.
-            UndoToast(text: "\(made.name) made", undo: { Task { await undoTrip(made) } }, stays: true) {
-                withAnimation { if madeTrip == made { madeTrip = nil } }
-            }
-            .padding(.bottom, Self.toastLift)
-        } else if let p = undoPattern, done == nil {
-            // AI-18y (1332:64062): the next card is up; Undo brings this one back.
-            UndoToast(text: "\(p.title): sorted from now on", undo: { Task { await undoYes(p) } }, stays: true) {
-                withAnimation { if undoPattern == p { undoPattern = nil } }
-            }
-            .padding(.bottom, Self.toastLift)
+            withAnimation(Self.undoEase) { patternAt = after }
         }
     }
 
@@ -909,11 +922,10 @@ struct QuickSortView: View {
             let made: Made = try await app.api.post("api/trips/asks/\(t.id)/\(answer)", [:])
             error = nil
             withAnimation {
-                toast = nil; undoPattern = nil
-                // G7-TripAsk: Yes says what it made; Skip says nothing.
-                madeTrip = made.trip.map { trip in
+                // G7-TripAsk: a Yes can be undone; a Skip can't (those dates aren't asked again).
+                lastAnswer = made.trip.map { trip in
                     let name = trip.name.isEmpty ? (t.name ?? "") : trip.name
-                    return MadeTrip(trip: trip.id, name: name.isEmpty ? "Trip" : name)
+                    return .trip(MadeTrip(trip: trip.id, name: name.isEmpty ? "Trip" : name))
                 }
             }
             drag = .zero
@@ -929,18 +941,19 @@ struct QuickSortView: View {
     /// Undo on "Trip to Montréal made": the trip goes (its dates aren't
     /// skipped, so Pearl can ask again) and its card comes back on top.
     private func undoTrip(_ made: MadeTrip) async {
-        withAnimation { madeTrip = nil }
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
+        let after = tripAt
+        withAnimation(Self.undoEase) { lastAnswer = nil; done = nil; tripAt = max(tripAt - 1, 0) }
         do {
             struct Gone: Decodable {}
             let _: Gone = try await app.api.delete("api/trips/\(made.trip)", query: ["undo": "1"])
-            withAnimation(.spring()) {
-                done = nil
-                tripAt = max(tripAt - 1, 0)
-            }
             error = nil
             app.changed()
         } catch {
             self.error = app.handle(error)
+            withAnimation(Self.undoEase) { tripAt = after }
         }
     }
 
@@ -984,8 +997,7 @@ struct QuickSortView: View {
     /// The question's sheet did the work; the batch notes what it said, for
     /// the done screen. Skip in the sheet moves it to Skipped too.
     private func answered(_ ask: Ask, _ answer: ReviewAnswer, always: String? = nil) async {
-        undoPattern = nil
-        madeTrip = nil
+        lastAnswer = nil
         busy = true
         withAnimation(.easeIn(duration: 0.25)) { leaving = true }
         do {
@@ -1006,8 +1018,9 @@ struct QuickSortView: View {
                 }
                 await step(ask, ["action": "marked", "title": reply.title ?? answer.done], quiet: true)
                 withAnimation {
-                    toast = Sorted(text: always.map { QuickSortStep.always($0, sorted: 1) } ?? reply.title ?? answer.done,
-                                   ask: ask, undo: reply.undo, deck: before, index: at)
+                    lastAnswer = .sorted(Sorted(
+                        text: always.map { QuickSortStep.always($0, sorted: 1) } ?? reply.title ?? answer.done,
+                        ask: ask, undo: reply.undo, deck: before, index: at))
                 }
             }
         } catch let e where e.whoPaid != nil {
@@ -1032,10 +1045,10 @@ struct QuickSortView: View {
 
     private func step(_ ask: Ask, _ body: [String: Any], said: String? = nil, always: String? = nil,
                       quiet: Bool = false) async {
-        undoPattern = nil
-        madeTrip = nil
+        lastAnswer = nil
         busy = true
         defer { busy = false }
+        let deckBefore = deck
         // The next card comes as the swipe finishes, not when the server
         // answers (perf rehaul, 2026-11-19): the PUT goes on behind it,
         // through the outbox. The last card waits for it, so the done
@@ -1056,16 +1069,18 @@ struct QuickSortView: View {
             error = nil
             let also = Set(reply?.also ?? [])
             if quiet {
-                // answered() says what happened.
+                // answered() notes what happened.
             } else if body["action"] as? String == "skip" {
-                withAnimation { toast = nil }
-            } else if !also.isEmpty || always != nil || said != nil {
-                // T-86: the others leave the deck, and the toast can take it all back.
+                // A Skip can be taken back too: the card comes back on top.
+                withAnimation { lastAnswer = .skipped(Sorted(text: "", ask: ask, undo: nil, deck: deckBefore, index: at)) }
+            } else {
+                // T-86: the others leave the deck, and Undo can take it all back.
                 let before = deck
                 withAnimation {
-                    toast = Sorted(text: said ?? always.map { QuickSortStep.always($0, sorted: also.count + 1) }
-                                       ?? "Sorted \(also.count + 1) from \(ask.t.name)",
-                                   ask: ask, undo: reply?.undo, deck: before, index: at)
+                    lastAnswer = .sorted(Sorted(
+                        text: said ?? always.map { QuickSortStep.always($0, sorted: also.count + 1) }
+                            ?? "Sorted \(also.count + 1) from \(ask.t.name)",
+                        ask: ask, undo: reply?.undo, deck: before, index: at))
                 }
                 // The card she's on stays, even if the rule sorted it too.
                 let now = index
@@ -1089,22 +1104,45 @@ struct QuickSortView: View {
         }
     }
 
-    /// Undo on T-86's toast: the ledger, the batch and the deck as they were.
+    /// The card comes back at once (product owner, 2026-11-20: Undo felt
+    /// slow): a short ease, not the spring, and the server catches up
+    /// behind it. If the server refuses, the deck goes forward again.
+    static let undoEase = Animation.easeOut(duration: 0.18)
+
+    /// Undo on a Skip: the card comes back on top; the batch forgets it.
+    private func undoSkip(_ sorted: Sorted) async {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
+        let after = (deck, index)
+        withAnimation(Self.undoEase) { lastAnswer = nil; deck = sorted.deck; index = sorted.index }
+        do {
+            let _: OK = try await app.api.put("api/quick-sort/\(sorted.ask.t.id)", ["action": "undo"])
+            error = nil
+        } catch {
+            self.error = app.handle(error)
+            withAnimation(Self.undoEase) { deck = after.0; index = after.1 }
+        }
+    }
+
+    /// Undo on a Yes (T-86): the card comes back on top; the ledger and the
+    /// batch are put back behind it.
     private func undo(_ sorted: Sorted) async {
-        withAnimation { toast = nil }
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
         drafts[sorted.ask.id] = nil
+        let after = (deck, index)
+        withAnimation(Self.undoEase) { lastAnswer = nil; deck = sorted.deck; index = sorted.index }
         do {
             if let body = sorted.undo?.any as? [String: Any] {
                 let _: OK = try await app.api.post("api/transactions/undo", body)
             }
             let _: OK = try await app.api.put("api/quick-sort/\(sorted.ask.t.id)", ["action": "undo"])
-            withAnimation(.spring()) {
-                deck = sorted.deck
-                index = sorted.index
-            }
             error = nil
         } catch {
             self.error = app.handle(error)
+            withAnimation(Self.undoEase) { deck = after.0; index = after.1 }
         }
     }
 

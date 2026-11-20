@@ -37,9 +37,11 @@ def test_amount_wells_have_cents():
     assert 'String(format: "%.2f", Double(r.cents) / 100)' in carry
 
 
-def test_quick_sort_trip_yes_has_its_toast():
+def test_quick_sort_trip_yes_can_be_undone():
+    """Quick sort has no toast since 2026-11-20 (it sat over Skip and Yes);
+    the trip just made is the card's Undo, at its top right."""
     src = QUICK.read_text()
-    assert 'UndoToast(text: "\\(made.name) made"' in src
+    assert "case trip(MadeTrip)" in src and "case .trip(let made): await undoTrip(made)" in src
     assert 'api.delete("api/trips/\\(made.trip)", query: ["undo": "1"])' in src
     assert "tripAt = max(tripAt - 1, 0)" in src
 
