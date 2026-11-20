@@ -19,6 +19,7 @@ Two things the iPhone needs to stop refetching whole screens:
 from __future__ import annotations
 
 import json
+import os
 import re
 
 from flask import Response, g, request
@@ -51,8 +52,14 @@ def concerns(path: str, method: str) -> bool:
         and not path.startswith(_NO_ENVELOPE)
 
 
+# Which build of the server answered (2026-11-20): a deploy that changes
+# what a row carries must make the phone's kept copies stale even though
+# the ledger's version hasn't moved. Vercel sets the commit; locally "dev".
+BUILD = (os.environ.get("VERCEL_GIT_COMMIT_SHA") or "dev")[:7]
+
+
 def etag(st, today: str) -> str:
-    return f'W/"{st.version()}-{today}"'
+    return f'W/"{st.version()}-{today}-{BUILD}"'
 
 
 def not_modified(st, today: str):
