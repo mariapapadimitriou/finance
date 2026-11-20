@@ -96,9 +96,25 @@ class TestHeadersLevelWithIt(unittest.TestCase):
         self.assertIn(".padding(.top, ProfileSlot.top)", top[:600])
         scroll = code(read("Views", "Transactions", "CashFlowScroll.swift"))
         bar = scroll[scroll.index("private var bar: some View"):scroll.index("private func pin(")]
-        # Filters and + leave the circle the bar's right end.
-        self.assertIn(".padding(.trailing, ProfileSlot.clearance)", bar)
-        self.assertLess(bar.index('symbol: "plus"'), bar.index("Spacer()"))
+        # Product owner (2026-11-19): "Cash flow" small on the left, then a
+        # spacer, then Filters and + just left of the circle, all in one row,
+        # so nothing overlaps (no ZStack laying the title over the buttons).
+        self.assertNotIn("ZStack", bar)
+        self.assertIn(".padding(.trailing, ProfileSlot.clearance + 4)", bar)
+        self.assertIn(".padding(.leading, Pearl.gutter + 4)", bar)
+        title = bar.index('Text("Cash flow").font(Nacre.headline)')
+        spacer = bar.index("Spacer(minLength: 8)")
+        filters = bar.index('symbol: "slider.horizontal.3"')
+        plus = bar.index('symbol: "plus"')
+        self.assertLess(title, spacer)
+        self.assertLess(spacer, filters)
+        self.assertLess(filters, plus)
+        # 44 pt targets kept.
+        self.assertIn(".frame(width: 44, height: 44)", scroll)
+        # Fits a 375 pt iPhone: title + gaps + two 44 pt buttons + the circle.
+        widest_title = 17 * 0.6 * len("Cash flow")  # Figtree 17 semibold, generous
+        used = (16 + 4) + widest_title + 8 + 44 + 8 + 44 + (44 + 12 + 4)
+        self.assertLess(used, 375)
         # The bar's centre line is the circle's: 6 + 44 / 2 == 56 / 2.
         self.assertIn("static let barHeight: CGFloat = 56", scroll)
 
