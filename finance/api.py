@@ -3492,6 +3492,8 @@ def _already_have_it():
     """A read the phone already holds this version of is a 304; a write the
     phone already made gets its earlier answer (finance/changed.py)."""
     from . import changed
+    if not changed.concerns(request.path, request.method):
+        return None
     try:
         st = store()
     except Exception:                                            # noqa: BLE001
@@ -3558,7 +3560,7 @@ def _say_what_changed(response):
     worked out before the Sorted-today log is written."""
     from . import changed
     from datetime import date as _date
-    if g.get("user") is None and response.status_code in (401, 403, 503):
+    if not changed.concerns(request.path, request.method) or response.status_code >= 400:
         return response
     try:
         st = store()

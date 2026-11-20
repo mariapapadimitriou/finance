@@ -40,6 +40,17 @@ _TAGGED_READS = ("/api/home", "/api/transactions", "/api/review", "/api/quick-so
                  "/api/accounts", "/api/categories", "/api/setup-again")
 
 
+def concerns(path: str, method: str) -> bool:
+    """Whether this module has anything to do with the request: a read the
+    phone keeps, or a write it patches from. Everything else, deleting an
+    account above all, is left alone: opening the store for it after the
+    ledger is gone would make the ledger again."""
+    if method == "GET":
+        return path.startswith(_TAGGED_READS)
+    return method in _UNSAFE and path.startswith(_WRITE_PATHS) \
+        and not path.startswith(_NO_ENVELOPE)
+
+
 def etag(st, today: str) -> str:
     return f'W/"{st.version()}-{today}"'
 
