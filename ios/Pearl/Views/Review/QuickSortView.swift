@@ -44,6 +44,8 @@ extension PatternAsk {
 struct QuickSortStep: Decodable {
     let also: [String]?
     let undo: JSONValue?
+    /// What the write changed (perf rehaul, 2026-11-19).
+    var changed: Changed? = nil
 
     /// T-91: "Always Dining out".
     static func always(_ label: String, sorted: Int) -> String {
@@ -988,6 +990,9 @@ struct QuickSortView: View {
         withAnimation(.easeIn(duration: 0.25)) { leaving = true }
         do {
             let reply = try await answer.send(app.api)
+            // The Allowance and the badge move now (perf rehaul); the deck's
+            // end reloads the rest.
+            app.apply(reply.changed, by: nil, bump: false)
             if case .skip(_, _) = answer {
                 await step(ask, ["action": "skip"])
             } else {
@@ -1031,10 +1036,25 @@ struct QuickSortView: View {
         madeTrip = nil
         busy = true
         defer { busy = false }
+        // The next card comes as the swipe finishes, not when the server
+        // answers (perf rehaul, 2026-11-19): the PUT goes on behind it,
+        // through the outbox. The last card waits for it, so the done
+        // screen counts it right.
+        let at = index
+        let ahead = index + 1 < total
+        let outbox = app.outbox
+        let path = "api/quick-sort/\(ask.t.id)"
+        let put = Task { () throws -> Outbox.Sent<QuickSortStep>? in try await outbox.send("PUT", path, body) }
+        if ahead {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            next()
+            busy = false
+        }
         do {
-            let reply: QuickSortStep = try await app.api.put("api/quick-sort/\(ask.t.id)", body)
+            let sent = try await put.value
+            let reply = sent?.body
             error = nil
-            let also = Set(reply.also ?? [])
+            let also = Set(reply?.also ?? [])
             if quiet {
                 // answered() says what happened.
             } else if body["action"] as? String == "skip" {
@@ -1042,19 +1062,30 @@ struct QuickSortView: View {
             } else if !also.isEmpty || always != nil || said != nil {
                 // T-86: the others leave the deck, and the toast can take it all back.
                 let before = deck
-                let at = index
                 withAnimation {
                     toast = Sorted(text: said ?? always.map { QuickSortStep.always($0, sorted: also.count + 1) }
                                        ?? "Sorted \(also.count + 1) from \(ask.t.name)",
-                                   ask: ask, undo: reply.undo, deck: before, index: at)
+                                   ask: ask, undo: reply?.undo, deck: before, index: at)
                 }
-                deck = deck.enumerated().filter { $0.offset <= index || !also.contains($0.element.t.id) }.map(\.element)
+                // The card she's on stays, even if the rule sorted it too.
+                let now = index
+                deck = deck.enumerated()
+                    .filter { $0.offset <= at || $0.offset == now || !also.contains($0.element.t.id) }.map(\.element)
             }
-            next()
+            // The Allowance and the badge move now; the deck's end reloads the rest.
+            if let sent = sent { app.apply(sent.changed, by: nil, bump: false) }
+            if !ahead { next() }
         } catch {
             self.error = app.handle(error)
             busy = false
-            comeBack()
+            if ahead, index > at, at < deck.count {
+                // Refused: the card comes back, where she is now.
+                let card = deck.remove(at: at)
+                deck.insert(card, at: index - 1)
+                withAnimation(.spring()) { index -= 1; leaving = nil; drag = .zero }
+            } else {
+                comeBack()
+            }
         }
     }
 

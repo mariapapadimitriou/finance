@@ -535,8 +535,8 @@ struct ReviewView: View {
         let wantAccounts = accounts.isEmpty
         async let overviewReply: AccountsOverview? = loadOverview(wantAccounts)
         do {
-            let loaded: Review = try await app.api.get("api/review")
-            withAnimation(.easeInOut(duration: 0.2)) { review = loaded }
+            // The kept list at once, the server's eased in if it changed.
+            try await app.screens.load("api/review", as: Review.self) { review = $0 }
             if let overview = await overviewReply {
                 accounts = overview.linked
             }
@@ -548,7 +548,7 @@ struct ReviewView: View {
 
     private func loadOverview(_ want: Bool) async -> AccountsOverview? {
         guard want else { return nil }
-        return try? await app.api.get("api/accounts/overview")
+        return (try? await app.screens.fetch(AccountsOverview.self, "api/accounts/overview"))?.value
     }
 
     private func send(_ answer: ReviewAnswer) async {
@@ -559,7 +559,9 @@ struct ReviewView: View {
             withAnimation { toast = Toast(title: reply.title ?? answer.done, undo: reply.undo) }
             error = nil
             await load()
-            app.changed()
+            // What it changed goes to the rest of the app (the Allowance, the
+            // badge, rows swapped into Cash flow); no envelope, a reload.
+            app.apply(reply.changed)
         } catch let e where e.whoPaid != nil {
             // Nothing saved: ask who, once the answer's sheet has gone.
             try? await Task.sleep(nanoseconds: 450_000_000)

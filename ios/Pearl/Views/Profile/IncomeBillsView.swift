@@ -335,7 +335,7 @@ struct IncomeBillsView: View {
 
     private func load() async {
         do {
-            data = try await app.api.get("api/income-bills")
+            try await app.screens.load("api/income-bills", as: IncomeBills.self) { data = $0 }
             error = nil
         } catch {
             self.error = app.handle(error)

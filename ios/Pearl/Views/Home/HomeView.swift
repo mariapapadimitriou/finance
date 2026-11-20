@@ -109,18 +109,22 @@ struct HomeView: View {
         struct Ran: Decodable { let sorted: Int }
         _ = try? await app.api.post("api/pattern-sort/run", [:]) as Ran
         do {
-            // All four at once (perf rehaul, 2026-11-19); Home's reply still
-            // lands first, and its failure still ends the load.
-            async let homeReply: Home = app.api.get("api/home")
-            async let setupReply: SetupAgain? = try? app.api.get("api/setup-again")
-            async let owedReply: OwedOverview? = try? app.api.get("api/owed")
-            async let worthReply: WorthReply? = try? app.api.get("api/worth-a-look")
-            let loaded = try await homeReply
-            withAnimation(.easeInOut(duration: 0.2)) { home = loaded }
-            let (s, o, w) = await (setupReply, owedReply, worthReply)
-            setup = s
-            owed = o
-            worth = w?.items ?? []
+            // All four at once (perf rehaul, 2026-11-19), each shown from
+            // its kept answer the moment it's asked for and settled when the
+            // server says it changed (ScreenStore); Home's failure still
+            // ends the load.
+            let screens = app.screens
+            async let setupLoad: Bool? = try? screens.load("api/setup-again", as: SetupAgain.self) { setup = $0 }
+            async let owedLoad: Bool? = try? screens.load("api/owed", as: OwedOverview.self) { owed = $0 }
+            async let worthLoad: Bool? = try? screens.load("api/worth-a-look", as: WorthReply.self) { worth = $0.items }
+            try await screens.load("api/home", as: Home.self, apply: { loaded in
+                home = loaded
+                // The Allowance Home shows is the app's: a kept answer seeds
+                // it only when there is none yet (a write may have moved it
+                // since), the server's own always does.
+                if app.allowance == nil { app.seed(loaded) }
+            }, fresh: { app.seed($0) })
+            _ = await (setupLoad, owedLoad, worthLoad)
             error = nil
             offline = false
             loadedAt = Date()
@@ -377,19 +381,23 @@ struct HomeTopBar: View {
 /// estimate, over and no-income states keep their line under it.
 private struct HomeOrb: View {
     static let anchor = "home-orb"
+    @EnvironmentObject private var app: AppModel
     let home: Home
     let calm: Bool
 
+    /// The app's Allowance (moved by every write's `changed`), else Home's own.
+    private var sts: Allowance? { app.allowance ?? home.safeToSpend }
+
     var body: some View {
         VStack(spacing: 10) {
-            AllowanceOrb(progress: home.safeToSpend?.ringProgress ?? 0,
+            AllowanceOrb(progress: sts?.ringProgress ?? 0,
                          label: "Allowance",
-                         amount: home.safeToSpend?.ringAmount ?? "—",
-                         sub: home.safeToSpend?.orbSub(month: home.month) ?? Allowance.orbSub(forMonth: home.month),
+                         amount: sts?.ringAmount ?? "—",
+                         sub: sts?.orbSub(month: home.month) ?? Allowance.orbSub(forMonth: home.month),
                          size: calm ? AllowanceOrb.full : AllowanceOrb.small)
                 .accessibilityAddTraits(.isHeader)
-                .accessibilityHint(home.safeToSpend?.ringCaption == Allowance.restCaption ? Allowance.restCaption : "")
-            if let caption = home.safeToSpend?.ringCaption, !caption.isEmpty, caption != Allowance.restCaption {
+                .accessibilityHint(sts?.ringCaption == Allowance.restCaption ? Allowance.restCaption : "")
+            if let caption = sts?.ringCaption, !caption.isEmpty, caption != Allowance.restCaption {
                 Text(caption).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)

@@ -85,6 +85,10 @@ struct TransactionsView: View {
     @State private var tripName = ""
     @State private var busy = false
     @State private var toast: Toast?
+    /// Cash flow's name in `app.changed(by:)` (perf rehaul, 2026-11-19): an
+    /// edit made here, or on a page pushed from here, is shown here already,
+    /// so this screen isn't fetched again for it.
+    static let screenKey = "cashflow"
     /// T-23: adding one by hand.
     @State private var adding = false
 
@@ -263,8 +267,13 @@ struct TransactionsView: View {
             if !inTrip { await runSync(force: true) }
             await reload()
         }
-        .reloads { await start() }
+        .reloads(key: Self.screenKey) { await start() }
         .task(id: query) { await search() }
+        .onReceive(app.$changedRows) { changed in
+            // The rows a write touched, wherever it was made (a detail page,
+            // Needs a look): swapped in here, no fetch.
+            if let changed = changed { absorb(changed) }
+        }
         .onReceive(CashFlowFocus.shared.$request) { request in
             guard let request = request, !inTrip else { return }
             CashFlowFocus.shared.request = nil
@@ -296,6 +305,8 @@ struct TransactionsView: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+        // Detail pages pushed from here count their edits as Cash flow's own.
+        .environment(\.screenKey, Self.screenKey)
     }
 
     /// CashFlowFocus: Cash flow filtered to one category, every month, as if
@@ -1042,16 +1053,39 @@ struct TransactionsView: View {
         busy = true
         defer { busy = false }
         var payload = body
-        payload["ids"] = Array(picked)
+        let ids = (body["ids"] as? [String]) ?? Array(picked)
+        payload["ids"] = ids
+        // Shown at once (perf rehaul, 2026-11-19): a category or a Yes reads
+        // on the rows the moment she picks it. The server's own rows replace
+        // them when its answer comes; a refusal puts them back.
+        let before = (rows, results, cardRows)
+        let chosen = Set(ids)
+        let name = path.hasSuffix("/category") ? body["category"] as? String : nil
+        if name != nil || path.hasSuffix("/confirm") {
+            func patched(_ t: Transaction) -> Transaction {
+                guard chosen.contains(t.id) else { return t }
+                return name.map { t.sorted(as: $0) } ?? t.guessConfirmed()
+            }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                rows = rows.map(patched)
+                results = results?.map(patched)
+                cardRows = cardRows?.map(patched)
+            }
+        }
+        func restore() { withAnimation { (rows, results, cardRows) = before } }
         do {
-            let reply: MarkReply = try await app.api.post(path, payload)
+            // Through the outbox: sent once with an op id, or queued when the
+            // server can't be reached (nil), with what she sees kept.
+            let sent: Outbox.Sent<MarkReply>? = try await app.outbox.send("POST", path, payload, rollback: restore)
             endSelecting()
-            let title = say.map { [$0, reply.detail ?? ""].filter { !$0.isEmpty }.joined(separator: " ") }
-                ?? reply.title ?? "Changed."
-            withAnimation { toast = Toast(title: title, undo: reply.undo) }
+            let reply = sent?.body
+            let title = say.map { [$0, reply?.detail ?? ""].filter { !$0.isEmpty }.joined(separator: " ") }
+                ?? reply?.title ?? "Changed."
+            withAnimation { toast = Toast(title: title, undo: reply?.undo) }
             error = nil
-            app.changed()
+            if let sent = sent { settle(sent.changed) }
         } catch {
+            restore()
             self.error = app.handle(error)
         }
     }
@@ -1061,14 +1095,50 @@ struct TransactionsView: View {
         guard !busy else { return }
         busy = true
         defer { busy = false }
+        // The chip reads as hers at once (perf rehaul); back if refused.
+        let before = (rows, results, cardRows)
+        func patched(_ row: Transaction) -> Transaction { row.id == t.id ? row.guessConfirmed() : row }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            rows = rows.map(patched)
+            results = results?.map(patched)
+            cardRows = cardRows?.map(patched)
+        }
+        func restore() { withAnimation { (rows, results, cardRows) = before } }
         do {
-            let reply: MarkReply = try await app.api.post("api/transactions/batch/confirm", ["ids": [t.id]])
-            withAnimation { toast = Toast(title: reply.title ?? "\(t.merchant) · \(t.label)", undo: reply.undo) }
+            let sent: Outbox.Sent<MarkReply>? = try await app.outbox.send(
+                "POST", "api/transactions/batch/confirm", ["ids": [t.id]], rollback: restore)
+            withAnimation {
+                toast = Toast(title: sent?.body.title ?? "\(t.merchant) · \(t.label)", undo: sent?.body.undo)
+            }
             error = nil
-            app.changed()
+            if let sent = sent { settle(sent.changed) }
         } catch {
+            restore()
             self.error = app.handle(error)
         }
+    }
+
+    /// A write's `changed` taken in: its rows swapped into the lists here,
+    /// the app told (the Allowance, the badge, the other screens' ETag
+    /// checks), and this screen left as it is rather than fetched again.
+    /// With no envelope, everything reloads as before.
+    private func settle(_ changed: Changed?) {
+        if let changed = changed { absorb(changed) }
+        app.apply(changed, by: Self.screenKey)
+    }
+
+    /// Rows a write touched, swapped into every list here. The month card's
+    /// totals can move with them: asked again, one small read (304 when
+    /// nothing there changed).
+    private func absorb(_ changed: Changed) {
+        var moved = false
+        withAnimation(.easeInOut(duration: 0.2)) {
+            if rows.merge(changed) { moved = true }
+            if merged.merge(changed) { moved = true }
+            if results?.merge(changed) == true { moved = true }
+            if cardRows?.merge(changed) == true { moved = true }
+        }
+        if moved { Task { await loadCard() } }
     }
 
     private func undo() async {
@@ -1200,20 +1270,23 @@ struct TransactionsView: View {
             await reload()
             return
         }
-        let api = app.api
-        async let summaryReply: Summary? = try? api.get("api/summary")
-        async let reviewReply: Review? = try? api.get("api/review")
-        async let accountsReply: AccountsOverview? = try? api.get("api/accounts/overview")
-        // CF-SCROLL: the list is every month's, so it needn't wait for them.
-        async let listed: Void = reload()
-        if let summary = await summaryReply {
+        // Each from its kept answer at once, then the server's if it changed
+        // (ScreenStore, perf rehaul 2026-11-19).
+        let screens = app.screens
+        async let summaryLoad: Bool? = try? screens.load("api/summary", as: Summary.self) { summary in
             months = summary.months ?? []
             if month == nil || !months.contains(month!) { month = summary.latestMonth ?? months.last }
         }
+        async let reviewLoad: Bool? = try? screens.load("api/review", as: Review.self) { took($0) }
+        async let accountsLoad: Bool? = try? screens.load("api/accounts/overview", as: AccountsOverview.self) {
+            accounts = $0.linked
+        }
+        // CF-SCROLL: the list is every month's, so it needn't wait for them.
+        async let listed: Void = reload()
+        _ = await summaryLoad
         await loadCard()
         _ = await listed
-        if let review = await reviewReply { took(review) }
-        if let overview = await accountsReply { accounts = overview.linked }
+        _ = await (reviewLoad, accountsLoad)
         if !syncedOnce {
             syncedOnce = true
             await runSync(force: false)
@@ -1256,7 +1329,20 @@ struct TransactionsView: View {
                 var p = listQuery
                 p["offset"] = String(got.count)
                 p["limit"] = String(min(1000, want - got.count))
-                let list: TransactionList = try await app.api.get("api/transactions/list", query: p)
+                let list: TransactionList
+                if got.isEmpty {
+                    // The first page is kept (ScreenStore): an empty list
+                    // shows it the moment the screen opens, and the server
+                    // is asked with its ETag.
+                    if rows.isEmpty,
+                       let kept = await app.screens.cached(TransactionList.self, "api/transactions/list", query: p) {
+                        guard gen == loadGen else { return }
+                        show(kept)
+                    }
+                    list = try await app.screens.fetch(TransactionList.self, "api/transactions/list", query: p).value
+                } else {
+                    list = try await app.api.get("api/transactions/list", query: p)
+                }
                 guard gen == loadGen else { return }
                 if got.isEmpty {
                     owed = Set(list.owedIds)
@@ -1280,6 +1366,21 @@ struct TransactionsView: View {
         }
         if needsEverything { await loadRest() }
         if cardFilter != nil { await loadCardRows() }
+    }
+
+    /// The kept first page, as it was, without animation.
+    private func show(_ kept: TransactionList) {
+        var quiet = SwiftUI.Transaction()
+        quiet.disablesAnimations = true
+        withTransaction(quiet) {
+            rows = kept.transactions
+            merged = kept.merged
+            total = kept.total
+            owed = Set(kept.owedIds)
+            owedLine = kept.owedTotal > 0.005
+                ? OwedLine(names: kept.owedNames, count: kept.owedCount, total: kept.owedTotal) : nil
+            tags = kept.tags
+        }
     }
 
     /// A card chip's rows: what the card's Spent, Saved or Came in adds up
@@ -1341,10 +1442,9 @@ struct TransactionsView: View {
     /// The cards are the month's, whatever the list is narrowed to.
     private func loadCard() async {
         guard !inTrip, let m = month else { return }
-        if let plain: TransactionList = try? await app.api.get("api/transactions/list",
-                                                               query: ["month": m, "limit": "1"]),
-           m == month {
-            monthTotals = plain.monthTotals
+        try? await app.screens.load("api/transactions/list", query: ["month": m, "limit": "1"],
+                                    as: TransactionList.self) { plain in
+            if m == month { monthTotals = plain.monthTotals }
         }
     }
 
