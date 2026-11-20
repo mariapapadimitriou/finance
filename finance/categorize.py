@@ -128,6 +128,15 @@ TRAVEL_BANK_CATEGORIES = ("Travel", "Lodging")
 # Ordered: the first match wins, so put specific merchants above generic words.
 # Patterns are matched case-insensitively against "MERCHANT || raw description".
 
+
+# The names of investment firms and registered accounts, as a transfer's
+# words carry them (2026-11-20, finance/checks.py asks about them).
+SAVING_NAMES_PATTERN = (r"\b(questrade|qtrade|interactive brokers|vanguard|fidelity invest\w*|"
+                        r"wealthsimple (?:invest\w*|trade)|ws (?:invest\w*|trade)|"
+                        r"direct investing|direct brokerage|itrade|investor'?s edge|"
+                        r"robinhood|moomoo|(?:tfsa|rrsp|fhsa|resp) (?:contrib\w*|deposit))\b")
+SAVING_NAMES = re.compile(SAVING_NAMES_PATTERN, re.I)
+
 RULES: list[tuple[str, str]] = [
     # Fees & interest first — these are the highest-value findings and their
     # descriptors often contain a merchant word that would otherwise capture them.
@@ -137,15 +146,11 @@ RULES: list[tuple[str, str]] = [
     (r"\b(foreign transaction fee|forex fee|fx fee|non-sterling|conversion fee)\b", "Fees & Interest"),
     (r"\b(atm fee|service charge|monthly fee|maintenance fee|overdraft)\b", "Fees & Interest"),
 
-    # Money going into an investment account. Before the transfer rules, which
-    # would otherwise call it a transfer and lose that it was saved. Specific
-    # names only: Wealthsimple also runs a cash account and a card, and a
-    # payment to those is not an investment.
-    (r"\b(questrade|qtrade|interactive brokers|vanguard|fidelity invest\w*|"
-     r"wealthsimple (?:invest\w*|trade)|ws (?:invest\w*|trade)|"
-     r"direct investing|direct brokerage|itrade|investor'?s edge|"
-     r"robinhood|moomoo|(?:tfsa|rrsp|fhsa|resp) (?:contrib\w*|deposit))\b",
-     "Saved"),
+    # Money going to an investment firm. A transfer, until she says that is
+    # where she saves (2026-11-20; it was Saved on the name alone): Needs a
+    # look asks once per destination (finance/checks.py, `SAVING_NAMES`).
+    # Specific names only: Wealthsimple also runs a cash account and a card.
+    (SAVING_NAMES_PATTERN, "Transfers"),
 
     # Payments & transfers
     # Card payments come in many spellings; all of them are money moving onto
@@ -348,10 +353,11 @@ AUTHORITATIVE_ISSUER_CATEGORIES = {
     # happens to contain.
     "transfer_in_savings": "Transfers",
     "transfer_out_savings": "Transfers",
-    # Money coming back out of an investment account is a drawdown: savings
-    # going down, not income and not a transfer between pockets you can see.
-    "transfer_in_investment_and_retirement_funds": "Saved",
-    "transfer_out_investment_and_retirement_funds": "Saved",
+    # Money to or from an investment account is a transfer until she says
+    # that account is where she saves (2026-11-20, finance/checks.py); it
+    # was Saved on the bank's word alone.
+    "transfer_in_investment_and_retirement_funds": "Transfers",
+    "transfer_out_investment_and_retirement_funds": "Transfers",
     "income_wages": "Income",
 }
 
@@ -416,7 +422,7 @@ def is_unsure(t) -> bool:
 # Bumped whenever the rules above change enough that what is already in the
 # ledger should be sorted again; the next sync does it once.
 # 16 (2026-11-15): bills paid from a bank account sort by their payee.
-RULES_VERSION = 16
+RULES_VERSION = 17      # 2026-11-20: investment transfers are Transfers until she says Saved
 
 
 # ── Bills paid from a bank account (2026-11-15) ──────────────────────────
@@ -562,6 +568,12 @@ def bank_category(issuer_category: str) -> str | None:
 # answer: Pearl's own rules know where a transfer went (Questrade is Saved)
 # and what a generic service was.
 _BANK_NOT_AN_ANSWER = {"Other", "Transfers"}
+
+
+def looks_like_saving(merchant: str, description: str = "") -> bool:
+    """Whether the name says an investment firm or a registered account:
+    reason to ask "Is X where you save?", never to decide it."""
+    return bool(SAVING_NAMES.search(f"{merchant or ''} || {description or ''}"))
 
 
 def categorize(merchant: str, description: str = "", issuer_category: str = "",

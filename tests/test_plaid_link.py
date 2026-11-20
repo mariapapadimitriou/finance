@@ -750,7 +750,8 @@ class TestQuietTwinsAndInvestments:
         assert r.status_code == 400 and "investment" in r.get_json()["error"]
         assert st.account_sync_rules()["inv"]["enabled"] is False
 
-    def test_a_transfer_into_a_linked_investment_account_is_saved(self, store):
+    def test_a_transfer_into_a_linked_investment_account_is_saved_once_she_says_so(self, store):
+        from finance import checks
         from finance.models import Transaction
         from finance.transfers import apply_transfer_matches, known_destinations, linked_accounts
         store.add_plaid_item("item-1", "tok", "Wealthsimple")
@@ -764,6 +765,8 @@ class TestQuietTwinsAndInvestments:
             category="Transfers", account_id="chq", account_name="Chequing",
             raw={"account_type": "depository"})])
         apply_transfer_matches(store)
+        assert store.all_transactions()[0].category == "Transfers"      # 2026-11-20: not on the type alone
+        checks.answer(store, "chk:saver:inv", True, day)
         assert store.all_transactions()[0].category == "Saved"
         store.set_destination("acct:3333", "Transfers")
         apply_transfer_matches(store)

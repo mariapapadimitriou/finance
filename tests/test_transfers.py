@@ -331,14 +331,20 @@ class TestTransfersOutByAccountNumber:
         "TFR-TO 12343333", "Online transfer to deposit account-3333", "WS RRSP 3333 CONTRIB",
         "SEND E-TFR ***3333", "Transfer sent - 12 3333",
     ])
-    def test_into_her_investment_account_is_saved(self, linked, words):
+    def test_into_her_investment_account_is_a_transfer_until_she_says_she_saves_there(self, linked, words):
+        """2026-11-20: Transfer, not Saved, on the account's type alone; her
+        Yes to "Is Wealthsimple RRSP where you save?" (finance/checks.py)
+        makes it Saved."""
+        from finance import checks
         rows = load(linked, row(500.0, words, category="Transfers"))
-        assert rows[words].category == "Saved"
+        assert rows[words].category == "Transfers"
+        checks.answer(linked, "chk:saver:rrsp", True, TODAY.isoformat())
+        assert {t.description: t for t in linked.all_transactions()}[words].category == "Saved"
 
     def test_even_when_plaid_names_who_it_went_to(self, linked):
         t = row(500.0, "TFR-TO 12343333", category="Transfers")
         t.raw["counterparty"] = "Wealthsimple"
-        assert load(linked, t)["TFR-TO 12343333"].category == "Saved"
+        assert load(linked, t)["TFR-TO 12343333"].category == "Transfers"
 
     def test_into_her_own_savings_is_a_transfer_before_the_other_side_syncs(self, linked):
         rows = load(linked, row(300.0, "Online transfer to deposit account-2222"))
@@ -363,7 +369,7 @@ class TestTransfersOutByAccountNumber:
         rows = load(linked, row(200.0, "E-TFR TO RETIREMENT"),
                     row(250.0, "Transfer to Wealthsimple RRSP"))
         assert rows["E-TFR TO RETIREMENT"].category == UNSORTED
-        assert rows["Transfer to Wealthsimple RRSP"].category == "Saved"
+        assert rows["Transfer to Wealthsimple RRSP"].category == "Transfers"      # hers; Saved after her Yes
 
     def test_a_generic_name_never_matches(self, linked):
         rows = load(linked, row(40.0, "E-TFR TO CHEQUING"))

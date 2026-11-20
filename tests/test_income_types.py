@@ -86,7 +86,8 @@ class TestCadence:
 
 class TestSavingsAndLending:
     def test_money_back_from_a_brokerage_is_a_drawdown(self):
-        assert categorize("QUESTRADE INC", "QUESTRADE INC")[0] == "Saved"
+        # 2026-11-20: Questrade is a transfer until she says it's where she saves.
+        assert categorize("QUESTRADE INC", "QUESTRADE INC")[0] == "Transfers"
         out = row(1000, "QUESTRADE INC", "2026-09-03", category="Saved")
         back = row(-400, "QUESTRADE INC", "2026-09-20", category="Saved")
         assert invested_in([out, back], "2026-09") == 600
