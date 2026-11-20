@@ -70,6 +70,7 @@ def run_checks() -> int:
         build = subprocess.run(
             ["xcrun", "swiftc", "-parse-as-library", "-target", f"{arch}-apple-macos14", "-o", exe,
              os.path.join(PEARL, "API/Models.swift"), os.path.join(PEARL, "API/Boxed.swift"),
+                        os.path.join(PEARL, "API/Changed.swift"),
              os.path.join(PEARL, "App/Format.swift"), os.path.join(tmp, "Stub.swift"),
              os.path.join(CHAT, "ChatCore.swift"), os.path.join(HERE, "chat_checks.swift")],
             capture_output=True, text=True)

@@ -88,6 +88,7 @@ def sizes() -> dict[str, int]:
         arch = "arm64" if os.uname().machine == "arm64" else "x86_64"
         subprocess.run(["xcrun", "swiftc", "-target", f"{arch}-apple-macos14", "-o", exe,
                         os.path.join(pearl, "API/Models.swift"), os.path.join(pearl, "API/Boxed.swift"),
+                        os.path.join(pearl, "API/Changed.swift"),
                         os.path.join(pearl, "App/Format.swift"), os.path.join(tmp, "Stub.swift"),
                         os.path.join(tmp, "main.swift")], check=True)
         out = subprocess.run([exe], capture_output=True, text=True, check=True).stdout
