@@ -1200,20 +1200,23 @@ struct TransactionsView: View {
             await reload()
             return
         }
-        let api = app.api
-        async let summaryReply: Summary? = try? api.get("api/summary")
-        async let reviewReply: Review? = try? api.get("api/review")
-        async let accountsReply: AccountsOverview? = try? api.get("api/accounts/overview")
-        // CF-SCROLL: the list is every month's, so it needn't wait for them.
-        async let listed: Void = reload()
-        if let summary = await summaryReply {
+        // Each from its kept answer at once, then the server's if it changed
+        // (ScreenStore, perf rehaul 2026-11-19).
+        let screens = app.screens
+        async let summaryLoad: Bool? = try? screens.load("api/summary", as: Summary.self) { summary in
             months = summary.months ?? []
             if month == nil || !months.contains(month!) { month = summary.latestMonth ?? months.last }
         }
+        async let reviewLoad: Bool? = try? screens.load("api/review", as: Review.self) { took($0) }
+        async let accountsLoad: Bool? = try? screens.load("api/accounts/overview", as: AccountsOverview.self) {
+            accounts = $0.linked
+        }
+        // CF-SCROLL: the list is every month's, so it needn't wait for them.
+        async let listed: Void = reload()
+        _ = await summaryLoad
         await loadCard()
         _ = await listed
-        if let review = await reviewReply { took(review) }
-        if let overview = await accountsReply { accounts = overview.linked }
+        _ = await (reviewLoad, accountsLoad)
         if !syncedOnce {
             syncedOnce = true
             await runSync(force: false)
@@ -1256,7 +1259,20 @@ struct TransactionsView: View {
                 var p = listQuery
                 p["offset"] = String(got.count)
                 p["limit"] = String(min(1000, want - got.count))
-                let list: TransactionList = try await app.api.get("api/transactions/list", query: p)
+                let list: TransactionList
+                if got.isEmpty {
+                    // The first page is kept (ScreenStore): an empty list
+                    // shows it the moment the screen opens, and the server
+                    // is asked with its ETag.
+                    if rows.isEmpty,
+                       let kept = await app.screens.cached(TransactionList.self, "api/transactions/list", query: p) {
+                        guard gen == loadGen else { return }
+                        show(kept)
+                    }
+                    list = try await app.screens.fetch(TransactionList.self, "api/transactions/list", query: p).value
+                } else {
+                    list = try await app.api.get("api/transactions/list", query: p)
+                }
                 guard gen == loadGen else { return }
                 if got.isEmpty {
                     owed = Set(list.owedIds)
@@ -1280,6 +1296,21 @@ struct TransactionsView: View {
         }
         if needsEverything { await loadRest() }
         if cardFilter != nil { await loadCardRows() }
+    }
+
+    /// The kept first page, as it was, without animation.
+    private func show(_ kept: TransactionList) {
+        var quiet = SwiftUI.Transaction()
+        quiet.disablesAnimations = true
+        withTransaction(quiet) {
+            rows = kept.transactions
+            merged = kept.merged
+            total = kept.total
+            owed = Set(kept.owedIds)
+            owedLine = kept.owedTotal > 0.005
+                ? OwedLine(names: kept.owedNames, count: kept.owedCount, total: kept.owedTotal) : nil
+            tags = kept.tags
+        }
     }
 
     /// A card chip's rows: what the card's Spent, Saved or Came in adds up
@@ -1341,10 +1372,9 @@ struct TransactionsView: View {
     /// The cards are the month's, whatever the list is narrowed to.
     private func loadCard() async {
         guard !inTrip, let m = month else { return }
-        if let plain: TransactionList = try? await app.api.get("api/transactions/list",
-                                                               query: ["month": m, "limit": "1"]),
-           m == month {
-            monthTotals = plain.monthTotals
+        try? await app.screens.load("api/transactions/list", query: ["month": m, "limit": "1"],
+                                    as: TransactionList.self) { plain in
+            if m == month { monthTotals = plain.monthTotals }
         }
     }
 

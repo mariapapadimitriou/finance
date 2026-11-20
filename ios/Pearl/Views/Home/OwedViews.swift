@@ -53,7 +53,7 @@ struct OwedView: View {
 
     private func load() async {
         do {
-            owed = try await app.api.get("api/owed")
+            try await app.screens.load("api/owed", as: OwedOverview.self) { owed = $0 }
             error = nil
         } catch {
             self.error = app.handle(error)
@@ -401,7 +401,7 @@ struct OwedPersonView: View {
     }
 
     private func load() async {
-        if let owed: OwedOverview = try? await app.api.get("api/owed") {
+        try? await app.screens.load("api/owed", as: OwedOverview.self) { owed in
             row = owed.owesYou.first { $0.name == name }
         }
         loaded = true

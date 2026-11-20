@@ -535,8 +535,8 @@ struct ReviewView: View {
         let wantAccounts = accounts.isEmpty
         async let overviewReply: AccountsOverview? = loadOverview(wantAccounts)
         do {
-            let loaded: Review = try await app.api.get("api/review")
-            withAnimation(.easeInOut(duration: 0.2)) { review = loaded }
+            // The kept list at once, the server's eased in if it changed.
+            try await app.screens.load("api/review", as: Review.self) { review = $0 }
             if let overview = await overviewReply {
                 accounts = overview.linked
             }
@@ -548,7 +548,7 @@ struct ReviewView: View {
 
     private func loadOverview(_ want: Bool) async -> AccountsOverview? {
         guard want else { return nil }
-        return try? await app.api.get("api/accounts/overview")
+        return (try? await app.screens.fetch(AccountsOverview.self, "api/accounts/overview"))?.value
     }
 
     private func send(_ answer: ReviewAnswer) async {

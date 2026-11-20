@@ -353,9 +353,10 @@ struct AccountsView: View {
 
     private func load() async {
         do {
-            let overview: AccountsOverview = try await app.api.get("api/accounts/overview")
-            linked = overview.linked
-            added = overview.added ?? []
+            try await app.screens.load("api/accounts/overview", as: AccountsOverview.self) { overview in
+                linked = overview.linked
+                added = overview.added ?? []
+            }
             error = nil
         } catch {
             self.error = app.handle(error)
@@ -782,7 +783,8 @@ struct AccountDetailView: View {
     /// What AM-08 or AM-09 changed while they were open, and the other
     /// accounts AM-09 could combine this one with.
     private func refresh() async {
-        guard let overview: AccountsOverview = try? await app.api.get("api/accounts/overview") else { return }
+        guard let overview = (try? await app.screens.fetch(AccountsOverview.self, "api/accounts/overview"))?.value
+        else { return }
         all = overview.linked + (overview.added ?? [])
         if let now = all.first(where: { $0.id == account.id }) {
             account = now

@@ -759,7 +759,7 @@ struct CalendarCard: View {
             ? data?.cells.first(where: { $0.state == "today" })?.date : nil
         async let dayReply: CalendarDay? = loadDay(knownToday)
         do {
-            data = try await app.api.get("api/calendar", query: ["month": month])
+            try await app.screens.load("api/calendar", query: ["month": month], as: CalendarMonth.self) { data = $0 }
             error = nil
             if shownDay == nil {
                 let today = data?.cells.first(where: { $0.state == "today" })?.date
