@@ -266,9 +266,10 @@ struct TransactionsView: View {
             focus(on: request)
         }
         .sheet(isPresented: $showFilters) {
-            // CF-SCROLL (G1-FilterOpen): no Month; "Show N" counts every
-            // month, once every page is here.
-            FilterSheet(filters: filters, accounts: filterAccounts,
+            // fix/filters-expanded: the old sheet, opened expanded. Its
+            // Month keeps the list to one month (the card's chooser is
+            // apart); "Show N" counts every month, once every page is here.
+            FilterSheet(filters: filters, months: months, accounts: filterAccounts,
                         categories: allCategories, tags: tags,
                         counted: rows.count >= total || inTrip,
                         count: { visible(applying: $0).count }) { chosen in
@@ -398,10 +399,11 @@ struct TransactionsView: View {
     private var blocks: [CFBlock] {
         // The first month's divider is left out when it's this month: the
         // card above already names it (AP-CashFlow, G1-Category). A search
-        // shows every month's (G1-Search).
+        // shows every month's (G1-Search), and so does a month picked in
+        // Filters: its rows sit under its divider.
         let first = shown.first.map { String($0.date.prefix(7)) }
         return CFBlock.build(shown, sort: filters.sort, byDay: byDay, byCategory: byCategory,
-                             hideFirst: !inSearch && first == Format.thisMonth(),
+                             hideFirst: !inSearch && filters.month == nil && first == Format.thisMonth(),
                              select: !selecting && !inTrip && !inSearch && (!byCategory || owedLine == nil))
     }
 
@@ -1696,6 +1698,9 @@ struct TxFilters: Equatable {
     var min = ""
     var max = ""
     var merchant = ""
+    /// Filters' Month row (fix/filters-expanded): one month of the list,
+    /// "2026-11"; nil is All months. Apart from the card's own month (T-47).
+    var month: String?
 
     static let typeNames: [(key: String, name: String)] = [
         ("spending", "Spending"), ("income", "Money in"), ("savings", "Savings"), ("transfer", "Transfers"),
@@ -1713,6 +1718,7 @@ struct TxFilters: Equatable {
     var maxValue: Double? { Double(max.replacingOccurrences(of: "$", with: "")) }
 
     func matches(_ t: Transaction, owed: Set<String>) -> Bool {
+        if let m = month, !t.date.hasPrefix(m) { return false }
         if !accounts.isEmpty && !accounts.contains(t.accountId ?? "") { return false }
         if !categories.isEmpty && !categories.contains(t.label) { return false }
         if !types.isEmpty && !types.contains(where: { type in
@@ -1749,6 +1755,7 @@ struct TxFilters: Equatable {
     /// "By category ×", "TD Visa ••9021 ×": each choice that's on.
     func chips(accounts all: [FilterAccount]) -> [Chip] {
         var out: [Chip] = []
+        if let m = month { out.append(Chip(id: "month", label: Self.monthLabel(m), needsServer: false)) }
         if sort != .newest { out.append(Chip(id: "sort", label: sort.rawValue, needsServer: false)) }
         for id in accounts.sorted() {
             out.append(Chip(id: "a:" + id, label: all.first { $0.id == id }?.label ?? "Account", needsServer: false))
@@ -1766,6 +1773,11 @@ struct TxFilters: Equatable {
             out.append(Chip(id: "merchant", label: merchant, needsServer: false))
         }
         return out
+    }
+
+    /// "November" this year, "November 2025" before it.
+    static func monthLabel(_ m: String) -> String {
+        m.prefix(4) == Format.thisMonth().prefix(4) ? Format.monthName(m) : Format.month(m)
     }
 
     /// "$50–$200", "$50 and up", or nil for any amount.
@@ -1786,19 +1798,24 @@ struct TxFilters: Equatable {
         case "t:": tags.remove(value)
         default:
             if chip == "sort" { sort = .newest }
+            if chip == "month" { month = nil }
             if chip == "amount" { min = ""; max = "" }
             if chip == "merchant" { merchant = "" }
         }
     }
 }
 
-/// T-17 (G1-FilterOpen, CF-SCROLL): every section at once, as chips and
-/// wells: transaction type, spending type, accounts, category, tags,
-/// amount, only show, merchant and sort, then the left-out switch. No
-/// Month (the list is every month) and no More filters. "Show 214" counts
-/// every month and applies it.
+/// T-17 (G1-Search-r, fix/filters-expanded): the sheet opens with every
+/// filter showing, as More filters used to leave it; there is no More
+/// filters step. Transaction type as chips, Month on its own card (All
+/// months, or one month of the list), spending type as chips, then a card
+/// whose rows open in place (T-17b to T-17d): accounts, category, tags,
+/// amount, sort, only show and merchant; and whether to show what's left
+/// out. "Show 214" counts every month and applies it.
 struct FilterSheet: View {
     @State var filters: TxFilters
+    /// The list's months, oldest first.
+    let months: [String]
     let accounts: [FilterAccount]
     let categories: [String]
     let tags: [String]
@@ -1808,10 +1825,15 @@ struct FilterSheet: View {
     let onApply: (TxFilters) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @State private var open: Row?
+    @State private var allMonths = false
 
-    init(filters: TxFilters, accounts: [FilterAccount], categories: [String], tags: [String],
+    enum Row { case month, accounts, category, tags, amount, sort, only, merchant }
+
+    init(filters: TxFilters, months: [String], accounts: [FilterAccount], categories: [String], tags: [String],
          counted: Bool = true, count: @escaping (TxFilters) -> Int, onApply: @escaping (TxFilters) -> Void) {
         _filters = State(initialValue: filters)
+        self.months = months
         self.accounts = accounts
         self.categories = categories
         self.tags = tags
@@ -1820,52 +1842,29 @@ struct FilterSheet: View {
         self.onApply = onApply
     }
 
-    /// A+ (G1-FilterOpen): Reset · Filters · ✕, the sections, and "Show 214"
-    /// as the one Primary.
+    /// A+ (G1-Search, Filters): Reset · Filters · ✕, the types as chips
+    /// (kit `.chip`, rose when on), Month on its card, spending types, a
+    /// card of rows, the left-out switch on its own card, and "Show 24" as
+    /// the one Primary.
     var body: some View {
         VStack(spacing: 0) {
             CFSheetTitle(title: "Filters", left: "Reset", onLeft: { filters = TxFilters() }) { dismiss() }
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    FilterChipSection(title: "Transaction type", first: true,
-                                      names: TxFilters.typeNames.map { ($0.key, $0.name) },
+                    FilterChipSection(title: "Transaction type", names: TxFilters.typeNames.map { ($0.key, $0.name) },
                                       on: { filters.types.contains($0) }) { filters.types.formSymmetricDifference([$0]) }
+                    if !months.isEmpty {
+                        APCard { OwnBody { monthRows } }.padding(.top, 16)
+                    }
                     FilterChipSection(title: "Spending type", names: TxFilters.groupNames.map { ($0.key, $0.name) },
                                       on: { filters.groups.contains($0) }) { filters.groups.formSymmetricDifference([$0]) }
-                    if !accounts.isEmpty {
-                        // T-17c: All accounts first, then each one.
-                        FilterChipSection(title: "Accounts",
-                                          names: [("", "All accounts")] + accounts.map { ($0.id, $0.label + ($0.joint ? " \u{00B7} Joint" : "")) },
-                                          on: { $0.isEmpty ? filters.accounts.isEmpty : filters.accounts.contains($0) }) { id in
-                            if id.isEmpty { filters.accounts = [] } else { toggleAccount(id) }
-                        }
-                    }
-                    if !categories.isEmpty {
-                        FilterChipSection(title: "Category", names: categories.map { ($0, $0) },
-                                          on: { filters.categories.contains($0) }) { filters.categories.formSymmetricDifference([$0]) }
-                    }
-                    if Features.tags && !tags.isEmpty {
-                        FilterChipSection(title: "Tags", names: tags.map { ($0, "#" + $0) },
-                                          on: { filters.tags.contains($0) }) { filters.tags.formSymmetricDifference([$0]) }
-                    }
-                    amountSection
-                    FilterChipSection(title: "Only show",
-                                      names: TxFilters.Only.allCases.filter { $0 != .leftOut }.map { ($0.rawValue, $0.rawValue) },
-                                      on: { TxFilters.Only(rawValue: $0).map(filters.only.contains) ?? false }) { raw in
-                        if let flag = TxFilters.Only(rawValue: raw) { filters.only.formSymmetricDifference([flag]) }
-                    }
-                    APSectionLabel(text: "Merchant").padding(.top, 22).padding(.bottom, 10)
-                    // REDESIGN-09: a search well.
-                    PearlField(placeholder: "Any merchant", text: $filters.merchant, kind: .search)
-                        .autocorrectionDisabled()
-                    FilterChipSection(title: "Sort", names: TxFilters.Sort.allCases.map { ($0.rawValue, $0.rawValue) },
-                                      on: { filters.sort.rawValue == $0 }) { raw in
-                        if let sort = TxFilters.Sort(rawValue: raw) { filters.sort = sort }
-                    }
-                    APCard { leftOutToggle }.padding(.top, 22)
+                        .padding(.top, 20)
+                    APCard { OwnBody { rows } }.padding(.top, 16)
+                    APCard { leftOutToggle }.padding(.top, 12)
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 24)
+                .animation(.easeOut(duration: 0.2), value: open)
             }
             .scrollDismissesKeyboard(.interactively)
 
@@ -1877,20 +1876,6 @@ struct FilterSheet: View {
         .presentationDragIndicator(.visible)
     }
 
-    /// "$ 50  to  $ Max": two amount wells (REDESIGN-09).
-    private var amountSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            APSectionLabel(text: "Amount").padding(.top, 22).padding(.bottom, 10)
-            HStack(spacing: 10) {
-                PearlField(placeholder: "Min", text: $filters.min, kind: .amount, identifier: "Min amount")
-                    .frame(maxWidth: .infinity)
-                Text("to").font(Nacre.subheadline).foregroundColor(Pearl.muted)
-                PearlField(placeholder: "Max", text: $filters.max, kind: .amount, identifier: "Max amount")
-                    .frame(maxWidth: .infinity)
-            }
-        }
-    }
-
     private var leftOutToggle: some View {
         Toggle(isOn: Binding(get: { filters.only.contains(.leftOut) },
                              set: { on in if on { filters.only.insert(.leftOut) } else { filters.only.remove(.leftOut) } })) {
@@ -1900,10 +1885,104 @@ struct FilterSheet: View {
         .padding(.horizontal, 16).frame(minHeight: 64)
     }
 
+    /// Month, and its choices in place once tapped (T-17b): All months,
+    /// the last four, then Earlier months. One month keeps only its rows.
+    @ViewBuilder private var monthRows: some View {
+        row(.month, "Month", filters.month.map(TxFilters.monthLabel) ?? "All months")
+        if open == .month {
+            option("All months", on: filters.month == nil) { filters.month = nil }
+            let shownMonths = allMonths ? Array(months.reversed()) : Array(months.suffix(4).reversed())
+            ForEach(shownMonths, id: \.self) { m in
+                option(allMonths ? Format.month(m) : TxFilters.monthLabel(m), on: filters.month == m) { filters.month = m }
+            }
+            if months.count > 4 && !allMonths {
+                option("Earlier months", on: false) { allMonths = true }
+            }
+        }
+    }
+
+    @ViewBuilder private var rows: some View {
+        if !accounts.isEmpty {
+            row(.accounts, "Accounts", accountsValue)
+            if open == .accounts {
+                // T-17c (G1-FilterOpen): All accounts first, then each one.
+                option("All accounts", on: filters.accounts.isEmpty) { filters.accounts = [] }
+                ForEach(accounts, id: \.id) { a in
+                    option(a.label + (a.joint ? " · Joint" : ""),
+                           on: filters.accounts.contains(a.id)) { toggleAccount(a.id) }
+                }
+            }
+            APSeparator(afterFace: false)
+        }
+        if !categories.isEmpty {
+            row(.category, "Category", list(filters.categories.sorted()))
+            if open == .category {
+                ForEach(categories, id: \.self) { c in
+                    option(c, on: filters.categories.contains(c)) { filters.categories.formSymmetricDifference([c]) }
+                }
+            }
+            APSeparator(afterFace: false)
+        }
+        // Tags sit under Category, as on the old sheet (only while tags are on).
+        if Features.tags && !tags.isEmpty {
+            row(.tags, "Tags", list(filters.tags.sorted().map { "#" + $0 }))
+            if open == .tags {
+                ForEach(tags, id: \.self) { tag in
+                    option("#" + tag, on: filters.tags.contains(tag)) { filters.tags.formSymmetricDifference([tag]) }
+                }
+            }
+            APSeparator(afterFace: false)
+        }
+        row(.amount, "Amount", filters.amountLabel ?? "Any")
+        if open == .amount {
+            HStack(spacing: 12) {
+                amountField("Min", text: $filters.min, prompt: "0")
+                amountField("Max", text: $filters.max, prompt: "Any")
+            }
+            .padding(.horizontal, 16).padding(.bottom, 12)
+        }
+        APSeparator(afterFace: false)
+        row(.sort, "Sort", filters.sort.rawValue)
+        if open == .sort {
+            ForEach(TxFilters.Sort.allCases, id: \.self) { sort in
+                option(sort.rawValue, on: filters.sort == sort) { filters.sort = sort }
+            }
+        }
+        APSeparator(afterFace: false)
+        row(.only, "Only show", list(TxFilters.Only.allCases.filter { $0 != .leftOut && filters.only.contains($0) }
+            .map(\.rawValue)))
+        if open == .only {
+            ForEach(TxFilters.Only.allCases.filter { $0 != .leftOut }, id: \.self) { flag in
+                option(flag.rawValue, on: filters.only.contains(flag)) { filters.only.formSymmetricDifference([flag]) }
+            }
+        }
+        APSeparator(afterFace: false)
+        row(.merchant, "Merchant", filters.merchant.trimmingCharacters(in: .whitespaces).isEmpty ? "Any" : filters.merchant)
+        if open == .merchant {
+            // REDESIGN-09: a search well.
+            PearlField(placeholder: "Any merchant", text: $filters.merchant, kind: .search)
+                .autocorrectionDisabled()
+                .padding(.horizontal, 16).padding(.bottom, 12)
+        }
+    }
+
     /// "Show 214" across every month; just "Show" while the older months
     /// are still on their way.
     private var showLabel: String {
         counted ? "Show \(count(filters))" : "Show"
+    }
+
+    private var accountsValue: String {
+        if filters.accounts.isEmpty { return "All accounts" }
+        if filters.accounts.count == 1, let a = accounts.first(where: { filters.accounts.contains($0.id) }) {
+            return a.label
+        }
+        return "\(filters.accounts.count) accounts"
+    }
+
+    /// "Groceries, Dining out", or Any.
+    private func list(_ names: [String]) -> String {
+        names.isEmpty ? "Any" : names.joined(separator: ", ")
     }
 
     /// From All accounts, a tap keeps just that one; taps add or take off
@@ -1913,21 +1992,69 @@ struct FilterSheet: View {
         chosen.formSymmetricDifference([id])
         filters.accounts = chosen.count == accounts.count ? [] : chosen
     }
+
+    /// "Month   November ›": tapping opens its choices under it, and closes
+    /// whichever was open.
+    private func row(_ which: Row, _ title: String, _ value: String) -> some View {
+        Button { open = open == which ? nil : which } label: {
+            // kit `.kv`: 52 high, the value muted with the chevron.
+            // G1-FilterOpen: an open row's value turns `link` and its chevron goes.
+            HStack(spacing: 8) {
+                Text(title).font(Nacre.body).foregroundColor(Pearl.ink).layoutPriority(1)
+                Spacer(minLength: 12)
+                Text(value).font(Nacre.body).foregroundColor(open == which ? Pearl.link : Pearl.muted).lineLimit(1)
+                if open != which { CFChevron() }
+            }
+            .padding(.horizontal, 16).frame(minHeight: 52)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(value)
+        .accessibilityHint(open == which ? "Closes the choices" : "Shows the choices")
+    }
+
+    /// One choice under an open row (G1-FilterOpen): 28 in, 16 pt, 48
+    /// high, the rose ✓ on the right when it's on.
+    private func option(_ label: String, on: Bool, _ tap: @escaping () -> Void) -> some View {
+        VStack(spacing: 0) {
+            Rectangle().fill(APlus.separator).frame(height: 0.5).padding(.leading, 28)
+            Button(action: tap) {
+                HStack(spacing: 12) {
+                    Text(label).font(.custom("Figtree-Regular", size: 16, relativeTo: .body))
+                        .foregroundColor(Pearl.ink).lineLimit(1)
+                    Spacer()
+                    if on {
+                        Image(systemName: "checkmark").font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(Pearl.action).accessibilityHidden(true)
+                    }
+                }
+                .padding(.leading, 28).padding(.trailing, 16).frame(minHeight: 48)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(on ? .isSelected : [])
+        }
+    }
+
+    /// REDESIGN-09: Min and Max are amount wells.
+    private func amountField(_ label: String, text: Binding<String>, prompt: String) -> some View {
+        PearlField(label: label, placeholder: prompt, text: text, kind: .amount, identifier: "\(label) amount")
+            .frame(maxWidth: .infinity)
+    }
 }
 
-/// One Filters section (G1-FilterOpen `.sec`): its label, then its chips
-/// (kit `.chip`, 36 high, rose when on), wrapping. Its own body (stack check).
+/// One Filters chip section (kit `.label` then `.chip`, 36 high, rose when
+/// on), wrapping. Its own body (stack check).
 struct FilterChipSection: View {
     let title: String
-    var first = false
     let names: [(key: String, name: String)]
     let on: (String) -> Bool
     let tap: (String) -> Void
 
-    init(title: String, first: Bool = false, names: [(String, String)],
+    init(title: String, names: [(String, String)],
          on: @escaping (String) -> Bool, tap: @escaping (String) -> Void) {
         self.title = title
-        self.first = first
         self.names = names.map { (key: $0.0, name: $0.1) }
         self.on = on
         self.tap = tap
@@ -1943,7 +2070,6 @@ struct FilterChipSection: View {
             }
             .padding(.vertical, -5)
         }
-        .padding(.top, first ? 12 : 22)
     }
 }
 
