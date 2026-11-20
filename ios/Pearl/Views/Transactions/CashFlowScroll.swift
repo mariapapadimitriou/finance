@@ -282,8 +282,12 @@ enum CFScroll {
 }
 
 /// cf.css `.cbar`: scrolled, the large title folds into a 56 pt glass bar,
-/// "Cash flow" centred, with Filters and + (40 pt) still in reach; the
+/// "Cash flow" on the left, with Filters and + (40 pt) still in reach; the
 /// month she is in pins under it (`.pin`), with what's narrowing the list.
+/// The profile circle stays pinned at the bar's right end, on its centre
+/// line (`ProfileSlot`), with Filters and + just left of it. Centred, the
+/// title ran into them on a 375 pt iPhone, so it sits small on the left
+/// (product owner, 2026-11-19).
 struct CFFoldedBar: View {
     @ObservedObject var tracker: CFScrollTracker
     let filtersOn: Bool
@@ -304,17 +308,18 @@ struct CFFoldedBar: View {
     }
 
     private var bar: some View {
-        ZStack {
+        HStack(spacing: 8) {
             Text("Cash flow").font(Nacre.headline).foregroundColor(Pearl.ink)
+                .lineLimit(1).minimumScaleFactor(0.8)
                 .accessibilityAddTraits(.isHeader)
-            HStack(spacing: 8) {
-                Spacer()
-                CFBarButton(symbol: "slider.horizontal.3", label: filtersOn ? "Filters, on" : "Filters",
-                            dot: filtersOn, action: filters)
-                CFBarButton(symbol: "plus", label: "Add a transaction", dot: false, action: add)
-            }
-            .padding(.leading, 16).padding(.trailing, 12)
+            Spacer(minLength: 8)
+            CFBarButton(symbol: "slider.horizontal.3", label: filtersOn ? "Filters, on" : "Filters",
+                        dot: filtersOn, action: filters)
+            CFBarButton(symbol: "plus", label: "Add a transaction", dot: false, action: add)
         }
+        // The title on the large title's edge (gutter + 4); + stops 4 short
+        // of the circle's 44 pt target, a 10 pt gap between the discs.
+        .padding(.leading, Pearl.gutter + 4).padding(.trailing, ProfileSlot.clearance + 4)
         .frame(height: CFScrollTracker.barHeight)
         .background(CFGlassStrip(strong: true).ignoresSafeArea(edges: .top))
         .zIndex(1)

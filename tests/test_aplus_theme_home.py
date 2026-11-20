@@ -76,7 +76,7 @@ class TestHome:
         assert "sorted: home.sorted ?? home.pearlSorted ?? 0" in self.home, "REDESIGN-18"
         assert "people owe you" in self.home and "OwedCard(" in self.home
         assert "BankAlertCard(" in self.home, "a bank to reconnect keeps its own card"
-        assert "ProfileCircle()" in self.home
+        assert ".profileCircleSlot()" in self.home
 
     def test_paycheque_is_a_worth_a_look_item(self):
         # T-74 (AP-Paycheque): Got it on the item; no separate card; nothing opens Your plan.

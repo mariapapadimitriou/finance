@@ -3,8 +3,10 @@ import UIKit
 
 // A+ navigation (REDESIGN-02, -03; AP-Home, AP-CashFlow, AP-PhotoHome,
 // AP-Profile; Pearl Design System `ProfileCircle`). Profile leaves the tab
-// bar for this circle at the top right of Home, Cash flow, Save and Wins.
-// It pushes Profile in the current tab's navigation stack.
+// bar for this circle at the top right of every main tab: Home, Cash flow,
+// Save, Wins and Pearl. It pushes Profile in the current tab's navigation
+// stack. Every tab places it with `profileCircleSlot`, never by hand, so it
+// sits in the same spot on all five and doesn't move between them.
 
 /// Her profile photo, kept on this iPhone only: a JPEG in Application
 /// Support, excluded from iCloud backup, never sent to Pearl's server. One
@@ -108,6 +110,39 @@ struct ProfileCircle: View {
                 open = false
                 goHome()
             })
+        }
+    }
+}
+
+/// Where the profile circle sits on a main tab, the same on all five: a
+/// 44 pt tap target pinned 6 below the safe area's top and 12 in from the
+/// trailing edge, so the 36 pt disc's edge lines up with the 16 pt gutter.
+/// Its centre, 28 below the safe area, is the middle of a 56 pt bar: Cash
+/// flow's folded glass bar and the chat's inline bar put their titles on
+/// that line, and the large-title rows sit level with it.
+enum ProfileSlot {
+    static let top: CGFloat = 6
+    static let trailing: CGFloat = Pearl.gutter - 4
+    static let size: CGFloat = 44
+    /// From the screen's trailing edge to the circle's leading edge: what a
+    /// bar drawn under the circle leaves free on its right.
+    static let clearance: CGFloat = trailing + size
+}
+
+extension View {
+    /// The profile circle, pinned top right over a main tab's root view
+    /// (inside its NavigationStack, so it pushes Profile there). It doesn't
+    /// scroll or fold with the page, and a pushed page or a sheet covers it.
+    /// `shown: false` takes it away (Cash flow's Select); `enabled: false`
+    /// keeps it but not tappable (a trip's pick).
+    func profileCircleSlot(shown: Bool = true, enabled: Bool = true) -> some View {
+        overlay(alignment: .topTrailing) {
+            if shown {
+                ProfileCircle()
+                    .disabled(!enabled)
+                    .padding(.top, ProfileSlot.top)
+                    .padding(.trailing, ProfileSlot.trailing)
+            }
         }
     }
 }

@@ -25,7 +25,7 @@ class TestCashFlow(unittest.TestCase):
 
     def test_profile_circle_on_the_title_row(self):
         self.assertIn('Text("Cash flow")', self.tv)
-        self.assertIn("ProfileCircle()", self.tv)
+        self.assertIn(".profileCircleSlot(shown: !selecting || inTrip, enabled: !inTrip)", self.tv)
 
     def test_need_a_look_has_a_tint_chip_and_no_streak(self):
         # CF-SCROLL (AP-CashFlow r7): no mini streak. After #398 the row is

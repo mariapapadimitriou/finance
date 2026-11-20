@@ -129,6 +129,10 @@ struct TransactionsView: View {
             }
         }
         .nacreScreen()
+        // Pinned over the scroll and its folding bar, so it stays put when
+        // the title folds. G1-Select: while selecting, the circle goes; a
+        // trip's pick (TR-11, TR-12) keeps it, but only Select answers.
+        .profileCircleSlot(shown: !selecting || inTrip, enabled: !inTrip)
         .navigationBarHidden(true)
         .onChange(of: selecting) { on in if !inTrip { app.hidesTabBar = on } }
         .onDisappear { if !inTrip { app.hidesTabBar = false } }
@@ -337,18 +341,18 @@ struct TransactionsView: View {
     /// states (loading, empty, error) or the calendar.
     @ViewBuilder private var top: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // A+ (AP-CashFlow, kit `.hdr`): Cash flow in Fraunces 34 with
-            // the profile circle, its visual edge on the filter button's.
-            // G1-Select: while selecting, the title stays and the circle goes.
+            // A+ (AP-CashFlow, kit `.hdr`): Cash flow in Fraunces 34, level
+            // with the profile circle (`ProfileSlot`), which `body` pins over
+            // the page; the row keeps its place empty.
             HStack(alignment: .center) {
                 Text("Cash flow").font(Nacre.largeTitle).foregroundColor(Pearl.ink)
                     .padding(.leading, 4)
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 8)
-                if !selecting || inTrip { ProfileCircle().padding(.trailing, -4).disabled(inTrip) }
+                Color.clear.frame(width: ProfileSlot.size - 4, height: ProfileSlot.size)
             }
-            .frame(minHeight: 44)
-            .padding(.top, 16)
+            .frame(minHeight: ProfileSlot.size)
+            .padding(.top, ProfileSlot.top)
             if noTransactionsYet {
                 emptyLedger
             } else if selecting && !inTrip {
