@@ -371,4 +371,7 @@ class TestSpeed:
             assert r.headers["Server-Timing"].startswith("app;dur=")
 
     def test_other_reads_are_not(self, client):
-        assert "Server-Timing" not in client.get("/api/transactions/list").headers
+        """Every answer carries the server's timing since 2026-11-19
+        (finance/timing.py); the chat's own `app` entry is the chat's alone."""
+        header = client.get("/api/transactions/list").headers["Server-Timing"]
+        assert "app;dur=" not in header and header.startswith("total;dur=")

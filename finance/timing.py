@@ -65,7 +65,9 @@ def install(app) -> None:
                  f"db;dur={t['db_s'] * 1000:.0f};desc=\"tx={t['tx']} stmts={t['stmts']}\""]
         for key, value in t["notes"].items():
             parts.append(f"{key};desc=\"{value}\"")
-        response.headers[HEADER] = ", ".join(parts)
+        # The chat's own entry (finance/chat_api.py) stays first.
+        earlier = response.headers.get(HEADER)
+        response.headers[HEADER] = ", ".join(([earlier] if earlier else []) + parts)
         if app.config.get("TESTING"):
             # The budget test reads what the last request cost.
             app.config["LAST_TIMING"] = {"path": request.path, "method": request.method,
