@@ -559,7 +559,9 @@ struct ReviewView: View {
             withAnimation { toast = Toast(title: reply.title ?? answer.done, undo: reply.undo) }
             error = nil
             await load()
-            app.changed()
+            // What it changed goes to the rest of the app (the Allowance, the
+            // badge, rows swapped into Cash flow); no envelope, a reload.
+            app.apply(reply.changed)
         } catch let e where e.whoPaid != nil {
             // Nothing saved: ask who, once the answer's sheet has gone.
             try? await Task.sleep(nanoseconds: 450_000_000)

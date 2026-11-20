@@ -117,12 +117,13 @@ struct HomeView: View {
             async let setupLoad: Bool? = try? screens.load("api/setup-again", as: SetupAgain.self) { setup = $0 }
             async let owedLoad: Bool? = try? screens.load("api/owed", as: OwedOverview.self) { owed = $0 }
             async let worthLoad: Bool? = try? screens.load("api/worth-a-look", as: WorthReply.self) { worth = $0.items }
-            try await screens.load("api/home", as: Home.self) { loaded in
+            try await screens.load("api/home", as: Home.self, apply: { loaded in
                 home = loaded
-                // The Allowance Home shows is the app's: every write's
-                // `changed.allowance` moves it from here on.
-                app.seed(loaded)
-            }
+                // The Allowance Home shows is the app's: a kept answer seeds
+                // it only when there is none yet (a write may have moved it
+                // since), the server's own always does.
+                if app.allowance == nil { app.seed(loaded) }
+            }, fresh: { app.seed($0) })
             _ = await (setupLoad, owedLoad, worthLoad)
             error = nil
             offline = false

@@ -136,10 +136,12 @@ final class ScreenStore {
     /// with its ETag, a changed answer eased in. Offline with a last answer
     /// keeps it quietly; offline with none throws, as the plain GET did. A
     /// cancelled load (the screen went away) does nothing. Returns whether
-    /// anything was shown.
+    /// anything was shown. `fresh` runs only for the server's own answer,
+    /// after `apply`, for what mustn't be set back from a kept one.
     @discardableResult
     func load<T: Decodable>(_ path: String, query: [String: String] = [:], as type: T.Type,
-                            apply: @escaping @MainActor (T) -> Void) async throws -> Bool {
+                            apply: @escaping @MainActor (T) -> Void,
+                            fresh: (@MainActor (T) -> Void)? = nil) async throws -> Bool {
         let have: T? = await cached(type, path, query: query)
         if let have = have {
             // SwiftUI's Transaction, not Pearl's: shown without animation.
@@ -148,8 +150,11 @@ final class ScreenStore {
             withTransaction(quiet) { apply(have) }
         }
         do {
-            let (value, fresh) = try await fetch(type, path, query: query)
-            if fresh { withAnimation(.easeInOut(duration: 0.2)) { apply(value) } }
+            let (value, isFresh) = try await fetch(type, path, query: query)
+            if isFresh {
+                withAnimation(.easeInOut(duration: 0.2)) { apply(value) }
+                fresh?(value)
+            }
             return true
         } catch is CancellationError {
             return have != nil

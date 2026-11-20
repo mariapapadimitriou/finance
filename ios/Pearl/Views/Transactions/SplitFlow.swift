@@ -1743,9 +1743,11 @@ struct MarkPaidSheet: View {
     /// SPLIT-19: a payment with its extra said, and the Sorted toast's Undo.
     var onUndoable: ((String, JSONValue?) -> Void)? = nil
     /// S-44b (REFRESH-02): "Priya paid back $30.00" and the Undo of every
-    /// link or payment it saved, newest last.
-    var onLinked: ((String, [JSONValue]) -> Void)? = nil
+    /// link or payment it saved, newest last, and what the last write
+    /// changed (perf rehaul, 2026-11-19).
+    var onLinked: ((String, [JSONValue], Changed?) -> Void)? = nil
 
+    @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var how = "bank"
     /// S-06ra answered: on to S-06rb, S-06rc or S-06rd.
@@ -1840,7 +1842,7 @@ struct MarkPaidSheet: View {
 
     init(t: Transaction, person: Transaction.Splitting.Person, api: APIClient,
          onUndoable: ((String, JSONValue?) -> Void)? = nil,
-         onLinked: ((String, [JSONValue]) -> Void)? = nil, onDone: @escaping (String) -> Void) {
+         onLinked: ((String, [JSONValue], Changed?) -> Void)? = nil, onDone: @escaping (String) -> Void) {
         self.onLinked = onLinked
         self.t = t
         self.person = person
@@ -2462,21 +2464,41 @@ struct MarkPaidSheet: View {
         do {
             if finding {
                 let linking = uses
+                let order = picked
+                // Every link at once (perf rehaul, 2026-11-19), each through
+                // the outbox with its own op id, in the order she ticked them;
+                // the answers are read back in that order too.
+                var answers: [String: Outbox.Sent<Saved>] = [:]
+                let outbox = app.outbox
+                let charge = t.id
+                try await withThrowingTaskGroup(of: (String, Outbox.Sent<Saved>?).self) { group in
+                    for id in order {
+                        guard let use = linking[id], let d = deposits.first(where: { $0.id == id }) else { continue }
+                        var body: [String: Any] = ["person": person.name]
+                        if use < d.whole - 0.005 { body["amount"] = use }
+                        group.addTask { @MainActor in
+                            (id, try await outbox.send("POST", "api/transactions/\(charge)/paybacks/\(id)", body))
+                        }
+                    }
+                    for try await (id, sent) in group {
+                        if let sent = sent { answers[id] = sent }
+                    }
+                }
                 var undos: [JSONValue] = []
                 var said: String?
-                for id in picked {
-                    guard let use = linking[id], let d = deposits.first(where: { $0.id == id }) else { continue }
-                    var body: [String: Any] = ["person": person.name]
-                    if use < d.whole - 0.005 { body["amount"] = use }
-                    let r: Saved = try await api.post("api/transactions/\(t.id)/paybacks/\(id)", body)
-                    if let u = r.undo { undos.append(u) }
-                    said = r.toast
+                // The newest state of the rows: the answer with the highest version.
+                var changed: Changed?
+                for id in order {
+                    guard let sent = answers[id] else { continue }
+                    if let u = sent.body.undo { undos.append(u) }
+                    said = sent.body.toast
+                    if let c = sent.changed, c.version >= (changed?.version ?? 0) { changed = c }
                 }
                 let total = linking.values.reduce(0, +)
                 // S-44b: "Priya paid back $30.00".
                 let title = picked.count == 1 ? (said ?? "\(person.name) paid back \(Format.amount(total))")
                     : "\(person.name) paid back \(Format.amount(total))"
-                if let onLinked = onLinked { onLinked(title, undos) } else { onDone(title) }
+                if let onLinked = onLinked { onLinked(title, undos, changed) } else { onDone(title) }
             } else if how == "bank" {
                 struct Reply: Decodable { let candidates: [Lenient<Candidate>]? }
                 // TEST-20: for this person, so their own money leads and
@@ -2510,9 +2532,13 @@ struct MarkPaidSheet: View {
                 // SPLIT-14: the app's name, when she gave one.
                 let named = appName.trimmingCharacters(in: .whitespaces)
                 if how == "app" && !named.isEmpty { body["app"] = named }
-                let r: Saved = try await api.post("api/transactions/\(t.id)/split/cash", body)
+                let sent: Outbox.Sent<Saved>? = try await app.outbox.send("POST", "api/transactions/\(t.id)/split/cash", body)
                 let title = "\(person.name) paid back \(Format.amount(value))"
-                if let onLinked = onLinked { onLinked(title, r.undo.map { [$0] } ?? []) } else { onDone(title) }
+                if let onLinked = onLinked {
+                    onLinked(title, sent?.body.undo.map { [$0] } ?? [], sent?.changed)
+                } else {
+                    onDone(title)
+                }
             }
             error = nil
         } catch {
