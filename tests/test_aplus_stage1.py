@@ -140,10 +140,12 @@ class TestPearlTab(unittest.TestCase):
 
 
 class TestProfileCircleAndPhoto(unittest.TestCase):
-    def test_circle_on_the_four_main_tabs(self):
-        self.assertIn("ProfileCircle()", code(read("Views", "Home", "HomeView.swift")))
-        self.assertIn("ProfileCircle()", code(read("Views", "Transactions", "TransactionsView.swift")))
-        self.assertIn("ProfileCircle()", code(read("App", "PearlApp.swift")))  # Save and Wins
+    def test_circle_on_the_five_main_tabs(self):
+        # One shared placement (test_aplus_profile_slot.py): every tab pins it.
+        self.assertIn(".profileCircleSlot(", code(read("Views", "Home", "HomeView.swift")))
+        self.assertIn(".profileCircleSlot(", code(read("Views", "Transactions", "TransactionsView.swift")))
+        self.assertIn(".profileCircleSlot(", code(read("App", "PearlApp.swift")))  # Save and Wins
+        self.assertIn(".profileCircleSlot(", code(read("Chat", "PearlChatView.swift")))
 
     def test_circle_size_dot_and_push(self):
         c = code(read("Views", "Components", "ProfileCircle.swift"))

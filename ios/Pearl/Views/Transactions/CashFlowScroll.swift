@@ -284,6 +284,10 @@ enum CFScroll {
 /// cf.css `.cbar`: scrolled, the large title folds into a 56 pt glass bar,
 /// "Cash flow" centred, with Filters and + (40 pt) still in reach; the
 /// month she is in pins under it (`.pin`), with what's narrowing the list.
+/// The profile circle stays pinned at the bar's right end, on its centre
+/// line (`ProfileSlot`). Beside it, Filters and + would run into the centred
+/// title on a 375 pt iPhone, so they move as a pair to the bar's left end,
+/// as the chat's New chat does.
 struct CFFoldedBar: View {
     @ObservedObject var tracker: CFScrollTracker
     let filtersOn: Bool
@@ -308,12 +312,12 @@ struct CFFoldedBar: View {
             Text("Cash flow").font(Nacre.headline).foregroundColor(Pearl.ink)
                 .accessibilityAddTraits(.isHeader)
             HStack(spacing: 8) {
-                Spacer()
                 CFBarButton(symbol: "slider.horizontal.3", label: filtersOn ? "Filters, on" : "Filters",
                             dot: filtersOn, action: filters)
                 CFBarButton(symbol: "plus", label: "Add a transaction", dot: false, action: add)
+                Spacer()
             }
-            .padding(.leading, 16).padding(.trailing, 12)
+            .padding(.leading, 12).padding(.trailing, ProfileSlot.clearance)
         }
         .frame(height: CFScrollTracker.barHeight)
         .background(CFGlassStrip(strong: true).ignoresSafeArea(edges: .top))

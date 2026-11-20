@@ -66,6 +66,9 @@ struct PearlChatView: View {
                 }
             }
             .nacreScreen()
+            // The profile circle, as on every main tab (in this stack, so
+            // Profile pushes here and a chat page covers it).
+            .profileCircleSlot()
             .navigationBarHidden(true)
             .navigationDestination(for: Route.self) { route in
                 switch route {
@@ -180,6 +183,8 @@ struct PearlChatView: View {
 // MARK: - The top
 
 /// The large "Pearl" (Fraunces 34, AP-Chat) or the inline one with New chat.
+/// Both sit on the profile circle's line (`ProfileSlot`); the circle is
+/// pinned top right, so New chat moved to the bar's left end.
 private struct ChatTop: View {
     let large: Bool
     let newChat: () -> Void
@@ -188,14 +193,14 @@ private struct ChatTop: View {
         if large {
             Text("Pearl").font(Nacre.largeTitle).foregroundColor(Pearl.ink)
                 .accessibilityAddTraits(.isHeader)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 20).padding(.top, 18)
+                .frame(maxWidth: .infinity, minHeight: ProfileSlot.size, alignment: .leading)
+                .padding(.leading, 20).padding(.trailing, ProfileSlot.clearance)
+                .padding(.top, ProfileSlot.top)
         } else {
             ZStack {
                 Text("Pearl").font(Nacre.headline).foregroundColor(Pearl.ink)
                     .accessibilityAddTraits(.isHeader)
                 HStack {
-                    Spacer()
                     Button("New chat", action: newChat)
                         .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
                         .foregroundColor(Pearl.link)
@@ -204,10 +209,14 @@ private struct ChatTop: View {
                         .contentShape(Rectangle())
                         .accessibilityHint("Asks first. What you told Pearl here is forgotten.")
                         .accessibilityIdentifier("chat-new")
+                    Spacer()
                 }
+                .padding(.leading, 20).padding(.trailing, ProfileSlot.clearance)
             }
-            .frame(height: 44)
-            .padding(.horizontal, 20).padding(.top, 6)
+            // Full width, so "Pearl" stays centred on the screen.
+            .frame(maxWidth: .infinity)
+            .frame(height: ProfileSlot.size)
+            .padding(.top, ProfileSlot.top)
         }
     }
 }

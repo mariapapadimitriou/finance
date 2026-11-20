@@ -56,6 +56,8 @@ struct HomeView: View {
         .onChange(of: toOrb) { _ in withAnimation { proxy.scrollTo(HomeOrb.anchor, anchor: .top) } }
         }
         .nacreScreen()
+        // Pinned, not in the feed: it stays put as Home scrolls.
+        .profileCircleSlot()
         .navigationBarHidden(true)
         .refreshable { await load() }
         .reloads { await load() }
@@ -322,10 +324,11 @@ private struct HomeFeed: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let since = offlineSince {
-                OfflineBanner(since: since).padding(.top, 8).padding(.bottom, 8)
-            }
             HomeTopBar(today: home.today)
+            // Under the date, so the pinned profile circle never covers it.
+            if let since = offlineSince {
+                OfflineBanner(since: since).padding(.top, 4).padding(.bottom, 8)
+            }
             HomeOrb(home: home, calm: calm)
             if calm {
                 CalmState().padding(.top, 12)
@@ -344,26 +347,25 @@ private struct HomeFeed: View {
     }
 }
 
-/// The date (12/500, tracked 1.4, `muted`), centred, and the profile circle
-/// on the right, 44 high.
+/// The date (12/500, tracked 1.4, `muted`), centred on the profile
+/// circle's line (`ProfileSlot`): the circle itself is pinned over Home by
+/// `profileCircleSlot`, so this row keeps its 44 pt place empty.
 struct HomeTopBar: View {
     let today: String?
 
     var body: some View {
         HStack {
-            Color.clear.frame(width: 44, height: 44)
+            Color.clear.frame(width: ProfileSlot.size, height: ProfileSlot.size)
             Spacer(minLength: 0)
             Text((today.map { Format.day($0) } ?? "").uppercased())
                 .font(.custom("Figtree-Medium", size: 12, relativeTo: .caption)).tracking(1.4)
                 .foregroundColor(Pearl.muted)
                 .lineLimit(1).minimumScaleFactor(0.8)
             Spacer(minLength: 0)
-            // A+ (AP-Home, AP-PhotoHome): it pushes Profile in this tab.
-            ProfileCircle()
+            Color.clear.frame(width: ProfileSlot.size, height: ProfileSlot.size)
         }
-        .frame(height: 44)
-        .padding(.top, 2)
-        .padding(.trailing, -4)
+        .frame(height: ProfileSlot.size)
+        .padding(.top, ProfileSlot.top)
     }
 }
 

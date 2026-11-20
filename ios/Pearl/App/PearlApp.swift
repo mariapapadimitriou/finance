@@ -115,7 +115,7 @@ struct RootView: View {
 /// Pearl in the system tab bar, Liquid Glass on iOS 26 (THL-209: "use the
 /// system TabView, don't rebuild it"), tinted Pearl.action; unselected items
 /// as the system draws them. Profile left the bar for the profile circle at
-/// the top right of the first four tabs; the floating Pearl button is gone
+/// the top right of all five (`profileCircleSlot`); the floating Pearl button is gone
 /// and Pearl chat is the fifth tab. Save and Wins are parked, so blank.
 @MainActor
 struct MainTabs: View {
@@ -327,10 +327,8 @@ private struct BlankTab: View {
     var body: some View {
         Color.clear
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .overlay(alignment: .topTrailing) {
-                ProfileCircle().padding(.trailing, Pearl.gutter - 4).padding(.top, 4)
-            }
             .nacreScreen()
+            .profileCircleSlot()
             .navigationBarHidden(true)
     }
 }
