@@ -152,13 +152,35 @@ enum Format {
     private static let monthDay = formatter("MMMM d")
     private static let monthDayYear = formatter("MMMM d, yyyy")
 
+    /// The UTC calendar `dayParts` counts in, made once: making one per
+    /// call cost every row on every pass (perf rehaul, 2026-11-19).
+    private static let utc: Calendar = {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "UTC")!
+        return c
+    }()
+
+    /// `dayParts`' answers by date string, good for one local day: a list
+    /// of a thousand rows asks for each row's day on every pass, and
+    /// `relativeDay` and `dayHeader` ask again on top.
+    private static var dayPartsCache: (day: DateComponents?, parts: [String: (name: String, date: String)]) = (nil, [:])
+    private static let dayPartsLock = NSLock()
+
     /// A day in the list, as the web heads it: "Today" · "Thu, Oct 29",
     /// "Monday" · "Oct 26", or "October 20" · "Tuesday".
     static func dayParts(_ iso: String, now: Date = Date()) -> (name: String, date: String) {
-        guard let day = date(iso) else { return (iso, "") }
-        var utc = Calendar(identifier: .gregorian)
-        utc.timeZone = TimeZone(identifier: "UTC")!
         let local = Calendar.current.dateComponents([.year, .month, .day], from: now)
+        dayPartsLock.lock()
+        defer { dayPartsLock.unlock() }
+        if dayPartsCache.day != local { dayPartsCache = (local, [:]) }
+        if let hit = dayPartsCache.parts[iso] { return hit }
+        let parts = dayParts(iso, local: local, now: now)
+        dayPartsCache.parts[iso] = parts
+        return parts
+    }
+
+    private static func dayParts(_ iso: String, local: DateComponents, now: Date) -> (name: String, date: String) {
+        guard let day = date(iso) else { return (iso, "") }
         let today = utc.date(from: local) ?? now
         let ago = utc.dateComponents([.day], from: day, to: today).day ?? 0
         switch ago {

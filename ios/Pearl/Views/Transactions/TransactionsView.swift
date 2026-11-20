@@ -25,6 +25,11 @@ struct TransactionsView: View {
     @State private var loadGen = 0
     /// The folding bar and the pin's position, apart from this view's state.
     @State private var tracker = CFScrollTracker()
+    /// `shown`, the blocks, the paid-back names and the filter's accounts,
+    /// worked out once per change of what they're made from, not on every
+    /// read (perf rehaul, 2026-11-19): one body pass read `shown` half a
+    /// dozen times, each a filter and a sort of every row.
+    @State private var memo = CFMemo()
     /// Arrivals merged into a transfer line in `rows`, for a filter that
     /// keeps only that end (TransferEnds, 2026-11-15).
     @State private var merged: [Transaction] = []
@@ -401,10 +406,15 @@ struct TransactionsView: View {
         // card above already names it (AP-CashFlow, G1-Category). A search
         // shows every month's (G1-Search), and so does a month picked in
         // Filters: its rows sit under its divider.
+        let shown = self.shown
         let first = shown.first.map { String($0.date.prefix(7)) }
-        return CFBlock.build(shown, sort: filters.sort, byDay: byDay, byCategory: byCategory,
-                             hideFirst: !inSearch && filters.month == nil && first == Format.thisMonth(),
-                             select: !selecting && !inTrip && !inSearch && (!byCategory || owedLine == nil))
+        let key = CFMemo.BlocksKey(shown: shown, sort: filters.sort, byDay: byDay, byCategory: byCategory,
+                                   hideFirst: !inSearch && filters.month == nil && first == Format.thisMonth(),
+                                   select: !selecting && !inTrip && !inSearch && (!byCategory || owedLine == nil))
+        return memo.blocks(key) {
+            CFBlock.build(key.shown, sort: key.sort, byDay: key.byDay, byCategory: key.byCategory,
+                          hideFirst: key.hideFirst, select: key.select)
+        }
     }
 
     @ViewBuilder private func blockView(_ block: CFBlock) -> some View {
@@ -1114,7 +1124,12 @@ struct TransactionsView: View {
 
     private var noTransactionsYet: Bool { !inTrip && loadedOnce && months.isEmpty && rows.isEmpty && error == nil }
 
-    private var shown: [Transaction] { visible(applying: filters) }
+    private var shown: [Transaction] {
+        let key = CFMemo.ShownKey(rows: rows, merged: merged, results: results, resultsMerged: resultsMerged,
+                                  cardRows: cardRows, cardFilter: cardFilter, inSearch: inSearch,
+                                  filters: filters, owed: owed)
+        return memo.shown(key) { visible(applying: filters) }
+    }
 
     /// The rows the list shows under these filters and the card's chip:
     /// the search's or every month's, narrowed, then sorted. Grouped by
@@ -1149,19 +1164,24 @@ struct TransactionsView: View {
     private func paidBack(for t: Transaction) -> String? {
         // TEST-31 Money back: her share's refund reads "Refund · <shop>".
         guard let id = t.repays, t.refundOf == nil else { return nil }
-        return (rows + (results ?? [])).first { $0.id == id }?.merchant
+        // The list's rows first, then the search's, as the scan was.
+        return memo.merchants(rows: rows, results: results) {
+            Dictionary((rows + (results ?? [])).map { ($0.id, $0.merchant) }, uniquingKeysWith: { first, _ in first })
+        }[id]
     }
 
     /// Every account in the list, named as Accounts names them when it can.
     private var filterAccounts: [FilterAccount] {
-        var out: [FilterAccount] = []
-        for t in rows {
-            guard let id = t.accountId, !id.isEmpty, !out.contains(where: { $0.id == id }) else { continue }
-            let linked = accounts.first { $0.id == id }
-            out.append(FilterAccount(id: id, label: linked?.label ?? t.account ?? "Account",
-                                     joint: linked?.joint == true || !t.joint.isEmpty))
+        memo.filterAccounts(rows: rows, accounts: accounts) {
+            var out: [FilterAccount] = []
+            for t in rows {
+                guard let id = t.accountId, !id.isEmpty, !out.contains(where: { $0.id == id }) else { continue }
+                let linked = accounts.first { $0.id == id }
+                out.append(FilterAccount(id: id, label: linked?.label ?? t.account ?? "Account",
+                                         joint: linked?.joint == true || !t.joint.isEmpty))
+            }
+            return out.sorted { $0.label < $1.label }
         }
-        return out.sorted { $0.label < $1.label }
     }
 
     /// Every category in the list, most used first.
@@ -1249,8 +1269,10 @@ struct TransactionsView: View {
                 total = list.total
                 if list.transactions.isEmpty { break }
             } while got.count < min(want, total)
-            rows = got
-            merged = arrivals
+            withAnimation(.easeInOut(duration: 0.2)) {
+                rows = got
+                merged = arrivals
+            }
             error = nil
         } catch {
             guard gen == loadGen else { return }
@@ -1348,14 +1370,15 @@ struct TransactionsView: View {
                     m = String(Format.shiftDay(m + "-01", by: 31).prefix(7))
                 }
                 let own = Set(p.trip.ids)
-                rows = all.filter {
+                let kept = all.filter {
                     let day = String($0.date.prefix(10))
                     return day >= w.start && day <= w.end && !own.contains($0.id) && $0.trip == nil
                 }
                 .sorted { $0.date > $1.date }
+                withAnimation(.easeInOut(duration: 0.2)) { rows = kept }
             case .remove:
                 let d: TripDetail = try await api.get("api/trips/\(p.trip.id)")
-                rows = d.rows
+                withAnimation(.easeInOut(duration: 0.2)) { rows = d.rows }
                 if let month = month {
                     let list: TransactionList? = try? await api.get("api/transactions/list",
                                                                     query: ["month": month, "limit": "1"])
@@ -2526,6 +2549,71 @@ private struct HidesTabBar: ViewModifier {
 /// flow tab; Cash flow takes it (once), shows that month if one is given,
 /// and puts the category in Filters with its chip, so one tap takes it off.
 ///
+/// Cash flow's derived lists, each kept with the inputs it was made from
+/// and remade only when they change (perf rehaul, 2026-11-19). A plain
+/// class in `@State`: reading it in `body` never triggers a redraw, and an
+/// unchanged `@State` array compares to its copy by storage, not row by row.
+@MainActor
+final class CFMemo {
+    struct ShownKey: Equatable {
+        let rows: [Transaction]
+        let merged: [Transaction]
+        let results: [Transaction]?
+        let resultsMerged: [Transaction]
+        let cardRows: [Transaction]?
+        let cardFilter: CardFilter?
+        let inSearch: Bool
+        let filters: TxFilters
+        let owed: Set<String>
+    }
+
+    struct BlocksKey: Equatable {
+        let shown: [Transaction]
+        let sort: TxFilters.Sort
+        let byDay: Bool
+        let byCategory: Bool
+        let hideFirst: Bool
+        let select: Bool
+    }
+
+    private var shownKey: ShownKey?
+    private var shownValue: [Transaction] = []
+    private var blocksKey: BlocksKey?
+    private var blocksValue: [CFBlock] = []
+    private var merchantsKey: (rows: [Transaction], results: [Transaction]?)?
+    private var merchantsValue: [String: String] = [:]
+    private var accountsKey: (rows: [Transaction], accounts: [AccountsOverview.Account])?
+    private var accountsValue: [FilterAccount] = []
+
+    func shown(_ key: ShownKey, make: () -> [Transaction]) -> [Transaction] {
+        if shownKey != key { shownValue = make(); shownKey = key }
+        return shownValue
+    }
+
+    func blocks(_ key: BlocksKey, make: () -> [CFBlock]) -> [CFBlock] {
+        if blocksKey != key { blocksValue = make(); blocksKey = key }
+        return blocksValue
+    }
+
+    /// Each row's merchant by id, for "Paid back · <shop>".
+    func merchants(rows: [Transaction], results: [Transaction]?, make: () -> [String: String]) -> [String: String] {
+        if merchantsKey?.rows != rows || merchantsKey?.results != results {
+            merchantsValue = make()
+            merchantsKey = (rows, results)
+        }
+        return merchantsValue
+    }
+
+    func filterAccounts(rows: [Transaction], accounts: [AccountsOverview.Account],
+                        make: () -> [FilterAccount]) -> [FilterAccount] {
+        if accountsKey?.rows != rows || accountsKey?.accounts != accounts {
+            accountsValue = make()
+            accountsKey = (rows, accounts)
+        }
+        return accountsValue
+    }
+}
+
 ///     CashFlowFocus.shared.show(category: "Takeout", month: "2026-11")
 ///     tab = .cashFlow
 @MainActor

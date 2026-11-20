@@ -250,6 +250,12 @@ struct ReloadsOnChange: ViewModifier {
     @State private var loaded: Int?
     @State private var loadedAt = Date.distantPast
     @State private var visible = false
+    /// The load under way: a change while it runs cancels it before the
+    /// next starts (perf rehaul, 2026-11-19), so quick `version` bumps
+    /// don't leave overlapping loads where the last to finish wins. The
+    /// APIClient turns a cancelled request into `CancellationError`, which
+    /// `app.handle` ignores.
+    @State private var running: Task<Void, Never>?
     static let stale: TimeInterval = 300
 
     func body(content: Content) -> some View {
@@ -265,7 +271,8 @@ struct ReloadsOnChange: ViewModifier {
     private func go() {
         loaded = app.version
         loadedAt = Date()
-        Task { await load() }
+        running?.cancel()
+        running = Task { await load() }
     }
 }
 

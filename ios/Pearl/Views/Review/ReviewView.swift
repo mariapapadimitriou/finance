@@ -530,15 +530,25 @@ struct ReviewView: View {
     // MARK: Loading and answering
 
     private func load() async {
+        // Both at once (perf rehaul, 2026-11-19); the accounts still count
+        // only once the review has come, and only the first time.
+        let wantAccounts = accounts.isEmpty
+        async let overviewReply: AccountsOverview? = loadOverview(wantAccounts)
         do {
-            review = try await app.api.get("api/review")
-            if accounts.isEmpty, let overview: AccountsOverview = try? await app.api.get("api/accounts/overview") {
+            let loaded: Review = try await app.api.get("api/review")
+            withAnimation(.easeInOut(duration: 0.2)) { review = loaded }
+            if let overview = await overviewReply {
                 accounts = overview.linked
             }
             error = nil
         } catch {
             self.error = app.handle(error)
         }
+    }
+
+    private func loadOverview(_ want: Bool) async -> AccountsOverview? {
+        guard want else { return nil }
+        return try? await app.api.get("api/accounts/overview")
     }
 
     private func send(_ answer: ReviewAnswer) async {

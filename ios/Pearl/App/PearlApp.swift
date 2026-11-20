@@ -251,8 +251,11 @@ struct MainTabs: View {
         }
     }
 
-    /// While Pearl is open, every 15 seconds: is another device waiting for
-    /// this one to approve it? (The web looks as often.)
+    /// Once as Pearl comes to the front, then every 60 seconds while it's
+    /// active, never in the background (`.task(id: scenePhase)` ends the
+    /// loop as the phase changes): is another device waiting for this one to
+    /// approve it? Was every 15 seconds, a paid call each (perf rehaul,
+    /// 2026-11-19).
     private func lookForApprovals() async {
         struct Waiting: Decodable { let approvals: [Lenient<Approval>] }
         while scenePhase == .active && !Task.isCancelled {
@@ -261,7 +264,7 @@ struct MainTabs: View {
                 seenApprovals.insert(next.id)
                 approval = next
             }
-            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            try? await Task.sleep(nanoseconds: 60_000_000_000)
         }
     }
 
