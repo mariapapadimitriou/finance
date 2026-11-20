@@ -25,7 +25,7 @@ from datetime import timedelta
 from flask import Flask, abort, g, jsonify, request, send_from_directory, session
 from flask_cors import CORS
 
-from finance import auth, devices, mailer, passkeys, passwords, security, signin_codes, users
+from finance import auth, devices, mailer, passkeys, passwords, security, signin_codes, timing, users
 from finance.api import bp
 # storage_mode is re-exported for convenience; /api/health reads it from db.
 from finance.db import database_url, is_hosted as _is_hosted, storage_mode  # noqa: F401
@@ -1081,6 +1081,7 @@ def create_app(db_path: str | None = None) -> Flask:
         CORS(app, origins=DEV_ORIGINS)
 
     app.config["STORE"] = Store(db_path or _hosted_db_path() or DEFAULT_DB)
+    timing.install(app)
     _install_auth(app)
     app.register_blueprint(bp)
 

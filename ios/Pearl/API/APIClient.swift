@@ -93,8 +93,22 @@ final class APIClient {
         }
         let data: Data
         let response: URLResponse
+        #if DEBUG
+        let began = Date()
+        var timed: HTTPURLResponse?
+        defer {
+            // Server-Timing says what the server spent (finance/timing.py);
+            // the difference from the wall time is the network and the phone.
+            let ms = Int(Date().timeIntervalSince(began) * 1000)
+            let server = timed?.value(forHTTPHeaderField: "Server-Timing") ?? "-"
+            print("Pearl: \(method) \(path) \(ms) ms wall; server \(server)")
+        }
+        #endif
         do {
             (data, response) = try await session.data(for: request)
+            #if DEBUG
+            timed = response as? HTTPURLResponse
+            #endif
         } catch {
             // A screen that reloaded or went away cancels its request: not a
             // connection problem, so it isn't reported as one.

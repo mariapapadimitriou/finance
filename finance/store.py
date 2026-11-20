@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from contextlib import contextmanager
 
 from datetime import datetime, timezone
 
-from . import db
+from . import db, timing
 from .models import Transaction
 
 # Bumped by every write through any store (2026-11-08), so a copy of the
@@ -38,17 +39,29 @@ class _Watched:
         global _writes
         if not sql.lstrip().upper().startswith(_READS):
             _writes += 1
-        return self._c.execute(sql, *args, **kw)
+        began = time.perf_counter()
+        try:
+            return self._c.execute(sql, *args, **kw)
+        finally:
+            timing.statement(time.perf_counter() - began)
 
     def executemany(self, sql, *args, **kw):
         global _writes
         _writes += 1
-        return self._c.executemany(sql, *args, **kw)
+        began = time.perf_counter()
+        try:
+            return self._c.executemany(sql, *args, **kw)
+        finally:
+            timing.statement(time.perf_counter() - began)
 
     def executescript(self, *args, **kw):
         global _writes
         _writes += 1
-        return self._c.executescript(*args, **kw)
+        began = time.perf_counter()
+        try:
+            return self._c.executescript(*args, **kw)
+        finally:
+            timing.statement(time.perf_counter() - began)
 
     def __getattr__(self, name):
         return getattr(self._c, name)

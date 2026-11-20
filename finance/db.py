@@ -249,6 +249,12 @@ def close_cached() -> None:
     _drop_pg()
 
 
+def _count_transaction() -> None:
+    """Tell the request's Server-Timing a transaction began (finance/timing.py)."""
+    from . import timing
+    timing.transaction()
+
+
 @contextmanager
 def connect(path: str, url: str | None = None, schema: str = "public"):
     """Open the ledger: Postgres when a URL is configured, SQLite otherwise.
@@ -276,6 +282,7 @@ def connect(path: str, url: str | None = None, schema: str = "public"):
             # short-lived connection, as before.
             import psycopg
             from psycopg.rows import dict_row
+            _count_transaction()
             raw = psycopg.connect(url, row_factory=dict_row)
             conn = _PgConnection(raw, schema)
             try:
@@ -284,6 +291,7 @@ def connect(path: str, url: str | None = None, schema: str = "public"):
             finally:
                 conn.close()
             return
+        _count_transaction()
         raw = _pg_raw(url)
         conn = _PgConnection(raw, schema)
         _local.pgconn = conn
@@ -306,6 +314,7 @@ def connect(path: str, url: str | None = None, schema: str = "public"):
                 _local.pg = (raw, url, time.monotonic())
         return
 
+    _count_transaction()
     c = sqlite3.connect(path)
     c.row_factory = sqlite3.Row
     try:
