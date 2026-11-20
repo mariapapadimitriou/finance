@@ -782,7 +782,7 @@ struct JointShareBarCard: View {
                 HStack {
                     Text("You \(Format.amount(mine))")
                     Spacer(minLength: 8)
-                    if theirs >= 0.005 { Text("\(t.jointWho) \(Format.amount(theirs))").lineLimit(1) }
+                    if theirs >= 0.005 { Text("\(t.jointShortWho) \(Format.amount(theirs))").lineLimit(1) }
                 }
                 .font(.custom("Figtree-Regular", size: 13, relativeTo: .footnote)).foregroundColor(Pearl.muted)
                 .padding(.top, 8)
@@ -794,15 +794,22 @@ struct JointShareBarCard: View {
 }
 
 extension Transaction {
-    /// G2b-Purchase: "Half each with Sam Lee", "All yours", "Sam Lee’s", or
-    /// "Yours $30.00 · with Sam Lee".
+    /// G2b-Purchase: "Half each", "All yours", "Sam’s", or "Yours $30.00".
+    /// The pill above the card already says who the account is joint with,
+    /// so the title doesn't repeat the name (2026-11-20); the labels under
+    /// the bar carry it, by first name.
     var jointShareTitle: String {
         let whole = abs(fullAmount ?? amount)
         let mine = splitBase
         if mine >= whole - 0.005 { return "All yours" }
-        if mine < 0.005 { return "\(possessive(jointWho))" }
-        if jointPeople.count <= 1, abs(mine * 2 - whole) < 0.015 { return "Half each with \(jointWho)" }
-        return "Yours \(Format.amount(mine)) · with \(jointWho)"
+        if mine < 0.005 { return "\(possessive(jointShortWho))" }
+        if jointPeople.count <= 1, abs(mine * 2 - whole) < 0.015 { return "Half each" }
+        return "Yours \(Format.amount(mine))"
+    }
+
+    /// `jointWho` by first names: "Anastasia", "Anastasia and Sam".
+    var jointShortWho: String {
+        jointPeople.isEmpty ? jointWho : Format.shortList(jointPeople)
     }
 
     /// T-06jr's value beside Whose was it?: "Half each", "Sam Lee’s", "Yours".

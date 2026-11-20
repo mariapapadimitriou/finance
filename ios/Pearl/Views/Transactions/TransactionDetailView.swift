@@ -1079,7 +1079,7 @@ struct TransactionDetailView: View {
         if !t.joint.isEmpty && t.transfer == nil {
             // T-40: "Joint with Sam · 50%"; T-75 on a charge: "yours unless you say".
             CFPill(text: !t.inflow && t.accountShare == nil && !t.jointPeople.isEmpty
-                   ? "Joint with \(t.jointPeople.joined(separator: " and ")) · yours unless you say" : jointLine,
+                   ? "Joint with \(Format.shortList(t.jointPeople)) · yours unless you say" : jointLine,
                    symbol: "person.2")
                 .padding(.top, 10)
         }
@@ -1294,6 +1294,18 @@ struct TransactionDetailView: View {
             .buttonStyle(.plain)
             .disabled(busy)
             .accessibilityHint(isIncome || paidBackAnswer != nil ? "Changes what it was" : "Changes the category")
+            if paidBackAnswer == nil, t.split, let full = t.fullAmount {
+                // S-05 (2026-11-20): "Your share $42.06" as a pill, "of $84.12"
+                // beside it in muted, under the category and in line with it.
+                HStack(spacing: 8) {
+                    CFPill(text: "Your share \(Format.amount(t.splitting.map { $0.you } ?? t.amount))",
+                           symbol: "person.2", symbolTone: Pearl.moneyOut)
+                    Text("of \(Format.amount(full))").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 16 + 36 + 12).padding(.trailing, 16).padding(.bottom, 14).padding(.top, -4)
+                .accessibilityElement(children: .combine)
+            }
             if let trip = t.trip {
                 // TR-06 (G7-TripMore): the trip it's in, under the category,
                 // "Trip to Montréal" over "Mar 4–9 · 23 transactions"; it opens TR-02.
@@ -1498,10 +1510,11 @@ struct TransactionDetailView: View {
     private var countsLine: String? {
         if !t.excluded.isEmpty { return "Left out · \(t.excluded)" }
         if t.refundOf != nil { return nil }
-        if t.split, let full = t.fullAmount {
-            // S-05: "Your share · $42.06 of $84.12". Rule A: the share as
-            // split, not what counts until they pay.
-            return "Your share · \(Format.amount(t.splitting.map { $0.you } ?? t.amount)) of \(Format.amount(full))"
+        if t.split, t.fullAmount != nil {
+            // S-05: the share is a pill under the row (`sharePill`), not a
+            // line of text (2026-11-20). Rule A: the share as split, not
+            // what counts until they pay.
+            return nil
         }
         switch t.counts {
         case "income" where t.jointFrom == "both":
@@ -1803,7 +1816,7 @@ struct TransactionDetailView: View {
 
     /// "Joint with Sam · 50%", or the account's name when it has no people.
     private var jointLine: String {
-        let who = t.jointPeople.isEmpty ? t.joint : "Joint with " + t.jointPeople.joined(separator: " and ")
+        let who = t.jointPeople.isEmpty ? t.joint : "Joint with " + Format.shortList(t.jointPeople)
         return who + (t.jointShare.map { " · \(Int($0.rounded()))%" } ?? "")
     }
 
@@ -1927,8 +1940,9 @@ struct TransactionDetailView: View {
     /// "Joint with Sam · yours, Sam’s or shared", or what she said.
     private var whoseSub: String {
         if t.shareSet { return spendWhose }
-        let them = t.jointPeople.isEmpty ? "theirs" : t.jointPeople.map { "\($0)’s" }.joined(separator: ", ")
-        let who = t.jointPeople.isEmpty ? t.joint : "Joint with " + t.jointPeople.joined(separator: " and ")
+        let them = t.jointPeople.isEmpty ? "theirs"
+            : t.jointPeople.map { "\(Format.shortName($0))’s" }.joined(separator: ", ")
+        let who = t.jointPeople.isEmpty ? t.joint : "Joint with " + Format.shortList(t.jointPeople)
         return "\(who) · yours, \(them) or shared"
     }
 
@@ -2305,7 +2319,9 @@ struct TransactionDetailView: View {
             HStack(spacing: 12) {
                 CFIcon(symbol: "repeat")
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Always for \(t.merchant)").font(Nacre.body).foregroundColor(Pearl.ink)
+                    // One label whatever the merchant is called (2026-11-20):
+                    // a bank's long descriptor made it a paragraph.
+                    Text("Always for this merchant").font(Nacre.body).foregroundColor(Pearl.ink)
                         .fixedSize(horizontal: false, vertical: true)
                     if let sub = sub {
                         Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)

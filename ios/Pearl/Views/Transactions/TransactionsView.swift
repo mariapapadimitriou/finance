@@ -898,6 +898,11 @@ struct TransactionsView: View {
                     if guesses == 0 {
                         barButton("Leave out") { leavingOut = true }
                     }
+                    // Cancel lives in the list's header too, but Select is
+                    // offered on every day's heading, and from far down the
+                    // page the header is out of sight (2026-11-20): the bar
+                    // has to let her out as well.
+                    barButton("Cancel") { endSelecting() }
                 }
                 barButton("Make a trip", on: true) { tripName = ""; makingTrip = true }
                 if guesses > 0 {

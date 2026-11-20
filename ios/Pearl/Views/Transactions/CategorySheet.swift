@@ -124,7 +124,7 @@ struct CategorySheet: View {
                     header
                     if let merchant = merchant, showsAlways {
                         // G1-WhatWasThis: Always on its own card, no second line.
-                        APCard { CFToggleRow(symbol: "repeat", title: "Always for \(merchant)", isOn: $newOnes) }
+                        APCard { CFToggleRow(symbol: "repeat", title: "Always for this merchant", isOn: $newOnes) }
                             .padding(.top, 14)
                     }
                     if available.isEmpty {
@@ -201,7 +201,7 @@ struct CategorySheet: View {
                         .padding(.top, 12)
                     }
                     if let merchant = merchant, showsAlways {
-                        APCard { CFToggleRow(symbol: "repeat", title: "Always for \(merchant)", isOn: $newOnes) }
+                        APCard { CFToggleRow(symbol: "repeat", title: "Always for this merchant", isOn: $newOnes) }
                             .padding(.top, 12)
                     }
                 }
