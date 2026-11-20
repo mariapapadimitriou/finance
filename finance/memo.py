@@ -72,9 +72,11 @@ def remember(key: tuple, compute: Callable[[], T], *, shared: bool = False) -> T
 # instance or another) moves the version on and the entry is simply never
 # asked for again; `today` is in the key where the answer depends on it.
 # Only a request that hasn't written yet reads from here: after its own
-# write the request-level memo above takes over. Bounded, newest kept.
+# write the request-level memo above takes over. One entry per ledger and
+# answer, the newest version only: a ledger is megabytes, and every edit
+# would otherwise leave another copy behind until the process died.
 _ACROSS: dict = {}
-_ACROSS_SIZE = 64
+_ACROSS_SIZE = 256          # (ledger, answer) pairs; oldest dropped past this
 
 
 def _clean() -> bool:
@@ -96,16 +98,17 @@ def remember_across(store, key: tuple, compute: Callable[[], T], *, rows_only: b
         # The request has written: its own memo serves it, and the ledger's
         # version needn't be read again after every write.
         return _out(remember(key + where, compute, shared=True), shared)
-    ident = store.identity()
-    full = ("across",) + ident + key
-    hit = _ACROSS.get(full)
-    if hit is not None:
-        return _out(hit, shared)
+    ledger_id, version = store.identity()
+    slot = (ledger_id,) + key
+    hit = _ACROSS.get(slot)
+    if hit is not None and hit[0] == version:
+        return _out(hit[1], shared)
     value = remember(key + where, compute, shared=True)
     if _seq() == seq:                    # computing it wrote nothing
+        _ACROSS.pop(slot, None)          # the older version goes
         if len(_ACROSS) >= _ACROSS_SIZE:
             _ACROSS.pop(next(iter(_ACROSS)))
-        _ACROSS[full] = value
+        _ACROSS[slot] = (version, value)
     return _out(value, shared)
 
 
