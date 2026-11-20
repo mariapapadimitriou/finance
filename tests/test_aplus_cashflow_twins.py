@@ -86,7 +86,8 @@ class TestBoards(unittest.TestCase):
         tv = read(*TX, "TransactionsView.swift")
         self.assertIn("CFChipWrap(chips: chipItems)", tv)
         self.assertIn("for chip in filters.chips(accounts: filterAccounts)", tv)
-        self.assertIn('[("", "All accounts")] + accounts.map', tv)
+        # fix/filters-expanded: Accounts is a drill-in row again, All accounts first.
+        self.assertIn('option("All accounts", on: filters.accounts.isEmpty)', tv)
 
     def test_results_states(self):
         tv = read(*TX, "TransactionsView.swift")

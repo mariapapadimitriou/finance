@@ -1,6 +1,6 @@
 """CF-SCROLL (canvas v47, approved 2026-11-19): Cash flow is one continuous
-list across months, the month card only chooses its own summary, Filters is
-flat, and Quick sort's cards are one size with 56 pt circles."""
+list across months, the month card only chooses its own summary, Filters opens
+expanded (fix/filters-expanded), and Quick sort's cards are one size with 56 pt circles."""
 
 from __future__ import annotations
 
@@ -139,13 +139,49 @@ def test_search_hides_the_card():
     assert "if !showCalendar && !inSearch { summaryCard" in TV
 
 
-def test_filters_are_flat_with_no_month():
-    sheet = TV[TV.index("struct FilterSheet: View {"):TV.index("struct FilterChipSection: View")]
-    for gone in ("More filters", "monthRows", "Earlier months", "months: [String]", "initialMonth"):
+def _sheet() -> str:
+    return TV[TV.index("struct FilterSheet: View {"):TV.index("struct FilterChipSection: View")]
+
+
+def test_filters_open_expanded_with_no_more_filters_step():
+    """fix/filters-expanded: the pre-#398 sheet, opened as More filters left
+    it. No toggle, no state for it, every section in the body at once."""
+    sheet = _sheet()
+    for gone in ("More filters", "more = true", "@State private var more", "if more {", "_more"):
         assert gone not in sheet, gone
-    for title in ("Transaction type", "Spending type", "Accounts", "Category", "Only show", "Merchant", "Sort"):
-        assert f'"{title}"' in sheet, title
+    body = sheet[sheet.index("var body: some View {"):sheet.index("private var leftOutToggle")]
+    order = ['"Transaction type"', "monthRows", '"Spending type"', "OwnBody { rows }", "leftOutToggle"]
+    at = [body.index(x) for x in order]
+    assert at == sorted(at), order
+    # Nothing in the body hides behind a condition other than Month's own.
+    assert body.count("if ") == 1 and "if !months.isEmpty" in body
     assert 'counted ? "Show \\(count(filters))" : "Show"' in sheet
+
+
+def test_filters_rows_are_the_old_drill_ins_with_tags_under_category():
+    rows = _sheet()
+    rows = rows[rows.index("@ViewBuilder private var rows: some View {"):]
+    order = ['"Accounts"', '"Category"', '"Tags"', '"Amount"', '"Sort"', '"Only show"', '"Merchant"']
+    at = [rows.index(x) for x in order]
+    assert at == sorted(at), order
+    assert "if Features.tags && !tags.isEmpty {" in rows
+
+
+def test_filters_month_keeps_the_list_to_one_month():
+    sheet = _sheet()
+    assert 'row(.month, "Month", filters.month.map(TxFilters.monthLabel) ?? "All months")' in sheet
+    assert 'option("All months", on: filters.month == nil) { filters.month = nil }' in sheet
+    assert "{ filters.month = m }" in sheet
+    # The list, not the card: matches, chip, × and Reset.
+    assert "if let m = month, !t.date.hasPrefix(m) { return false }" in TV
+    assert 'Chip(id: "month", label: Self.monthLabel(m)' in TV
+    assert 'if chip == "month" { month = nil }' in TV
+    assert 'onLeft: { filters = TxFilters() }' in sheet
+    # Its rows sit under their divider, even this month's.
+    assert "hideFirst: !inSearch && filters.month == nil && first == Format.thisMonth()" in TV
+    # The card's own chooser still only changes the card.
+    months = TV[TV.index(".sheet(isPresented: $showMonths)"):][:400]
+    assert "filters" not in months
 
 
 def test_no_single_month_wording():
