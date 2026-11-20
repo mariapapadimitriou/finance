@@ -54,7 +54,8 @@ struct WhoSentNamePage: View {
                             .font(Nacre.body).autocorrectionDisabled()
                             .textInputAutocapitalization(.words)
                             .accessibilityLabel("Name")
-                            .onChange(of: text) { value in if !value.isEmpty { choice = nil } }
+                            // Typing clears a pick; a pick puts its own name here (below).
+                            .onChange(of: text) { value in if !value.isEmpty, value != choice { choice = nil } }
                     }
                     .padding(.horizontal, 14).frame(height: 44)
                     .background(Capsule().fill(Pearl.ink.opacity(0.08)))
@@ -103,8 +104,11 @@ struct WhoSentNamePage: View {
 
     private func row(_ n: String) -> some View {
         Button {
+            // The pick fills the field (2026-11-20): clearing it dropped the
+            // list back to the first contacts, where the one tapped usually
+            // wasn't, so the tick vanished and the tap looked ignored.
             choice = n
-            text = ""
+            text = n
         } label: {
             HStack(spacing: 12) {
                 Text(n).font(Nacre.body).foregroundColor(Pearl.ink)
