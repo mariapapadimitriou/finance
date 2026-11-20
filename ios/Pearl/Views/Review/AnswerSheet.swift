@@ -370,6 +370,7 @@ struct AnswerSheet: View {
     }
 
     private func loadOptions() async {
+        if step == .sender, contacts.state == .asking { await contacts.load() }
         guard step == .out || step == .into, full == nil else { return }
         struct Cases: Decodable { let learnable: Bool? }
         // Both at once (perf rehaul, 2026-11-19).
@@ -1017,6 +1018,9 @@ struct AnswerSheet: View {
         var detail: String? = nil
     }
 
+    /// Who sent this? searches her contacts too (product owner, 2026-11-20).
+    @StateObject private var contacts = ContactNames()
+
     private var choiceSheet: some View {
         VStack(spacing: 0) {
             CFSheetTitle(title: title) { dismiss() }.sheetPart()
@@ -1038,8 +1042,14 @@ struct AnswerSheet: View {
                                 .padding(.horizontal, 16)
                         }
                         if step == .sender && !options.isEmpty {
-                            Text("RECENT").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+                            Text(options.contains { $0.detail == "In your contacts" } && !names.isEmpty
+                                 ? "RECENT AND CONTACTS" : options.contains { $0.detail == "In your contacts" }
+                                 ? "CONTACTS" : "RECENT")
+                                .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
                                 .padding(.horizontal, 16)
+                        }
+                        if step == .sender && contacts.state == .off {
+                            ContactsOffLine().padding(.horizontal, 12)
                         }
                         if !options.isEmpty {
                             APCard {
@@ -1288,8 +1298,15 @@ struct AnswerSheet: View {
             }
         case .sender:
             let typed = text.trimmingCharacters(in: .whitespaces)
-            return names.filter { typed.isEmpty || $0.localizedCaseInsensitiveContains(typed) }
+            let recent = names.filter { typed.isEmpty || $0.localizedCaseInsensitiveContains(typed) }
                 .map { Option(id: "name:" + $0, label: $0) }
+            let found = contacts.matches(typed, excluding: names)
+                .map { Option(id: "name:" + $0, label: $0, detail: "In your contacts") }
+            // The typed name, when nobody listed matches it, is one row to pick.
+            let new = !typed.isEmpty && !names.contains { $0.caseInsensitiveCompare(typed) == .orderedSame }
+                && !contacts.has(typed)
+                ? [Option(id: "name:" + typed, label: "Add “\(typed)” as a new name")] : []
+            return recent + found + new
         // RQ-01, PQ-01 and PQ-02 are tiles (tilesSheet); PQ-03 too (paybackSheet).
         case .kinds, .otherKinds, .guess, .category, .cadence, .joint, .recurring, .payback:
             return []

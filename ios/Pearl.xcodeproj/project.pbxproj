@@ -28,6 +28,7 @@
 		B4F50BD8435DEB237F51EFD7 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97809C6135186A3BD204F423 /* Theme.swift */; };
 		5C5C23B160087A9704B706BB /* AllowanceOrb.swift in Sources */ = {isa = PBXBuildFile; fileRef = E21AE2F637B8AF4630212950 /* AllowanceOrb.swift */; };
 		D02B27EB92A7DFD6D51C0DA8 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = C497270FF4823ED50730E0BC /* Components.swift */; };
+		218DC566CDDFE90CA8E446C2 /* ContactNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B0EAF5567285C8779914090 /* ContactNames.swift */; };
 		145A5EED9E6F3AFA2DB624F1 /* KeyboardDone.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46975E38D86085BDDA245313 /* KeyboardDone.swift */; };
 		E220B67B8BD59918DBDF7B25 /* PearlConfirmSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE07E1F41699A26A45FCC30C /* PearlConfirmSheet.swift */; };
 		707FBD763449C287EBDFB546 /* PearlDateSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDFD30C3406BA7F7401B8A63 /* PearlDateSheet.swift */; };
@@ -156,6 +157,7 @@
 		97809C6135186A3BD204F423 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		E21AE2F637B8AF4630212950 /* AllowanceOrb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllowanceOrb.swift; sourceTree = "<group>"; };
 		C497270FF4823ED50730E0BC /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		3B0EAF5567285C8779914090 /* ContactNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactNames.swift; sourceTree = "<group>"; };
 		46975E38D86085BDDA245313 /* KeyboardDone.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardDone.swift; sourceTree = "<group>"; };
 		EE07E1F41699A26A45FCC30C /* PearlConfirmSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlConfirmSheet.swift; sourceTree = "<group>"; };
 		DDFD30C3406BA7F7401B8A63 /* PearlDateSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlDateSheet.swift; sourceTree = "<group>"; };
@@ -380,6 +382,7 @@
 			children = (
 				E21AE2F637B8AF4630212950 /* AllowanceOrb.swift */,
 				C497270FF4823ED50730E0BC /* Components.swift */,
+				3B0EAF5567285C8779914090 /* ContactNames.swift */,
 				46975E38D86085BDDA245313 /* KeyboardDone.swift */,
 				EE07E1F41699A26A45FCC30C /* PearlConfirmSheet.swift */,
 				DDFD30C3406BA7F7401B8A63 /* PearlDateSheet.swift */,
@@ -613,6 +616,7 @@
 				B4F50BD8435DEB237F51EFD7 /* Theme.swift in Sources */,
 				5C5C23B160087A9704B706BB /* AllowanceOrb.swift in Sources */,
 				D02B27EB92A7DFD6D51C0DA8 /* Components.swift in Sources */,
+				218DC566CDDFE90CA8E446C2 /* ContactNames.swift in Sources */,
 				145A5EED9E6F3AFA2DB624F1 /* KeyboardDone.swift in Sources */,
 				E220B67B8BD59918DBDF7B25 /* PearlConfirmSheet.swift in Sources */,
 				707FBD763449C287EBDFB546 /* PearlDateSheet.swift in Sources */,

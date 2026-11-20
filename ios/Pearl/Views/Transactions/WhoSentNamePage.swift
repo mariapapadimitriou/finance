@@ -3,7 +3,9 @@ import SwiftUI
 /// T-14 Who sent this? (THL-232) before PB-30, for money no one owes her
 /// that Pearl can't put a name to (2026-11-18, after #380): the same
 /// question as Needs a look asks it (AnswerSheet's `.sender` step), with a
-/// name typed or one of the RECENT people, then Continue. The name is who
+/// name typed, one of the RECENT people or one of her CONTACTS (product
+/// owner, 2026-11-20), then Continue. A name nobody matches is one row to
+/// pick, "Add “Denise” as a new name", so adding one is plain to see. The name is who
 /// PB-30's OTHER PURCHASES are split with; nothing is saved here, so the
 /// payback keeps one save and one Undo. No "Use your bank's name instead"
 /// or Skip: those answer the Needs a look question, and this is a step in
@@ -21,11 +23,21 @@ struct WhoSentNamePage: View {
     @State private var text = ""
     @State private var choice: String?
     @State private var recent: [String] = []
+    @StateObject private var contacts = ContactNames()
 
     private var typed: String { text.trimmingCharacters(in: .whitespaces) }
 
     private var shown: [String] {
         recent.filter { typed.isEmpty || $0.localizedCaseInsensitiveContains(typed) }
+    }
+
+    private var fromContacts: [String] { contacts.matches(typed, excluding: recent) }
+
+    /// The typed name, when it isn't anyone listed, as the row to pick.
+    private var newName: String? {
+        guard !typed.isEmpty, !recent.contains(where: { $0.caseInsensitiveCompare(typed) == .orderedSame }),
+              !contacts.has(typed) else { return nil }
+        return typed
     }
 
     private var picked: String? { choice ?? (typed.isEmpty ? nil : typed) }
@@ -56,6 +68,24 @@ struct WhoSentNamePage: View {
                             }
                         }
                     }
+                    if !fromContacts.isEmpty {
+                        Text("CONTACTS").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+                            .padding(.horizontal, 16)
+                        APCard {
+                            ForEach(Array(fromContacts.enumerated()), id: \.element) { i, n in
+                                if i > 0 { APSeparator(afterFace: false) }
+                                row(n)
+                            }
+                        }
+                        if typed.isEmpty && contacts.names.count > ContactNames.browseCap {
+                            Text("Search to find anyone in your contacts.")
+                                .font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 4)
+                        }
+                    }
+                    if let name = newName {
+                        APCard { AddTypedNameRow(name: name, picked: choice == name) { choice = name } }
+                    }
+                    if contacts.state == .off { ContactsOffLine() }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 12)
             }
@@ -68,7 +98,7 @@ struct WhoSentNamePage: View {
         .background(APSheetSurface())
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .task { await load() }
+        .task { await load(); await contacts.load() }
     }
 
     private func row(_ n: String) -> some View {
