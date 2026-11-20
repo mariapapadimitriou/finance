@@ -439,6 +439,13 @@ _MOVED = {NEUTRAL, "Saved", UNSORTED}
 
 
 def transfer_pairs(transactions: list[Transaction], today: str | None = None) -> dict[str, str]:
+    """Remembered for the request (finance/memo.py); see `_transfer_pairs`."""
+    from .memo import remember_for
+    return remember_for(transactions, ("pairs", today),
+                        lambda: _transfer_pairs(transactions, today))
+
+
+def _transfer_pairs(transactions: list[Transaction], today: str | None = None) -> dict[str, str]:
     """{departure id: arrival id} for money that left one of her accounts and
     arrived, the same amount, in another of hers within WINDOW_DAYS (two days) — for the
     list to show as one line.

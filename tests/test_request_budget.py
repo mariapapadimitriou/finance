@@ -41,15 +41,17 @@ def _a_purchase(client) -> str:
     return next(r["id"] for r in rows if r["amount"] > 0)
 
 
-# Ceilings: (transactions, statements). Measured on the bundled ledger when
-# the header was added; a request is allowed to cost this much and no more.
+# Ceilings: (transactions, statements). Measured on the bundled ledger; a
+# request is allowed to cost this much and no more. One transaction per
+# request since finance/request_tx.py (2026-11-19); the statements come down
+# as computed results are kept (finance/derived.py).
 READS = {
-    "/api/home": (74, 79),
-    "/api/transactions/list?limit=25&offset=0": (47, 59),
-    "/api/review": (23, 26),
-    "/api/quick-sort": (30, 36),
-    "/api/calendar?month=2026-09": (19, 19),
-    "/api/accounts/overview": (25, 25),
+    "/api/home": (1, 47),
+    "/api/transactions/list?limit=25&offset=0": (1, 30),
+    "/api/review": (1, 19),
+    "/api/quick-sort": (1, 19),
+    "/api/calendar?month=2026-09": (1, 14),
+    "/api/accounts/overview": (1, 24),
 }
 
 
@@ -66,14 +68,17 @@ def test_category_change_stays_within_budget(client):
     tid = _a_purchase(client)
     t = _cost(client, "post", "/api/transactions/batch/category",
               json={"ids": [tid], "category": "Groceries"})
-    assert t["tx"] <= 47, t["tx"]
+    assert t["tx"] <= 1 and t["stmts"] <= 62, (t["tx"], t["stmts"])
 
 
 def test_mark_stays_within_budget(client):
+    """A write's answer carries what changed (finance/changed.py): the rows
+    it touched, the Allowance and the review's count. That is most of a
+    write's statements now, and what spares the phone three screen loads."""
     tid = _a_purchase(client)
     t = _cost(client, "post", f"/api/transactions/{tid}/mark",
               json={"case": "spending", "category": "Groceries"})
-    assert t["tx"] <= 55, t["tx"]
+    assert t["tx"] <= 1 and t["stmts"] <= 65, (t["tx"], t["stmts"])
 
 
 def test_header_says_what_the_request_spent(client):

@@ -78,7 +78,14 @@ def bill_merchants(confirm: dict | None) -> set[str]:
 
 
 def kind_map(store, transactions: list[Transaction], today: date) -> dict[str, str]:
-    """{txn_id: kind} for every row that counts as spending."""
+    """{txn_id: kind} for every row that counts as spending. Remembered for
+    the request (finance/memo.py)."""
+    from .memo import remember_for
+    return remember_for(transactions, ("kinds", store.path, store.url, store.schema, today),
+                        lambda: _kind_map(store, transactions, today))
+
+
+def _kind_map(store, transactions: list[Transaction], today: date) -> dict[str, str]:
     from .analytics import counts_as_spending
     from .income_bills import load
     chosen = category_kinds(store)

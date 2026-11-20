@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from contextlib import contextmanager
 
@@ -23,45 +24,136 @@ from datetime import datetime, timezone
 from . import db, timing
 from .models import Transaction
 
-# Bumped by every write through any store (2026-11-08), so a copy of the
-# ledger kept for one request is never read after something changed it.
-_writes = 0
+# Writes are counted per request (2026-11-08, on `g` since 2026-11-19), so a
+# copy of the ledger kept for one request is never read after something
+# changed it. A statement that changed no row (an UPDATE that found nothing,
+# a DELETE of what wasn't there) doesn't count: a request-long transaction
+# runs many of those and the ledger it read is still right.
 _READS = ("SELECT", "WITH", "PRAGMA")
+
+
+_SETTINGS_WRITE = re.compile(r"^\s*(?:INSERT(?:\s+OR\s+\w+)?\s+INTO|UPDATE|DELETE\s+FROM)\s+settings\b",
+                             re.IGNORECASE)
+
+
+def _dirty(cur, key=None, sql: str = "") -> None:
+    """Note a write. A write to `settings` counts separately: the ledger's
+    rows don't depend on it, so the copy of them kept for the request stays
+    good (2026-11-19); what reads settings is remembered against both."""
+    try:
+        from flask import g, has_request_context
+    except ImportError:                                           # pragma: no cover
+        return
+    if not has_request_context():
+        return
+    rowcount = getattr(cur, "rowcount", -1)
+    if rowcount is None or rowcount != 0:
+        if _SETTINGS_WRITE.match(sql or ""):
+            g._settings_seq = g.get("_settings_seq", 0) + 1
+        else:
+            g._dirty_seq = g.get("_dirty_seq", 0) + 1
+        if key is not None:
+            keys = g.setdefault("_dirty_keys", {})
+            keys[key] = keys.get(key, 0) + 1
+
+
+def dirty_stores() -> list:
+    """The stores this request changed, for the version bump at the end."""
+    try:
+        from flask import g, has_request_context
+    except ImportError:                                           # pragma: no cover
+        return []
+    if not has_request_context():
+        return []
+    stores = g.get("_stores", {})
+    return [stores[k] for k in g.get("_dirty_keys", {}) if k in stores]
+
+
+def dirty_seq() -> int:
+    """How many times this request has changed the ledger's rows (0 outside one)."""
+    try:
+        from flask import g, has_request_context
+    except ImportError:                                           # pragma: no cover
+        return 0
+    return g.get("_dirty_seq", 0) if has_request_context() else 0
+
+
+def settings_seq() -> int:
+    """How many times this request has changed a setting."""
+    try:
+        from flask import g, has_request_context
+    except ImportError:                                           # pragma: no cover
+        return 0
+    return g.get("_settings_seq", 0) if has_request_context() else 0
+
+
+def request_scoped() -> bool:
+    """Whether this request runs as one transaction (finance/request_tx.py)."""
+    try:
+        from flask import g, has_request_context
+    except ImportError:                                           # pragma: no cover
+        return False
+    return has_request_context() and bool(g.get("_tx_enabled", False))
+
+
+
+def remembered(method):
+    """A read-only Store method whose answer is kept for the rest of the
+    request, until something is written (finance/memo.py). The list, Home
+    and a write's answer each asked for the splits, the notes and the rest
+    several times over; now once. Answers come back as copies."""
+    import functools
+
+    @functools.wraps(method)
+    def wrapper(self, *args):
+        from .memo import remember
+        return remember(("store", method.__name__, self.path, self.url, self.schema) + args,
+                        lambda: method(self, *args))
+    return wrapper
 
 
 class _Watched:
     """A connection that notes when it writes; everything else passes through."""
 
-    def __init__(self, c):
+    def __init__(self, c, key=None):
         self._c = c
+        self._key = key
 
     def execute(self, sql, *args, **kw):
-        global _writes
+        began = time.perf_counter()
+        try:
+            cur = self._c.execute(sql, *args, **kw)
+        finally:
+            timing.statement(time.perf_counter() - began)
         if not sql.lstrip().upper().startswith(_READS):
-            _writes += 1
+            _dirty(cur, self._key, sql)
+        return cur
+
+    def executemany(self, sql, *args, **kw):
+        began = time.perf_counter()
+        try:
+            cur = self._c.executemany(sql, *args, **kw)
+        finally:
+            timing.statement(time.perf_counter() - began)
+        _dirty(cur, self._key, sql)
+        return cur
+
+    def execute_quietly(self, sql, *args, **kw):
+        """A write that is bookkeeping, not a change (the version bump)."""
         began = time.perf_counter()
         try:
             return self._c.execute(sql, *args, **kw)
         finally:
             timing.statement(time.perf_counter() - began)
 
-    def executemany(self, sql, *args, **kw):
-        global _writes
-        _writes += 1
-        began = time.perf_counter()
-        try:
-            return self._c.executemany(sql, *args, **kw)
-        finally:
-            timing.statement(time.perf_counter() - began)
-
     def executescript(self, *args, **kw):
-        global _writes
-        _writes += 1
         began = time.perf_counter()
         try:
-            return self._c.executescript(*args, **kw)
+            cur = self._c.executescript(*args, **kw)
         finally:
             timing.statement(time.perf_counter() - began)
+        _dirty(cur, self._key)
+        return cur
 
     def __getattr__(self, name):
         return getattr(self._c, name)
@@ -633,6 +725,30 @@ CREATE TABLE IF NOT EXISTS txn_tags (
     tag    TEXT NOT NULL,
     PRIMARY KEY (txn_id, tag)
 );
+
+-- Which ledger this is (2026-11-19): bumped once by every request that
+-- changed something. Answers carry it as their ETag, so the phone can ask
+-- "anything new since version N?" for the cost of one statement, and keep
+-- what it has when the answer is no.
+CREATE TABLE IF NOT EXISTS ledger_meta (
+    id        INTEGER PRIMARY KEY,
+    version   INTEGER NOT NULL DEFAULT 0,
+    bumped_at TEXT
+);
+INSERT OR IGNORE INTO ledger_meta (id, version) VALUES (1, 0);
+
+-- Writes the phone has already made (2026-11-19). The phone queues an edit
+-- while offline and sends it with an id of its own; a send that reaches
+-- the server twice (a timeout, a retry) finds its row here and gets the
+-- same answer back instead of doing the work again.
+CREATE TABLE IF NOT EXISTS applied_ops (
+    op_id        TEXT PRIMARY KEY,
+    base_version INTEGER,
+    version      INTEGER,
+    status       INTEGER NOT NULL DEFAULT 0,
+    result       TEXT,
+    applied_at   TEXT
+);
 CREATE INDEX IF NOT EXISTS idx_tag ON txn_tags(tag);
 CREATE TABLE IF NOT EXISTS txn_saved_to (
     txn_id     TEXT PRIMARY KEY,
@@ -825,12 +941,83 @@ class Store:
         # One account's ledger. On Postgres a schema per account; on SQLite
         # the account's own file is the path, and this stays "public".
         self.schema = db.valid_schema(schema)
-        self._init()
+        self._initialising = True
+        try:
+            self._init()
+        finally:
+            self._initialising = False
 
     @contextmanager
-    def conn(self):
-        with db.connect(self.path, self.url, self.schema) as c:
-            yield _Watched(c)
+    def conn(self, *, standalone: bool = False):
+        """One transaction, or the request's one (finance/request_tx.py).
+
+        `standalone` keeps out of the request's transaction: schema creation
+        and migrations run in their own short ones, because an `ALTER TABLE`
+        that is expected to fail would abort a Postgres transaction for
+        everything after it, and the schema lock must not be held for a
+        whole request."""
+        scoped = not standalone and not self._initialising and request_scoped()
+        key = (self.path, self.url, self.schema)
+        if scoped:
+            from flask import g
+            g.setdefault("_stores", {})[key] = self
+        with db.connect(self.path, self.url, self.schema, request_scope=scoped) as c:
+            yield _Watched(c, key)
+
+    # ── Writes the phone already made ─────────────────────────────────────
+
+    def claim_op(self, op_id: str, base_version: int | None) -> dict | None:
+        """Start applying the phone's write `op_id`. None when it is new;
+        otherwise the earlier attempt: {status, result, version}, where
+        status 0 means it is still being applied."""
+        with self.conn() as c:
+            cur = c.execute_quietly(
+                "INSERT OR IGNORE INTO applied_ops (op_id, base_version, status, applied_at) "
+                "VALUES (?, ?, 0, ?)", (op_id, base_version, _now()))
+            if (cur.rowcount or 0) > 0:
+                return None
+            row = c.execute("SELECT status, result, version FROM applied_ops WHERE op_id = ?",
+                            (op_id,)).fetchone()
+        return dict(row) if row else None
+
+    def finish_op(self, op_id: str, status: int, result: str | None, version: int) -> None:
+        with self.conn() as c:
+            c.execute_quietly("UPDATE applied_ops SET status = ?, result = ?, version = ?, "
+                              "applied_at = ? WHERE op_id = ?",
+                              (status, result, version, _now(), op_id))
+
+    def forget_op(self, op_id: str) -> None:
+        """The attempt failed on the server's side: the phone may try again."""
+        with self.conn() as c:
+            c.execute_quietly("DELETE FROM applied_ops WHERE op_id = ?", (op_id,))
+
+    # ── Ledger version ────────────────────────────────────────────────────
+
+    def version(self) -> int:
+        """Which ledger this is: bumped by every request that changed it.
+        Read once per request until something is written (finance/memo.py)."""
+        from .memo import remember
+        return remember(("version", self.path, self.url, self.schema), self._version)
+
+    def _version(self) -> int:
+        with self.conn() as c:
+            row = c.execute("SELECT version FROM ledger_meta WHERE id = 1").fetchone()
+        return int(row["version"]) if row else 0
+
+    def bump_version(self) -> int:
+        """Note that the ledger changed; the new version."""
+        with self.conn() as c:
+            c.execute_quietly("UPDATE ledger_meta SET version = version + 1, bumped_at = ? "
+                              "WHERE id = 1", (_now(),))
+            row = c.execute("SELECT version FROM ledger_meta WHERE id = 1").fetchone()
+        version = int(row["version"]) if row else 0
+        try:
+            from flask import g, has_request_context
+            if has_request_context():
+                g.get("_memo", {}).pop(("version", self.path, self.url, self.schema), None)
+        except ImportError:                                       # pragma: no cover
+            pass
+        return version
 
     @property
     def is_postgres(self) -> bool:
@@ -1278,8 +1465,9 @@ class Store:
         cache = g.setdefault("_ledger", {})
         key = (self.path, self.url, self.schema)
         hit = cache.get(key)
-        if hit is None or hit[0] != _writes:
-            hit = (_writes, self._all_transactions())
+        seq = dirty_seq()
+        if hit is None or hit[0] != seq:
+            hit = (seq, self._all_transactions())
             cache[key] = hit
         return [copy.copy(t) for t in hit[1]]
 
@@ -1536,6 +1724,7 @@ class Store:
             c.execute("UPDATE txn_exclusions SET kept = 1 WHERE txn_id = ?", (txn_id,))
             return True
 
+    @remembered
     def exclusion_rules(self) -> list[dict]:
         with self.conn() as c:
             rules = [dict(r) for r in c.execute(
@@ -1583,11 +1772,16 @@ class Store:
         if not kinds:
             return 0
         with self.conn() as c:
-            mine = {r["txn_id"] for r in c.execute(
-                "SELECT txn_id FROM txn_income_type WHERE source = 'user'").fetchall()}
+            rows = c.execute("SELECT txn_id, kind, source FROM txn_income_type").fetchall()
+            mine = {r["txn_id"] for r in rows if r["source"] == "user"}
+            # A guess already written stays as it is (2026-11-19): writing
+            # it again cost two statements a row and threw away the ledger
+            # the request had read.
+            same = {r["txn_id"] for r in rows
+                    if r["source"] != "user" and kinds.get(r["txn_id"]) == r["kind"]}
             n = 0
             for tid, kind in kinds.items():
-                if tid in mine:
+                if tid in mine or tid in same:
                     continue
                 c.execute("DELETE FROM txn_income_type WHERE txn_id = ?", (tid,))
                 c.execute("INSERT INTO txn_income_type (txn_id, kind, source) "
@@ -1596,6 +1790,7 @@ class Store:
             return n
 
     # ── Review ───────────────────────────────────────────────────────────
+    @remembered
     def dismissed_reviews(self) -> set[str]:
         with self.conn() as c:
             return {r["item_key"] for r in
@@ -1606,6 +1801,7 @@ class Store:
             c.execute("INSERT OR IGNORE INTO review_dismissed (item_key) VALUES (?)",
                       (key,))
 
+    @remembered
     def skipped_reviews(self) -> set[str]:
         with self.conn() as c:
             return {r["item_key"] for r in
@@ -1645,6 +1841,7 @@ class Store:
             rows = c.execute("SELECT txn_id, twin_id FROM txn_duplicates").fetchall()
         return {r["txn_id"] for r in rows} | {r["twin_id"] for r in rows}
 
+    @remembered
     def duplicates(self) -> dict[str, dict]:
         """copy id → {twin, state, found_on}."""
         with self.conn() as c:
@@ -1670,6 +1867,7 @@ class Store:
             return (cur.rowcount or 0) > 0
 
     # ── Confirmed categories and notes ──────────────────────────────────
+    @remembered
     def confirmed_categories(self) -> dict[str, str]:
         """{txn_id: the category you said was right}."""
         with self.conn() as c:
@@ -1686,6 +1884,7 @@ class Store:
         with self.conn() as c:
             c.execute("DELETE FROM txn_confirmed WHERE txn_id = ?", (txn_id,))
 
+    @remembered
     def notes(self) -> dict[str, str]:
         with self.conn() as c:
             return {r["txn_id"]: r["note"] for r in
@@ -1739,6 +1938,7 @@ class Store:
                              "ORDER BY charge_id", (inflow_id,)).fetchall()
         return [(r["charge_id"], float(r["amount"])) for r in rows]
 
+    @remembered
     def payback_people(self) -> dict[str, str]:
         """inflow id → the person in a split it came from, where you said."""
         with self.conn() as c:
@@ -1755,6 +1955,7 @@ class Store:
                           (inflow_id, person))
 
     # ── What was this? (2026-10-14) ──────────────────────────────────────
+    @remembered
     def payback_kinds(self) -> dict[str, str]:
         """inflow id → "reimbursement" where a repayment was one (work,
         insurance) rather than a friend's share."""
@@ -1769,6 +1970,7 @@ class Store:
                 c.execute("INSERT INTO txn_payback_kind (inflow_id, kind) VALUES (?, ?)",
                           (inflow_id, kind))
 
+    @remembered
     def refunds(self) -> dict[str, str]:
         """inflow id → the charge it refunds, where she linked them."""
         with self.conn() as c:
@@ -1783,6 +1985,7 @@ class Store:
                 c.execute("INSERT INTO txn_refunds (inflow_id, charge_id) VALUES (?, ?)",
                           (inflow_id, charge_id))
 
+    @remembered
     def saved_to(self) -> dict[str, str]:
         """txn id → the savings or investment account a Saved row went to
         (or, for money in, came out of)."""
@@ -1797,6 +2000,7 @@ class Store:
                 c.execute("INSERT INTO txn_saved_to (txn_id, account_id) VALUES (?, ?)",
                           (txn_id, account_id))
 
+    @remembered
     def tags(self) -> dict[str, list[str]]:
         """txn id → her tags on it, in alphabetical order."""
         with self.conn() as c:
@@ -1932,6 +2136,7 @@ class Store:
             rows = c.execute("SELECT txn_id, range_id FROM sorted_range_rows").fetchall()
         return {r["txn_id"]: int(r["range_id"]) for r in rows}
 
+    @remembered
     def merchant_names(self) -> dict[str, str]:
         """merchant key (lower-cased) → her name for it."""
         with self.conn() as c:
@@ -1947,6 +2152,7 @@ class Store:
                           (key, name))
 
     # ── Splits (THL-124) ─────────────────────────────────────────────────
+    @remembered
     def splits(self) -> dict[str, dict]:
         """charge id → {mode, watch, people: [{name, amount}]}, each person
         with any cash they paid her (`cash`) and what their part was before
@@ -2652,6 +2858,7 @@ class Store:
         return self.setting("seeded", "") == "done"
 
     # ── Merchant overrides ───────────────────────────────────────────────────
+    @remembered
     def overrides(self) -> dict[str, str]:
         with self.conn() as c:
             rows = c.execute("SELECT merchant_key, category FROM merchant_overrides").fetchall()
@@ -2846,9 +3053,33 @@ class Store:
             return bool(cur.rowcount and cur.rowcount > 0)
 
     def setting(self, key: str, default=None):
+        """One setting. Within a request the table is read once and kept
+        until something is written (2026-11-19): Home read twenty-odd keys,
+        one statement each."""
+        settings = self._settings()
+        if settings is not None:
+            return settings.get(key, default)
         with self.conn() as c:
             row = c.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
         return row["value"] if row else default
+
+    def _settings(self) -> dict | None:
+        try:
+            from flask import g, has_request_context
+        except ImportError:                                       # pragma: no cover
+            return None
+        if not has_request_context():
+            return None
+        cache = g.setdefault("_settings", {})
+        key = (self.path, self.url, self.schema)
+        seq = settings_seq()
+        hit = cache.get(key)
+        if hit is None or hit[0] != seq:
+            with self.conn() as c:
+                rows = c.execute("SELECT key, value FROM settings").fetchall()
+            hit = (seq, {r["key"]: r["value"] for r in rows})
+            cache[key] = hit
+        return hit[1]
 
     def set_setting(self, key: str, value) -> None:
         with self.conn() as c:
@@ -2867,6 +3098,7 @@ class Store:
     # ── Piggy banks ──────────────────────────────────────────────────────────
     # The arithmetic lives in finance/piggy.py; this only stores the decisions.
 
+    @remembered
     def piggy_banks(self) -> list:
         from .piggy import Bank
         with self.conn() as c:
@@ -3157,11 +3389,13 @@ class Store:
             )
 
     # ── Transfer destinations ────────────────────────────────────────────
+    @remembered
     def destinations(self) -> dict[str, str]:
         with self.conn() as c:
             rows = c.execute("SELECT key, category FROM transfer_destinations").fetchall()
         return {r["key"]: r["category"] for r in rows}
 
+    @remembered
     def destination_labels(self) -> dict[str, str]:
         with self.conn() as c:
             rows = c.execute("SELECT key, label FROM transfer_destinations").fetchall()
@@ -3223,6 +3457,7 @@ class Store:
         return {r["account_id"]: {"day": r["day"], "current": r["current"]} for r in rows}
 
     # ── Joint accounts ───────────────────────────────────────────────────
+    @remembered
     def joint_accounts(self) -> dict[str, str]:
         with self.conn() as c:
             rows = c.execute("SELECT account_id, label FROM joint_accounts").fetchall()
@@ -3285,6 +3520,7 @@ class Store:
                           (account_id, label))
 
     # ── How each account counts (AM-02 to AM-07) ─────────────────────────
+    @remembered
     def account_settings(self) -> dict[str, dict]:
         with self.conn() as c:
             rows = c.execute("SELECT * FROM account_settings").fetchall()
@@ -3315,6 +3551,7 @@ class Store:
             c.execute(f"UPDATE account_settings SET {sets} WHERE account_id = ?",
                       (*values.values(), account_id))
 
+    @remembered
     def not_counted(self) -> set[str]:
         """Accounts whose rows and balance stay out of her budget."""
         with self.conn() as c:
@@ -3455,6 +3692,7 @@ class Store:
                           "VALUES (?, ?, ?, ?)", (account_id, key, who, person or None))
 
     # ── Regular pay rules (2026-10-28) ─────────────────────────────────────
+    @remembered
     def pay_rules(self) -> dict[str, str]:
         """{payer key: the payer's name}."""
         with self.conn() as c:
@@ -3471,6 +3709,7 @@ class Store:
             cur = c.execute("DELETE FROM pay_rules WHERE payer_key = ?", (key,))
             return (cur.rowcount or 0) > 0
 
+    @remembered
     def recurring_transfers(self) -> list[dict]:
         with self.conn() as c:
             rows = c.execute("SELECT * FROM recurring_transfers ORDER BY amount DESC").fetchall()

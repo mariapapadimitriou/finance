@@ -83,7 +83,11 @@ def apply(store, transactions: list[Transaction] | None = None) -> int:
             continue
         if t.category != "Income":
             cats[t.fingerprint] = ("Income", SOURCE)
-        # Hers, as if she'd said it: guesses never write over it.
+        # Hers, as if she'd said it: guesses never write over it. Already
+        # so: nothing to write (2026-11-19).
+        if t.income_type == rule["kind"] and t.income_type_source == "user" \
+                and t.category == "Income":
+            continue
         store.set_income_type(t.fingerprint, rule["kind"], "user")
         n += 1
     if cats:
