@@ -1280,7 +1280,12 @@ struct TransactionsView: View {
         let screens = app.screens
         async let summaryLoad: Bool? = try? screens.load("api/summary", as: Summary.self) { summary in
             months = summary.months ?? []
+            let was = month
             if month == nil || !months.contains(month!) { month = summary.latestMonth ?? months.last }
+            // The card's numbers come from the kept summary's month at
+            // once (2026-11-20), not after the server has confirmed it:
+            // "Spent so far" filled in last and moved the page.
+            if month != was || monthTotals == nil { Task { await loadCard() } }
         }
         async let reviewLoad: Bool? = try? screens.load("api/review", as: Review.self) { took($0) }
         async let accountsLoad: Bool? = try? screens.load("api/accounts/overview", as: AccountsOverview.self) {
@@ -1289,7 +1294,6 @@ struct TransactionsView: View {
         // CF-SCROLL: the list is every month's, so it needn't wait for them.
         async let listed: Void = reload()
         _ = await summaryLoad
-        await loadCard()
         _ = await listed
         _ = await (reviewLoad, accountsLoad)
         if !syncedOnce {
@@ -1373,11 +1377,14 @@ struct TransactionsView: View {
         if cardFilter != nil { await loadCardRows() }
     }
 
-    /// The kept first page, as it was, without animation.
+    /// The kept first page, as it was, without animation. It counts as
+    /// loaded (2026-11-20): the loading rows used to sit over it until the
+    /// server answered, then swap for the same rows.
     private func show(_ kept: TransactionList) {
         var quiet = SwiftUI.Transaction()
         quiet.disablesAnimations = true
         withTransaction(quiet) {
+            loadedOnce = true
             rows = kept.transactions
             merged = kept.merged
             total = kept.total
