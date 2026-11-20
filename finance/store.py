@@ -17,6 +17,7 @@ import json
 import os
 import re
 import time
+import uuid
 from contextlib import contextmanager
 
 from datetime import datetime, timezone
@@ -36,17 +37,19 @@ _SETTINGS_WRITE = re.compile(r"^\s*(?:INSERT(?:\s+OR\s+\w+)?\s+INTO|UPDATE|DELET
                              re.IGNORECASE)
 
 
-def _dirty(cur, key=None, sql: str = "") -> None:
+def _dirty(cur, key=None, sql: str = "", watched=None) -> None:
     """Note a write. A write to `settings` counts separately: the ledger's
     rows don't depend on it, so the copy of them kept for the request stays
     good (2026-11-19); what reads settings is remembered against both."""
+    rowcount = getattr(cur, "rowcount", -1)
+    if watched is not None and (rowcount is None or rowcount != 0):
+        watched.wrote = True
     try:
         from flask import g, has_request_context
     except ImportError:                                           # pragma: no cover
         return
     if not has_request_context():
         return
-    rowcount = getattr(cur, "rowcount", -1)
     if rowcount is None or rowcount != 0:
         if _SETTINGS_WRITE.match(sql or ""):
             g._settings_seq = g.get("_settings_seq", 0) + 1
@@ -106,9 +109,9 @@ def remembered(method):
 
     @functools.wraps(method)
     def wrapper(self, *args):
-        from .memo import remember
-        return remember(("store", method.__name__, self.path, self.url, self.schema) + args,
-                        lambda: method(self, *args))
+        from .memo import remember_across
+        return remember_across(self, ("store", method.__name__) + args,
+                               lambda: method(self, *args))
     return wrapper
 
 
@@ -118,6 +121,7 @@ class _Watched:
     def __init__(self, c, key=None):
         self._c = c
         self._key = key
+        self.wrote = False
 
     def execute(self, sql, *args, **kw):
         began = time.perf_counter()
@@ -126,7 +130,7 @@ class _Watched:
         finally:
             timing.statement(time.perf_counter() - began)
         if not sql.lstrip().upper().startswith(_READS):
-            _dirty(cur, self._key, sql)
+            _dirty(cur, self._key, sql, self)
         return cur
 
     def executemany(self, sql, *args, **kw):
@@ -135,7 +139,7 @@ class _Watched:
             cur = self._c.executemany(sql, *args, **kw)
         finally:
             timing.statement(time.perf_counter() - began)
-        _dirty(cur, self._key, sql)
+        _dirty(cur, self._key, sql, self)
         return cur
 
     def execute_quietly(self, sql, *args, **kw):
@@ -152,7 +156,7 @@ class _Watched:
             cur = self._c.executescript(*args, **kw)
         finally:
             timing.statement(time.perf_counter() - began)
-        _dirty(cur, self._key)
+        _dirty(cur, self._key, "", self)
         return cur
 
     def __getattr__(self, name):
@@ -735,7 +739,8 @@ CREATE TABLE IF NOT EXISTS txn_tags (
 CREATE TABLE IF NOT EXISTS ledger_meta (
     id        INTEGER PRIMARY KEY,
     version   INTEGER NOT NULL DEFAULT 0,
-    bumped_at TEXT
+    bumped_at TEXT,
+    ledger_id TEXT
 );
 
 -- Writes the phone has already made (2026-11-19). The phone queues an edit
@@ -963,7 +968,16 @@ class Store:
             from flask import g
             g.setdefault("_stores", {})[key] = self
         with db.connect(self.path, self.url, self.schema, request_scope=scoped) as c:
-            yield _Watched(c, key)
+            watched = _Watched(c, key)
+            yield watched
+            # Outside a request (tests, seeding, the command line) and on the
+            # requests that keep their own short transactions, a write moves
+            # the version on here, so what is remembered across requests
+            # for the old version is never served again.
+            if watched.wrote and not scoped and not self._initialising:
+                watched.execute_quietly(
+                    "UPDATE ledger_meta SET version = version + 1, bumped_at = ? WHERE id = 1",
+                    (_now(),))
 
     # ── Writes the phone already made ─────────────────────────────────────
 
@@ -995,15 +1009,21 @@ class Store:
     # ── Ledger version ────────────────────────────────────────────────────
 
     def version(self) -> int:
-        """Which ledger this is: bumped by every request that changed it.
-        Read once per request until something is written (finance/memo.py)."""
-        from .memo import remember
-        return remember(("version", self.path, self.url, self.schema), self._version)
+        """Which ledger this is: bumped by every request that changed it."""
+        return self.identity()[1]
 
-    def _version(self) -> int:
+    def identity(self) -> tuple:
+        """(ledger id, version): what an answer about this ledger is an
+        answer about. Read once per request until something is written."""
+        from .memo import remember
+        return remember(("identity", self.path, self.url, self.schema), self._identity)
+
+    def _identity(self) -> tuple:
         with self.conn() as c:
-            row = c.execute("SELECT version FROM ledger_meta WHERE id = 1").fetchone()
-        return int(row["version"]) if row else 0
+            row = c.execute("SELECT ledger_id, version FROM ledger_meta WHERE id = 1").fetchone()
+        if not row:
+            return (f"{self.path}|{self.url}|{self.schema}", 0)
+        return (row["ledger_id"] or f"{self.path}|{self.url}|{self.schema}", int(row["version"]))
 
     def bump_version(self) -> int:
         """Note that the ledger changed; the new version."""
@@ -1015,7 +1035,7 @@ class Store:
         try:
             from flask import g, has_request_context
             if has_request_context():
-                g.get("_memo", {}).pop(("version", self.path, self.url, self.schema), None)
+                g.get("_memo", {}).pop(("identity", self.path, self.url, self.schema), None)
         except ImportError:                                       # pragma: no cover
             pass
         return version
@@ -1033,7 +1053,18 @@ class Store:
         with self.conn() as c:
             c.executescript(SCHEMA)
         with self.conn() as c:
-            c.execute_quietly("INSERT OR IGNORE INTO ledger_meta (id, version) VALUES (1, 0)")
+            # A ledger_meta made before the ledger had an id (2026-11-19).
+            try:
+                c.execute_quietly("ALTER TABLE ledger_meta ADD COLUMN ledger_id TEXT")
+            except Exception:                                    # noqa: BLE001
+                pass
+        with self.conn() as c:
+            # Its own id: two fresh ledgers at version 0 are not the same
+            # ledger to what is remembered across requests (finance/memo.py).
+            c.execute_quietly("INSERT OR IGNORE INTO ledger_meta (id, version, ledger_id) "
+                              "VALUES (1, 0, ?)", (uuid.uuid4().hex,))
+            c.execute_quietly("UPDATE ledger_meta SET ledger_id = ? WHERE id = 1 AND ledger_id IS NULL",
+                              (uuid.uuid4().hex,))
         self._migrate_buckets()
         self._migrate_allocation_amounts()
         self._migrate_exclusion_whole_name()
@@ -1465,12 +1496,16 @@ class Store:
         if not has_request_context():
             return self._all_transactions()
         import copy
+        from .memo import remember_across
         cache = g.setdefault("_ledger", {})
         key = (self.path, self.url, self.schema)
         hit = cache.get(key)
         seq = dirty_seq()
         if hit is None or hit[0] != seq:
-            hit = (seq, self._all_transactions())
+            # Across requests too, for a ledger at one version (finance/memo.py).
+            rows = remember_across(self, ("ledger",), self._all_transactions, rows_only=True,
+                                   shared=True)
+            hit = (seq, rows)
             cache[key] = hit
         return [copy.copy(t) for t in hit[1]]
 

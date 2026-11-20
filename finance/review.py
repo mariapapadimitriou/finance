@@ -525,9 +525,8 @@ def for_store(st, today: str | None = None) -> dict:
     """The review as every screen sees it: one call, so one number.
     Remembered for the request (finance/memo.py): the list, Home and Quick
     sort each asked again."""
-    from .memo import remember
-    return remember(("review", st.path, st.url, st.schema, today, _me()),
-                    lambda: _for_store(st, today))
+    from .memo import remember_across
+    return remember_across(st, ("review", today, _me()), lambda: _for_store(st, today))
 
 
 def _for_store(st, today: str | None = None) -> dict:

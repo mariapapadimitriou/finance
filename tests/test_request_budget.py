@@ -43,21 +43,23 @@ def _a_purchase(client) -> str:
 
 # Ceilings: (transactions, statements). Measured on the bundled ledger; a
 # request is allowed to cost this much and no more. One transaction per
-# request since finance/request_tx.py (2026-11-19); the statements come down
-# as computed results are kept (finance/derived.py).
+# request since finance/request_tx.py (2026-11-19); a warm instance keeps the
+# ledger, the review and the store's reads for one ledger version between
+# requests (finance/memo.py), which is why a read is a handful of statements.
 READS = {
-    "/api/home": (1, 47),
-    "/api/transactions/list?limit=25&offset=0": (1, 30),
-    "/api/review": (1, 19),
-    "/api/quick-sort": (1, 19),
-    "/api/calendar?month=2026-09": (1, 19),
-    "/api/accounts/overview": (1, 29),
+    "/api/home": (1, 28),
+    "/api/transactions/list?limit=25&offset=0": (1, 6),
+    "/api/review": (1, 2),
+    "/api/quick-sort": (1, 3),
+    "/api/calendar?month=2026-09": (1, 9),
+    "/api/accounts/overview": (1, 18),
 }
 
 
 @pytest.mark.parametrize("path", sorted(READS))
 def test_read_stays_within_budget(client, path):
     client.get(path)                       # the first call pays one-time setup
+    client.get(path)                       # and the second fills what is kept across requests
     t = _cost(client, "get", path)
     tx, stmts = READS[path]
     assert t["tx"] <= tx, f"{path}: {t['tx']} transactions, budget {tx}"
@@ -68,7 +70,7 @@ def test_category_change_stays_within_budget(client):
     tid = _a_purchase(client)
     t = _cost(client, "post", "/api/transactions/batch/category",
               json={"ids": [tid], "category": "Groceries"})
-    assert t["tx"] <= 1 and t["stmts"] <= 66, (t["tx"], t["stmts"])
+    assert t["tx"] <= 1 and t["stmts"] <= 67, (t["tx"], t["stmts"])
 
 
 def test_mark_stays_within_budget(client):
@@ -78,7 +80,7 @@ def test_mark_stays_within_budget(client):
     tid = _a_purchase(client)
     t = _cost(client, "post", f"/api/transactions/{tid}/mark",
               json={"case": "spending", "category": "Groceries"})
-    assert t["tx"] <= 1 and t["stmts"] <= 69, (t["tx"], t["stmts"])
+    assert t["tx"] <= 1 and t["stmts"] <= 70, (t["tx"], t["stmts"])
 
 
 def test_header_says_what_the_request_spent(client):
