@@ -883,15 +883,17 @@ struct QuickSortView: View {
         guard !busy else { return }
         busy = true
         defer { busy = false }
-        withAnimation { lastAnswer = nil }
+        let after = patternAt
+        withAnimation(Self.undoEase) {
+            lastAnswer = nil
+            if let at = patterns.firstIndex(of: p), at < patternAt { patternAt = at }
+        }
         do {
             let _: OK = try await app.api.post("api/pattern-sort/asks/\(p.id)/undo", [:])
             error = nil
-            if let at = patterns.firstIndex(of: p), at < patternAt {
-                withAnimation(.spring()) { patternAt = at }
-            }
         } catch {
             self.error = app.handle(error)
+            withAnimation(Self.undoEase) { patternAt = after }
         }
     }
 
@@ -939,18 +941,19 @@ struct QuickSortView: View {
     /// Undo on "Trip to Montréal made": the trip goes (its dates aren't
     /// skipped, so Pearl can ask again) and its card comes back on top.
     private func undoTrip(_ made: MadeTrip) async {
-        withAnimation { lastAnswer = nil }
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
+        let after = tripAt
+        withAnimation(Self.undoEase) { lastAnswer = nil; done = nil; tripAt = max(tripAt - 1, 0) }
         do {
             struct Gone: Decodable {}
             let _: Gone = try await app.api.delete("api/trips/\(made.trip)", query: ["undo": "1"])
-            withAnimation(.spring()) {
-                done = nil
-                tripAt = max(tripAt - 1, 0)
-            }
             error = nil
             app.changed()
         } catch {
             self.error = app.handle(error)
+            withAnimation(Self.undoEase) { tripAt = after }
         }
     }
 
@@ -1101,43 +1104,45 @@ struct QuickSortView: View {
         }
     }
 
-    /// Undo on a Skip: the batch forgets it and the card comes back on top.
+    /// The card comes back at once (product owner, 2026-11-20: Undo felt
+    /// slow): a short ease, not the spring, and the server catches up
+    /// behind it. If the server refuses, the deck goes forward again.
+    static let undoEase = Animation.easeOut(duration: 0.18)
+
+    /// Undo on a Skip: the card comes back on top; the batch forgets it.
     private func undoSkip(_ sorted: Sorted) async {
         guard !busy else { return }
         busy = true
         defer { busy = false }
-        withAnimation { lastAnswer = nil }
+        let after = (deck, index)
+        withAnimation(Self.undoEase) { lastAnswer = nil; deck = sorted.deck; index = sorted.index }
         do {
             let _: OK = try await app.api.put("api/quick-sort/\(sorted.ask.t.id)", ["action": "undo"])
-            withAnimation(.spring()) {
-                deck = sorted.deck
-                index = sorted.index
-            }
             error = nil
         } catch {
             self.error = app.handle(error)
+            withAnimation(Self.undoEase) { deck = after.0; index = after.1 }
         }
     }
 
-    /// Undo on a Yes (T-86): the ledger, the batch and the deck as they were.
+    /// Undo on a Yes (T-86): the card comes back on top; the ledger and the
+    /// batch are put back behind it.
     private func undo(_ sorted: Sorted) async {
         guard !busy else { return }
         busy = true
         defer { busy = false }
-        withAnimation { lastAnswer = nil }
         drafts[sorted.ask.id] = nil
+        let after = (deck, index)
+        withAnimation(Self.undoEase) { lastAnswer = nil; deck = sorted.deck; index = sorted.index }
         do {
             if let body = sorted.undo?.any as? [String: Any] {
                 let _: OK = try await app.api.post("api/transactions/undo", body)
             }
             let _: OK = try await app.api.put("api/quick-sort/\(sorted.ask.t.id)", ["action": "undo"])
-            withAnimation(.spring()) {
-                deck = sorted.deck
-                index = sorted.index
-            }
             error = nil
         } catch {
             self.error = app.handle(error)
+            withAnimation(Self.undoEase) { deck = after.0; index = after.1 }
         }
     }
 
