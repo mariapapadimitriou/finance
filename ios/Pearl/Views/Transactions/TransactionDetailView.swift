@@ -1771,7 +1771,7 @@ struct TransactionDetailView: View {
                                                    who: charge.person == "everyone" ? t.merchant : (charge.person ?? "They"),
                                                    name: t.merchant, amount: t.amount, date: t.date)
                 } label: {
-                    row(title: "Unlink", sub: "It counts as money in again", chevron: true)
+                    row(title: "Unlink", sub: "It counts as money in again", chevron: true, icon: "link")
                 }
                 .buttonStyle(.plain)
                 .disabled(busy)
@@ -1893,7 +1893,7 @@ struct TransactionDetailView: View {
             APCard {
                 Button { asking = Asking(step: .joint) } label: {
                     // T-40b (G1-TxNote): "Whose pay   Sam's · not yours ›".
-                    row(title: "Whose pay", chevron: true, value: jointWhose)
+                    row(title: "Whose pay", chevron: true, value: jointWhose, icon: "person.2")
                 }
                 .buttonStyle(.plain)
                 .disabled(busy)
@@ -2116,7 +2116,7 @@ struct TransactionDetailView: View {
                 repicking = true
                 parting = deposit(rest: false)
             } label: {
-                row(title: "Change what it paid back", chevron: true)
+                row(title: "Change what it paid back", chevron: true, icon: "arrow.left.arrow.right")
             }
             .buttonStyle(.plain)
             .disabled(busy)
@@ -2124,7 +2124,7 @@ struct TransactionDetailView: View {
             Button { unlinking = true } label: {
                 // TP-04: "Unlink all · it's a transfer again".
                 row(title: t.jointPayback != nil ? "Unlink all · it’s a transfer again" : n == 2 ? "Unlink both" : "Unlink",
-                    chevron: true)
+                    chevron: true, icon: "link")
             }
             .buttonStyle(.plain)
             .disabled(busy)
@@ -2618,8 +2618,10 @@ struct TransactionDetailView: View {
     @ViewBuilder private var footerAction: some View {
         if !t.excluded.isEmpty && t.transfer == nil {
             // Left out (T-56, T-77's Leave out): put it back in her numbers.
+            // A real button (product owner, 2026-11-20), A+ `.btn2`, not a
+            // line of text at the foot of the page.
             Button("Put it back") { Task { await putBack() } }
-                .buttonStyle(NacreTextButtonStyle(tone: Pearl.link))
+                .buttonStyle(APSecondaryButtonStyle())
                 .padding(.top, 12)
                 .disabled(busy)
         }

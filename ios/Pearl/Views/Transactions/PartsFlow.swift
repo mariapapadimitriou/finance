@@ -1100,11 +1100,11 @@ struct PartsSheet: View {
             }
             total(with: typed.isEmpty ? [] : hidden)
             if !open {
-                // G2-PB30-r: the way to everything else, one quiet link.
+                // G2-PB30-r: the way to everything else. A button, A+ `.btn2`
+                // (product owner, 2026-11-20), not a line of text.
                 Button("Not here? Search other purchases") { searching = true }
-                    .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
-                    .foregroundColor(Pearl.link).buttonStyle(.plain)
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .buttonStyle(APSecondaryButtonStyle())
+                    .padding(.top, 4)
                     .accessibilityIdentifier("pb30-search-other")
             }
             if let j = joint {
