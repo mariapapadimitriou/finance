@@ -1765,18 +1765,56 @@ struct TransactionDetailView: View {
             // S-33: the money that paid it back can be unlinked (S-34).
             section("Options")
             APCard {
-                Button {
-                    // TEST-31: "all of it" is work's, not a person's.
-                    unlinkingPayback = PaybackLink(charge: charge.id, inflow: t.id,
-                                                   who: charge.person == "everyone" ? t.merchant : (charge.person ?? "They"),
-                                                   name: t.merchant, amount: t.amount, date: t.date)
-                } label: {
-                    row(title: "Unlink", sub: "It counts as money in again", chevron: true, icon: "link")
+                if wholeSinglePart {
+                    // The one Options card for a payback saved on Paid back
+                    // (2026-11-20): PB-41's Change what it paid back on the
+                    // deposit, and the parts' Unlink.
+                    Button {
+                        editingParts = true
+                        repicking = true
+                        parting = parentDeposit()
+                    } label: {
+                        row(title: "Change what it paid back", chevron: true, icon: "arrow.left.arrow.right")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                    APSeparator(afterFace: false)
+                    Button { unlinking = true } label: {
+                        row(title: "Unlink", sub: "It counts as money in again", chevron: true, icon: "link")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                } else {
+                    Button {
+                        // TEST-31: "all of it" is work's, not a person's.
+                        unlinkingPayback = PaybackLink(charge: charge.id, inflow: t.id,
+                                                       who: charge.person == "everyone" ? t.merchant : (charge.person ?? "They"),
+                                                       name: t.merchant, amount: t.amount, date: t.date)
+                    } label: {
+                        row(title: "Unlink", sub: "It counts as money in again", chevron: true, icon: "link")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
                 }
-                .buttonStyle(.plain)
-                .disabled(busy)
             }
         }
+    }
+
+    /// A payback saved on Paid back for one purchase is the deposit's one
+    /// part, as big as the deposit (finance/parts.py). The page opened on
+    /// that part said it twice: PAYS BACK with Unlink, then "Part of a
+    /// $58.00 deposit" naming the same purchase, with Unlink again
+    /// (product owner, 2026-11-20). Such a row is shown as the payback it
+    /// is: one card, one Options.
+    private var wholeSinglePart: Bool {
+        guard let parent = t.partOf, t.repaysCharge != nil else { return false }
+        return parent.parts.count == 1 && abs(parent.amount - abs(t.amount)) < 0.005
+    }
+
+    /// The deposit this part is from, for PB-41 on it.
+    private func parentDeposit() -> PartsDeposit? {
+        guard let parent = t.partOf else { return nil }
+        return PartsDeposit(id: parent.id, name: t.merchant, amount: -parent.amount, date: parent.date, rest: false)
     }
 
     /// T-41w / T-41m (G2-BPayback): OPTIONS, "Change what it paid back" (or
@@ -2050,7 +2088,10 @@ struct TransactionDetailView: View {
     /// from (S-33, S-34).
     @ViewBuilder private var depositParts: some View {
         let parts = !t.parts.isEmpty ? t.parts : (t.partOf?.parts ?? [])
-        if paidBackOnly {
+        if wholeSinglePart {
+            // Said once, by PAYS BACK and its Options (`wholeSinglePart`).
+            EmptyView()
+        } else if paidBackOnly {
             paidBackParts
         } else if !parts.isEmpty {
             // S-33 v2 (G2-BPayback): PAYBACK + GIFT, every part, so they add
