@@ -109,10 +109,13 @@ struct HomeView: View {
         struct Ran: Decodable { let sorted: Int }
         _ = try? await app.api.post("api/pattern-sort/run", [:]) as Ran
         do {
-            home = try await app.api.get("api/home")
+            // All four at once (perf rehaul, 2026-11-19); Home's reply still
+            // lands first, and its failure still ends the load.
+            async let homeReply: Home = app.api.get("api/home")
             async let setupReply: SetupAgain? = try? app.api.get("api/setup-again")
             async let owedReply: OwedOverview? = try? app.api.get("api/owed")
             async let worthReply: WorthReply? = try? app.api.get("api/worth-a-look")
+            home = try await homeReply
             let (s, o, w) = await (setupReply, owedReply, worthReply)
             setup = s
             owed = o

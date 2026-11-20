@@ -752,13 +752,31 @@ struct CalendarCard: View {
 
     private func load() async {
         loadedVersion = app.version
+        // No day shown: today's day comes with the month (perf rehaul,
+        // 2026-11-19) when this month's last reply already says which day
+        // that is; a first load still takes it from the month's reply.
+        let knownToday = shownDay == nil && data?.month == month
+            ? data?.cells.first(where: { $0.state == "today" })?.date : nil
+        async let dayReply: CalendarDay? = loadDay(knownToday)
         do {
             data = try await app.api.get("api/calendar", query: ["month": month])
             error = nil
-            if shownDay == nil { await loadDay() }
+            if shownDay == nil {
+                let today = data?.cells.first(where: { $0.state == "today" })?.date
+                if let known = knownToday, known == today {
+                    dayData = await dayReply
+                } else {
+                    await loadDay()
+                }
+            }
         } catch {
             self.error = app.handle(error)
         }
+    }
+
+    private func loadDay(_ day: String?) async -> CalendarDay? {
+        guard let day = day else { return nil }
+        return try? await app.api.get("api/calendar/day/\(day)")
     }
 
     private func loadRange() async {
