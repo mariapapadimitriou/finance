@@ -148,7 +148,7 @@ struct MainTabs: View {
     @State private var tab: Tab = .home
     @State private var reviewCount = 0
     /// Quick sort on return (THL-254): offered at most once a day, when
-    /// something new needs a look; it walks every open question.
+    /// something new needs a look; it walks only the new questions.
     @State private var quickSort: [Ask] = []
     @State private var quickSortNames: [String] = []
     /// AI-18: patterns Pearl asks about once, first in Quick sort.
@@ -268,12 +268,14 @@ struct MainTabs: View {
     private func offerQuickSort() async {
         guard !offered else { return }
         offered = true
+        // THL-254: once a day at most, only when something is new since her
+        // last visit (the server's `show`), and then only the new ones.
         guard let prompt: QuickSortPrompt = try? await app.api.get("api/quick-sort"),
-              prompt.show, !(prompt.asks.isEmpty && prompt.patterns.isEmpty && prompt.trips.isEmpty) else { return }
+              prompt.show, !(prompt.newAsks.isEmpty && prompt.newPatterns.isEmpty && prompt.newTrips.isEmpty) else { return }
         quickSortNames = prompt.review?.people ?? []
-        quickSortPatterns = prompt.patterns
-        quickSortTrips = prompt.trips
-        quickSort = prompt.asks
+        quickSortPatterns = prompt.newPatterns
+        quickSortTrips = prompt.newTrips
+        quickSort = prompt.newAsks
     }
 
     /// One tab: its own navigation, so each keeps its place. Select in Cash

@@ -10,29 +10,27 @@ import SwiftUI
 
 // MARK: - The card's figures as filters (T-67, T-67c)
 
-/// Spent, Saved, Came in or "need a look" tapped on the month card: the list
-/// narrows to that month and kind. Leftover isn't a kind.
+/// Spent, Saved or Came in tapped on the month card: the list narrows to
+/// that month and kind. Leftover isn't a kind. "need a look" isn't one
+/// either: it opens the Needs a look page (G1-NeedsALook).
 enum CardKind: String, Equatable {
-    case spent, saved, cameIn, look
+    case spent, saved, cameIn
 
     var label: String {
         switch self {
         case .spent: return "Spent"
         case .saved: return "Saved"
         case .cameIn: return "Came in"
-        case .look: return "Needs a look"
         }
     }
 
     /// The card figure's own rows come from the server (`kind=` on the
-    /// list), so they add up to exactly the card; nil for need a look,
-    /// which is Needs a look's own rows, kept here.
-    var server: String? {
+    /// list), so they add up to exactly the card.
+    var server: String {
         switch self {
         case .spent: return "spent"
         case .saved: return "saved"
         case .cameIn: return "income"
-        case .look: return nil
         }
     }
 }
@@ -44,12 +42,6 @@ struct CardFilter: Equatable {
 
     var label: String { "\(kind.label) \u{00B7} \(Format.monthName(month))" }
 
-    /// Need a look's rows in this month; a figure's rows are the server's
-    /// already (`kind.server`), so they're all kept.
-    func matches(_ t: Transaction, look: Set<String>) -> Bool {
-        kind.server != nil || (t.date.hasPrefix(month) && look.contains(t.id))
-    }
-
     /// T-54's empty line, for this month and kind.
     var nothingLine: String {
         let m = Format.monthName(month)
@@ -57,7 +49,6 @@ struct CardFilter: Equatable {
         case .spent: return "Nothing spent in \(m)."
         case .saved: return "Nothing saved in \(m)."
         case .cameIn: return "No money came in in \(m)."
-        case .look: return "Nothing in \(m) needs a look."
         }
     }
 }
@@ -509,42 +500,34 @@ struct CFChipWrap: View {
 
 // MARK: - The card's need-a-look row
 
-/// G1-Months / AP-CashFlow: "6 need a look" (the month's own count) filters
-/// the list to them, underlined in rose while it does; Sort is its own small
-/// capsule and opens Quick sort. No streak (approved r7).
+/// G1-Months / AP-CashFlow: "6 need a look" (the month's own count) with a
+/// chevron, one tap target that opens the Needs a look page (G1-NeedsALook),
+/// whose Quick sort card sorts them. No Sort capsule, no list filter, no
+/// streak (product owner, after #398).
 struct CFLookRow: View {
     let count: Int
-    let on: Bool
-    let look: () -> Void
-    let sort: () -> Void
+    let open: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Button(action: look) {
-                HStack(spacing: 12) {
-                    CFCount(n: count)
-                    Text("need\(count == 1 ? "s" : "") a look").font(Nacre.body).foregroundColor(Pearl.ink)
-                        .underline(on, color: Pearl.action)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .contentShape(Rectangle())
+        Button(action: open) {
+            HStack(spacing: 12) {
+                CFCount(n: count)
+                Text("need\(count == 1 ? "s" : "") a look").font(Nacre.body).foregroundColor(Pearl.ink)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right").font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(Pearl.muted)
+                    .accessibilityHidden(true)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("\(count) need\(count == 1 ? "s" : "") a look")
-            .accessibilityHint(on ? "Shows everything again" : "Shows only these")
-            .accessibilityAddTraits(on ? .isSelected : [])
-            Button(action: sort) {
-                Text("Sort").font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
-                    .foregroundColor(Pearl.link)
-                    .padding(.horizontal, 14).frame(height: 32)
-                    .background(Capsule().fill(APlus.actionWash))
-                    .frame(minHeight: 44).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Sort them in Quick sort")
+            .padding(.leading, 16).padding(.trailing, 16).padding(.vertical, 4)
+            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .padding(.leading, 16).padding(.trailing, 12).padding(.vertical, 4)
-        .frame(minHeight: 52)
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(count) need\(count == 1 ? "s" : "") a look")
+        .accessibilityHint("Opens Needs a look")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier("cf-need-a-look")
     }
 }

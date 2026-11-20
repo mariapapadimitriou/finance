@@ -36,12 +36,10 @@ struct TransactionsView: View {
     private var categories: [CategoryList.Category] { app.categories }
     @State private var accounts: [AccountsOverview.Account] = []
     /// AP-CashFlow (r7): the card's count is its month's own; the tab badge
-    /// still counts everything. Needs a look's rows, for the card's filter.
+    /// still counts everything.
     @State private var lookByMonth: [String: Int] = [:]
-    @State private var lookIds: Set<String> = []
-    /// The card's Sort: Quick sort over Cash flow.
-    @State private var quickDeck: QuickSortDeck?
-    @State private var openingSort = false
+    /// The card's "need a look" row opens the Needs a look page.
+    @State private var showingLook = false
     @State private var loadedOnce = false
     @State private var error: String?
 
@@ -52,7 +50,7 @@ struct TransactionsView: View {
     @State private var resultsMerged: [Transaction] = []
 
     @State private var filters = TxFilters()
-    /// T-67 (CF-SCROLL): Spent, Saved, Came in or need a look tapped on the
+    /// T-67 (CF-SCROLL): Spent, Saved or Came in tapped on the
     /// card: that month and kind, with its chip under the card.
     @State private var cardFilter: CardFilter?
     /// That figure's rows, exactly those the card adds up (the server's
@@ -247,6 +245,8 @@ struct TransactionsView: View {
         .navigationDestination(isPresented: Binding(get: { openTrip != nil }, set: { if !$0 { openTrip = nil } })) {
             if let id = openTrip { TripPage(id: id) }
         }
+        // G1-NeedsALook: the card's "need a look" row; its Quick sort card sorts them.
+        .navigationDestination(isPresented: $showingLook) { ReviewView() }
         .navigationDestination(for: Transaction.self) { t in
             TransactionDetailView(transaction: t, categories: categories, siblings: rows)
         }
@@ -331,13 +331,6 @@ struct TransactionsView: View {
         }
         .onChange(of: needsEverything) { on in if on { Task { await loadRest() } } }
         .onChange(of: cardFilter) { _ in Task { await loadCardRows() } }
-        .fullScreenCover(item: $quickDeck) { deck in
-            QuickSortView(asks: deck.asks, categories: categories, names: deck.names,
-                          patterns: deck.patterns, trips: deck.trips) {
-                quickDeck = nil
-                app.changed()
-            }
-        }
     }
 
     /// Title, search, tabs, chips, the card, the bank, and the list's own
@@ -464,7 +457,7 @@ struct TransactionsView: View {
     /// Everything must be here: a filter, a sort, a card chip, or Filters
     /// open (its "Show N" counts every month).
     private var needsEverything: Bool {
-        !inTrip && (filters.isActive || filters.sort != .newest || cardFilter?.kind == .look || showFilters)
+        !inTrip && (filters.isActive || filters.sort != .newest || showFilters)
     }
 
     /// Each thing narrowing the list, as a chip with its ✕ (cf.css `.fchip`).
@@ -566,7 +559,7 @@ struct TransactionsView: View {
     /// T-01r (TEST-05, REFRESH-00 decision 1), A+ (AP-CashFlow, G1-Over):
     /// the month and Came in, Leftover as the one headline in Fraunces 44, a
     /// bar of Spent (plum) / Saved (green) / Leftover (track), its legend,
-    /// and "6 need a look" with Sort. Red only for over.
+    /// and "6 need a look", which opens Needs a look. Red only for over.
     private var summaryCard: some View {
         // T-67 (TEST-34): a filter or a search never changes the month
         // card; it is always the month's own Came in, Leftover and legend.
@@ -600,15 +593,14 @@ struct TransactionsView: View {
         cardFilter = cardFilter == next ? nil : next
     }
 
-    /// The month's own count (AP-CashFlow r7: 6 on the card, 8 on the tab),
-    /// which narrows the list to them; Sort opens Quick sort. No streak.
+    /// The month's own count (AP-CashFlow r7: 6 on the card, 8 on the tab).
+    /// The whole row opens the Needs a look page, as usual (all months: the
+    /// page has no month filter); Quick sort is its top card. No streak.
     @ViewBuilder private var needsALookRow: some View {
         Rectangle().fill(APlus.separator).frame(height: 0.5).accessibilityHidden(true)
         let count = month.flatMap { lookByMonth[$0] } ?? 0
         if count > 0 {
-            CFLookRow(count: count, on: cardFilter?.kind == .look && cardFilter?.month == month,
-                      look: { pickOnCard(.look) }, sort: { Task { await openQuickSort() } })
-                .disabled(openingSort)
+            CFLookRow(count: count) { showingLook = true }
         } else {
             // T-48 (G1-Months): "✓ All sorted" in teal, a 52 pt row.
             HStack(spacing: 8) {
@@ -618,20 +610,6 @@ struct TransactionsView: View {
             .foregroundColor(Nacre.teal)
             .padding(.horizontal, 16).frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
             .accessibilityElement(children: .combine)
-        }
-    }
-
-    /// The card's Sort: every question, as Home's Sort now opens it.
-    private func openQuickSort() async {
-        guard !openingSort else { return }
-        openingSort = true
-        defer { openingSort = false }
-        do {
-            let prompt: QuickSortPrompt = try await app.api.get("api/quick-sort", query: ["all": "1"])
-            quickDeck = QuickSortDeck(asks: prompt.asks, names: prompt.review?.people ?? [],
-                                      patterns: prompt.patterns, trips: prompt.trips)
-        } catch {
-            if let words = app.handle(error) { app.say(words) }
         }
     }
 
@@ -758,7 +736,7 @@ struct TransactionsView: View {
                 // G1-Empty: "No matches · Try another word. · Clear search".
                 CFState(title: "No matches", line: "Try another word.", action: "Clear search") { query = "" }
             } else if filters.isActive || cardFilter != nil {
-                if rows.count < total && cardFilter?.kind.server == nil || cardFilter?.kind.server != nil && cardRows == nil {
+                if cardFilter == nil && rows.count < total || cardFilter != nil && cardRows == nil {
                     CFLoadingRows()
                 } else {
                     CFState(title: "Nothing matches", line: noMatchLine, action: "Clear filters") {
@@ -1136,13 +1114,9 @@ struct TransactionsView: View {
     /// the search's or every month's, narrowed, then sorted. Grouped by
     /// month afterwards (CFBlock), so each sort stays within its month.
     private func visible(applying f: TxFilters) -> [Transaction] {
-        let card = inSearch ? nil : cardFilter
-        let figure = card?.kind.server != nil
+        let figure = !inSearch && cardFilter != nil
         let base = inSearch ? (results ?? []) : figure ? (cardRows ?? []) : rows
-        let look = lookIds
-        let kept: (Transaction) -> Bool = { t in
-            f.matches(t, owed: owed) && (card?.matches(t, look: look) ?? true)
-        }
+        let kept: (Transaction) -> Bool = { t in f.matches(t, owed: owed) }
         // A transfer's arrival, where the filter keeps it but not the line
         // it was merged into ("Savings" kept, the line is Chequing's).
         var out = TransferEnds.adding(inSearch ? resultsMerged : figure ? [] : merged, to: base.filter(kept), keep: kept,
@@ -1277,13 +1251,14 @@ struct TransactionsView: View {
             self.error = app.handle(error)
         }
         if needsEverything { await loadRest() }
-        if cardFilter?.kind.server != nil { await loadCardRows() }
+        if cardFilter != nil { await loadCardRows() }
     }
 
     /// A card chip's rows: what the card's Spent, Saved or Came in adds up
     /// for its month, from the server, so they match it exactly (CF-SCROLL).
     private func loadCardRows() async {
-        guard let c = cardFilter, let kind = c.kind.server else { cardRows = nil; return }
+        guard let c = cardFilter else { cardRows = nil; return }
+        let kind = c.kind.server
         if cardRows == nil || c != loadedCard { cardRows = nil }
         var got: [Transaction] = []
         var p = listQuery
@@ -1399,7 +1374,6 @@ struct TransactionsView: View {
         var by: [String: Int] = [:]
         for ask in open { by[String(ask.t.date.prefix(7)), default: 0] += 1 }
         lookByMonth = by
-        lookIds = Set(open.map(\.t.id))
     }
 
     private func search() async {

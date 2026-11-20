@@ -159,7 +159,9 @@ def prompt(st, transactions: list[Transaction], today: date, everything: bool = 
     which the app turns into cards the way Needs a look does). It shows once
     a day, only when something is new since it last offered — or always,
     with `everything`, for the Quick sort button on Home and To review.
-    `items` are the category cards on their own, kept for older apps."""
+    `items` are the category cards on their own, kept for older apps.
+    `new` are the keys of the questions not offered before: on open, the
+    app deals only those (what came in since her last visit)."""
     from .review import for_store
     review = for_store(st, today.isoformat())
     asked = questions(review)
@@ -169,7 +171,7 @@ def prompt(st, transactions: list[Transaction], today: date, everything: bool = 
     count = review.get("count", 0)
     show = count > 0 and (everything or (bool(new) and not shown_today))
     cards = items(st, transactions, today, everything)
-    return {"show": show, "count": count, "keys": [k for k, _ in asked], "review": review,
+    return {"show": show, "count": count, "keys": [k for k, _ in asked], "new": new, "review": review,
             "items": cards, "shown_today": shown_today,
             "safe_to_spend": safe_to_spend(st, transactions, today) if count else None}
 

@@ -28,12 +28,13 @@ class TestCashFlow(unittest.TestCase):
         self.assertIn("ProfileCircle()", self.tv)
 
     def test_need_a_look_has_a_tint_chip_and_no_streak(self):
-        # CF-SCROLL (AP-CashFlow r7): no mini streak; Sort is a capsule.
+        # CF-SCROLL (AP-CashFlow r7): no mini streak. After #398 the row is
+        # one tap target with a chevron that opens Needs a look: no Sort.
         self.assertNotIn("SortStreak(", self.tv)
-        self.assertIn("CFLookRow(count: count", self.tv)
+        self.assertIn("CFLookRow(count: count) { showingLook = true }", self.tv)
         scroll = code(read("Views", "Transactions", "CashFlowScroll.swift"))
         self.assertIn("CFCount(n: count)", scroll)
-        self.assertIn('.accessibilityLabel("Sort them in Quick sort")', scroll)
+        self.assertNotIn('"Sort them in Quick sort"', scroll)
         kit = code(read("Views", "Transactions", "CashFlowKit.swift"))
         count = kit[kit.index("struct CFCount"):kit.index("struct CFChip")]
         self.assertIn("Pearl.action", count)
