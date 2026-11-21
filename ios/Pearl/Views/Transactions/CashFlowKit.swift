@@ -176,7 +176,8 @@ struct CFRing: View {
 
     var body: some View {
         Text(mark ?? (transfer ? "\u{21C4}" : APFace.initials(name)))
-            .font(.custom("Figtree-Medium", size: size >= 56 ? 17 : 15))
+            // The ⇄ smaller than initials (product owner, 2026-11-21).
+            .font(.custom("Figtree-Medium", size: transfer ? (size >= 56 ? 13 : 12) : (size >= 56 ? 17 : 15)))
             .foregroundColor(Pearl.ink)
             .lineLimit(1).minimumScaleFactor(0.5)
             .frame(width: size - 2.4, height: size - 2.4)
