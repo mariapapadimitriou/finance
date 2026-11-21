@@ -36,6 +36,10 @@ enum Pearl {
     /// amounts. Lilac/900 #3D2E60 in light, lilac/200 #E3D4FF in dark.
     /// Names and body text stay ink; red is `danger`.
     static let moneyOut = dynamic(light: 0x3D2E60, dark: 0xE3D4FF)
+    /// Money moved between her own accounts (product owner, 2026-11-21):
+    /// a lighter grey than `muted`, so a transfer's amount reads apart from
+    /// spending's plum at a glance. Light mist/400, dark mist/400.
+    static let moved = dynamic(light: 0x8B879E, dark: 0x8E8BA8)
     static let caution = dynamic(light: 0x8A5A12, dark: 0xF3D9A4)   // --caution
     static let cautionBackground = dynamic(light: 0xFBECC8, dark: 0x3A2E14)
 

@@ -1642,7 +1642,7 @@ struct TransactionRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Text(shownMoney)
+            moneyText
                 .font(Nacre.headline).monospacedDigit()
                 .foregroundColor(t.rowTone)
                 .lineLimit(1).fixedSize()
@@ -1701,6 +1701,15 @@ struct TransactionRow: View {
     /// RC-01: what it costs her now, the server's `amount`, which Spent and
     /// the Allowance count too. Rule A stays on the server: a split nobody
     /// has paid yet costs the whole purchase, and each payback lowers it.
+    /// The amount; a transfer's ⇄ smaller than the figures (product owner,
+    /// 2026-11-21), so it reads as a mark, not a character of the amount.
+    private var moneyText: Text {
+        if t.movedBetweenAccounts {
+            return Text("\u{21C4}").font(.system(size: 12, weight: .semibold)) + Text(" " + Format.amount(t.amount))
+        }
+        return Text(shownMoney)
+    }
+
     private var shownMoney: String {
         Format.row(t) + (currency.map { " \($0)" } ?? "")
     }
@@ -2455,7 +2464,7 @@ extension Transaction {
     /// the Calendar day list and a trip page. Moved between her accounts is
     /// grey, like anything else that doesn’t count (product owner,
     /// 2026-11-15); spending stays ink and money in green.
-    var rowTone: Color { movedBetweenAccounts ? Pearl.muted : tone }
+    var rowTone: Color { movedBetweenAccounts ? Pearl.moved : tone }
 }
 
 /// RC-03 (note 1402:5082, Motion): when a payback lands, the amount counts

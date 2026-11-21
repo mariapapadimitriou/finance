@@ -1053,7 +1053,7 @@ struct TransactionDetailView: View {
                 // T-41m: a refund of her share too. TF-01: a transfer in
                 // money-transfer grey, with no sign.
                 .foregroundColor(paidBackAnswer != nil || t.refundOf?.share == true ? Pearl.moneyIn
-                                 : t.transfer != nil ? Pearl.muted : t.tone)
+                                 : t.transfer != nil ? Pearl.moved : t.tone)
                 .lineLimit(1).minimumScaleFactor(0.5)
                 .accessibilityLabel(heroSpoken)
             if let line = costLine {
@@ -1069,11 +1069,12 @@ struct TransactionDetailView: View {
                 // PQ-03p (G2-APQ): "Name them" on its own line under the date.
                 NameThemLink { asking = Asking(step: .sender) }
             }
+            // The Counts pill under the transaction's own lines (product
+            // owner, 2026-11-21), not off in the top right.
+            OwnBody { countsOrName }.padding(.top, 10)
             OwnBody { heroPills }
         }
         .frame(maxWidth: .infinity)
-        // The Counts pill: top right, in Back's row (kit `.pill`, 16 down).
-        .overlay(alignment: .topTrailing) { OwnBody { countsOrName }.padding(.top, 8) }
         // The ring sits in the bar's row, 8 under the status bar, as drawn.
         .padding(.top, -36)
     }
@@ -2725,9 +2726,25 @@ struct TransactionDetailView: View {
     /// paid me back" is the page's Primary and This isn't a transfer the
     /// quiet link under it (pagePrimary).
     @ViewBuilder private func jointLegs(_ transfer: Transaction.Transfer) -> some View {
+        howItCounts
         legsLine(transfer)
             .padding(.top, 8)
             .sheet(isPresented: $unpairing) { unpairSheet(transfer) }
+    }
+
+    /// "Between your accounts ›", opening What was this? (product owner,
+    /// 2026-11-21: a transfer on a joint account gave no way to say it was
+    /// something else; only the plain transfer page had this card).
+    @ViewBuilder private var howItCounts: some View {
+        section("How it counts")
+        APCard {
+            Button { sorting = sortAsk(.transfer) } label: {
+                categoryRow(symbol: "", title: "Between your accounts", sub: nil, systemImage: "arrow.left.arrow.right")
+            }
+            .buttonStyle(.plain)
+            .disabled(busy)
+            .accessibilityHint("Changes what it was")
+        }
     }
 
     /// TP-05: the money in of a transfer between two accounts only hers.
@@ -2739,6 +2756,7 @@ struct TransactionDetailView: View {
     /// on one line, "Both accounts are only yours." under them, and This
     /// isn't a transfer as the one quiet link at the foot (pagePrimary).
     @ViewBuilder private func mineLegs(_ transfer: Transaction.Transfer) -> some View {
+        howItCounts
         VStack(spacing: 0) {
             legsLine(transfer)
             NoPaidBackCallout().padding(.top, 10)
