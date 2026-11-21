@@ -407,6 +407,18 @@ struct PaidBackFromPurchase: ViewModifier {
             go(.person(c))
             return nil
         }
+        // Who paid is already known (product owner, 2026-11-21: "it shouldn't
+        // even ask"): the money reads as work's or a shop's, or the purchase
+        // is a work expense waiting to be reimbursed. Straight to her
+        // purchases, this one ticked (MP-01 / MP-02).
+        if let who = c.who, who != .person {
+            go(.many(c, who))
+            return nil
+        }
+        if purchase.excluded == "Waiting to be reimbursed" {
+            go(.many(c, .work))
+            return nil
+        }
         go(.who(c))
         return nil
     }

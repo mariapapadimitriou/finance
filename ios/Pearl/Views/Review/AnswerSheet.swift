@@ -366,6 +366,12 @@ struct AnswerSheet: View {
             paidBack(.person)
             return
         }
+        // Work's or a shop's money (the payer pays her, or refunded her
+        // before): straight to her purchases, no PB-11 (2026-11-21).
+        if let who = likelyWho, who != .person {
+            paidBack(who)
+            return
+        }
         whoPaid = true
     }
 
