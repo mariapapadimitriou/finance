@@ -1338,6 +1338,12 @@ struct TransactionDetailView: View {
                 // A+ (REDESIGN-09 fix): no line repeating the row's title.
                 alwaysToggle(sub: nil)
             }
+            if isIncome, let payer = t.incomeRule?.payer {
+                // Income's Always too (product owner, 2026-11-21: under the
+                // category on every page, never in Options).
+                APSeparator(afterFace: false)
+                incomeAlwaysToggle(payer)
+            }
         }
     }
 
@@ -2415,7 +2421,8 @@ struct TransactionDetailView: View {
         let unlink = t.refundOf != nil && t.refundOf?.share != true
         // Income can be left out of the usual month too (2026-11-08).
         let canOneOff = t.canOneOff && (!t.inflow || isIncome)
-        let incomeAlways = isIncome ? t.incomeRule?.payer : nil
+        // Income's Always is in the category card too (2026-11-21).
+        let incomeAlways: String? = nil
         // T-03r: on a sorted row Always is in the category card instead.
         let offersNewOnes = self.offersNewOnes && !alwaysInCategoryCard
         // S-01jr (G2b-Purchase): the share bar and the Primary take Whose was
@@ -2510,18 +2517,7 @@ struct TransactionDetailView: View {
                 }
                 if let payer = incomeAlways {
                     if canSplit || couldBePay || unlink || canOneOff || offersNewOnes { APSeparator(afterFace: false) }
-                    Toggle(isOn: Binding(get: { incomeAlwaysOn ?? (t.incomeRule?.on == true) },
-                                         set: { on in Task { await setIncomeAlways(on) } })) {
-                        HStack(spacing: 12) {
-                            CFIcon(symbol: "repeat")
-                            Text("Always for \(payer)").font(Nacre.body).foregroundColor(Pearl.ink)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    .tint(Pearl.action)
-                    .disabled(busy)
-                    .padding(.horizontal, 16).frame(minHeight: 64)
-                    .accessibilityHint("New ones from \(payer) count as \(Self.kindName(t.incomeType))")
+                    incomeAlwaysToggle(payer)
                 }
                 if canPayFromBank {
                     APSeparator(afterFace: false)
@@ -2539,6 +2535,24 @@ struct TransactionDetailView: View {
                 }
             }
         }
+    }
+
+    /// Income's Always (2026-11-08): new ones from the payer count as this
+    /// kind. The one label every page uses (2026-11-21), the payer in the
+    /// VoiceOver hint.
+    private func incomeAlwaysToggle(_ payer: String) -> some View {
+        Toggle(isOn: Binding(get: { incomeAlwaysOn ?? (t.incomeRule?.on == true) },
+                             set: { on in Task { await setIncomeAlways(on) } })) {
+            HStack(spacing: 12) {
+                CFIcon(symbol: "repeat")
+                Text("Always for this merchant").font(Nacre.body).foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .tint(Pearl.action)
+        .disabled(busy)
+        .padding(.horizontal, 16).frame(minHeight: 64)
+        .accessibilityHint("New ones from \(payer) count as \(Self.kindName(t.incomeType))")
     }
 
     /// A tile on the category page only changes what's on this page, so Yes can
