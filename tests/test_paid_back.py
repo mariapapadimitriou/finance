@@ -261,7 +261,9 @@ class TestTilesBySource:
 
     def test_who_paid_you_back_and_how_much(self):
         s = self.src("ios/Pearl/Views/Transactions/PaidBackViews.swift")
-        for words in ('"Who paid you back?"', '"A person"', '"The shop"', '"Work"',
+        for words in ('"Who paid you back?"', '"A person"', '"The shop"',
+                      # "Work or other" (product owner, 2026-11-21): any reimbursement.
+                      '"Work or other"',
                       # REDESIGN-09 (G2-WhoPaid): The shop's line is "A refund".
                       '"A refund"',
                       '"Let it go"', '"Let the other \\(Format.amount(rest)) go?"'):

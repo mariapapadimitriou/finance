@@ -298,7 +298,15 @@ struct AnswerSheet: View {
             // or S-35's ticks, then part or all of each share (PB-13).
             PartsSheet(deposit: PartsDeposit(id: t.id, name: who, amount: t.amount, date: t.date), api: api,
                        paidBack: manyWho == nil, payer: manyWho == nil ? partPerson ?? ask.item.from : nil,
-                       person: partPerson, mustTick: mustTick, many: manyWho) { reply in
+                       person: partPerson, mustTick: mustTick, many: manyWho,
+                       // PB-11 was skipped for a person Pearl knows: Change brings it back.
+                       onChangeWho: manyWho == nil && partPerson == nil ? {
+                           parting = false
+                           Task {
+                               try? await Task.sleep(nanoseconds: 450_000_000)
+                               whoPaid = true
+                           }
+                       } : nil) { reply in
                 parting = false
                 onAnswer(.done(reply))
             }

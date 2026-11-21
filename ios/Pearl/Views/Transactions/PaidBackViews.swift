@@ -71,7 +71,9 @@ struct PaidBackWhoSheet: View {
             return APTile(symbol: "bag", title: "The shop", sub: on ? "this shop" : "A refund",
                           current: on) { onPick(.shop) }
         case .work:
-            return APTile(symbol: "briefcase", title: "Work", sub: on ? "your employer" : nil,
+            // "Work or other" (product owner, 2026-11-21): a reimbursement
+            // from anyone who isn't a person on a split or the shop.
+            return APTile(symbol: "briefcase", title: "Work or other", sub: on ? "a reimbursement" : nil,
                           current: on) { onPick(.work) }
         }
     }
