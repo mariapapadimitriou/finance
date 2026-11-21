@@ -2078,7 +2078,9 @@ def set_joint_from(txn_id: str):
     """Who put this money into a joint account: "me" (hers: her pay, or her
     own money from an account not in Pearl), "them" (the other person's),
     "both" (pay that's both of theirs: her share of it counts, T-33), or
-    null to ask again.
+    null to ask again. With "me", `kind` says which (product owner,
+    2026-11-21: a deposit into a joint account isn't always pay): "pay"
+    counts as her income, "transfer" is her own money moved in, not income.
     `remember` answers for every deposit from that sender too. `person` is
     which of the people she shares the account with put it in."""
     from .joint import BOTH, ME, THEM
@@ -2107,11 +2109,20 @@ def set_joint_from(txn_id: str):
     # Her rule waited for her to say it was hers: a Costco refund she claims
     # now comes off Groceries, as her rule for Costco says.
     title = None
+    kind = body.get("kind")
+    if kind not in ("pay", "transfer", None):
+        return jsonify({"error": "Say whether it was pay or a transfer."}), 400
     from .categorize import merchant_key
     rule = st.overrides().get(merchant_key(t.merchant or "")) if who in (ME, BOTH) else None
     if rule:
         st.set_transaction_category(txn_id, rule)
         title = f"Yours. Comes off {rule}."
+    elif who == ME and kind == "transfer":
+        st.set_transaction_category(txn_id, "Transfers")
+        title = "Yours. Money moved in, not income."
+    elif who == ME and kind == "pay" and t.category != "Income":
+        st.set_transaction_category(txn_id, "Income")
+        title = "Yours. Counts as your pay."
     elif who == ME and t.category in ("Saved", "Other", "Unsorted transfers"):
         st.set_transaction_category(txn_id, "Transfers")
     undo = undo_payload(before, snapshot(st, st.all_transactions()))
