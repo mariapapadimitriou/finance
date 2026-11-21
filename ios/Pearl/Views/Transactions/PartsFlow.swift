@@ -98,6 +98,11 @@ struct PartsSheet: View {
     /// (MP-02) ticks several of her own purchases, as PB-30 does a person's
     /// shares. Replaces T-09w / T-09rs's one pick. `forCharge` stays ticked.
     var many: PaidBackWho? = nil
+    /// PB-30 opened straight for a person Pearl knows (PB-11 skipped): a
+    /// way back to Who paid you back? (product owner, 2026-11-21: an
+    /// e-transfer from someone she knew was work paying her back, and the
+    /// page gave no way to say so).
+    var onChangeWho: (() -> Void)? = nil
     let onSaved: (MarkReply) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -1065,12 +1070,16 @@ struct PartsSheet: View {
                 jointLabel(first)
             }
             if rows.isEmpty && others.isEmpty && likelyOthers.isEmpty {
+                if typed.isEmpty, joint == nil, onChangeWho != nil { personLabel(first) }
                 // G2-APaidBackMore PB-12: the calm empty state.
                 EmptyStateBlock(title: "No purchases match", line: "Search for the purchase, or try another name.",
                                 action: nil) {}
             } else if !rows.isEmpty || !likelyOthers.isEmpty {
                 if typed.isEmpty, joint != nil {
                     jointLabel(first)
+                } else if typed.isEmpty, onChangeWho != nil {
+                    // "LIKELY · DENISE" with Change: back to Who paid you back?
+                    personLabel(first)
                 } else if typed.isEmpty {
                     // G2-PB30-r: "LIKELY", and VoiceOver hears whose and when.
                     label("Likely")
@@ -1115,6 +1124,15 @@ struct PartsSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    /// "LIKELY · DENISE" with Change on the right (2026-11-21): back to Who
+    /// paid you back?, for when it wasn't her after all (work, or the shop).
+    private func personLabel(_ first: String) -> some View {
+        APSectionLabel(text: "Likely · \(first)", action: "Change") { onChangeWho?() }
+            .accessibilityElement(children: .contain)
+            .accessibilityHint("Change who paid you back")
+            .padding(.top, 8)
     }
 
     /// G2b-JointIn2 TP-03: "MOM · FROM YOUR JOINT ACCOUNT" with Change on
