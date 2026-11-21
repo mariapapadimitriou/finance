@@ -168,6 +168,25 @@ def test_whose_pay_me_is_her_income(client):
     assert month(client)["income"] == 1000
 
 
+def test_who_put_this_in_me_can_be_pay_or_a_transfer(client):
+    """2026-11-21: money into a joint account isn't always pay. "Me" with
+    kind transfer is her own money moved in (Transfers, not income); with
+    kind pay it counts as her income."""
+    i = ids(client)
+    pay = i["PAYROLL DEPOSIT DAD"]
+    st = client.application.config["STORE"]
+    st.set_transaction_category(pay, "Income")
+    r = client.put(f"/api/transactions/{pay}/joint-from", json={"who": "me", "kind": "transfer"})
+    assert r.status_code == 200 and "not income" in r.get_json()["title"]
+    assert txn(client, pay)["category"] == "Transfers"
+    assert month(client)["income"] == 0
+    r = client.put(f"/api/transactions/{pay}/joint-from", json={"who": "me", "kind": "pay"})
+    assert r.status_code == 200
+    assert txn(client, pay)["category"] == "Income"
+    assert month(client)["income"] == 1000
+    assert client.put(f"/api/transactions/{pay}/joint-from", json={"who": "me", "kind": "gift"}).status_code == 400
+
+
 def test_whose_pay_both_of_us_counts_her_share(client):
     """T-33's "Both of us": the account's percent of it is hers; half when
     the account has none."""

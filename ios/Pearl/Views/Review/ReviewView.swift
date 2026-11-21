@@ -604,7 +604,9 @@ enum ReviewAnswer {
     case incomeType(String, kind: String)
     /// "Whose pay is this?" on a joint account (T-33): "me", "both" (her
     /// share counts), or "them" and who.
-    case joint(String, who: String, person: String?, remember: Bool = true)
+    /// `kind`, with "me": "pay" (her income) or "transfer" (her own money
+    /// moved in, not income); nil keeps the server's own rule.
+    case joint(String, who: String, person: String?, remember: Bool = true, kind: String? = nil)
     /// "This is my regular pay" (THL-198, T-31): every deposit from this
     /// payer is her pay, on the schedule she chose.
     case regularPay(BriefTransaction, cadence: String)
@@ -661,8 +663,9 @@ enum ReviewAnswer {
         case .category(_, let name, _): return name
         case .incomeType(_, let kind): return TransactionDetailView.kindName(kind)
         case .regularPay: return "My pay"
-        case .joint(_, let who, let person, _):
-            return who == "me" ? "Yours" : who == "both" ? "Both of yours" : (person ?? "Theirs")
+        case .joint(_, let who, let person, _, let kind):
+            return who == "me" ? (kind == "transfer" ? "A transfer" : "Yours")
+                : who == "both" ? "Everyone’s" : (person ?? "Theirs")
         case .party(_, let name): return name.isEmpty ? "Your bank’s name" : "From \(name)"
         case .duplicate(_, let same): return same ? "Same purchase" : "Both are real"
         case .recurring: return "Recurring"
@@ -726,14 +729,15 @@ enum ReviewAnswer {
             return try await api.post("api/transactions/\(id)/mark", body)
         case .incomeType(let id, let kind):
             return try await api.put("api/transactions/\(id)/income-type", ["kind": kind])
-        case .joint(let id, let who, let person, let remember):
+        case .joint(let id, let who, let person, let remember, let kind):
             var body: [String: Any] = ["who": who, "remember": remember]
             if let person = person { body["person"] = person }
+            if let kind = kind { body["kind"] = kind }
             let reply: MarkReply = try await api.put("api/transactions/\(id)/joint-from", body)
             let title: String
             switch who {
-            case "me": title = "Yours."
-            case "both": title = "Both of yours. Your share counts."
+            case "me": title = kind == "transfer" ? "Yours. Money moved in, not income." : "Yours. Counts as your pay."
+            case "both": title = "Everyone’s. Your share counts."
             default: title = "\(person ?? "Theirs"). Not counted as yours."
             }
             return MarkReply(title: reply.title ?? title, detail: nil, undo: reply.undo)

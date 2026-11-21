@@ -47,7 +47,8 @@ struct WhosePaySheet: View {
                             }
                         }
                         APSeparator(afterFace: false)
-                        APChoiceRow(title: "Both of us", sub: "Your \(share)% counts", selected: false) { answer("both") }
+                        APChoiceRow(title: people.count > 1 ? "Everyone" : "Both of us", sub: "Your \(share)% counts",
+                                    selected: false) { answer("both") }
                         APSeparator(afterFace: false)
                         APChoiceRow(title: "This isn\u{2019}t regular pay", sub: "Ask me about each deposit",
                                     selected: false) { Task { await notPay() } }

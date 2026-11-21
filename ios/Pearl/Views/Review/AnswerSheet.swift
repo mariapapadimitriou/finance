@@ -886,8 +886,14 @@ struct AnswerSheet: View {
                 ringed: String(t.date.prefix(10)))
         QuestionCaption(text: "It’s…")
         AnswerGrid(columns: 3) {
-            AnswerTile(title: "Me", line: "Counts as your pay", symbol: "briefcase", current: choice == "me") {
-                onAnswer(.joint(t.id, who: "me", person: nil, remember: true))
+            // Hers can be pay or a transfer (product owner, 2026-11-21: money
+            // into a joint account isn't always income).
+            AnswerTile(title: "My pay", line: "Counts as your income", symbol: "briefcase", current: choice == "me") {
+                onAnswer(.joint(t.id, who: "me", person: nil, remember: true, kind: "pay"))
+            }
+            AnswerTile(title: "My transfer", line: "Not income", symbol: "arrow.left.arrow.right",
+                       current: choice == "me:transfer") {
+                onAnswer(.joint(t.id, who: "me", person: nil, remember: true, kind: "transfer"))
             }
             if people.isEmpty {
                 AnswerTile(title: ask.item.label ?? "Someone else", line: "Not in your numbers",
@@ -902,7 +908,10 @@ struct AnswerSheet: View {
                     }
                 }
             }
-            AnswerTile(title: "Both of us", line: "Your \(share)% counts", symbol: "person.2", current: choice == "both") {
+            // "Everyone" on an account shared with several people (product
+            // owner, 2026-11-21); "Both of us" when it's the two of them.
+            AnswerTile(title: people.count > 1 ? "Everyone" : "Both of us", line: "Your \(share)% counts",
+                       symbol: "person.2", current: choice == "both") {
                 onAnswer(.joint(t.id, who: "both", person: nil, remember: true))
             }
         }
@@ -913,7 +922,7 @@ struct AnswerSheet: View {
     private var jointSentence: String {
         let since = deposits?.first.map { " since \(Self.sinceMonth($0))" } ?? ""
         let money = Format.amount(abs(t.amount))
-        guard let d = deposits, d.count > 1 else { return "\(who) paid \(money) into your joint account." }
+        guard let d = deposits, d.count > 1 else { return "\(who) put \(money) into your joint account." }
         if let every = Self.every(d.cadence) {
             return every.prefix(1).uppercased() + every.dropFirst() + since
         }
@@ -1250,7 +1259,7 @@ struct AnswerSheet: View {
         case .kinds: return "What kind of income?"
         case .otherKinds: return "Which kind?"
         case .cadence: return "How often is this pay?"
-        case .joint: return "Whose pay is this?"
+        case .joint: return "Who put this in?"
         case .sender: return "Who sent this?"
         case .recurring: return "Is this a recurring transfer?"
         case .payback: return "Is \(ask.item.payback?.who ?? payer) paying you back?"

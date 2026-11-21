@@ -1940,7 +1940,7 @@ struct TransactionDetailView: View {
             APCard {
                 Button { asking = Asking(step: .joint) } label: {
                     // T-40b (G1-TxNote): "Whose pay   Sam's · not yours ›".
-                    row(title: "Whose pay", chevron: true, value: jointWhose, icon: "person.2")
+                    row(title: "Who put it in", chevron: true, value: jointWhose, icon: "person.2")
                 }
                 .buttonStyle(.plain)
                 .disabled(busy)
