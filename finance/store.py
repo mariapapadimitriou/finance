@@ -395,6 +395,11 @@ CREATE TABLE IF NOT EXISTS transfer_links (
     txn_id  TEXT PRIMARY KEY,
     link_id TEXT NOT NULL
 );
+-- Legs she took apart (2026-11-22): each its own row, a transfer still,
+-- paired with nothing until she links it again.
+CREATE TABLE IF NOT EXISTS transfer_unpaired (
+    txn_id TEXT PRIMARY KEY
+);
 CREATE TABLE IF NOT EXISTS joint_deposit_rules (
     account_id TEXT NOT NULL,
     sender_key TEXT NOT NULL,
@@ -881,7 +886,7 @@ _ROW_TABLES = ("txn_shares", "txn_invested", "piggy_allocations", "piggy_optouts
                "txn_splits", "txn_split_people", "txn_oneoff", "txn_duplicates",
                "joint_deposits", "txn_party", "txn_tags", "txn_saved_to", "sorted_range_rows",
                "txn_split_cash", "txn_split_let_go", "txn_split_not_me", "txn_parts", "txn_joint_parts",
-               "txn_joint_paybacks", "transfer_links")
+               "txn_joint_paybacks", "transfer_links", "transfer_unpaired")
 
 # What friends have sent back for each charge, as a positive total.
 _PAYBACKS = """(
@@ -925,6 +930,7 @@ _CHARGE_COLUMNS = """sh.my_share AS my_share,
                           COALESCE(jdx.who, jrx.who) AS joint_from,
                           ptx.name AS party,
                           tlx.link_id AS transfer_link,
+                          CASE WHEN upx.txn_id IS NULL THEN 0 ELSE 1 END AS unpaired,
                           a.bank_id AS bank_id,
                           CASE WHEN a.bank_id IS NULL THEN 0 ELSE a.charged
                           END AS bank_amount,
@@ -1437,6 +1443,7 @@ class Store:
                                                     AND jsx.merchant_key = LOWER(t.merchant)
                      LEFT JOIN joint_deposits jdx ON jdx.txn_id = t.id
                      LEFT JOIN transfer_links tlx ON tlx.txn_id = t.id
+                     LEFT JOIN transfer_unpaired upx ON upx.txn_id = t.id
                      LEFT JOIN txn_party ptx ON ptx.txn_id = t.id
                      LEFT JOIN joint_deposit_rules jrx ON jrx.account_id = t.account_id
                                                       AND jrx.sender_key = LOWER(t.merchant)
@@ -1567,6 +1574,7 @@ class Store:
                                                      AND jsx.merchant_key = LOWER(t.merchant)
                       LEFT JOIN joint_deposits jdx ON jdx.txn_id = t.id
                      LEFT JOIN transfer_links tlx ON tlx.txn_id = t.id
+                     LEFT JOIN transfer_unpaired upx ON upx.txn_id = t.id
                       LEFT JOIN txn_party ptx ON ptx.txn_id = t.id
                       LEFT JOIN joint_deposit_rules jrx ON jrx.account_id = t.account_id
                                                        AND jrx.sender_key = LOWER(t.merchant)
@@ -1613,6 +1621,7 @@ class Store:
                                                     AND jsx.merchant_key = LOWER(t.merchant)
                      LEFT JOIN joint_deposits jdx ON jdx.txn_id = t.id
                      LEFT JOIN transfer_links tlx ON tlx.txn_id = t.id
+                     LEFT JOIN transfer_unpaired upx ON upx.txn_id = t.id
                      LEFT JOIN txn_party ptx ON ptx.txn_id = t.id
                      LEFT JOIN joint_deposit_rules jrx ON jrx.account_id = t.account_id
                                                       AND jrx.sender_key = LOWER(t.merchant)
@@ -2744,6 +2753,7 @@ class Store:
             ("txn_joint_paybacks", "joint money that paid you back"),
             ("txn_party", "names on e-Transfers"),
             ("transfer_links", "transfers you linked as one"),
+            ("transfer_unpaired", "transfer legs you took apart"),
             ("dismissed_insights", "dismissed findings"),
             ("txn_exclusions", "excluded transactions"),
             ("exclusion_rules", "exclusion rules"),
@@ -3754,6 +3764,13 @@ class Store:
         # A link needs two rows.
         c.execute("""DELETE FROM transfer_links WHERE link_id IN (
                          SELECT link_id FROM transfer_links GROUP BY link_id HAVING COUNT(*) < 2)""")
+
+    def set_unpaired(self, txn_id: str, on: bool) -> None:
+        """A leg she took apart from its transfer line (2026-11-22), or not."""
+        with self.conn() as c:
+            c.execute("DELETE FROM transfer_unpaired WHERE txn_id = ?", (txn_id,))
+            if on:
+                c.execute("INSERT INTO transfer_unpaired (txn_id) VALUES (?)", (txn_id,))
 
     def restore_transfer_links(self, was: dict[str, str | None]) -> None:
         """Undo: each row back in the link it was in, or in none."""
