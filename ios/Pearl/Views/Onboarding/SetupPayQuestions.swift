@@ -24,7 +24,9 @@ struct WhosePaySheet: View {
         // G6-PayBills O-10f: who, then each answer as a radio row that
         // answers at once, and one short note. No Save.
         VStack(spacing: 0) {
-            APSheetTitle(title: "Whose pay is this?") { dismiss() }
+            // "Who put this in?" (product owner, 2026-11-21): money into a joint
+            // account isn't always pay; Needs a look asks it the same way.
+            APSheetTitle(title: "Who put this in?") { dismiss() }
                 .padding(.horizontal, 16).padding(.top, 14)
                 .sheetPart()
             ScrollView {
@@ -34,7 +36,9 @@ struct WhosePaySheet: View {
                         .padding(.top, 8)
                     ProfileSection("It\u{2019}s\u{2026}")
                     APCard {
-                        APChoiceRow(title: "Me", sub: "Counts as your pay", selected: false) { answer("me") }
+                        APChoiceRow(title: "My pay", sub: "Counts as your income", selected: false) { answer("me", kind: "pay") }
+                        APSeparator(afterFace: false)
+                        APChoiceRow(title: "My transfer", sub: "Not income", selected: false) { answer("me", kind: "transfer") }
                         if people.isEmpty {
                             APSeparator(afterFace: false)
                             APChoiceRow(title: "Someone else", sub: "Not in your numbers", selected: false) { answer("them") }
@@ -75,12 +79,13 @@ struct WhosePaySheet: View {
     private var share: Int { Int((ask.share ?? 50).rounded()) }
 
     /// A tile answers for every deposit from them, then the toast with Undo.
-    private func answer(_ who: String, person: String? = nil) {
+    private func answer(_ who: String, person: String? = nil, kind: String? = nil) {
         busy = true
         Task {
             defer { busy = false }
             do {
-                let reply = try await ReviewAnswer.joint(ask.txn, who: who, person: person, remember: true).send(app.api)
+                let reply = try await ReviewAnswer.joint(ask.txn, who: who, person: person, remember: true, kind: kind)
+                    .send(app.api)
                 let check: IncomeBills = try await app.api.get("api/income-bills")
                 saved(check)
                 dismiss()

@@ -1959,7 +1959,9 @@ struct TransactionDetailView: View {
     private var jointWhose: String {
         switch t.jointFrom {
         case "me": return "Yours"
-        case "both": return "Both of yours · your share \(Int((t.jointShare ?? 50).rounded()))% counts"
+        case "both":
+            // "Everyone" on an account shared with several people (2026-11-21).
+            return "\(t.jointPeople.count > 1 ? "Everyone’s" : "Both of yours") · your share \(Int((t.jointShare ?? 50).rounded()))% counts"
         default: return t.jointPerson.map { "\($0)’s · not yours" } ?? "Theirs · not yours"
         }
     }
