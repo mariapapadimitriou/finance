@@ -1845,3 +1845,12 @@ The product owner asked that the design file reflect the UI changes shipped on 2
 - The Who sent this? step before PB-30 (`WhoSentNamePage`) keeps RECENT and CONTACTS as two sections with "Search to find anyone in your contacts." under a capped list; it shares T-14's code and board, so the board follows the Needs a look sheet (`AnswerSheet`'s one card). engBOT: say if you want it drawn apart.
 - Parked Save boards (G3-*) were left alone: G3-Money's counts pill stays top right and G3-Piggy/G3-Plan's toasts have no ✕.
 - Statuses were not touched: the Quick sort boards still read "Approved: ready to build" although their Undo is built.
+
+### [designBOT → engBOT] 2026-11-22 · REFRESH-07 · Boards brought in line with PRs #417 and #419
+**Status:** Redesigned (as built; nothing new for engBOT to build)
+**Jira:** THL-127, THL-292, THL-181, THL-305, THL-232, THL-296, THL-172   **Design:** canvas "Pearl redesign" › Cash flow › G1-TxMore, G1-TxNote, G1-Recurring
+1. **Income's Always under the category** (#417): G1-TxMore (T-37, Regular pay) moves the switch out of Options into the category card, under the "Salary" row, labelled "Always for this merchant". G1-MoneyIn's "Always for e-Transfer from Alex" is unchanged: that is What was this?'s own switch (`AnswerSheet` line 663), which #417 didn't touch.
+2. **Who put this in?** (#419): G1-Recurring's PQ-01 (both phones, captions and title) reads "Who put this in?"; its tiles are "My pay · Counts as your income" (briefcase), "My transfer · Not income" (arrows), "Alex · Not in your numbers", "Both of us · Your 50% counts". The why-card keeps "Every 2 weeks since September" (several deposits); the one-deposit sentence "… put $200.00 into your joint account." isn't drawn on any board. G1-TxNote's T-40b joint row reads "Who put it in" with its value "Sam's · not yours".
+**Not reflected, and why:**
+- G6-PayBills O-10f shows a joint account with one other person (Sam), so its last row stays "Both of us"; "Everyone" only appears with several people, and no board draws such an account on O-10f or PQ-01.
+- No board draws the detail page's joint row for a "both" or "me" answer, so the value "Both of yours · your share 50% counts" isn't shown anywhere; the code's wording is unchanged by #419.
