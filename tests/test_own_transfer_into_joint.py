@@ -140,3 +140,24 @@ def test_money_that_left_again_weeks_later_is_not_a_chain(tmp_path):
         assert rows[t["TFR-TO 1234567"].fingerprint]["transfer"]["other_id"] == t["TFR-FR 7654321"].fingerprint
         assert rows[t["RZ363 TFR-TO"].fingerprint]["transfer"]["other_id"] == t["RZ363 TFR-FR"].fingerprint
         assert "via" not in rows[t["TFR-TO 1234567"].fingerprint]["transfer"]
+
+
+def test_a_departure_posted_a_day_before_its_arrival_still_chains(tmp_path):
+    """Plaid dates the arrival from A on the 21st and the departure to C on
+    the 20th, though she moved the money on one day: still one line."""
+    from app import create_app
+    app = create_app(str(tmp_path / "z.db"))
+    app.config.update(TESTING=True)
+    with app.test_client() as c:
+        set_plan(c, income=5200, savings=900)
+        st = app.config["STORE"]
+        ingest(st, IngestResult(transactions=[row(200, "TFR-TO 1234567", "a", ago(3))], account_id="a"))
+        ingest(st, IngestResult(transactions=[row(-200, "TFR-FR 7654321", "b", ago(2)),
+                                              row(200, "RZ363 TFR-TO", "b", ago(3))], account_id="b"))
+        ingest(st, IngestResult(transactions=[row(-200, "RZ363 TFR-FR", "fam", ago(3))], account_id="fam"))
+        c.put("/api/accounts/fam/joint", json={"label": "Family"})
+        t = {x.description: x for x in st.all_transactions()}
+        rows = listed(c)
+        line = rows[t["TFR-TO 1234567"].fingerprint]["transfer"]
+        assert line["other_id"] == t["RZ363 TFR-FR"].fingerprint and len(line["via"]) == 1
+        assert t["RZ363 TFR-TO"].fingerprint not in rows
