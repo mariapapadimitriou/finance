@@ -743,6 +743,19 @@ def still_asking(row: dict, money_in: set[str]) -> dict:
             "note": "Paid back or income? Tell us", "note_link": True}
 
 
+def own_arrival(t: Transaction, row: dict) -> dict:
+    """A joint deposit that is the other end of her own transfer (product
+    owner, 2026-11-22: the list showed the transfer line and a "Whose?" row
+    for the same money). The match answers it Me the next time the ledger is
+    sorted; until then the row reads as the transfer it is. It counts as
+    nothing either way."""
+    if ((row.get("chip") or {}).get("label") != "Whose?" or not getattr(t, "joint", None)
+            or getattr(t, "joint_from", None)):
+        return row
+    return {**row, "chip": {"label": "Transfer", "suggested": False}, "suggested": False,
+            "counts": "none", "note": "Transfer between your accounts \u00b7 not counted", "note_link": False}
+
+
 def collapse_transfers(rows: list[tuple[Transaction, dict]],
                        pairs: dict[str, str],
                        merged: list[tuple[Transaction, dict]] | None = None
@@ -761,6 +774,8 @@ def collapse_transfers(rows: list[tuple[Transaction, dict]],
     so a transfer she marked vanished. Each arrival dropped here is put in
     `merged`, when given, with `merged_into` naming its line, so the phone
     can show it where the line isn't (TransferEnds.swift)."""
+    arrivals = set(pairs.values())
+    rows = [(t, own_arrival(t, r) if t.fingerprint in arrivals else r) for t, r in rows]
     by_id = {t.fingerprint: (t, r) for t, r in rows}
     # Either end counts as nothing (moved between accounts, or put into or
     # taken out of savings), and neither was left out (2026-10-22).

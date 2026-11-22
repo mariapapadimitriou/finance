@@ -550,6 +550,11 @@ def transaction_detail(txn_id: str):
         other = next((x for x, xr in rows if x.fingerprint == other_id), None) if other_id else None
         if other is not None:
             orow = next(xr for x, xr in rows if x.fingerprint == other_id)
+            if txn_id in back:
+                # Her own money arriving in a joint account reads as the
+                # transfer it is, not "Whose?" (2026-11-22).
+                from .txlist import own_arrival
+                r.update(own_arrival(t, r))
             r["transfer"] = {"from": r.get("account", "") if txn_id in pairs else orow.get("account", ""),
                              "to": orow.get("account", "") if txn_id in pairs else r.get("account", ""),
                              "other_id": other_id, "other_date": other.date[:10]}
