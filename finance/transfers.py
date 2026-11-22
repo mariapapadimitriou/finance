@@ -79,6 +79,18 @@ def others(t: Transaction) -> bool:
     return bool(getattr(t, "joint", None)) and abs(t.my_share or 0.0) < 0.005
 
 
+def _theirs(t: Transaction) -> bool:
+    """Money in that isn't hers to pair: a row she excluded, or a joint
+    deposit she said was the other person's. A joint deposit nobody has
+    answered counts as nothing of hers until she does (`my_share` 0), but
+    it can still be the other end of her own transfer (product owner,
+    2026-11-22: $200 from her account into the family account showed as a
+    lone transfer and "Whose?")."""
+    if getattr(t, "excluded", None):
+        return True
+    return bool(getattr(t, "joint", None)) and t.joint_from == "them"
+
+
 def _days(a: str, b: str) -> int:
     return abs((date.fromisoformat(a[:10]) - date.fromisoformat(b[:10])).days)
 
@@ -484,7 +496,7 @@ def _transfer_pairs(transactions: list[Transaction], today: str | None = None) -
                   key=lambda t: (t.date, t.fingerprint))
     arrivals: dict[int, list[Transaction]] = {}
     for t in transactions:
-        if (t.amount < 0 and not others(t) and not t.repays
+        if (t.amount < 0 and not _theirs(t) and not t.repays
                 and ((t.category or "") in _MOVED - {UNSORTED} or _guessed_arrival(t))):
             arrivals.setdefault(_cents(-t.amount), []).append(t)
     used: set[str] = set()
@@ -494,7 +506,7 @@ def _transfer_pairs(transactions: list[Transaction], today: str | None = None) -
     # two lines; none of them pairs with anything outside the link.
     linked: dict[str, list[Transaction]] = {}
     for t in transactions:
-        if t.transfer_link and not others(t):
+        if t.transfer_link and not (others(t) if t.amount > 0 else _theirs(t)):
             linked.setdefault(t.transfer_link, []).append(t)
     in_link: set[str] = set()
     for rows in linked.values():
@@ -542,13 +554,23 @@ def apply_transfer_matches(store, transactions: list[Transaction] | None = None)
     txns = transactions if transactions is not None else store.all_transactions()
     current = {t.fingerprint: (t.category, t.category_source) for t in txns}
     changes = {}
+    used: set[str] = set()
     for tid, cat in match_transfers(txns, destinations=known_destinations(store),
                                     accounts=linked_accounts(store),
-                                    recurring=store.recurring_transfers()).items():
+                                    recurring=store.recurring_transfers(), used_out=used).items():
         source = "transfer_match" if cat in (NEUTRAL, UNSORTED) else RULED
         if current.get(tid) != (cat, source):
             changes[tid] = (cat, source)
-    return store.set_categories(changes) if changes else 0
+    # Money that left one of her accounts and arrived in a joint one is hers,
+    # moved (2026-11-22): "Who put this in?" is answered, Me, a transfer, so
+    # the page and the list don't ask what Pearl can see. She can change it.
+    answered = 0
+    for t in txns:
+        if (t.fingerprint in used and t.joint and t.amount < 0 and not t.joint_from
+                and not t.share_set and not t.excluded):
+            store.set_joint_deposit(t.fingerprint, "me")
+            answered += 1
+    return (store.set_categories(changes) if changes else 0) + answered
 
 
 def migrate_overrides(store) -> int:
