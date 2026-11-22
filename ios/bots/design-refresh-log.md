@@ -1854,3 +1854,17 @@ The product owner asked that the design file reflect the UI changes shipped on 2
 **Not reflected, and why:**
 - G6-PayBills O-10f shows a joint account with one other person (Sam), so its last row stays "Both of us"; "Everyone" only appears with several people, and no board draws such an account on O-10f or PQ-01.
 - No board draws the detail page's joint row for a "both" or "me" answer, so the value "Both of yours · your share 50% counts" isn't shown anywhere; the code's wording is unchanged by #419.
+
+### [designBOT → engBOT] 2026-11-22 · REFRESH-08 · Boards brought in line with PR #422 (Link transfers; contacts on Who was it with?)
+**Status:** Redesigned (as built; nothing new for engBOT to build)
+**Jira:** THL-292, THL-181, THL-289, THL-291, THL-301, THL-303   **Design:** canvas "Pearl redesign" › Cash flow › G1-TxSheets (TF-02, TF-02l, TF-02e), G1-TxMore (TF-01), G2-WhoWith (S-02 v2)
+1. **Link transfers** (`LinkTransfersSheet`): G1-TxSheets gains three phone pairs over the TF-01 transfer page (the board is now 6020 wide; G1-MoneyIn moved right to make room):
+   - TF-02 · Link transfers: title bar, the transaction as the sheet's who (⇄ ring, "To Tangerine Savings", "$500.00" in `moved`, "TD Chequing ••4417 · Thu, Nov 12"), the footnote "Tick the other legs of this move. Linked, they count as one transfer: not spending, not income.", the label SAME AMOUNT, WITHIN A WEEK, a card of legs (merchant over "account · date", the amount on the right in `money-in` when it came in, a tick box; one leg says "· in another link"), and Link.
+   - TF-02l · Linked transfers: the legs come ticked, Save, then Unlink as a secondary button; behind it the page's Options row reads "Linked transfers" with the accounts as its second line.
+   - TF-02e · the empty card "Nothing else for $500.00 within a week." with Link disabled.
+2. **Options row** on the transfer page (G1-TxMore TF-01): "Link to another transfer" with the link icon, under "This isn't a transfer".
+3. **Who was it with?** (G2-WhoWith S-02 v2, the typing state "Pri"): under RECENT, a CONTACTS card of matching contacts in the same row style with tick boxes, then a card with the "+ Add “Pri” as a new name" row.
+**Not reflected, and why:**
+- The Options row on a Not sorted yet / Saved / Other / money-in page: no board draws those pages' Options with this row; TF-01 covers the look, and the row is the same everywhere.
+- A paired linked row where "Linked transfers" replaces "This isn't a transfer": TF-02l's page shows the "Linked transfers" row on the paired TF-01 page, which is that case.
+- "Contacts are off for Pearl. Turn on" on Who was it with?: not drawn (one state per phone; it is the same line as G1-Asks T-14d).
