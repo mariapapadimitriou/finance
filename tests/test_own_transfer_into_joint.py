@@ -80,3 +80,20 @@ def test_her_answer_stands(client):
     into = t["RZ363 TFR-FR"]
     assert client.put(f"/api/transactions/{into.fingerprint}/joint-from", json={"who": "them"}).status_code == 200
     assert by_desc(client)["RZ363 TFR-FR"].joint_from == "them"
+
+
+def test_before_the_match_answers_it_the_rows_still_read_as_one_transfer(client):
+    """Until the ledger is sorted again (a sync or an edit), the deposit has
+    no answer yet; the list must not show the transfer line and a "Whose?"
+    row for the same money."""
+    t = by_desc(client)
+    into, out = t["RZ363 TFR-FR"], t["RZ363 TFR-TO"]
+    client.application.config["STORE"].set_joint_deposit(into.fingerprint, None)
+    assert by_desc(client)["RZ363 TFR-FR"].joint_from is None
+    month = TODAY.strftime("%Y-%m")
+    rows = {r["id"]: r for r in client.get("/api/transactions/list",
+                                           query_string={"month": month, "limit": 100}).get_json()["transactions"]}
+    assert into.fingerprint not in rows
+    assert rows[out.fingerprint]["transfer"]["other_id"] == into.fingerprint
+    page = client.get(f"/api/transactions/{into.fingerprint}").get_json()
+    assert page["chip"]["label"] == "Transfer" and page["transfer"]["other_id"] == out.fingerprint
