@@ -316,9 +316,11 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
     out: dict[str, str] = {}
 
     # Rows she linked herself as one movement of money (2026-11-22): each is
-    # a transfer, whatever it was sorted as, and none pairs with anything else.
+    # a transfer, whatever it was sorted as, and none pairs with anything
+    # else. A leg she took apart (`unpaired`) is a transfer on its own row,
+    # likewise paired with nothing and asked about nothing.
     for t in transactions:
-        if t.transfer_link:
+        if t.transfer_link or t.unpaired:
             out[t.fingerprint] = NEUTRAL
             if t.amount < 0:
                 used.add(t.fingerprint)
@@ -492,11 +494,11 @@ def _transfer_pairs(transactions: list[Transaction], today: str | None = None) -
     sorted as spending or income. Each arrival pairs once, nearest first.
     """
     outs = sorted((t for t in transactions
-                   if t.amount > 0 and not others(t) and (t.category or "") in _MOVED),
+                   if t.amount > 0 and not others(t) and not t.unpaired and (t.category or "") in _MOVED),
                   key=lambda t: (t.date, t.fingerprint))
     arrivals: dict[int, list[Transaction]] = {}
     for t in transactions:
-        if (t.amount < 0 and not _theirs(t) and not t.repays
+        if (t.amount < 0 and not _theirs(t) and not t.repays and not t.unpaired
                 and ((t.category or "") in _MOVED - {UNSORTED} or _guessed_arrival(t))):
             arrivals.setdefault(_cents(-t.amount), []).append(t)
     used: set[str] = set()

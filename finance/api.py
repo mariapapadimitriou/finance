@@ -577,6 +577,9 @@ def transaction_detail(txn_id: str):
                     r["transfer"]["joint"] = {"people": offer["people"], "account": offer["account"]}
                 elif not t.joint and not other.joint:
                     r["transfer"]["mine_only"] = True
+        if t.unpaired:
+            # A leg she took apart from its line (2026-11-22).
+            r["unpaired"] = True
         if t.transfer_link:
             # Link transfers (2026-11-22): the other legs she linked this with.
             r["links"] = [_leg_brief(x) for x in txns
@@ -2210,9 +2213,13 @@ def set_transfer_links(txn_id: str):
     was = {i: links.get(i) for i in touched}
     from .impact import snapshot, undo_payload
     before = snapshot(st, txns)
+    unpaired_was = {i: True for i in group if by_id[i].unpaired}
     if ids:
         link_id = st.link_transfers(group)
         title = "Linked. One transfer, not spending or income."
+        # Linking a leg she had taken apart pairs it again.
+        for i in unpaired_was:
+            st.set_unpaired(i, False)
         # A leg she had sorted by hand: the match never writes over her
         # answer, so the link says it itself.
         for i in group:
@@ -2232,8 +2239,41 @@ def set_transfer_links(txn_id: str):
         st.set_categories({x.fingerprint: (x.category, x.category_source) for x in rows})
     _reclassify(st)
     undo = undo_payload(before, snapshot(st, st.all_transactions()))
-    undo["marks"] = {"transfer_links": was}
+    undo["marks"] = {"transfer_links": was, **({"unpaired": unpaired_was} if unpaired_was else {})}
     return jsonify({"ok": True, "link": link_id, "title": title, "undo": undo})
+
+
+@bp.post("/transactions/<txn_id>/unpair")
+def unpair_transfer(txn_id: str):
+    """Take a transfer line apart (product owner, 2026-11-22): every leg of
+    the line this row is on, a pair or a chain, is its own row in Cash flow
+    again. Each stays a transfer, paired with nothing and asked about
+    nothing, until she links it (PUT …/links, which pairs it again). A leg
+    she had linked by hand comes out of its link. Undo puts the line back."""
+    st = store()
+    t = st.get_transaction(txn_id)
+    if t is None:
+        return jsonify({"error": "No such transaction."}), 404
+    from .transfers import transfer_pairs
+    from .txlist import line_of
+    txns = st.all_transactions()
+    rows = _txlist_rows(st, everything=True)
+    legs = line_of(txn_id, rows, transfer_pairs(txns, today=_today_iso()))
+    if not legs:
+        return jsonify({"error": "This isn't paired with anything."}), 400
+    links = st.transfer_links()
+    was_links = {i: links[i] for i in legs if i in links}
+    from .impact import snapshot, undo_payload
+    before = snapshot(st, txns)
+    for i in legs:
+        st.set_unpaired(i, True)
+    if was_links:
+        st.restore_transfer_links({i: None for i in was_links})
+    _reclassify(st)
+    undo = undo_payload(before, snapshot(st, st.all_transactions()))
+    undo["marks"] = {"unpaired": {i: False for i in legs},
+                     **({"transfer_links": was_links} if was_links else {})}
+    return jsonify({"ok": True, "legs": legs, "title": "Unlinked. Each leg is its own row.", "undo": undo})
 
 
 @bp.get("/accounts")

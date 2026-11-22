@@ -828,6 +828,19 @@ def chains(rows: list[tuple[Transaction, dict]], pairs: dict[str, str]) -> dict[
     return out
 
 
+def line_of(txn_id: str, rows: list[tuple[Transaction, dict]], pairs: dict[str, str]) -> list[str]:
+    """The legs of the transfer line this row is on: a chain's, or the pair's
+    two; [] when it's on its own."""
+    for legs in chains(rows, pairs).values():
+        if txn_id in legs:
+            return legs
+    _, joined = _prepared(rows, pairs)
+    for out, arr in joined.items():
+        if txn_id in (out, arr):
+            return [out, arr]
+    return []
+
+
 def chain_line(by_id, legs: list[str]) -> dict:
     """What the head's `transfer` says for a chain: where the money ended
     up, the accounts it passed through, and every leg."""

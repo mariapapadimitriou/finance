@@ -2883,6 +2883,14 @@ struct TransactionDetailView: View {
                 .buttonStyle(.plain)
                 .disabled(busy)
             } else {
+                // Unlink from transfer (2026-11-22): the line comes apart into
+                // its legs, each its own row, each a transfer still.
+                Button { Task { await unpairTransfer() } } label: {
+                    row(title: "Unlink from transfer", sub: "Each leg becomes its own row", chevron: true, icon: "link")
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+                APSeparator(afterFace: false)
                 Button { unpairing = true } label: {
                     // TEXT-01: no second line; the sheet asks.
                     row(title: "This isn’t a transfer", chevron: true, icon: "link")
@@ -2908,6 +2916,20 @@ struct TransactionDetailView: View {
             otherSide = transfer.otherId
             try? await Task.sleep(nanoseconds: 450_000_000)
             sorting = sortAsk(.transfer)
+        }
+    }
+
+    /// POST …/unpair: the page reloads as a lone leg; the toast carries Undo.
+    private func unpairTransfer() async {
+        await run {
+            let reply: MarkReply? = try await write("POST", "api/transactions/\(t.id)/unpair")
+            if let reply = reply {
+                app.say(reply.title ?? "Unlinked.", undo: reply.undo.map { payload in {
+                    guard let body = payload.any as? [String: Any] else { return }
+                    let _: OK = try await app.api.post("api/transactions/undo", body)
+                } })
+            }
+            return nil
         }
     }
 

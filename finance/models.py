@@ -315,6 +315,9 @@ class Transaction:
     # The link she put this row in, with the other legs of one movement of
     # money (2026-11-22); None when she didn't.
     transfer_link: str | None = None
+    # She took this leg apart from its transfer line (2026-11-22): its own
+    # row, a transfer still, paired with nothing until she links it again.
+    unpaired: bool = False
     # The people a joint account is shared with, as she named them, and which
     # of them put this money in.
     joint_people: list = field(default_factory=list)
@@ -488,6 +491,7 @@ class Transaction:
             duplicate_state=row.get("duplicate_state") or None,
             party=row.get("party") or None,
             transfer_link=row.get("transfer_link") or None,
+            unpaired=bool(row.get("unpaired")),
             joint_people=_people_of(row.get("joint_people")),
             joint_person=row.get("joint_person") or None,
             account_nickname=row.get("account_nickname") or None,

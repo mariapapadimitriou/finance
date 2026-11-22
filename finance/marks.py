@@ -1624,6 +1624,11 @@ def undo_marks(store, marks: dict) -> int:
         if tid in known and isinstance(was, dict):
             store.set_joint_deposit(tid, was.get("who"), was.get("person"))
             n += 1
+    # A transfer line taken apart, or put back (2026-11-22).
+    for tid, on in (marks.get("unpaired") or {}).items():
+        if tid in known:
+            store.set_unpaired(tid, bool(on))
+            n += 1
     # Link transfers (2026-11-22): each row back in the link it was in.
     links = marks.get("transfer_links") or {}
     if isinstance(links, dict) and links:
