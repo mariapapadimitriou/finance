@@ -161,3 +161,27 @@ def test_a_departure_posted_a_day_before_its_arrival_still_chains(tmp_path):
         line = rows[t["TFR-TO 1234567"].fingerprint]["transfer"]
         assert line["other_id"] == t["RZ363 TFR-FR"].fingerprint and len(line["via"]) == 1
         assert t["RZ363 TFR-TO"].fingerprint not in rows
+
+
+def test_every_leg_gets_a_partner_when_the_arrivals_tie(tmp_path):
+    """Product owner, 2026-11-22: A out on the 3rd; B in, B out and C in all
+    on the 5th. Nearest-first alone paired A with C (a tie, first listed)
+    and left B's two rows alone; A→B, B→C pairs every row, one line."""
+    from app import create_app
+    app = create_app(str(tmp_path / "w.db"))
+    app.config.update(TESTING=True)
+    with app.test_client() as c:
+        set_plan(c, income=5200, savings=900)
+        st = app.config["STORE"]
+        # The family account first, so its arrival is the one a tie would pick.
+        ingest(st, IngestResult(transactions=[row(-200, "RZ363 TFR-FR", "fam", ago(3))], account_id="fam"))
+        ingest(st, IngestResult(transactions=[row(200, "TFR-TO 1234567", "a", ago(5))], account_id="a"))
+        ingest(st, IngestResult(transactions=[row(-200, "TFR-FR 7654321", "b", ago(3)),
+                                              row(200, "RZ363 TFR-TO", "b", ago(3))], account_id="b"))
+        c.put("/api/accounts/fam/joint", json={"label": "Family"})
+        t = {x.description: x for x in st.all_transactions()}
+        rows = listed(c)
+        line = rows[t["TFR-TO 1234567"].fingerprint]["transfer"]
+        assert line["legs"] == [t["TFR-TO 1234567"].fingerprint, t["TFR-FR 7654321"].fingerprint,
+                                t["RZ363 TFR-TO"].fingerprint, t["RZ363 TFR-FR"].fingerprint]
+        assert len(rows) == 1
