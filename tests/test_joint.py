@@ -56,7 +56,10 @@ def test_mine_by_default(client):
     m = month(client)
     # Loblaws, and the e-transfer out until it's sorted.
     assert m["spend"] == 200
-    assert m["income"] == 0 and m["inflows"] == 0  # money in waits for an answer
+    # Money in waits for an answer, except the $500 Pearl saw leave her own
+    # chequing: that's hers, moved (2026-11-22), an inflow like any arrival
+    # between her accounts, never income.
+    assert m["income"] == 0 and m["inflows"] == 500
     accounts = {a["account_id"]: a for a in client.get("/api/accounts").get_json()["accounts"]}
     assert accounts["fam"]["joint"] == "Family"
 
