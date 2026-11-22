@@ -408,6 +408,8 @@ struct TransactionDetailView: View {
     @State private var viewing: Transaction?
     /// TF-01c: "This isn't a transfer?" asks first.
     @State private var unpairing = false
+    /// Link transfers (2026-11-22): the sheet that picks the other legs.
+    @State private var linking = false
     /// TF-01c: the other end, asked What was this? once this one is answered.
     @State private var otherSide: String?
     @State private var error: String?
@@ -731,6 +733,21 @@ struct TransactionDetailView: View {
     /// Split, your share, settle up, That's everything, Remove the split?
     private var splitSheets: some View {
         OwnBody { sortSheets }
+        .sheet(isPresented: $linking) {
+            // Link transfers (product owner, 2026-11-22): the other legs of
+            // one move, ticked; Link (or Unlink) saves with one Undo.
+            LinkTransfersSheet(t: t, api: app.api) { reply in
+                linking = false
+                lastChanged = reply.changed
+                Task {
+                    await run { nil }
+                    app.say(reply.title ?? "Linked.", undo: reply.undo.map { payload in {
+                        guard let body = payload.any as? [String: Any] else { return }
+                        let _: OK = try await app.api.post("api/transactions/undo", body)
+                    } })
+                }
+            }
+        }
         .sheet(isPresented: $splitting) {
             // T-98s (SPLIT-06): from a Quick sort card's page the split is
             // held for the card, like every other edit here; Yes saves it.
@@ -1462,6 +1479,15 @@ struct TransactionDetailView: View {
     private var guessFromList: Bool { guessing == nil && guessName != nil && !t.asks }
 
     private var isIncome: Bool { t.inflow && t.counts == "income" && t.transfer == nil }
+
+    /// Link transfers (2026-11-22): a row that is, or could be, one leg of
+    /// money moving between her accounts and has no other end paired: a
+    /// transfer, Not sorted yet, Saved, Other, or money in that isn't pay.
+    private var canLink: Bool {
+        guard t.transfer == nil, t.partOf == nil, t.parts.isEmpty, guessing == nil else { return false }
+        return t.counts != "spending" || t.category == "Unsorted transfers" || t.category == "Other"
+            || (t.inflow && !isIncome)
+    }
 
     /// T-41w (1297:64759, built from T-41): a deposit that pays a purchase
     /// back reads as her answer on What was this?, with its tile's icon:
@@ -2430,7 +2456,7 @@ struct TransactionDetailView: View {
         // S-01jr (G2b-Purchase): the share bar and the Primary take Whose was
         // it? and Split my part out of Options.
         let jointCharge = self.jointCharge && !showsShareBar
-        if canSplit || couldBePay || unlink || canOneOff || canPayFromBank || offersNewOnes
+        if canSplit || couldBePay || unlink || canLink || canOneOff || canPayFromBank || offersNewOnes
             || incomeAlways != nil || jointCharge {
             section("Options")
             APCard {
@@ -2492,8 +2518,20 @@ struct TransactionDetailView: View {
                     .buttonStyle(.plain)
                     .disabled(busy)
                 }
-                if canOneOff {
+                if canLink {
+                    // Link transfers (2026-11-22): a leg with no other end
+                    // paired, or the legs it's linked with.
                     if canSplit || couldBePay || unlink { APSeparator(afterFace: false) }
+                    Button { linking = true } label: {
+                        row(title: t.links.isEmpty ? "Link to another transfer" : "Linked transfers",
+                            sub: t.links.isEmpty ? nil : Format.shortList(t.links.compactMap(\.accountName)),
+                            chevron: true, icon: "link")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                }
+                if canOneOff {
+                    if canSplit || couldBePay || unlink || canLink { APSeparator(afterFace: false) }
                     Toggle(isOn: Binding(get: { oneOff ?? t.oneOff },
                                          set: { on in Task { await setOneOff(on) } })) {
                         // T-42 (G1-TxNote): what leaving it out does, under the title.
@@ -2514,11 +2552,11 @@ struct TransactionDetailView: View {
                     .accessibilityHint("Leaves it out of your usual month")
                 }
                 if offersNewOnes {
-                    if canSplit || couldBePay || unlink || canOneOff { APSeparator(afterFace: false) }
+                    if canSplit || couldBePay || unlink || canLink || canOneOff { APSeparator(afterFace: false) }
                     alwaysToggle(sub: nil)
                 }
                 if let payer = incomeAlways {
-                    if canSplit || couldBePay || unlink || canOneOff || offersNewOnes { APSeparator(afterFace: false) }
+                    if canSplit || couldBePay || unlink || canLink || canOneOff || offersNewOnes { APSeparator(afterFace: false) }
                     incomeAlwaysToggle(payer)
                 }
                 if canPayFromBank {
@@ -2829,13 +2867,23 @@ struct TransactionDetailView: View {
         }
         section("Options")
         APCard {
-            Button { unpairing = true } label: {
-                // TEXT-01: no second line; the sheet asks.
-                row(title: "This isn’t a transfer", chevron: true, icon: "link")
+            if !t.links.isEmpty {
+                // Linked by her (2026-11-22): the sheet shows the legs, and Unlink.
+                Button { linking = true } label: {
+                    row(title: "Linked transfers", sub: Format.shortList(t.links.compactMap(\.accountName)),
+                        chevron: true, icon: "link")
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+            } else {
+                Button { unpairing = true } label: {
+                    // TEXT-01: no second line; the sheet asks.
+                    row(title: "This isn’t a transfer", chevron: true, icon: "link")
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+                .accessibilityElement(children: .combine)
             }
-            .buttonStyle(.plain)
-            .disabled(busy)
-            .accessibilityElement(children: .combine)
         }
         .sheet(isPresented: $unpairing) { unpairSheet(transfer) }
     }

@@ -269,11 +269,15 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
     4. The day nets out — everything that left on a day equals everything
        that arrived in your other accounts that day.
 
+    Before any of that, rows she linked herself (`Transaction.transfer_link`,
+    2026-11-22) are transfers, and their arrivals count as used.
+
     Only what is still unmatched goes where you said its destination goes
-    (`destinations`, key → category); then, when it names one of her own
-    accounts (`accounts`, see `own_account`), an investment account makes it
-    Saved and any other of hers makes it a transfer. Whatever is left is
-    Unsorted when it's recent, and neutral when it's older than `ASK_DAYS`.
+    (`destinations`, key → category); a recurring transfer she confirmed
+    first, then, when it names one of her own accounts (`accounts`, see
+    `own_account`), it is a transfer, or Saved once she has said that
+    account is where she saves (2026-11-20). Whatever is left is Unsorted
+    when it's recent, and neutral when it's older than `ASK_DAYS`.
     """
     candidates = sorted(
         (t for t in transactions
@@ -298,6 +302,14 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
 
     used: set[str] = set()          # inflows already the other end of something
     out: dict[str, str] = {}
+
+    # Rows she linked herself as one movement of money (2026-11-22): each is
+    # a transfer, whatever it was sorted as, and none pairs with anything else.
+    for t in transactions:
+        if t.transfer_link:
+            out[t.fingerprint] = NEUTRAL
+            if t.amount < 0:
+                used.add(t.fingerprint)
 
     def near(t, other, days=None):
         return _days(t.date, other.date) <= (days if days is not None else _window(other))
@@ -477,10 +489,34 @@ def _transfer_pairs(transactions: list[Transaction], today: str | None = None) -
             arrivals.setdefault(_cents(-t.amount), []).append(t)
     used: set[str] = set()
     pairs: dict[str, str] = {}
+    # Rows she linked (2026-11-22) pair among themselves first, in date
+    # order and however far apart, so a chain through three accounts is
+    # two lines; none of them pairs with anything outside the link.
+    linked: dict[str, list[Transaction]] = {}
+    for t in transactions:
+        if t.transfer_link and not others(t):
+            linked.setdefault(t.transfer_link, []).append(t)
+    in_link: set[str] = set()
+    for rows in linked.values():
+        in_link.update(t.fingerprint for t in rows)
+        ins = [t for t in rows if t.amount < 0]
+        for t in sorted((t for t in rows if t.amount > 0), key=lambda t: (t.date, t.fingerprint)):
+            best = None
+            for other in ins:
+                if other.fingerprint in used or other.account_id == t.account_id:
+                    continue
+                gap = _days(t.date, other.date)
+                if best is None or gap < best[0]:
+                    best = (gap, other)
+            if best:
+                used.add(best[1].fingerprint)
+                pairs[t.fingerprint] = best[1].fingerprint
     for t in outs:
+        if t.fingerprint in in_link:
+            continue
         best = None
         for other in arrivals.get(_cents(t.amount), []):
-            if other.fingerprint in used or other.account_id == t.account_id:
+            if other.fingerprint in used or other.account_id == t.account_id or other.fingerprint in in_link:
                 continue
             gap = _days(t.date, other.date)
             if gap > _window(other):

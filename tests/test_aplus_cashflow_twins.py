@@ -40,7 +40,8 @@ class TestFollowUps(unittest.TestCase):
 
     def test_your_plan_questions_are_parked(self):
         rv = read("Views", "Review", "ReviewView.swift")
-        self.assertIn("YourPlanGate.shown ? asks : asks.filter { $0.kind != .check }", rv)
+        # Saved needs a Yes (2026-11-20): "Is X where you save?" is asked before the plan.
+        self.assertIn('YourPlanGate.shown ? asks : asks.filter { $0.kind != .check || $0.item.key.hasPrefix("chk:saver:") }', rv)
         self.assertNotIn("review.asks", rv)
         self.assertNotIn("review?.asks", rv)
         qs = read("Views", "Review", "QuickSortView.swift")
