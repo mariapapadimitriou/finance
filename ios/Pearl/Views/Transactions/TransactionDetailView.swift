@@ -1494,8 +1494,11 @@ struct TransactionDetailView: View {
     /// transfer, Not sorted yet, Saved, Other, or money in that isn't pay.
     private var canLink: Bool {
         // Opened from a Needs a look card too (2026-11-22): the leg left on
-        // its own is usually the one Pearl is asking about.
-        guard t.transfer == nil, t.partOf == nil, t.parts.isEmpty else { return false }
+        // its own is usually the one Pearl is asking about. Not on a payback
+        // or a refund: those have their own Options, and a second OPTIONS
+        // card read as a mistake.
+        guard t.transfer == nil, t.partOf == nil, t.parts.isEmpty, t.repaysCharge == nil, t.refundOf == nil
+        else { return false }
         return t.counts != "spending" || t.category == "Unsorted transfers" || t.category == "Other"
             || (t.inflow && !isIncome)
     }
@@ -1781,32 +1784,20 @@ struct TransactionDetailView: View {
             }
         } else if let charge = t.repaysCharge, t.refundOf == nil {
             section("Pays back")
-            if let split = charge.split {
-                // The split, not the whole purchase (2026-11-08): who it paid
-                // for first, then everyone else's part.
-                let who = charge.person
-                let people = split.people.sorted { a, _ in a.name == who }
-                SolidCard {
+            // Just the purchase it paid back, opening it (product owner,
+            // 2026-11-22): the split's people and shares belong on the
+            // purchase's own page, not repeated here (supersedes 2026-11-08).
+            SolidCard {
+                Button { Task { await open(charge.id) } } label: {
                     linkedRow(name: charge.merchant ?? charge.name,
-                              sub: "\(Format.short(charge.date)) · split \(split.people.count + (split.you >= 0.005 ? 1 : 0)) ways",
-                              amount: abs(charge.amount), inflow: false)
-                    ForEach(people) { p in
-                        APSeparator()
-                        linkedRow(name: p.name,
-                                  sub: p.owes >= 0.005 ? "Owes \(Format.amount(p.owes))"
-                                      : p.letGo != nil ? "Let go" : "Paid back",
-                                  amount: p.amount, inflow: false)
-                    }
-                    if split.you >= 0.005 {
-                        APSeparator()
-                        linkedRow(name: "You", sub: "Your share", amount: split.you, inflow: false)
-                    }
+                              sub: charge.split.map { "\(Format.short(charge.date)) · split \($0.people.count + ($0.you >= 0.005 ? 1 : 0)) ways" }
+                                  ?? Format.short(charge.date),
+                              amount: abs(charge.amount), inflow: false, chevron: true)
+                        .contentShape(Rectangle())
                 }
-            } else {
-                SolidCard {
-                    linkedRow(name: charge.merchant ?? charge.name, sub: Format.short(charge.date),
-                              amount: abs(charge.amount), inflow: false)
-                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+                .accessibilityHint("Opens the purchase")
             }
             // S-33: the money that paid it back can be unlinked (S-34).
             section("Options")
