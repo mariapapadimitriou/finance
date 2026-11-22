@@ -74,10 +74,6 @@ struct TransactionsView: View {
     /// T-19: picking rows to change together, and the sheet for what to change.
     @State private var selecting = false
     @State private var picked: Set<String> = []
-    /// The row whose ⋯ menu is open, and the lone leg Link was tapped on (2026-11-22).
-    struct RowMenu: Identifiable { let t: Transaction; var id: String { t.id } }
-    @State private var rowMenu: RowMenu?
-    @State private var linkFrom: RowMenu?
     @State private var bulk: Bulk?
     /// T-77's Leave out: why, so she can tell later.
     @State private var leavingOut = false
@@ -150,18 +146,6 @@ struct TransactionsView: View {
         .onChange(of: selecting) { on in if !inTrip { app.hidesTabBar = on } }
         .onDisappear { if !inTrip { app.hidesTabBar = false } }
         .modifier(HidesTabBar(on: inTrip))
-        .sheet(item: $rowMenu) { m in
-            // The row's ⋯ (product owner, 2026-11-22): a Pearl sheet, not a system menu.
-            RowMenuSheet(t: m.t, onUnlink: { rowMenu = nil; Task { await unlink(m.t) } },
-                         onLink: { rowMenu = nil; linkFrom = m },
-                         onClose: { rowMenu = nil })
-        }
-        .sheet(item: $linkFrom) { m in
-            LinkTransfersSheet(t: m.t, api: app.api) { reply in
-                linkFrom = nil
-                Task { await settled(reply) }
-            }
-        }
         .sheet(isPresented: $adding) {
             AddTransactionSheet(api: app.api, categories: categories) { said in
                 adding = false
@@ -814,42 +798,11 @@ struct TransactionsView: View {
             } else {
                 NavigationLink(value: t) {
                     TransactionRow(t: t, paidBack: paidBack(for: t), showsDay: !byDay,
-                                   onConfirm: { Task { await confirmGuess(t) } },
-                                   onMore: hasMenu(t) ? { rowMenu = RowMenu(t: t) } : nil)
+                                   onConfirm: { Task { await confirmGuess(t) } })
                 }
                 .buttonStyle(.plain)
             }
         }
-    }
-
-    /// Which rows get a ⋯ (2026-11-22): a transfer line (Unlink from
-    /// transfer), or a leg on its own that could be linked (Link to another
-    /// transfer): a transfer, Not sorted yet, Other, or money in that isn't pay.
-    private func hasMenu(_ t: Transaction) -> Bool {
-        if t.transfer != nil { return true }
-        guard t.partOf == nil, t.parts.isEmpty, t.mergedInto == nil else { return false }
-        return t.counts != "spending" || t.category == "Unsorted transfers" || t.category == "Other"
-            || (t.inflow && t.counts != "income")
-    }
-
-    /// Unlink from transfer: the line comes apart into its legs, each its
-    /// own row; the toast carries the server's Undo.
-    private func unlink(_ t: Transaction) async {
-        do {
-            let reply: MarkReply = try await app.api.post("api/transactions/\(t.id)/unpair")
-            await settled(reply)
-        } catch {
-            if let words = app.handle(error) { app.say(words) }
-        }
-    }
-
-    private func settled(_ reply: MarkReply) async {
-        app.say(reply.title ?? "Done.", undo: reply.undo.map { payload in {
-            guard let body = payload.any as? [String: Any] else { return }
-            let _: OK = try await app.api.post("api/transactions/undo", body)
-        } })
-        app.apply(reply.changed)
-        await reload()
     }
 
     // MARK: By category (T-18)
@@ -1658,9 +1611,6 @@ struct TransactionRow: View {
     var showsTrip = true
     /// TR-02m: a row in a trip's other currency says so ("−$142.00 USD").
     var currency: String? = nil
-    /// The row's ⋯ (product owner, 2026-11-22): a transfer line's Unlink, a
-    /// lone leg's Link; nil on rows with nothing to offer.
-    var onMore: (() -> Void)? = nil
 
     /// A+ (kit `.row`, APPaymentRow): the 40 pt face, the name (17) over its
     /// line (15 muted), the guess as a dashed chip, every amount on one
@@ -1700,15 +1650,6 @@ struct TransactionRow: View {
                 .padding(.top, t.suggested ? 9 : 0)
                 .accessibilityLabel(t.movedBetweenAccounts
                                     ? Format.movedSpoken(t.amount, to: t.movedTo) : Format.spoken(shownMoney))
-            if let onMore = onMore {
-                Button(action: onMore) {
-                    Image(systemName: "ellipsis").font(.system(size: 15, weight: .semibold)).foregroundColor(Pearl.muted)
-                        .frame(width: 28, height: 44).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(.trailing, -6)
-                .accessibilityLabel("More for \(t.merchant)")
-            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

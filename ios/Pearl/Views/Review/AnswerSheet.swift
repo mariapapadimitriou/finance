@@ -72,7 +72,11 @@ struct AnswerSheet: View {
     /// The transaction in full, for the options.
     @State private var full: Transaction?
     /// Whether a rule for this name could match the right rows (not "Interac e-Transfer").
-    @State private var learnable = true
+    /// Whether a rule for this name means anything: what the card already
+    /// knows, then the server's word. Unknown (nil) draws no Always switch,
+    /// so it can't show for a frame and vanish (product owner, 2026-11-22:
+    /// "Always for" flashed under What was this? on a linked e-Transfer).
+    @State private var learnable: Bool?
     /// Accounts for "Where did it go?", when the caller has none to hand.
     @State private var fetchedAccounts: [AccountsOverview.Account] = []
     /// The rule for an answer with a follow-up, and for money in.
@@ -154,6 +158,7 @@ struct AnswerSheet: View {
         self.pageAmount = pageAmount
         self.pageCategory = pageCategory
         _rememberInto = State(initialValue: pageAlways ?? true)
+        _learnable = State(initialValue: ask.t.learnable)
         self.ask = ask
         self.categories = categories
         self.accounts = accounts
@@ -204,10 +209,10 @@ struct AnswerSheet: View {
                 // T-06: Spending is the categories; Not spending, the answers.
                 CategorySheet(name: who, amount: amountText, tone: tone, categories: categories,
                               current: pageCategory ?? t.category ?? ask.item.guess?.text ?? "Other",
-                              merchant: learnable ? who : nil,
+                              merchant: learnable == true ? who : nil,
                               onRegularBill: fromPage ? nil : { regularBill = $0 },
                               title: fromPage && ask.kind == .category && !otherGuess ? "Category" : "What was this?",
-                              preview: learnable ? CategorySheet.preview(api: api, id: t.id, merchant: who) : nil,
+                              preview: learnable == true ? CategorySheet.preview(api: api, id: t.id, merchant: who) : nil,
                               notSpending: CaseTile.notSpending, startNotSpending: ask.kind != .category,
                               onCase: { outCase($0, remember: $1) },
                               confirmsCurrent: (ask.kind == .category && confirmsGuess) || splitSaid != nil,
@@ -215,7 +220,7 @@ struct AnswerSheet: View {
                               extras: fromPage ? nil : AnyView(outOptions),
                               answersAtOnce: true,
                               // Off where other rows are open or it varies: her answer here is for this row.
-                              newOnesOn: pageAlways ?? (learnable && t.mixed != true && ask.item.siblings.isEmpty),
+                              newOnesOn: pageAlways ?? (learnable == true && t.mixed != true && ask.item.siblings.isEmpty),
                               showsAlways: pageAlways == nil,
                               // G1-WhatWasThis-r (T-04n): Pearl's guess leads, then her
                               // four likeliest; every other answer under Something else….
@@ -390,7 +395,7 @@ struct AnswerSheet: View {
         // Both at once (perf rehaul, 2026-11-19).
         async let casesReply: Cases? = try? api.get("api/transactions/\(t.id)/cases")
         async let fullReply: Transaction? = try? api.get("api/transactions/\(t.id)")
-        if let c = await casesReply { learnable = c.learnable ?? true }
+        if let c = await casesReply { learnable = c.learnable ?? (learnable ?? true) }
         if let f = await fullReply { full = f }
     }
 
@@ -420,7 +425,7 @@ struct AnswerSheet: View {
 
     /// The Outcome table's rule for T-06's answers: work never makes one.
     private func outRule(_ key: String) -> String? {
-        guard learnable else { return nil }
+        guard learnable == true else { return nil }
         switch key {
         case "work": return nil
         case "not_mine": return "Leave out every \(who) from now on"
@@ -659,7 +664,7 @@ struct AnswerSheet: View {
                             .accessibilityHint("Shows every other answer here")
                         }
                     }
-                    if learnable && pageAlways == nil {
+                    if learnable == true && pageAlways == nil {
                         APCard { CFToggleRow(symbol: "repeat", title: "Always for \(who)", isOn: $rememberInto) }
                     }
                 }
@@ -730,12 +735,12 @@ struct AnswerSheet: View {
             } else {
                 Task { await askWhoPaid() }
             }
-        case "own": onAnswer(.mark(t.id, ["case": "own", "remember": learnable && rememberInto]))
+        case "own": onAnswer(.mark(t.id, ["case": "own", "remember": learnable == true && rememberInto]))
         case "loan": onAnswer(.mark(t.id, ["case": "borrowed"]))
         case "out_of_savings": onAnswer(.mark(t.id, ["case": "out_of_savings"]))
         case "lent_back": onAnswer(.mark(t.id, ["case": "lent_back"]))
         default: onAnswer(.mark(t.id, ["case": "not_mine", "reason": "Not mine",
-                                       "remember": learnable && rememberInto]))
+                                       "remember": learnable == true && rememberInto]))
         }
     }
 

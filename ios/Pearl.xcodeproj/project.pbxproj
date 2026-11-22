@@ -82,6 +82,7 @@
 		B1FFE2B19D12A9AD736E9FBE /* CategorySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56F3819F3BB3A338B035DE02 /* CategorySheet.swift */; };
 		04EAEDCFF861F9AD58FBA5F7 /* JointPaybackViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB029BC2F915F0FDA2FBF0F6 /* JointPaybackViews.swift */; };
 		1F259E54F43C7759992A1C07 /* JointSplitViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 319C3C645D45ACBE1863750E /* JointSplitViews.swift */; };
+		D39B3BCEE9126D9FBDD300CF /* LegMenuSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CE3C7C0888E13BE8FDFE3F0 /* LegMenuSheet.swift */; };
 		5D89B15A07A286D2494E186F /* LinkTransfersSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74DAD21B47BB262299FE1D9 /* LinkTransfersSheet.swift */; };
 		9AA99A83956F00835F526B9D /* PaidBackFindViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2F9ADED1FAF9A04D0A9D5B9 /* PaidBackFindViews.swift */; };
 		8F984295248B136FC68629E7 /* PaidBackPerson.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13B70C1F7B4722DCDC8F9EAF /* PaidBackPerson.swift */; };
@@ -89,7 +90,6 @@
 		8AF9A0C07760B9758CC9F76D /* PartsFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96396C8A0D0A1C86E81686D9 /* PartsFlow.swift */; };
 		3812F0CFE8572BDDD0FF614B /* PaybackLinkViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE06D62AFA3444FB6874B030 /* PaybackLinkViews.swift */; };
 		2196B0F0FEDADFDC6ADD6BF2 /* PaybackOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21096CABE6FEE63719E2FBE5 /* PaybackOptions.swift */; };
-		91DFE0E167CB1B7D7F9F75DE /* RowMenuSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9DA73392B7C1E3F37682909 /* RowMenuSheet.swift */; };
 		6DD0DA75E6CDC179E04AA850 /* SplitCarry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B2013BE75B8D7223F305AA5 /* SplitCarry.swift */; };
 		00E8B2945E5B9C6B0391813A /* SplitFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53A5D39D9874E14925943286 /* SplitFlow.swift */; };
 		4872AAE25E28798D24E870B2 /* SplitMenus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 558170EF44F3D7B55B10E732 /* SplitMenus.swift */; };
@@ -213,6 +213,7 @@
 		56F3819F3BB3A338B035DE02 /* CategorySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategorySheet.swift; sourceTree = "<group>"; };
 		CB029BC2F915F0FDA2FBF0F6 /* JointPaybackViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JointPaybackViews.swift; sourceTree = "<group>"; };
 		319C3C645D45ACBE1863750E /* JointSplitViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JointSplitViews.swift; sourceTree = "<group>"; };
+		9CE3C7C0888E13BE8FDFE3F0 /* LegMenuSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegMenuSheet.swift; sourceTree = "<group>"; };
 		D74DAD21B47BB262299FE1D9 /* LinkTransfersSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkTransfersSheet.swift; sourceTree = "<group>"; };
 		F2F9ADED1FAF9A04D0A9D5B9 /* PaidBackFindViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaidBackFindViews.swift; sourceTree = "<group>"; };
 		13B70C1F7B4722DCDC8F9EAF /* PaidBackPerson.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaidBackPerson.swift; sourceTree = "<group>"; };
@@ -220,7 +221,6 @@
 		96396C8A0D0A1C86E81686D9 /* PartsFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PartsFlow.swift; sourceTree = "<group>"; };
 		FE06D62AFA3444FB6874B030 /* PaybackLinkViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaybackLinkViews.swift; sourceTree = "<group>"; };
 		21096CABE6FEE63719E2FBE5 /* PaybackOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaybackOptions.swift; sourceTree = "<group>"; };
-		D9DA73392B7C1E3F37682909 /* RowMenuSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RowMenuSheet.swift; sourceTree = "<group>"; };
 		9B2013BE75B8D7223F305AA5 /* SplitCarry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitCarry.swift; sourceTree = "<group>"; };
 		53A5D39D9874E14925943286 /* SplitFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitFlow.swift; sourceTree = "<group>"; };
 		558170EF44F3D7B55B10E732 /* SplitMenus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitMenus.swift; sourceTree = "<group>"; };
@@ -475,6 +475,7 @@
 				56F3819F3BB3A338B035DE02 /* CategorySheet.swift */,
 				CB029BC2F915F0FDA2FBF0F6 /* JointPaybackViews.swift */,
 				319C3C645D45ACBE1863750E /* JointSplitViews.swift */,
+				9CE3C7C0888E13BE8FDFE3F0 /* LegMenuSheet.swift */,
 				D74DAD21B47BB262299FE1D9 /* LinkTransfersSheet.swift */,
 				F2F9ADED1FAF9A04D0A9D5B9 /* PaidBackFindViews.swift */,
 				13B70C1F7B4722DCDC8F9EAF /* PaidBackPerson.swift */,
@@ -482,7 +483,6 @@
 				96396C8A0D0A1C86E81686D9 /* PartsFlow.swift */,
 				FE06D62AFA3444FB6874B030 /* PaybackLinkViews.swift */,
 				21096CABE6FEE63719E2FBE5 /* PaybackOptions.swift */,
-				D9DA73392B7C1E3F37682909 /* RowMenuSheet.swift */,
 				9B2013BE75B8D7223F305AA5 /* SplitCarry.swift */,
 				53A5D39D9874E14925943286 /* SplitFlow.swift */,
 				558170EF44F3D7B55B10E732 /* SplitMenus.swift */,
@@ -676,6 +676,7 @@
 				B1FFE2B19D12A9AD736E9FBE /* CategorySheet.swift in Sources */,
 				04EAEDCFF861F9AD58FBA5F7 /* JointPaybackViews.swift in Sources */,
 				1F259E54F43C7759992A1C07 /* JointSplitViews.swift in Sources */,
+				D39B3BCEE9126D9FBDD300CF /* LegMenuSheet.swift in Sources */,
 				5D89B15A07A286D2494E186F /* LinkTransfersSheet.swift in Sources */,
 				9AA99A83956F00835F526B9D /* PaidBackFindViews.swift in Sources */,
 				8F984295248B136FC68629E7 /* PaidBackPerson.swift in Sources */,
@@ -683,7 +684,6 @@
 				8AF9A0C07760B9758CC9F76D /* PartsFlow.swift in Sources */,
 				3812F0CFE8572BDDD0FF614B /* PaybackLinkViews.swift in Sources */,
 				2196B0F0FEDADFDC6ADD6BF2 /* PaybackOptions.swift in Sources */,
-				91DFE0E167CB1B7D7F9F75DE /* RowMenuSheet.swift in Sources */,
 				6DD0DA75E6CDC179E04AA850 /* SplitCarry.swift in Sources */,
 				00E8B2945E5B9C6B0391813A /* SplitFlow.swift in Sources */,
 				4872AAE25E28798D24E870B2 /* SplitMenus.swift in Sources */,

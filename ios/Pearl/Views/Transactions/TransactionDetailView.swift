@@ -410,6 +410,10 @@ struct TransactionDetailView: View {
     @State private var unpairing = false
     /// Link transfers (2026-11-22): the sheet that picks the other legs.
     @State private var linking = false
+    /// The ⋯ beside a leg of the Moved card (product owner, 2026-11-22):
+    /// which leg, and the transactions behind it.
+    struct LegMenu: Identifiable { let id: String; let account: String; let ids: [String] }
+    @State private var legMenu: LegMenu?
     /// TF-01c: the other end, asked What was this? once this one is answered.
     @State private var otherSide: String?
     @State private var error: String?
@@ -733,6 +737,11 @@ struct TransactionDetailView: View {
     /// Split, your share, settle up, That's everything, Remove the split?
     private var splitSheets: some View {
         OwnBody { sortSheets }
+        .sheet(item: $legMenu) { m in
+            // A leg's ⋯ (2026-11-22): Unlink from transfer, for that leg.
+            LegMenuSheet(account: m.account, onUnlink: { legMenu = nil; Task { await unpairLegs(m.ids) } },
+                         onClose: { legMenu = nil })
+        }
         .sheet(isPresented: $linking) {
             // Link transfers (product owner, 2026-11-22): the other legs of
             // one move, ticked; Link (or Unlink) saves with one Undo.
@@ -2834,6 +2843,8 @@ struct TransactionDetailView: View {
                     Text(apartWords(outDate, inDate)).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                 }
                 Spacer(minLength: 0)
+                // The ⋯ (2026-11-22): Unlink from transfer, both legs.
+                moreButton { legMenu = LegMenu(id: "pair", account: route(transfer), ids: legIds(transfer)) }
             }
             .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 64)
             .accessibilityElement(children: .combine)
@@ -2863,14 +2874,24 @@ struct TransactionDetailView: View {
         }
         .padding(.top, 16)
         SolidCard {
-            leg(account: transfer.from, sub: "Out · \(Format.weekdayDay(outDate))")
+            // The ⋯ beside each leg (product owner, 2026-11-22) unlinks that
+            // leg: its row(s) come off the line and stand on their own.
+            let ids = legIds(transfer)
+            leg(account: transfer.from, sub: "Out · \(Format.weekdayDay(outDate))") {
+                legMenu = LegMenu(id: "out", account: transfer.from, ids: [ids[0]])
+            }
             // A chain (2026-11-22): the accounts it passed through, between.
-            ForEach(Array((transfer.via ?? []).enumerated()), id: \.offset) { _, account in
+            ForEach(Array((transfer.via ?? []).enumerated()), id: \.offset) { k, account in
                 APSeparator()
-                leg(account: account, sub: "Through")
+                leg(account: account, sub: "Through") {
+                    legMenu = LegMenu(id: "through\(k)", account: account,
+                                      ids: Array(ids[min(2 * k + 1, ids.count - 1)...min(2 * k + 2, ids.count - 1)]))
+                }
             }
             APSeparator()
-            leg(account: transfer.to, sub: "In · \(Format.weekdayDay(inDate))")
+            leg(account: transfer.to, sub: "In · \(Format.weekdayDay(inDate))") {
+                legMenu = LegMenu(id: "in", account: transfer.to, ids: [ids[ids.count - 1]])
+            }
         }
         section("Options")
         APCard {
@@ -2883,14 +2904,6 @@ struct TransactionDetailView: View {
                 .buttonStyle(.plain)
                 .disabled(busy)
             } else {
-                // Unlink from transfer (2026-11-22): the line comes apart into
-                // its legs, each its own row, each a transfer still.
-                Button { Task { await unpairTransfer() } } label: {
-                    row(title: "Unlink from transfer", sub: "Each leg becomes its own row", chevron: true, icon: "link")
-                }
-                .buttonStyle(.plain)
-                .disabled(busy)
-                APSeparator(afterFace: false)
                 Button { unpairing = true } label: {
                     // TEXT-01: no second line; the sheet asks.
                     row(title: "This isn’t a transfer", chevron: true, icon: "link")
@@ -2919,10 +2932,11 @@ struct TransactionDetailView: View {
         }
     }
 
-    /// POST …/unpair: the page reloads as a lone leg; the toast carries Undo.
-    private func unpairTransfer() async {
+    /// POST …/unpair with the leg's transactions: they come off the line;
+    /// the page reloads and the toast carries Undo.
+    private func unpairLegs(_ ids: [String]) async {
         await run {
-            let reply: MarkReply? = try await write("POST", "api/transactions/\(t.id)/unpair")
+            let reply: MarkReply? = try await write("POST", "api/transactions/\(t.id)/unpair", ["ids": ids])
             if let reply = reply {
                 app.say(reply.title ?? "Unlinked.", undo: reply.undo.map { payload in {
                     guard let body = payload.any as? [String: Any] else { return }
@@ -2942,7 +2956,7 @@ struct TransactionDetailView: View {
 
     /// TF-01: an end of the transfer, as a transaction row with no amount
     /// (the hero already says it).
-    private func leg(account: String, sub: String) -> some View {
+    private func leg(account: String, sub: String, more: (() -> Void)? = nil) -> some View {
         HStack(spacing: 12) {
             Initials(name: account)
             VStack(alignment: .leading, spacing: 2) {
@@ -2950,9 +2964,31 @@ struct TransactionDetailView: View {
                 Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
             }
             Spacer(minLength: 0)
+            if let more = more { moreButton(more) }
         }
         .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 64)
         .accessibilityElement(children: .combine)
+    }
+
+    /// The ⋯ at a leg's right edge (2026-11-22).
+    private func moreButton(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "ellipsis").font(.system(size: 15, weight: .semibold)).foregroundColor(Pearl.muted)
+                .frame(width: 32, height: 44).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
+        .padding(.trailing, -8)
+        .accessibilityLabel("More")
+        .accessibilityHint("Unlink from transfer")
+    }
+
+    /// The transactions behind the Moved card's legs, in order (2026-11-22):
+    /// a chain's `legs`; a pair's departure then arrival.
+    private func legIds(_ transfer: Transaction.Transfer) -> [String] {
+        if let legs = transfer.legs, legs.count >= 2 { return legs }
+        let other = transfer.otherId ?? t.id
+        return transfer.from == t.account ? [t.id, other] : [other, t.id]
     }
 
     /// "1 day apart", "Same day" (G1-TxMore: beside MOVED).
