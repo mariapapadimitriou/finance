@@ -1484,7 +1484,9 @@ struct TransactionDetailView: View {
     /// money moving between her accounts and has no other end paired: a
     /// transfer, Not sorted yet, Saved, Other, or money in that isn't pay.
     private var canLink: Bool {
-        guard t.transfer == nil, t.partOf == nil, t.parts.isEmpty, guessing == nil else { return false }
+        // Opened from a Needs a look card too (2026-11-22): the leg left on
+        // its own is usually the one Pearl is asking about.
+        guard t.transfer == nil, t.partOf == nil, t.parts.isEmpty else { return false }
         return t.counts != "spending" || t.category == "Unsorted transfers" || t.category == "Other"
             || (t.inflow && !isIncome)
     }
