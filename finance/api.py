@@ -2245,9 +2245,10 @@ def set_transfer_links(txn_id: str):
 
 @bp.post("/transactions/<txn_id>/unpair")
 def unpair_transfer(txn_id: str):
-    """Take a transfer line apart (product owner, 2026-11-22): every leg of
-    the line this row is on, a pair or a chain, is its own row in Cash flow
-    again. Each stays a transfer, paired with nothing and asked about
+    """Take a transfer line apart (product owner, 2026-11-22): the legs in
+    `ids` (the ⋯ beside a leg on the transfer page), or every leg of the
+    line this row is on when none are named, are their own rows in Cash
+    flow again. Each stays a transfer, paired with nothing and asked about
     nothing, until she links it (PUT …/links, which pairs it again). A leg
     she had linked by hand comes out of its link. Undo puts the line back."""
     st = store()
@@ -2258,9 +2259,14 @@ def unpair_transfer(txn_id: str):
     from .txlist import line_of
     txns = st.all_transactions()
     rows = _txlist_rows(st, everything=True)
-    legs = line_of(txn_id, rows, transfer_pairs(txns, today=_today_iso()))
-    if not legs:
+    line = line_of(txn_id, rows, transfer_pairs(txns, today=_today_iso()))
+    if not line:
         return jsonify({"error": "This isn't paired with anything."}), 400
+    body = request.get_json(silent=True) or {}
+    ids = [i for i in (body.get("ids") or []) if isinstance(i, str)]
+    if any(i not in line for i in ids):
+        return jsonify({"error": "Pick legs of this transfer."}), 400
+    legs = ids or line
     links = st.transfer_links()
     was_links = {i: links[i] for i in legs if i in links}
     from .impact import snapshot, undo_payload

@@ -98,3 +98,27 @@ def test_a_row_on_its_own_cannot_be_unpaired(client):
     t = by_desc(client)
     assert client.post(f"/api/transactions/{t['COFFEE'].fingerprint}/unpair").status_code == 400
     assert client.post("/api/transactions/nope/unpair").status_code == 404
+
+
+def test_one_leg_comes_off_and_the_rest_stays_a_line(client):
+    """The ⋯ beside a leg (product owner, 2026-11-22): only that leg's rows
+    come off. The In leg off a chain leaves A→B as the line; the Through
+    leg off leaves A and C to pair on their own."""
+    t = by_desc(client)
+    head, b_in, b_out, c_in = (t[d].fingerprint for d in LEGS)
+    r = client.post(f"/api/transactions/{head}/unpair", json={"ids": [c_in]})
+    assert r.status_code == 200 and r.get_json()["legs"] == [c_in]
+    rows = listed(client)
+    assert rows[head]["transfer"]["other_id"] == b_in and "via" not in rows[head]["transfer"]
+    assert rows[c_in]["chip"]["label"] == "Transfer" and "transfer" not in rows[c_in]
+    assert b_out in rows and "transfer" not in rows[b_out]      # nothing left to pair with
+    assert client.post(f"/api/transactions/{head}/unpair", json={"ids": [t["COFFEE"].fingerprint]}).status_code == 400
+
+
+def test_the_through_leg_comes_off(client):
+    t = by_desc(client)
+    head, b_in, b_out, c_in = (t[d].fingerprint for d in LEGS)
+    client.post(f"/api/transactions/{b_in}/unpair", json={"ids": [b_in, b_out]})
+    rows = listed(client)
+    assert "transfer" not in rows[b_in] and "transfer" not in rows[b_out]
+    assert rows[head]["transfer"]["other_id"] == c_in           # A and C pair on their own
