@@ -1624,6 +1624,12 @@ def undo_marks(store, marks: dict) -> int:
         if tid in known and isinstance(was, dict):
             store.set_joint_deposit(tid, was.get("who"), was.get("person"))
             n += 1
+    # Link transfers (2026-11-22): each row back in the link it was in.
+    links = marks.get("transfer_links") or {}
+    if isinstance(links, dict) and links:
+        store.restore_transfer_links({tid: (link if isinstance(link, str) else None)
+                                      for tid, link in links.items() if tid in known})
+        n += 1
     # SPLIT-C / JOINT-B: settle up's changes to cash and app records.
     settle = marks.get("settle_cash") or {}
     if isinstance(settle, dict) and settle:

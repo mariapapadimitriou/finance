@@ -82,6 +82,7 @@
 		B1FFE2B19D12A9AD736E9FBE /* CategorySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56F3819F3BB3A338B035DE02 /* CategorySheet.swift */; };
 		04EAEDCFF861F9AD58FBA5F7 /* JointPaybackViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB029BC2F915F0FDA2FBF0F6 /* JointPaybackViews.swift */; };
 		1F259E54F43C7759992A1C07 /* JointSplitViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 319C3C645D45ACBE1863750E /* JointSplitViews.swift */; };
+		5D89B15A07A286D2494E186F /* LinkTransfersSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74DAD21B47BB262299FE1D9 /* LinkTransfersSheet.swift */; };
 		9AA99A83956F00835F526B9D /* PaidBackFindViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2F9ADED1FAF9A04D0A9D5B9 /* PaidBackFindViews.swift */; };
 		8F984295248B136FC68629E7 /* PaidBackPerson.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13B70C1F7B4722DCDC8F9EAF /* PaidBackPerson.swift */; };
 		63AA5CAE5BF4CF1173C59B10 /* PaidBackViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A6C2D7708C47DF6B027473F /* PaidBackViews.swift */; };
@@ -211,6 +212,7 @@
 		56F3819F3BB3A338B035DE02 /* CategorySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategorySheet.swift; sourceTree = "<group>"; };
 		CB029BC2F915F0FDA2FBF0F6 /* JointPaybackViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JointPaybackViews.swift; sourceTree = "<group>"; };
 		319C3C645D45ACBE1863750E /* JointSplitViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JointSplitViews.swift; sourceTree = "<group>"; };
+		D74DAD21B47BB262299FE1D9 /* LinkTransfersSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkTransfersSheet.swift; sourceTree = "<group>"; };
 		F2F9ADED1FAF9A04D0A9D5B9 /* PaidBackFindViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaidBackFindViews.swift; sourceTree = "<group>"; };
 		13B70C1F7B4722DCDC8F9EAF /* PaidBackPerson.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaidBackPerson.swift; sourceTree = "<group>"; };
 		1A6C2D7708C47DF6B027473F /* PaidBackViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaidBackViews.swift; sourceTree = "<group>"; };
@@ -471,6 +473,7 @@
 				56F3819F3BB3A338B035DE02 /* CategorySheet.swift */,
 				CB029BC2F915F0FDA2FBF0F6 /* JointPaybackViews.swift */,
 				319C3C645D45ACBE1863750E /* JointSplitViews.swift */,
+				D74DAD21B47BB262299FE1D9 /* LinkTransfersSheet.swift */,
 				F2F9ADED1FAF9A04D0A9D5B9 /* PaidBackFindViews.swift */,
 				13B70C1F7B4722DCDC8F9EAF /* PaidBackPerson.swift */,
 				1A6C2D7708C47DF6B027473F /* PaidBackViews.swift */,
@@ -670,6 +673,7 @@
 				B1FFE2B19D12A9AD736E9FBE /* CategorySheet.swift in Sources */,
 				04EAEDCFF861F9AD58FBA5F7 /* JointPaybackViews.swift in Sources */,
 				1F259E54F43C7759992A1C07 /* JointSplitViews.swift in Sources */,
+				5D89B15A07A286D2494E186F /* LinkTransfersSheet.swift in Sources */,
 				9AA99A83956F00835F526B9D /* PaidBackFindViews.swift in Sources */,
 				8F984295248B136FC68629E7 /* PaidBackPerson.swift in Sources */,
 				63AA5CAE5BF4CF1173C59B10 /* PaidBackViews.swift in Sources */,

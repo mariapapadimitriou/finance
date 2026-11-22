@@ -389,6 +389,12 @@ CREATE TABLE IF NOT EXISTS txn_party (
     txn_id TEXT PRIMARY KEY,
     name   TEXT NOT NULL
 );
+-- Rows she linked as one movement of money (2026-11-22): a transfer whose
+-- other end Pearl couldn't pair, or a chain through several accounts.
+CREATE TABLE IF NOT EXISTS transfer_links (
+    txn_id  TEXT PRIMARY KEY,
+    link_id TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS joint_deposit_rules (
     account_id TEXT NOT NULL,
     sender_key TEXT NOT NULL,
@@ -875,7 +881,7 @@ _ROW_TABLES = ("txn_shares", "txn_invested", "piggy_allocations", "piggy_optouts
                "txn_splits", "txn_split_people", "txn_oneoff", "txn_duplicates",
                "joint_deposits", "txn_party", "txn_tags", "txn_saved_to", "sorted_range_rows",
                "txn_split_cash", "txn_split_let_go", "txn_split_not_me", "txn_parts", "txn_joint_parts",
-               "txn_joint_paybacks")
+               "txn_joint_paybacks", "transfer_links")
 
 # What friends have sent back for each charge, as a positive total.
 _PAYBACKS = """(
@@ -918,6 +924,7 @@ _CHARGE_COLUMNS = """sh.my_share AS my_share,
                               AS joint_mine,
                           COALESCE(jdx.who, jrx.who) AS joint_from,
                           ptx.name AS party,
+                          tlx.link_id AS transfer_link,
                           a.bank_id AS bank_id,
                           CASE WHEN a.bank_id IS NULL THEN 0 ELSE a.charged
                           END AS bank_amount,
@@ -1429,6 +1436,7 @@ class Store:
                      LEFT JOIN joint_split_rules jsx ON jsx.account_id = t.account_id
                                                     AND jsx.merchant_key = LOWER(t.merchant)
                      LEFT JOIN joint_deposits jdx ON jdx.txn_id = t.id
+                     LEFT JOIN transfer_links tlx ON tlx.txn_id = t.id
                      LEFT JOIN txn_party ptx ON ptx.txn_id = t.id
                      LEFT JOIN joint_deposit_rules jrx ON jrx.account_id = t.account_id
                                                       AND jrx.sender_key = LOWER(t.merchant)
@@ -1558,6 +1566,7 @@ class Store:
                       LEFT JOIN joint_split_rules jsx ON jsx.account_id = t.account_id
                                                      AND jsx.merchant_key = LOWER(t.merchant)
                       LEFT JOIN joint_deposits jdx ON jdx.txn_id = t.id
+                     LEFT JOIN transfer_links tlx ON tlx.txn_id = t.id
                       LEFT JOIN txn_party ptx ON ptx.txn_id = t.id
                       LEFT JOIN joint_deposit_rules jrx ON jrx.account_id = t.account_id
                                                        AND jrx.sender_key = LOWER(t.merchant)
@@ -1603,6 +1612,7 @@ class Store:
                      LEFT JOIN joint_split_rules jsx ON jsx.account_id = t.account_id
                                                     AND jsx.merchant_key = LOWER(t.merchant)
                      LEFT JOIN joint_deposits jdx ON jdx.txn_id = t.id
+                     LEFT JOIN transfer_links tlx ON tlx.txn_id = t.id
                      LEFT JOIN txn_party ptx ON ptx.txn_id = t.id
                      LEFT JOIN joint_deposit_rules jrx ON jrx.account_id = t.account_id
                                                       AND jrx.sender_key = LOWER(t.merchant)
@@ -2733,6 +2743,7 @@ class Store:
             ("joint_deposit_rules", "senders into a joint account"),
             ("txn_joint_paybacks", "joint money that paid you back"),
             ("txn_party", "names on e-Transfers"),
+            ("transfer_links", "transfers you linked as one"),
             ("dismissed_insights", "dismissed findings"),
             ("txn_exclusions", "excluded transactions"),
             ("exclusion_rules", "exclusion rules"),
@@ -3708,6 +3719,49 @@ class Store:
             if who:
                 c.execute("INSERT INTO joint_deposits (txn_id, who, person) VALUES (?, ?, ?)",
                           (txn_id, who, person or None))
+
+    @remembered
+    def transfer_links(self) -> dict[str, str]:
+        """txn id → link id, for the rows she linked as one movement of money
+        (2026-11-22). A link is two rows or more."""
+        with self.conn() as c:
+            rows = c.execute("SELECT txn_id, link_id FROM transfer_links").fetchall()
+        return {r["txn_id"]: r["link_id"] for r in rows}
+
+    def link_transfers(self, ids: list[str]) -> str | None:
+        """Make `ids` one link, taking each out of any link it was in first;
+        a link left with one row is dropped. Returns the new link's id."""
+        import uuid
+        ids = list(dict.fromkeys(ids))
+        with self.conn() as c:
+            self._unlink_rows(c, ids)
+            if len(ids) < 2:
+                return None
+            link_id = uuid.uuid4().hex[:12]
+            c.executemany("INSERT INTO transfer_links (txn_id, link_id) VALUES (?, ?)",
+                          [(i, link_id) for i in ids])
+        return link_id
+
+    def unlink_transfer(self, txn_id: str) -> None:
+        """Take one row out of its link."""
+        with self.conn() as c:
+            self._unlink_rows(c, [txn_id])
+
+    @staticmethod
+    def _unlink_rows(c, ids: list[str]) -> None:
+        for i in ids:
+            c.execute("DELETE FROM transfer_links WHERE txn_id = ?", (i,))
+        # A link needs two rows.
+        c.execute("""DELETE FROM transfer_links WHERE link_id IN (
+                         SELECT link_id FROM transfer_links GROUP BY link_id HAVING COUNT(*) < 2)""")
+
+    def restore_transfer_links(self, was: dict[str, str | None]) -> None:
+        """Undo: each row back in the link it was in, or in none."""
+        with self.conn() as c:
+            for tid, link_id in was.items():
+                c.execute("DELETE FROM transfer_links WHERE txn_id = ?", (tid,))
+                if link_id:
+                    c.execute("INSERT INTO transfer_links (txn_id, link_id) VALUES (?, ?)", (tid, link_id))
 
     def set_party(self, txn_id: str, name: str | None) -> None:
         """Who an e-Transfer was from or to, or None for the bank's name."""

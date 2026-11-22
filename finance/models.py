@@ -312,6 +312,9 @@ class Transaction:
     # The person an e-Transfer was from or to, as she typed it (THL-122);
     # see finance/etransfers.py for the bank's own.
     party: str | None = None
+    # The link she put this row in, with the other legs of one movement of
+    # money (2026-11-22); None when she didn't.
+    transfer_link: str | None = None
     # The people a joint account is shared with, as she named them, and which
     # of them put this money in.
     joint_people: list = field(default_factory=list)
@@ -484,6 +487,7 @@ class Transaction:
             duplicate_of=row.get("duplicate_of") or None,
             duplicate_state=row.get("duplicate_state") or None,
             party=row.get("party") or None,
+            transfer_link=row.get("transfer_link") or None,
             joint_people=_people_of(row.get("joint_people")),
             joint_person=row.get("joint_person") or None,
             account_nickname=row.get("account_nickname") or None,

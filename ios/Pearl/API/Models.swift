@@ -642,6 +642,9 @@ struct Transaction: Decodable, Identifiable, Hashable {
     @Boxed var oneOffLine: OneOffLine?
     let repaidBy: [Brief]
     @Boxed var transfer: Transfer?
+    /// Link transfers (2026-11-22): the other legs she linked this row with
+    /// as one movement of money; empty when she didn't.
+    var links: [Brief] = []
     /// The transfer line this arrival was merged into (2026-11-15): sent
     /// apart, in TransactionList.merged, for a filter that keeps only this
     /// end (TransferEnds).
@@ -1018,7 +1021,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
 
     enum CodingKeys: String, CodingKey {
         case id, date, description, amount, inflow, category, account, note, pending, excluded, chip
-        case counts, suggested, split, repays, tags, kind, group, joint, manual, recurring, transfer, rule
+        case counts, suggested, split, repays, tags, kind, group, joint, manual, recurring, transfer, rule, links
         case incomeRule = "income_rule"
         case cardPayment = "card_payment"
         case merchantName = "merchant"
@@ -1117,6 +1120,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         leftToSort = opt(Bool.self, .leftToSort) ?? false
         repaidBy = opt([Brief].self, .repaidBy) ?? []
         transfer = opt(Transfer.self, .transfer)
+        links = opt([Brief].self, .links) ?? []
         repaysCharge = opt(Brief.self, .repaysCharge)
         mergedInto = opt(String.self, .mergedInto)
         trip = opt(TripRef.self, .trip)

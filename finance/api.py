@@ -565,6 +565,10 @@ def transaction_detail(txn_id: str):
                     r["transfer"]["joint"] = {"people": offer["people"], "account": offer["account"]}
                 elif not t.joint and not other.joint:
                     r["transfer"]["mine_only"] = True
+        if t.transfer_link:
+            # Link transfers (2026-11-22): the other legs she linked this with.
+            r["links"] = [_leg_brief(x) for x in txns
+                          if x.transfer_link == t.transfer_link and x.fingerprint != txn_id]
         if t.amount < 0:
             # TP-04: money in that a joint account's other owner paid her back with.
             from .joint import payback_of
@@ -2128,6 +2132,96 @@ def set_joint_from(txn_id: str):
     undo = undo_payload(before, snapshot(st, st.all_transactions()))
     undo["marks"] = {"joint_from": {txn_id: was}}
     return jsonify({"ok": True, "who": who, "person": person, "undo": undo, "title": title})
+
+
+# Link transfers (product owner, 2026-11-22): $200 moved from one account to
+# a second and on into a joint one; two legs paired and one was left on its
+# own, with no way to say they were one movement of money.
+LINK_DAYS = 7
+
+
+def _leg_brief(t) -> dict:
+    """A leg as the sheet lists it: the account's label, not the bank's name."""
+    return dict(_txn_brief(t), account_name=(t.account_label or "").replace("\u2022\u2022", "\u00b7\u00b7"))
+
+
+def _link_rows(t, txns) -> list:
+    """What could be another leg of `t`: the same amount within LINK_DAYS,
+    on any account, either way round; nearest first."""
+    from .transfers import _cents, _days
+    cents = _cents(abs(t.amount))
+    return sorted((x for x in txns
+                   if x.fingerprint != t.fingerprint and _cents(abs(x.amount)) == cents
+                   and _days(t.date, x.date) <= LINK_DAYS),
+                  key=lambda x: (_days(t.date, x.date), x.date, x.fingerprint))
+
+
+@bp.get("/transactions/<txn_id>/link-candidates")
+def link_candidates(txn_id: str):
+    """The rows this one could be linked with (`_link_rows`), the legs
+    already in its link first and `linked`; `elsewhere` when a row is in
+    some other link (linking it moves it here)."""
+    st = store()
+    t = st.get_transaction(txn_id)
+    if t is None:
+        return jsonify({"error": "No such transaction."}), 404
+    txns = st.all_transactions()
+    rows = [dict(_leg_brief(x), linked=bool(t.transfer_link) and x.transfer_link == t.transfer_link,
+                 elsewhere=bool(x.transfer_link) and x.transfer_link != t.transfer_link)
+            for x in _link_rows(t, txns)]
+    rows.sort(key=lambda r: not r["linked"])
+    return jsonify({"rows": rows, "days": LINK_DAYS})
+
+
+@bp.put("/transactions/<txn_id>/links")
+def set_transfer_links(txn_id: str):
+    """Link this row with `ids` as one movement of money: every leg is a
+    transfer, none is asked about or paired with anything else, and the
+    list shows the legs as transfer lines. An empty `ids` unlinks it, and
+    the legs go back to what Pearl's rules make of them. Undo puts each row
+    back in the link it was in."""
+    body = request.get_json(silent=True) or {}
+    ids = [i for i in (body.get("ids") or []) if isinstance(i, str)]
+    st = store()
+    t = st.get_transaction(txn_id)
+    if t is None:
+        return jsonify({"error": "No such transaction."}), 404
+    txns = st.all_transactions()
+    by_id = {x.fingerprint: x for x in txns}
+    if txn_id in ids or any(i not in by_id for i in ids):
+        return jsonify({"error": "Pick transactions Pearl knows."}), 400
+    links = st.transfer_links()
+    group = [txn_id] + ids
+    # Every row this changes: the group, and whatever shared a link with one of them.
+    shared = {links[g] for g in group if g in links}
+    touched = set(group) | {i for i, link in links.items() if link in shared}
+    was = {i: links.get(i) for i in touched}
+    from .impact import snapshot, undo_payload
+    before = snapshot(st, txns)
+    if ids:
+        link_id = st.link_transfers(group)
+        title = "Linked. One transfer, not spending or income."
+        # A leg she had sorted by hand: the match never writes over her
+        # answer, so the link says it itself.
+        for i in group:
+            if by_id[i].category_source in ("user", "merchant_override", "pay_rule") \
+                    and by_id[i].category != "Transfers":
+                st.set_transaction_category(i, "Transfers")
+    else:
+        link_id = None
+        st.unlink_transfer(txn_id)
+        title = "Unlinked. Pearl sorts each one again."
+    # Legs the link had decided go back to the rules; the match below then
+    # makes the linked ones transfers, and the others whatever they are.
+    from .categorize import apply_categories
+    rows = [by_id[i] for i in touched if by_id[i].category_source == "transfer_match"]
+    if rows:
+        apply_categories(rows, st.overrides())
+        st.set_categories({x.fingerprint: (x.category, x.category_source) for x in rows})
+    _reclassify(st)
+    undo = undo_payload(before, snapshot(st, st.all_transactions()))
+    undo["marks"] = {"transfer_links": was}
+    return jsonify({"ok": True, "link": link_id, "title": title, "undo": undo})
 
 
 @bp.get("/accounts")

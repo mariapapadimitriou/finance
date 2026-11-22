@@ -54,6 +54,9 @@ struct SplitSheet: View {
     @State private var error: String?
     /// S-17 v2 Add someone (JOINT-A): the people picker, over this sheet.
     @State private var adding = false
+    /// Her contacts, for the search on Who was it with? (product owner,
+    /// 2026-11-22: from Quick sort's split she couldn't find new people).
+    @StateObject private var contacts = ContactNames()
     /// S-03fr (REFRESH-02): someone who has paid, swiped away; a Pearl
     /// sheet asks before they go (it replaced the stock alert).
     @State private var removing: Transaction.Splitting.Person?
@@ -443,18 +446,7 @@ struct SplitSheet: View {
                 APCard {
                     ForEach(Array(names.enumerated()), id: \.element) { i, name in
                         if i > 0 { APSeparator() }
-                        Button { toggle(name) } label: {
-                            HStack(spacing: 12) {
-                                APFace(name: name)
-                                Text(name).font(Nacre.body).foregroundColor(Pearl.ink)
-                                Spacer()
-                                APTickBox(on: people.contains(name))
-                            }
-                            .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 64)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(people.contains(name) ? .isSelected : [])
+                        personRow(name)
                     }
                     APSeparator()
                     // S-02: Add someone new opens S-17.
@@ -463,7 +455,41 @@ struct SplitSheet: View {
             } else {
                 APCard { addNewRow }
             }
+            // The search finds her contacts too (2026-11-22), as Who sent
+            // this? does, and a name nobody matches is one row to add.
+            let q = typed.trimmingCharacters(in: .whitespaces)
+            let fromContacts = q.isEmpty ? [] : contacts.matches(q, excluding: names + people)
+            if !fromContacts.isEmpty {
+                APSheetLabel(text: "Contacts")
+                APCard {
+                    ForEach(Array(fromContacts.enumerated()), id: \.element) { i, name in
+                        if i > 0 { APSeparator() }
+                        personRow(name)
+                    }
+                }
+            }
+            if !q.isEmpty, !names.contains(where: { $0.caseInsensitiveCompare(q) == .orderedSame }), !contacts.has(q) {
+                APCard { AddTypedNameRow(name: q, picked: false) { addTyped() } }
+            }
+            if !q.isEmpty && contacts.state == .off { ContactsOffLine() }
         }
+        .task { await contacts.load() }
+    }
+
+    /// One person to tick: a recent split or a contact.
+    private func personRow(_ name: String) -> some View {
+        Button { toggle(name) } label: {
+            HStack(spacing: 12) {
+                APFace(name: name)
+                Text(name).font(Nacre.body).foregroundColor(Pearl.ink)
+                Spacer()
+                APTickBox(on: people.contains(name))
+            }
+            .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 64)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(people.contains(name) ? .isSelected : [])
     }
 
     /// G2-WhoWith: the person icon and "Add someone new" in `link`.
