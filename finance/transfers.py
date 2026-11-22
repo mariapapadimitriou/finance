@@ -523,21 +523,49 @@ def _transfer_pairs(transactions: list[Transaction], today: str | None = None) -
             if best:
                 used.add(best[1].fingerprint)
                 pairs[t.fingerprint] = best[1].fingerprint
+    # Each departure's possible arrivals, nearest first.
+    options: dict[str, list[str]] = {}
     for t in outs:
         if t.fingerprint in in_link:
             continue
-        best = None
+        found = []
         for other in arrivals.get(_cents(t.amount), []):
             if other.fingerprint in used or other.account_id == t.account_id or other.fingerprint in in_link:
                 continue
             gap = _days(t.date, other.date)
             if gap > _window(other):
                 continue
-            if best is None or gap < best[0]:
-                best = (gap, other)
-        if best:
-            used.add(best[1].fingerprint)
-            pairs[t.fingerprint] = best[1].fingerprint
+            found.append((gap, other.date, other.fingerprint))
+        options[t.fingerprint] = [fp for _, _, fp in sorted(found)]
+    # Nearest first; then every departure left over looks for a chain of
+    # swaps that frees an arrival for it (product owner, 2026-11-22: $200
+    # A→B on the 3rd and B→C on the 5th, both arrivals dated the 5th. A took
+    # C's arrival and B's departure had nothing left, though A→B, B→C pairs
+    # every row). A pairing that leaves fewer rows alone is the right one.
+    owner: dict[str, str] = {}          # arrival → its departure
+    for t in outs:
+        for fp in options.get(t.fingerprint, []):
+            if fp not in owner:
+                owner[fp] = t.fingerprint
+                break
+
+    def frees(out_id: str, seen: set[str]) -> bool:
+        for fp in options.get(out_id, []):
+            if fp in seen:
+                continue
+            seen.add(fp)
+            if fp not in owner or frees(owner[fp], seen):
+                owner[fp] = out_id
+                return True
+        return False
+
+    paired = set(owner.values())
+    for t in outs:
+        if t.fingerprint in options and t.fingerprint not in paired and frees(t.fingerprint, set()):
+            paired = set(owner.values())
+    for fp, out_id in owner.items():
+        used.add(fp)
+        pairs[out_id] = fp
     return pairs
 
 

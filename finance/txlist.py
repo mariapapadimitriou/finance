@@ -784,7 +784,7 @@ def chains(rows: list[tuple[Transaction, dict]], pairs: dict[str, str]) -> dict[
     more than two of her accounts: departure, arrival, the departure that
     took the same amount out of that account again within CHAIN_DAYS (or in
     the same link), its arrival, and so on. A pair on its own isn't listed."""
-    from .transfers import _cents, _days
+    from .transfers import WINDOW_DAYS, _cents, _days
     by_id, joined = _prepared(rows, pairs)
     outs: dict[tuple, list[Transaction]] = {}
     for out in joined:
@@ -796,11 +796,15 @@ def chains(rows: list[tuple[Transaction, dict]], pairs: dict[str, str]) -> dict[
         a = by_id[arr][0]
         best = None
         for cand in outs.get((a.account_id, _cents(-a.amount)), []):
-            if cand.fingerprint in (out, arr) or cand.fingerprint in taken or cand.date[:10] < a.date[:10]:
+            if cand.fingerprint in (out, arr) or cand.fingerprint in taken:
                 continue
             gap = _days(a.date, cand.date)
             same_link = bool(a.transfer_link) and cand.transfer_link == a.transfer_link
-            if gap > CHAIN_DAYS and not same_link:
+            # The bank can post the arrival a day or two after the money
+            # left again (2026-11-22), so a departure dated just before
+            # the arrival still follows it.
+            before = cand.date[:10] < a.date[:10]
+            if not same_link and (gap > CHAIN_DAYS or (before and gap > WINDOW_DAYS)):
                 continue
             if best is None or gap < best[0]:
                 best = (gap, cand)
