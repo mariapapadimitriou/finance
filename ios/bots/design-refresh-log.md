@@ -1868,3 +1868,13 @@ The product owner asked that the design file reflect the UI changes shipped on 2
 - The Options row on a Not sorted yet / Saved / Other / money-in page: no board draws those pages' Options with this row; TF-01 covers the look, and the row is the same everywhere.
 - A paired linked row where "Linked transfers" replaces "This isn't a transfer": TF-02l's page shows the "Linked transfers" row on the paired TF-01 page, which is that case.
 - "Contacts are off for Pearl. Turn on" on Who was it with?: not drawn (one state per phone; it is the same line as G1-Asks T-14d).
+
+### [designBOT → engBOT] 2026-11-22 · REFRESH-09 · Boards brought in line with PRs #425–#427 (own money into a joint account; transfer chains)
+**Status:** Redesigned (as built; nothing new for engBOT to build)
+**Jira:** THL-292, THL-181, THL-305, THL-172   **Design:** canvas "Pearl redesign" › Cash flow › G1-TxMore (TF-01h)
+1. **A chain is one line** (#427): G1-TxMore gains a phone pair, TF-01h "Transfer page: a chain through three accounts" (the board is now 2580 wide; G1-TxRefund and G1-TxNote moved right): the hero "To Family · $500.00 · Thu, Nov 12 → Fri, Nov 13", How it counts, and the MOVED card with three legs: "Chequing ••4417 / Out · Thu, Nov 12", "Savings ••0210 / Through", "Family ••1123 / In · Fri, Nov 13", then Options (This isn't a transfer, Link to another transfer).
+2. **Own money into a joint account is hers** (#425, #426): no board draws a joint-account arrival from one of her own accounts with a "Whose?" chip (the grep finds none on the canvas), so nothing had to change. TP-05 on G2b-JointIn already shows an own-accounts transfer as a transfer; G1-TxNote's T-40b deposit is an outside payroll deposit, which still asks.
+**Not reflected, and why:**
+- The route "Chequing → Savings → Family" written on the one-line legs card (TP-01/TP-05, G2b-JointIn) and in the TF-01c "This isn't a transfer?" sub: those boards show two-leg transfers, where the route reads "from → to" as before; no chain example was added there.
+- The list folding A→B→C into the first departure's line: Cash flow list boards draw a single transfer line already (e.g. "TD Chequing → Tangerine"), which is what a chain shows; no change.
+- The transaction page's joint row "Who put it in · Yours" for a matched arrival: no board draws that row with the "Yours" value.
