@@ -429,7 +429,7 @@ struct AskLine: View {
     var body: some View {
         QuestionLine(name: ask.name,
                      sub: ask.kind == "joint" ? "Joint account" : Format.whole(ask.amount),
-                     question: ask.kind == "joint" ? "Whose pay?" : "What is it?", tap: tap)
+                     question: ask.kind == "joint" ? "Who put it in?" : "What is it?", tap: tap)
     }
 }
 
