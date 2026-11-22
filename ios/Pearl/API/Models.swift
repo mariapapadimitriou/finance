@@ -989,6 +989,10 @@ struct Transaction: Decodable, Identifiable, Hashable {
         var joint: JointFrom? = nil
         /// TP-05: between two accounts only hers, so no Paid back.
         var mineOnly: Bool? = nil
+        /// A chain (2026-11-22): the accounts the money passed through on
+        /// its way from `from` to `to`, and every leg's id.
+        var via: [String]? = nil
+        var legs: [String]? = nil
 
         struct JointFrom: Decodable, Hashable {
             let people: [String]
@@ -997,7 +1001,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         }
 
         enum CodingKeys: String, CodingKey {
-            case from, to, joint
+            case from, to, joint, via, legs
             case otherId = "other_id"
             case otherDate = "other_date"
             case mineOnly = "mine_only"

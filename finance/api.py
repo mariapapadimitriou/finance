@@ -558,6 +558,13 @@ def transaction_detail(txn_id: str):
             r["transfer"] = {"from": r.get("account", "") if txn_id in pairs else orow.get("account", ""),
                              "to": orow.get("account", "") if txn_id in pairs else r.get("account", ""),
                              "other_id": other_id, "other_date": other.date[:10]}
+            if txn_id in pairs:
+                # The first leg of a chain says where the money ended up and
+                # what it passed through (2026-11-22).
+                from .txlist import chain_line, chains
+                legs = chains(rows, pairs).get(txn_id)
+                if legs:
+                    r["transfer"].update(chain_line({x.fingerprint: (x, xr) for x, xr in rows}, legs))
             if (r.get("chip") or {}).get("label") == "Transfer" and not txlist_card_payment(t):
                 r["note"] = "Transfer between your accounts · not counted"
             if txn_id in back and txn_id not in pairs:

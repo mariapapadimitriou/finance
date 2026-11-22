@@ -756,6 +756,82 @@ def own_arrival(t: Transaction, row: dict) -> dict:
             "counts": "none", "note": "Transfer between your accounts \u00b7 not counted", "note_link": False}
 
 
+# A chain (product owner, 2026-11-22): $200 from Chequing to Savings and on
+# into the family account is one move, one line. An arrival that left its
+# account again, the same amount, within this many days (or in one link
+# with it) joins the line.
+CHAIN_DAYS = 7
+
+
+def _prepared(rows, pairs):
+    """{id: (txn, row)} with each paired arrival read as the transfer it is
+    (`own_arrival`), and {departure: arrival} for the pairs whose both ends
+    read as a Transfer: either end counts as nothing (moved between
+    accounts, or put into or taken out of savings), and neither was left
+    out (2026-10-22)."""
+    arrivals = set(pairs.values())
+    by_id = {t.fingerprint: (t, own_arrival(t, r) if t.fingerprint in arrivals else r) for t, r in rows}
+    is_transfer = lambda r: r.get("counts") == "none" and not r.get("excluded") \
+        and (r.get("chip") or {}).get("label") in ("Transfer", "Saved")
+    joined = {out: arr for out, arr in pairs.items()
+              if out in by_id and arr in by_id and out != arr
+              and is_transfer(by_id[out][1]) and is_transfer(by_id[arr][1])}
+    return by_id, joined
+
+
+def chains(rows: list[tuple[Transaction, dict]], pairs: dict[str, str]) -> dict[str, list[str]]:
+    """{first departure: [leg ids, in order]} for money that moved through
+    more than two of her accounts: departure, arrival, the departure that
+    took the same amount out of that account again within CHAIN_DAYS (or in
+    the same link), its arrival, and so on. A pair on its own isn't listed."""
+    from .transfers import _cents, _days
+    by_id, joined = _prepared(rows, pairs)
+    outs: dict[tuple, list[Transaction]] = {}
+    for out in joined:
+        t = by_id[out][0]
+        outs.setdefault((t.account_id, _cents(t.amount)), []).append(t)
+    after: dict[str, str] = {}          # arrival → the departure that followed it
+    taken: set[str] = set()
+    for out, arr in sorted(joined.items(), key=lambda kv: (by_id[kv[0]][0].date, kv[0])):
+        a = by_id[arr][0]
+        best = None
+        for cand in outs.get((a.account_id, _cents(-a.amount)), []):
+            if cand.fingerprint in (out, arr) or cand.fingerprint in taken or cand.date[:10] < a.date[:10]:
+                continue
+            gap = _days(a.date, cand.date)
+            same_link = bool(a.transfer_link) and cand.transfer_link == a.transfer_link
+            if gap > CHAIN_DAYS and not same_link:
+                continue
+            if best is None or gap < best[0]:
+                best = (gap, cand)
+        if best:
+            after[arr] = best[1].fingerprint
+            taken.add(best[1].fingerprint)
+    out: dict[str, list[str]] = {}
+    for head in joined:
+        if head in taken:
+            continue
+        legs, arr = [head], joined[head]
+        while True:
+            legs.append(arr)
+            nxt = after.get(arr)
+            if not nxt:
+                break
+            legs.append(nxt)
+            arr = joined[nxt]
+        if len(legs) > 2:
+            out[head] = legs
+    return out
+
+
+def chain_line(by_id, legs: list[str]) -> dict:
+    """What the head's `transfer` says for a chain: where the money ended
+    up, the accounts it passed through, and every leg."""
+    last_t, last = by_id[legs[-1]]
+    return {"to": last.get("account", ""), "other_id": legs[-1], "other_date": last_t.date[:10],
+            "via": [by_id[leg][1].get("account", "") for leg in legs[1:-1:2]], "legs": legs}
+
+
 def collapse_transfers(rows: list[tuple[Transaction, dict]],
                        pairs: dict[str, str],
                        merged: list[tuple[Transaction, dict]] | None = None
@@ -774,19 +850,18 @@ def collapse_transfers(rows: list[tuple[Transaction, dict]],
     so a transfer she marked vanished. Each arrival dropped here is put in
     `merged`, when given, with `merged_into` naming its line, so the phone
     can show it where the line isn't (TransferEnds.swift)."""
-    arrivals = set(pairs.values())
-    rows = [(t, own_arrival(t, r) if t.fingerprint in arrivals else r) for t, r in rows]
-    by_id = {t.fingerprint: (t, r) for t, r in rows}
-    # Either end counts as nothing (moved between accounts, or put into or
-    # taken out of savings), and neither was left out (2026-10-22).
-    is_transfer = lambda r: r.get("counts") == "none" and not r.get("excluded") \
-        and (r.get("chip") or {}).get("label") in ("Transfer", "Saved")
-    joined = {out: arr for out, arr in pairs.items()
-              if out in by_id and arr in by_id and out != arr
-              and is_transfer(by_id[out][1]) and is_transfer(by_id[arr][1])}
+    by_id, joined = _prepared(rows, pairs)
+    rows = [(t, by_id[t.fingerprint][1]) for t, _ in rows]
     hidden = set(joined.values())
     kept = []
     into = {arr: out for out, arr in joined.items()}
+    # A chain is one line (2026-11-22): every leg after the first is hidden
+    # into the head's line.
+    links = chains(rows, pairs)
+    for head, legs in links.items():
+        for leg in legs[1:]:
+            hidden.add(leg)
+            into[leg] = head
     for t, r in rows:
         if t.fingerprint in hidden:
             if merged is not None:
@@ -798,6 +873,8 @@ def collapse_transfers(rows: list[tuple[Transaction, dict]],
             r = dict(r)
             r["transfer"] = {"from": r.get("account", ""), "to": other.get("account", ""),
                              "other_id": arr, "other_date": other_t.date[:10]}
+            if t.fingerprint in links:
+                r["transfer"].update(chain_line(by_id, links[t.fingerprint]))
             if r.get("chip", {}).get("label") == "Transfer" and not _is_card_payment(t):
                 r["note"] = "Transfer between your accounts · not counted"
         kept.append((t, r))
