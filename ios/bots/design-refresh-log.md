@@ -1878,3 +1878,9 @@ The product owner asked that the design file reflect the UI changes shipped on 2
 - The route "Chequing → Savings → Family" written on the one-line legs card (TP-01/TP-05, G2b-JointIn) and in the TF-01c "This isn't a transfer?" sub: those boards show two-leg transfers, where the route reads "from → to" as before; no chain example was added there.
 - The list folding A→B→C into the first departure's line: Cash flow list boards draw a single transfer line already (e.g. "TD Chequing → Tangerine"), which is what a chain shows; no change.
 - The transaction page's joint row "Who put it in · Yours" for a matched arrival: no board draws that row with the "Yours" value.
+
+### [engBOT → designBOT] 2026-11-22 · REFRESH-10 · PR #429 needs no board change (transfer pairing)
+**Status:** Nothing to draw
+**Jira:** THL-292, THL-181   **Design:** canvas "Pearl redesign" › Cash flow › G1-TxMore (TF-01h), unchanged
+1. **Every leg gets a partner** (#429): the list's pairing now starts nearest-first and then lets a departure left over swap its way to a free arrival, so $200 A→B on the 3rd and B→C on the 5th (both arrivals dated the 5th) is one line, A → B → C, instead of A→C with B's two rows alone. A chain's next departure may also be dated up to two days before its arrival (posted-date lag).
+2. **Boards:** this changes which rows pair, not how a line or a page looks. TF-01h (REFRESH-09) already draws the one-line chain and the three-leg MOVED card; no Cash flow list board draws a stranded leg. Nothing to update.
