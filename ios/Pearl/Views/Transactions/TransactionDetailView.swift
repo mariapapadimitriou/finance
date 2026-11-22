@@ -2829,7 +2829,7 @@ struct TransactionDetailView: View {
             HStack(spacing: 12) {
                 CFIcon(symbol: "arrow.left.arrow.right")
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(transfer.from) \u{2192} \(transfer.to)").font(Nacre.body).foregroundColor(Pearl.ink)
+                    Text(route(transfer)).font(Nacre.body).foregroundColor(Pearl.ink)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(apartWords(outDate, inDate)).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                 }
@@ -2864,6 +2864,11 @@ struct TransactionDetailView: View {
         .padding(.top, 16)
         SolidCard {
             leg(account: transfer.from, sub: "Out · \(Format.weekdayDay(outDate))")
+            // A chain (2026-11-22): the accounts it passed through, between.
+            ForEach(Array((transfer.via ?? []).enumerated()), id: \.offset) { _, account in
+                APSeparator()
+                leg(account: account, sub: "Through")
+            }
             APSeparator()
             leg(account: transfer.to, sub: "In · \(Format.weekdayDay(inDate))")
         }
@@ -2895,7 +2900,7 @@ struct TransactionDetailView: View {
     private func unpairSheet(_ transfer: Transaction.Transfer) -> some View {
         PearlConfirmSheet(overline: "Transfer · \(Format.amount(t.amount))", title: "This isn’t a transfer?",
                           who: .init(name: "Transfer", amount: Format.amount(t.amount), tone: Pearl.muted,
-                                     sub: "\(transfer.from) \u{2192} \(transfer.to)", symbol: "arrow.left.arrow.right"),
+                                     sub: route(transfer), symbol: "arrow.left.arrow.right"),
                           message: "Pearl stops pairing them and asks what each one was.",
                           primary: "Not a transfer", secondary: "Keep it a transfer",
                           onClose: { unpairing = false }) {
@@ -2929,6 +2934,11 @@ struct TransactionDetailView: View {
     }
 
     /// "1 day apart", "Same day" (G1-TxMore: beside MOVED).
+    /// "Chequing → Savings → Family": every account the money passed through.
+    private func route(_ transfer: Transaction.Transfer) -> String {
+        ([transfer.from] + (transfer.via ?? []) + [transfer.to]).joined(separator: " \u{2192} ")
+    }
+
     private func apartWords(_ out: String, _ into: String) -> String {
         let days = abs(Calendar.current.dateComponents([.day], from: Format.localDay(out) ?? Date(),
                                                        to: Format.localDay(into) ?? Date()).day ?? 0)
