@@ -901,13 +901,18 @@ struct PartsSheet: View {
 
     /// PP-01 as this sheet's content, so one sheet asks and then shows PB-30.
     private func askWhoView(_ ask: AskWho) -> some View {
+        // Someone new (product owner, 2026-11-23): her contacts, or a typed
+        // name, beside the people from past splits. Anyone not on a split
+        // goes to PB-30 with OTHER PURCHASES only, so a payback still never
+        // adds anyone to a split.
         WhoPaidPicker(api: api, sub: "+\(Format.amount(deposit.whole ?? deposit.amount)) · \(deposit.name) · \(Format.short(deposit.date))",
-                      top: [], pastSplits: false, someoneNew: false, onlyPast: ask.rows,
+                      top: [], pastSplits: false, someoneNew: true, onlyPast: ask.rows,
                       onPick: { name in
-                          let notOnSplit = ask.rows.contains { $0.name == name && $0.fixed }
+                          let onSplit = ask.rows.contains { $0.name == name && !$0.fixed }
                           askWho = nil
-                          // The sender on none of her splits: PB-30 for them, OTHER PURCHASES only.
-                          if notOnSplit { toOthers(name); return }
+                          // The sender on none of her splits, or someone new: PB-30
+                          // for them, OTHER PURCHASES only.
+                          if !onSplit { toOthers(name); return }
                           pickedPerson = name
                           Task { await pickPerson() }
                       },
