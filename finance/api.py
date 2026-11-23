@@ -132,7 +132,7 @@ def transactions():
 
 
 def _txlist_rows(st, excluded: bool = False, joint: bool = False, everything: bool = False,
-                 only: str | set | None = None):
+                 only: str | set | None = None, folded: bool = False):
     """Every row of yours, described for the transactions list — or, with
     `excluded`, only the rows you left out; with `joint`, only the rows on a
     joint account that are someone else's."""
@@ -153,7 +153,9 @@ def _txlist_rows(st, excluded: bool = False, joint: bool = False, everything: bo
     elif joint:
         rows = txlist.theirs(txns)
     else:
-        rows = txlist.visible(txns)
+        # `folded` (2026-11-23): the list's rows, a payback-only deposit
+        # standing in for its parts.
+        rows = txlist.listed(txns) if folded else txlist.visible(txns)
     from . import trips as _trips
     in_trip = _trips.trip_of(st)
 
@@ -401,7 +403,7 @@ def transactions_list():
                "day": a.get("day") or None,
                "first": a.get("first") or None, "last": a.get("last") or None}
     st = store()
-    rows = _txlist_rows(st, excluded=a.get("excluded") in ("1", "true"),
+    rows = _txlist_rows(st, folded=True, excluded=a.get("excluded") in ("1", "true"),
                         joint=a.get("joint") in ("1", "true"))
     # "Priya owes you $194.20 for 2 purchases" (WW-01), and the rows behind it.
     owed = txlist.owed([t for t, _ in rows], st.splits(), st.payback_people())
@@ -3697,7 +3699,7 @@ def _changed_rows(st, ids: set[str]) -> dict[str, dict]:
     from . import txlist
     looking, mark = _needs_a_look(st)
     rows = _txlist_rows(st, everything=True, only=ids)
-    shown = {t.fingerprint for t in txlist.visible([t for t, _ in rows])}
+    shown = {t.fingerprint for t in txlist.listed([t for t, _ in rows])}
     picked = [(t, mark(r)) for t, r in rows if t.fingerprint in ids and t.fingerprint in shown]
     return {t.fingerprint: r for t, r in zip((t for t, _ in picked), _with_rules(st, picked))}
 

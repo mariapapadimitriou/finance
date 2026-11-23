@@ -1677,6 +1677,9 @@ struct TransactionRow: View {
     private var meta: String {
         let when: String? = showsDay ? Format.relativeDay(t.date) : nil
         if let paidBack = paidBack { return "Paid back · \(paidBack)" }
+        // A deposit whose parts all paid purchases back (2026-11-23): the
+        // server's line, "Paid back · Denise · 6 purchases".
+        if t.chip?.label == "Paid back", let note = t.note, !note.isEmpty { return note }
         if let charge = t.refundOf { return "Refund · \(charge.merchant)" }
         // T-01r2 (TEST-25): a split says what the server says.
         if let note = splitNote { return note }

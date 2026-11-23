@@ -95,11 +95,35 @@ def _name(t: Transaction | None, ctx: "Context") -> str:
     return ctx.names.get(_key(t.merchant)) or tidy_of(t) or t.merchant or t.description
 
 
+# A deposit split into parts that all paid purchases back (product owner,
+# 2026-11-23): Cash flow lists the deposit once, "Paid back · Denise · 6
+# purchases", not six part rows on its date. The parts stay rows of their
+# own on its page, and count as they did.
+_PAYBACK_PARTS = ("payback", "reimbursement", "refund")
+
+
+def payback_only_deposits(transactions: list[Transaction]) -> dict[str, list[Transaction]]:
+    """{deposit id: its parts} for deposits whose parts are all paybacks."""
+    from .parts import SPLIT
+    parts: dict[str, list[Transaction]] = defaultdict(list)
+    for t in transactions:
+        parent = (t.raw or {}).get("part_of")
+        if parent:
+            parts[parent].append(t)
+    by_id = {t.fingerprint: t for t in transactions}
+    return {pid: ps for pid, ps in parts.items()
+            if pid in by_id and by_id[pid].excluded == SPLIT
+            and all((p.raw or {}).get("part_kind") in _PAYBACK_PARTS and p.repays for p in ps)}
+
+
 def _paid_for(t: Transaction, ctx) -> str:
     """What a payback paid for: "GoodLife Fitness", or for one that covered
     several purchases (2026-10-28) "3 GoodLife Fitness purchases" or
     "Sushi Nami and Cineplex"."""
-    charges = [c for c in (ctx.by_id.get(i) for i in t.repays_all) if c is not None]
+    return _charges_text([c for c in (ctx.by_id.get(i) for i in t.repays_all) if c is not None], ctx)
+
+
+def _charges_text(charges: list, ctx) -> str:
     if not charges:
         return ""
     names = list(dict.fromkeys(_name(c, ctx) for c in charges))
@@ -174,6 +198,7 @@ class Context:
         self.payback_kinds = payback_kinds or {}
         self.names = names or {}
         self.accounts = accounts or {}
+        self.payback_only = payback_only_deposits(transactions)
         self.reimbursed = {cid for t in transactions
                            if t.repays and self.payback_kinds.get(t.fingerprint) == "reimbursement"
                            for cid in t.repays_all}
@@ -222,6 +247,7 @@ def describe(t: Transaction, ctx: Context) -> dict:
     note, note_link = "", False
 
     copy = t.excluded == dup.REASON and dup.is_copy(t)
+    whole_payback = False
     if copy and t.duplicate_state == dup.PENDING:
         # D-01: counted once until she checks; a question, so a dashed chip.
         chip = "Possible duplicate"
@@ -229,6 +255,15 @@ def describe(t: Transaction, ctx: Context) -> dict:
     elif copy:
         chip, structural = "Duplicate", True
         note = "Same purchase as another · hidden"
+    elif t.fingerprint in ctx.payback_only:
+        # One row for a deposit whose parts all paid purchases back
+        # (2026-11-23): what it paid back, and who, when it's one person.
+        ps = ctx.payback_only[t.fingerprint]
+        chip, structural, group = "Paid back", True, "transfer"
+        whole_payback = True
+        people = list(dict.fromkeys(p for p in (ctx.payer.get(x.fingerprint) for x in ps) if p))
+        what = _charges_text([c for c in (ctx.by_id.get(x.repays) for x in ps) if c is not None], ctx)
+        note = " · ".join(["Paid back"] + ([people[0]] if len(people) == 1 else []) + ([what] if what else []))
     elif t.excluded:
         chip, structural = "Left out", True
         note = f"Left out · {t.excluded}"
@@ -465,7 +500,7 @@ def describe(t: Transaction, ctx: Context) -> dict:
         "cost": cost,
         "repays": t.repays,
         "paid_part": t.paid_part if t.repays else None,
-        "excluded": "" if copy else (t.excluded or ""),
+        "excluded": "" if copy or whole_payback else (t.excluded or ""),
         # THL-71: only a row that counts can be a one-off — not a transfer,
         # a repayment you linked, or a row left out.
         "one_off": one_off,
@@ -528,6 +563,19 @@ def visible(transactions: list[Transaction]) -> list[Transaction]:
     account nobody has claimed is listed too, "Whose?" until she answers: it
     can't be someone else's before anyone has said so."""
     return [t for t in transactions if not is_others(t) or _waiting(t) or _unclaimed(t)]
+
+
+def listed(transactions: list[Transaction]) -> list[Transaction]:
+    """The rows Cash flow lists (2026-11-23): `visible`, with a deposit whose
+    parts all paid purchases back standing in for its parts. Only for the
+    list and what a write changed: everything else (a page's `txns`, the
+    totals, owed) still needs the parts themselves."""
+    whole = payback_only_deposits(transactions)
+    hidden = {p.fingerprint for ps in whole.values() for p in ps}
+    by_id = {t.fingerprint: t for t in transactions}
+    out = [t for t in visible(transactions) if t.fingerprint not in hidden]
+    seen = {t.fingerprint for t in out}
+    return out + [by_id[pid] for pid in whole if pid not in seen]
 
 
 def _unclaimed(t: Transaction) -> bool:
