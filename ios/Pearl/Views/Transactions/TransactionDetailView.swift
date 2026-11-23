@@ -2458,7 +2458,11 @@ struct TransactionDetailView: View {
         // S-01jr (G2b-Purchase): the share bar and the Primary take Whose was
         // it? and Split my part out of Options.
         let jointCharge = self.jointCharge && !showsShareBar
-        if canSplit || couldBePay || unlink || canLink || canOneOff || canPayFromBank || offersNewOnes
+        // Mark as paid back from the purchase (product owner, 2026-11-22):
+        // the finder that was only on a split's own row (PB-20).
+        let canFindPayback = !t.inflow && t.transfer == nil && t.partOf == nil && t.excluded.isEmpty
+            && t.counts == "spending" && t.refundOf == nil
+        if canSplit || canFindPayback || couldBePay || unlink || canLink || canOneOff || canPayFromBank || offersNewOnes
             || incomeAlways != nil || jointCharge {
             section("Options")
             APCard {
@@ -2494,8 +2498,17 @@ struct TransactionDetailView: View {
                     .buttonStyle(.plain)
                     .disabled(busy)
                 }
-                if couldBePay {
+                if canFindPayback {
                     if canSplit { APSeparator(afterFace: false) }
+                    Button { paidBackStep = .find } label: {
+                        row(title: "Mark as paid back", sub: "Find the money that paid it back", chevron: true,
+                            icon: "arrow.uturn.backward")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                }
+                if couldBePay {
+                    if canSplit || canFindPayback { APSeparator(afterFace: false) }
                     Button { asking = Asking(step: .cadence) } label: {
                         if let pay = t.regularPay {
                             // T-37: "Every 2 weeks · next on Fri, Nov 21".
@@ -2512,7 +2525,7 @@ struct TransactionDetailView: View {
                     .disabled(busy)
                 }
                 if unlink {
-                    if canSplit || couldBePay { APSeparator(afterFace: false) }
+                    if canSplit || canFindPayback || couldBePay { APSeparator(afterFace: false) }
                     Button { unlinkingRefund = true } label: {
                         row(title: "Unlink refund", chevron: true, icon: "link")
                     }
@@ -2523,7 +2536,7 @@ struct TransactionDetailView: View {
                 if canLink {
                     // Link transfers (2026-11-22): a leg with no other end
                     // paired, or the legs it's linked with.
-                    if canSplit || couldBePay || unlink { APSeparator(afterFace: false) }
+                    if canSplit || canFindPayback || couldBePay || unlink { APSeparator(afterFace: false) }
                     Button { linking = true } label: {
                         row(title: t.links.isEmpty ? "Link to another transfer" : "Linked transfers",
                             sub: t.links.isEmpty ? nil : Format.shortList(t.links.compactMap(\.accountName)),
@@ -2533,7 +2546,7 @@ struct TransactionDetailView: View {
                     .disabled(busy)
                 }
                 if canOneOff {
-                    if canSplit || couldBePay || unlink || canLink { APSeparator(afterFace: false) }
+                    if canSplit || canFindPayback || couldBePay || unlink || canLink { APSeparator(afterFace: false) }
                     Toggle(isOn: Binding(get: { oneOff ?? t.oneOff },
                                          set: { on in Task { await setOneOff(on) } })) {
                         // T-42 (G1-TxNote): what leaving it out does, under the title.
@@ -2554,11 +2567,11 @@ struct TransactionDetailView: View {
                     .accessibilityHint("Leaves it out of your usual month")
                 }
                 if offersNewOnes {
-                    if canSplit || couldBePay || unlink || canLink || canOneOff { APSeparator(afterFace: false) }
+                    if canSplit || canFindPayback || couldBePay || unlink || canLink || canOneOff { APSeparator(afterFace: false) }
                     alwaysToggle(sub: nil)
                 }
                 if let payer = incomeAlways {
-                    if canSplit || couldBePay || unlink || canLink || canOneOff || offersNewOnes { APSeparator(afterFace: false) }
+                    if canSplit || canFindPayback || couldBePay || unlink || canLink || canOneOff || offersNewOnes { APSeparator(afterFace: false) }
                     incomeAlwaysToggle(payer)
                 }
                 if canPayFromBank {
