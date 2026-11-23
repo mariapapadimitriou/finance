@@ -499,10 +499,11 @@ class TestFindWhatPaidItBack:
             self.find(client, i, q)
         assert TestFromThePurchase().dump(client, tmp_path) == before
 
-    def test_only_her_share_of_a_split(self, client):
+    def test_a_whole_purchase_too(self, client):
+        """A purchase that isn't split (2026-11-22): her share is all of it."""
         i = self.setup(client)
         r = client.get(f"/api/transactions/{i['AIR CANADA']}/paid-back-find")
-        assert r.status_code == 404
+        assert r.status_code == 200 and r.get_json()["share"] == 40.0 and r.get_json()["left"] == 40.0
 
     def taken(self, client, i):
         dep = i["NORTHWIND LTD EXPENSES"]

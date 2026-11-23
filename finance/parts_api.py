@@ -1161,6 +1161,26 @@ class _Find:
         self.whole = round(sp.split_base(t), 2)
         self.employers = _employers(st, self.txns)
         self.after = sp.bought_on(t).isoformat()
+        self.unsplit = False
+
+    @classmethod
+    def whole_purchase(cls, st, t):
+        """A purchase that isn't split (2026-11-22): nobody on it, her share
+        the whole of it, less what has already paid it back."""
+        from .etransfers import known_people
+        self = cls.__new__(cls)
+        self.st, self.t = st, t
+        self.split = {"mode": "even", "people": [], "me": True, "watch": False}
+        self.txns = st.all_transactions()
+        self.people = known_people(self.txns, st.splits(), st.payback_people())
+        self.owes = {}
+        self.whole = round(sp.split_base(t), 2)
+        self.share = self.whole
+        self.left = round(max(self.whole - (t.paid_back or 0.0), 0.0), 2)
+        self.employers = _employers(st, self.txns)
+        self.after = sp.bought_on(t).isoformat()
+        self.unsplit = True
+        return self
 
     def on_split(self, name: str | None) -> str | None:
         p = _person(self.split, " ".join(str(name or "").split())) if name else None
@@ -1232,7 +1252,10 @@ class _Find:
         near = abs(amount - _cents(self.share)) <= FIND_NEAR or abs(amount - _cents(self.whole)) <= FIND_NEAR
         return {"id": x.fingerprint, "date": x.date[:10], "payer": self.payer(x, kind, person),
                 "amount": amount / 100, "kind": kind, "person": person, "why": why or "",
-                "likely": kind == "person" or (kind is not None and near), "taken": taken}
+                # On a purchase that isn't split, money in for about the whole
+                # of it is likely too (2026-11-22): nobody is on it to match.
+                "likely": kind == "person" or (kind is not None and near) or (self.unsplit and near),
+                "taken": taken}
 
     def payer(self, x, kind: str | None, person: str | None) -> str:
         """LT-01's tidy name: someone on the split by their first name
@@ -1246,9 +1269,16 @@ class _Find:
 
 
 def _find_or_error(st, txn_id: str):
-    t, split, err = _split_or_error(st, txn_id)
-    if err:
-        return None, err
+    t = st.get_transaction(txn_id)
+    if t is None:
+        return None, (jsonify({"error": "No such transaction."}), 404)
+    split = st.splits().get(txn_id)
+    if split is None:
+        # Mark as paid back from a purchase that isn't split (product owner,
+        # 2026-11-22): the whole purchase is hers, so her share is all of it.
+        if t.amount <= 0:
+            return None, (jsonify({"error": "Only a purchase can be paid back."}), 400)
+        return _Find.whole_purchase(st, t), None
     if split.get("mode") == sp.UNSURE or not split.get("me", True) or t.my_share is None:
         return None, (jsonify({"error": "Find what paid it back is for your share of a split."}), 400)
     return _Find(st, t, split), None
