@@ -49,7 +49,7 @@ def test_no_one_owes_her_opens_pb30_other_purchases():
     assert "notOnSplits: named" in src
     # Always ask (2026-11-18): the sender Pearl read is PP-01's last row.
     assert 'sub: "Not on a split", fixed: true' in src
-    assert "if notOnSplit { toOthers(name); return }" in src
+    assert "if !onSplit { toOthers(name); return }" in src
     assert "joint: picked == nil ? joint?.person : nil" in src
     picker = (ROOT / "ios/Pearl/Views/Transactions/JointPaybackViews.swift").read_text()
     assert "r.fixed ? r :" in picker
