@@ -157,7 +157,10 @@ struct AnswerSheet: View {
         self.pageAlways = pageAlways
         self.pageAmount = pageAmount
         self.pageCategory = pageCategory
-        _rememberInto = State(initialValue: pageAlways ?? true)
+        // From a transaction page the Always switch lives on the page, not
+        // here (product owner, 2026-11-23); the sheet then makes no rule of
+        // its own unless the page's switch is on.
+        _rememberInto = State(initialValue: pageAlways ?? !fromPage)
         _learnable = State(initialValue: ask.t.learnable)
         self.ask = ask
         self.categories = categories
@@ -220,8 +223,8 @@ struct AnswerSheet: View {
                               extras: fromPage ? nil : AnyView(outOptions),
                               answersAtOnce: true,
                               // Off where other rows are open or it varies: her answer here is for this row.
-                              newOnesOn: pageAlways ?? (learnable == true && t.mixed != true && ask.item.siblings.isEmpty),
-                              showsAlways: pageAlways == nil,
+                              newOnesOn: pageAlways ?? (!fromPage && learnable == true && t.mixed != true && ask.item.siblings.isEmpty),
+                              showsAlways: pageAlways == nil && !fromPage,
                               // G1-WhatWasThis-r (T-04n): Pearl's guess leads, then her
                               // four likeliest; every other answer under Something else….
                               // TEST-46: an "Other?" guess opens What was this? from the page too.
@@ -664,7 +667,7 @@ struct AnswerSheet: View {
                             .accessibilityHint("Shows every other answer here")
                         }
                     }
-                    if learnable == true && pageAlways == nil {
+                    if learnable == true && pageAlways == nil && !fromPage {
                         APCard { CFToggleRow(symbol: "repeat", title: "Always for \(who)", isOn: $rememberInto) }
                     }
                 }
