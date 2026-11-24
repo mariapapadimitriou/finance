@@ -48,9 +48,10 @@ TOLERANCE = {"weekly": 2, "biweekly": 3, "monthly": 3}
 PERIOD = {"weekly": 7, "biweekly": 14}
 CADENCE_WORDS = {"weekly": "every week", "biweekly": "every two weeks", "monthly": "every month"}
 MIN_SERIES = 2
-# How many it takes to call a schedule: two a month apart for the same
-# amount is rent-like enough to ask; two a week apart could be anything.
-MIN_FOR = {"weekly": 3, "biweekly": 3, "monthly": 2, "payday": 3}
+# How many it takes to call a schedule: three. Two a month apart for the
+# same amount asked too soon (product owner, 2026-11-24: one-off savings of
+# the same round amount read as a pattern); two a week apart could be anything.
+MIN_FOR = {"weekly": 3, "biweekly": 3, "monthly": 3, "payday": 3}
 CADENCE_WORDS["payday"] = "every payday"
 # Every payday: from the day before a paycheque posts (the two can post in
 # either order) to three days after (pay on a Friday, moved on Monday).

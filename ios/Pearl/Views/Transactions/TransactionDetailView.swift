@@ -328,6 +328,8 @@ struct TransactionDetailView: View {
     @State private var splitToast: PearlToast.Model?
     @State private var seeingOwed = false
     @State private var parting: PartsDeposit?
+    /// The Recurring row's sheet (2026-11-24): Not this one, Stop the rule.
+    @State private var recurringMenu = false
     /// S-35c "Who sent this?" (SPLIT-22b): the payback it asks about.
     @State private var crediting: Crediting?
     /// S-11x (SPLIT-23 (1)): the deposit's question card opened on the
@@ -737,6 +739,7 @@ struct TransactionDetailView: View {
     /// Split, your share, settle up, That's everything, Remove the split?
     private var splitSheets: some View {
         OwnBody { sortSheets }
+        .sheet(isPresented: $recurringMenu) { recurringSheet }
         .sheet(item: $legMenu) { m in
             // A leg's ⋯ (2026-11-22): Unlink from transfer, for that leg.
             LegMenuSheet(account: m.account, onUnlink: { legMenu = nil; Task { await unpairLegs(m.ids) } },
@@ -1356,6 +1359,17 @@ struct TransactionDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint("Opens the trip")
+            }
+            if let rule = t.recurringRule {
+                // T-03t (G1-TxRecurring, 2026-11-24): the rule behind the
+                // category, in Always's slot; RS-01 is the way out of it.
+                APSeparator(afterFace: false)
+                Button { recurringMenu = true } label: {
+                    row(title: "Recurring", sub: rule.when, chevron: true, icon: "repeat")
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+                .accessibilityHint("Not this one, or stop the rule")
             }
             if alwaysInCategoryCard {
                 // T-03r (1074:698, dark 1074:814): Always for the merchant is
@@ -2934,6 +2948,43 @@ struct TransactionDetailView: View {
             try? await Task.sleep(nanoseconds: 450_000_000)
             sorting = sortAsk(.transfer)
         }
+    }
+
+    /// RS-01 (2026-11-24). Both act once the sheet has gone.
+    @ViewBuilder private var recurringSheet: some View {
+        if let rule = t.recurringRule {
+            RecurringRowSheet(rule: rule,
+                              onNotThisOne: { recurringMenu = false; Task { await notRecurring() } },
+                              onStop: { recurringMenu = false; Task { await stopRecurringRule() } },
+                              onClose: { recurringMenu = false })
+        }
+    }
+
+    /// POST …/not-recurring: this one keeps its category as her own answer (RS-01a).
+    private func notRecurring() async {
+        await run {
+            let reply: MarkReply? = try await write("POST", "api/transactions/\(t.id)/not-recurring")
+            if let reply = reply { app.say("Left out of the rule", undo: undoLater(reply.undo)) }
+            return nil
+        }
+    }
+
+    /// DELETE …/recurring-transfers/<rule>: as Profile's Stop treating it as recurring (RS-01b).
+    private func stopRecurringRule() async {
+        guard let rule = t.recurringRule?.id ?? t.recurring else { return }
+        await run {
+            let reply: MarkReply? = try await write("DELETE", "api/recurring-transfers/\(rule)")
+            if let reply = reply { app.say("Rule stopped", undo: undoLater(reply.undo)) }
+            return nil
+        }
+    }
+
+    /// The server's undo payload as the toast's Undo.
+    private func undoLater(_ payload: JSONValue?) -> (() async throws -> Void)? {
+        payload.map { payload in {
+            guard let body = payload.any as? [String: Any] else { return }
+            let _: OK = try await app.api.post("api/transactions/undo", body)
+        } }
     }
 
     /// POST …/unpair with the leg's transactions: they come off the line;

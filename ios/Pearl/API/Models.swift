@@ -627,6 +627,16 @@ struct Transaction: Decodable, Identifiable, Hashable {
     var splitMode: String? = nil
     let manual: Bool
     let recurring: String?
+    /// The rule behind `recurring` (2026-11-24), only on GET /api/transactions/<id>.
+    struct RecurringRule: Decodable, Equatable {
+        let id: String
+        /// "Every month, around the 1st".
+        let when: String
+        let category: String
+        let count: Int
+        let first: String?
+    }
+    var recurringRule: RecurringRule? = nil
 
     // Only on GET /api/transactions/<id>.
     /// Money in: what kind of income ("salary"), and her regular pay from
@@ -1027,6 +1037,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         case id, date, description, amount, inflow, category, account, note, pending, excluded, chip
         case counts, suggested, split, repays, tags, kind, group, joint, manual, recurring, transfer, rule, links
         case incomeRule = "income_rule"
+        case recurringRule = "recurring_rule"
         case cardPayment = "card_payment"
         case merchantName = "merchant"
         case accountId = "account_id"
@@ -1115,6 +1126,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         splitMode = opt(String.self, .splitMode)
         manual = opt(Bool.self, .manual) ?? false
         recurring = opt(String.self, .recurring)
+        recurringRule = opt(RecurringRule.self, .recurringRule)
         oneOffLine = opt(OneOffLine.self, .oneOffLine)
         incomeType = opt(String.self, .incomeType)
         regularPay = opt(RegularPay.self, .regularPay)
