@@ -187,6 +187,22 @@ class TestPB30Change(unittest.TestCase):
             self.assertLess(price, change)
             self.assertIn(call, body[change:])
 
+    def test_nothing_preticked_and_the_whole_row_ticks(self):
+        # Product owner, 2026-11-24: "don't have anything pre-selected"; only
+        # the purchase she came from is ticked when PB-30 / MP-01 opens.
+        pre = between(self.p, "private func preTick()", "\n    }\n")
+        self.assertNotIn("bestSum", pre)
+        self.assertNotIn("likely", pre)
+        self.assertIn("ticks = Set(must.map { [$0.id] } ?? [])", pre)
+        # "if I tap anywhere on the entire row, it should select": the price
+        # and the Change slot are inside the row's button; Change lies over it.
+        for row in ["private func tickRow", "private func unsplitRow", "private func mineRow"]:
+            body = between(self.p, row, "\n    }\n")
+            self.assertIn("ZStack(alignment: .trailing)", body)
+            self.assertLess(body.index("Text(Format.amount("), body.index(".buttonStyle(.plain)"))
+            self.assertIn("changeGap", body)
+            self.assertIn("changeSlot(on:", body)
+
     def test_row_lines(self):
         row = between(self.p, "private func unsplitRow", "\n    }\n")
         self.assertIn('"\\(day) · all of it"', row)

@@ -311,7 +311,7 @@ struct AnswerSheet: View {
             }
         }
         .sheet(item: $parting) { p in
-            // PB-11 › A person: their shares ticked as they add up (PB-30),
+            // PB-11 › A person: their shares, none ticked for her (PB-30),
             // or S-35's ticks, then part or all of each share (PB-13).
             PartsSheet(deposit: PartsDeposit(id: t.id, name: who, amount: t.amount, date: t.date), api: api,
                        paidBack: p.many == nil, payer: p.many == nil ? p.person ?? ask.item.from : nil,
