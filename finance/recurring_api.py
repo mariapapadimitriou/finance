@@ -55,8 +55,21 @@ def confirm_recurring_transfer():
             return jsonify({"error": "Say what it is."}), 400
         what = category
     s = item["series"]
-    rule = rt.rule_from(s, category, " ".join(str(body.get("label") or "").split())[:60])
     before = snapshot(st, st.all_transactions())
+    if body.get("once"):
+        # "Just these" (product owner, 2026-11-24): these ones sorted as her
+        # own answers, no rule, nothing to come. The question goes; the next
+        # one for the amount is asked on its own.
+        st.write_categories({fp: (category, "user") for fp in s["ids"]})
+        st.dismiss_review(s["key"])
+        apply_transfer_matches(st)
+        undo = undo_payload(before, snapshot(st, st.all_transactions()))
+        undo["undismiss"] = [s["key"]]
+        count = len(s["ids"])
+        return jsonify({"ok": True, "rule": None,
+                        "title": f"{what if kind in KINDS else what}: {'both' if count == 2 else f'all {count}'} sorted.",
+                        "detail": "Just these; nothing from now on.", "undo": undo})
+    rule = rt.rule_from(s, category, " ".join(str(body.get("label") or "").split())[:60])
     existing = {r["id"]: r for r in st.recurring_transfers()}
     was = existing.get(rule["id"])
     # Every payday (2026-10-28) takes over a calendar rule of hers that only
@@ -105,6 +118,29 @@ def delete_recurring_transfer(rule_id: str):
     undo = undo_payload(before, snapshot(st))
     undo["marks"] = {"recurring_transfers": {rule_id: rule}}
     return jsonify({"ok": True, "undo": undo})
+
+
+@bp.post("/transactions/<txn_id>/not-recurring")
+def not_recurring(txn_id: str):
+    """"Not this one" (product owner, 2026-11-24): a transfer a recurring rule
+    sorted keeps its category as her own answer, so the rule leaves it alone
+    and its row stops reading "Recurring"; the rule itself stays. Undo puts
+    it back under the rule."""
+    from .impact import snapshot, undo_payload
+    from .transfers import apply_transfer_matches
+    st = store()
+    t = st.get_transaction(txn_id)
+    if t is None:
+        return jsonify({"error": "No such transaction."}), 404
+    txns = st.all_transactions()
+    rule = rt.rule_for(t, st.recurring_transfers(), rt.paydays(txns))
+    if rule is None or t.category_source in ("user", "merchant_override"):
+        return jsonify({"error": "No recurring rule sorted this one."}), 409
+    before = snapshot(st, txns)
+    st.write_categories({t.fingerprint: (t.category, "user")})
+    apply_transfer_matches(st)
+    undo = undo_payload(before, snapshot(st, st.all_transactions()))
+    return jsonify({"ok": True, "title": "Not recurring: just this one.", "undo": undo})
 
 
 # What each schedule comes to in a month, on average. Every payday goes by

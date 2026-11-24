@@ -64,6 +64,15 @@ struct AnswerSheet: View {
         var mustTick: String? = nil
     }
     @State private var parting: Parting?
+    /// RQ-01b "From now on?" (G1-RecurringFrom, 2026-11-24): the tile's
+    /// answer, held until she says whether the ones to come are sorted the
+    /// same way. Shown in this sheet in the tiles' place; ✕ goes back.
+    private struct RepeatAsk {
+        let kind: String?
+        let category: String?
+        let label: String
+    }
+    @State private var repeatAsk: RepeatAsk?
     /// TEST-31 S-11w: her share is saved and more came in; "What's the extra?".
     @State private var shareExtra: ShareExtraAsk?
     @State private var shareError: String?
@@ -257,7 +266,7 @@ struct AnswerSheet: View {
                         onAnswer(.confirm(t.id))
                     case .category: onAnswer(.category(t.id, name: name, remember: remember))
                     case .spending: onAnswer(.mark(t.id, ["case": "spending", "category": name, "remember": remember]))
-                    case .recurring: onAnswer(.recurring(key: ask.item.key, kind: nil, category: name))
+                    case .recurring: recurring(nil, name, category: name)
                     }
                 }
             } else if step == .guess {
@@ -767,7 +776,8 @@ struct AnswerSheet: View {
 
     private var tilesSheet: some View {
         VStack(spacing: 0) {
-            CFSheetTitle(title: title) { dismiss() }.sheetPart()
+            // RQ-01b's ✕ goes back to the tiles with nothing saved.
+            CFSheetTitle(title: title) { if repeatAsk != nil { repeatAsk = nil } else { dismiss() } }.sheetPart()
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     // RQ-01: the amount and the account only; the schedule is in the card.
@@ -802,6 +812,53 @@ struct AnswerSheet: View {
         WhyCard(sentence: recurringSentence, dates: s?.dates ?? [], amount: s?.amount ?? abs(t.amount),
                 ringed: String(t.date.prefix(10)),
                 footer: s?.next.map { "Next: around \(Format.weekdayDay($0))" })
+        if let r = repeatAsk {
+            fromNowOn(r)
+        } else {
+            recurringChoices
+        }
+    }
+
+    /// RQ-01b (G1-RecurringFrom, 2026-11-24): "Every month from now on?"
+    /// under the rhythm card. Yes saves the rule, these and the ones to
+    /// come; "Just these 3" sorts only these, no rule.
+    private func fromNowOn(_ r: RepeatAsk) -> some View {
+        let every = Self.everyWords(ask.item.series?.cadence)
+        let n = ask.item.series?.count ?? 0
+        let these = n == 2 ? "both" : "these \(n)"
+        return VStack(alignment: .leading, spacing: 10) {
+            Text(every.prefix(1).uppercased() + every.dropFirst() + " from now on?")
+                .font(Nacre.title2).foregroundColor(Pearl.ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 6)
+                .accessibilityAddTraits(.isHeader)
+            Text("Pearl can sort the ones to come as \(r.label), too.")
+                .font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            PearlSheetButtons(primary: "Yes, \(every)", secondary: "Just \(these)",
+                              onPrimary: {
+                                  onAnswer(.recurring(key: ask.item.key, kind: r.kind, category: r.category,
+                                                      toast: "\(r.label) · \(seriesAll) sorted, and the ones to come"))
+                              },
+                              onSecondary: {
+                                  onAnswer(.recurring(key: ask.item.key, kind: r.kind, category: r.category,
+                                                      toast: "\(r.label) · \(seriesAll) sorted", once: true))
+                              })
+                .padding(.horizontal, -16)
+        }
+    }
+
+    /// "every month", "every two weeks", "every week", "every payday".
+    static func everyWords(_ cadence: String?) -> String {
+        switch cadence {
+        case "weekly": return "every week"
+        case "biweekly": return "every two weeks"
+        case "payday": return "every payday"
+        default: return "every month"
+        }
+    }
+
+    @ViewBuilder private var recurringChoices: some View {
         QuestionCaption(text: "Yes, it’s…")
         AnswerGrid {
             AnswerTile(title: "Rent", line: "Spending on rent", symbol: "house") { recurring("rent", "Rent") }
@@ -828,10 +885,10 @@ struct AnswerSheet: View {
         return n == 2 ? "both" : n > 2 ? "all \(n)" : "it"
     }
 
-    /// RQ-01b (1389:24086): "Rent · all 9 sorted, and the ones to come", with Undo.
+    /// RQ-01b: "From now on?" first (2026-11-24); then "Rent · all 9 sorted,
+    /// and the ones to come" or "Rent · all 9 sorted", with Undo.
     private func recurring(_ kind: String?, _ label: String, category: String? = nil) {
-        onAnswer(.recurring(key: ask.item.key, kind: kind, category: category,
-                            toast: "\(label) · \(seriesAll) sorted, and the ones to come"))
+        repeatAsk = RepeatAsk(kind: kind, category: category, label: label)
     }
 
     /// LT-02's caption: "Every month since March", "Every payday since
@@ -1266,7 +1323,8 @@ struct AnswerSheet: View {
         case .cadence: return "How often is this pay?"
         case .joint: return "Who put this in?"
         case .sender: return "Who sent this?"
-        case .recurring: return "Is this a recurring transfer?"
+        // RQ-01b: the chosen answer is the title while "from now on?" is asked.
+        case .recurring: return repeatAsk?.label ?? "Is this a recurring transfer?"
         case .payback: return "Is \(ask.item.payback?.who ?? payer) paying you back?"
         case .guess, .category: return ""
         }

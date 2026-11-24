@@ -586,6 +586,19 @@ def transaction_detail(txn_id: str):
             # Link transfers (2026-11-22): the other legs she linked this with.
             r["links"] = [_leg_brief(x) for x in txns
                           if x.transfer_link == t.transfer_link and x.fingerprint != txn_id]
+        if r.get("recurring"):
+            # The rule that sorted it (2026-11-24): the page's Recurring row
+            # and its sheet ("Every month, around the 1st", "Into savings ·
+            # 3 so far, since September").
+            from . import recurring_transfers as _rt
+            rule = next((x for x in st.recurring_transfers() if x["id"] == r["recurring"]), None)
+            if rule is not None:
+                pays = _rt.paydays(txns) if rule["cadence"] == "payday" else []
+                days = sorted(x.date[:10] for x in txns if _rt.matches(x, rule, pays))
+                when = _rt.when_words(rule["cadence"], _rt._d(rule["anchor"]))
+                r["recurring_rule"] = {"id": rule["id"], "when": when[:1].upper() + when[1:],
+                                       "category": rule["category"], "count": len(days),
+                                       "first": days[0] if days else None}
         if t.amount < 0:
             # TP-04: money in that a joint account's other owner paid her back with.
             from .joint import payback_of

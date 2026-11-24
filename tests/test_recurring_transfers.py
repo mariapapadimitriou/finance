@@ -61,7 +61,7 @@ class TestSpotting:
         (["2026-09-04", "2026-09-18", "2026-10-02"], "biweekly"),
         (["2026-10-02", "2026-10-09", "2026-10-16"], "weekly"),
         (["2026-08-31", "2026-09-30", "2026-10-31"], "monthly"),     # short months
-        (["2026-08-30", "2026-10-02"], "monthly"),                   # a weekend either side
+        (["2026-07-31", "2026-08-30", "2026-10-02"], "monthly"),     # a weekend either side
     ])
     def test_cadences(self, dates, cadence):
         assert rt.cadence_of([date.fromisoformat(d) for d in dates]) == cadence
@@ -71,9 +71,19 @@ class TestSpotting:
         ["2026-10-01", "2026-10-01"],                 # the same day
         ["2026-09-01", "2026-09-20", "2026-10-25"],   # no schedule
         ["2026-10-09", "2026-10-16"],                 # two a week apart: not yet
+        ["2026-08-30", "2026-10-02"],                 # two a month apart: not yet (2026-11-24)
     ])
     def test_not_a_schedule(self, dates):
         assert rt.cadence_of([date.fromisoformat(d) for d in dates]) is None
+
+    def test_two_a_month_apart_are_not_asked_yet(self, client):
+        # Product owner, 2026-11-24: one-off savings of the same round amount
+        # a month apart read as a pattern. Pearl asks from the third.
+        rent(client, months=2)
+        assert asked(client) == []
+        load(client.st, row(1500, "SEND E-TFR ***R2k", when=month_day(2)))
+        [it] = asked(client)
+        assert it["series"]["count"] == 3
 
     def test_a_different_amount_is_not_the_same_series(self, client):
         load(client.st, row(1500, "SEND E-TFR ***A1k", when=month_day(1)),
@@ -110,6 +120,64 @@ class TestConfirming:
         assert client.post("/api/transactions/undo", json=body["undo"]).status_code == 200
         assert client.st.recurring_transfers() == []
         assert [x["key"] for x in asked(client)] == [it["key"]]
+
+    def test_just_these_sorts_only_the_series(self, client):
+        # "Just these" (2026-11-24): her own answers on these, no rule.
+        rent(client)
+        [it] = asked(client)
+        body = client.post("/api/recurring-transfers",
+                           json={"key": it["key"], "kind": "saved", "once": True}).get_json()
+        assert body["rule"] is None and body["title"] == "Into savings: all 3 sorted."
+        rows = [t for t in client.st.all_transactions() if t.amount == 1500]
+        assert {(t.category, t.category_source) for t in rows} == {("Saved", "user")}
+        assert client.st.recurring_transfers() == [] and asked(client) == []
+        # Next month's isn't sorted by anything, and no row says Recurring.
+        load(client.st, row(1500, "SEND E-TFR ***N1k", when=month_day(-1, 2)))
+        nxt = next(t for t in client.st.all_transactions() if t.description == "SEND E-TFR ***N1k")
+        assert nxt.category != "Saved"
+        listed = client.get("/api/transactions/list?month=all&limit=50").get_json()["transactions"]
+        assert all(not r.get("recurring") for r in listed)
+        # Undo: the question comes back.
+        assert client.post("/api/transactions/undo", json=body["undo"]).status_code == 200
+        assert [x["key"] for x in asked(client)] == [it["key"]]
+
+    def test_not_this_one_frees_a_rule_sorted_row(self, client):
+        # "Not this one" (2026-11-24): this transfer keeps Saved as her own
+        # answer, the rule stays for the rest.
+        ids = rent(client)
+        [it] = asked(client)
+        client.post("/api/recurring-transfers", json={"key": it["key"], "kind": "saved"})
+        one = ids["SEND E-TFR ***R1k"]
+        r = client.post(f"/api/transactions/{one}/not-recurring")
+        assert r.status_code == 200, r.get_json()
+        t = client.st.get_transaction(one)
+        assert (t.category, t.category_source) == ("Saved", "user")
+        assert len(client.st.recurring_transfers()) == 1
+        listed = {x["id"]: x for x in client.get("/api/transactions/list?month=all&limit=50").get_json()["transactions"]}
+        assert not listed[one].get("recurring") and not listed[one]["note"].startswith("Recurring")
+        others = [x for x in listed.values() if x["amount"] == 1500 and x["id"] != one]
+        assert others and all(x.get("recurring") for x in others)
+        # Again: nothing to free.
+        assert client.post(f"/api/transactions/{one}/not-recurring").status_code == 409
+        # Undo puts it back under the rule.
+        assert client.post("/api/transactions/undo", json=r.get_json()["undo"]).status_code == 200
+        assert client.st.get_transaction(one).category_source != "user"
+
+    def test_the_page_gets_the_rule_behind_a_sorted_row(self, client):
+        # RS-01 (2026-11-24): "Every month, around the 1st", "3 so far, since …".
+        ids = rent(client)
+        [it] = asked(client)
+        client.post("/api/recurring-transfers", json={"key": it["key"], "kind": "saved"})
+        one = ids["SEND E-TFR ***R1k"]
+        d = client.get(f"/api/transactions/{one}").get_json()
+        assert d["recurring"] == it["key"]
+        rule = d["recurring_rule"]
+        assert rule["id"] == it["key"] and rule["category"] == "Saved" and rule["count"] == 3
+        assert rule["when"] == "Every month, around the 1st" and rule["first"] == month_day(2)
+        # Her own answer on one: no rule behind it.
+        client.post(f"/api/transactions/{one}/not-recurring")
+        d = client.get(f"/api/transactions/{one}").get_json()
+        assert not d.get("recurring") and "recurring_rule" not in d
 
     def test_no_asks_each_one_again(self, client):
         rent(client)
