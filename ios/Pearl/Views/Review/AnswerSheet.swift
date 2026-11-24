@@ -266,7 +266,12 @@ struct AnswerSheet: View {
                         onAnswer(.confirm(t.id))
                     case .category: onAnswer(.category(t.id, name: name, remember: remember))
                     case .spending: onAnswer(.mark(t.id, ["case": "spending", "category": name, "remember": remember]))
-                    case .recurring: recurring(nil, name, category: name)
+                    case .recurring:
+                        // RQ-01b after Something I pay for: back to the tiles' page,
+                        // where "from now on?" is drawn (the category page stayed up
+                        // and Save did nothing, product owner, 2026-11-24).
+                        recurring(nil, name, category: name)
+                        go(.recurring)
                     }
                 }
             } else if step == .guess {
