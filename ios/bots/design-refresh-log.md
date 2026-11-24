@@ -1923,3 +1923,16 @@ G2-WhoPaid gains two pairs (now 8 phones, 3440 wide; G2-PB30, G2-HowMuch and G2-
 - **Nothing on the canvas said PB-11 was skipped.** No caption, board title or note mentions skipping PB-11, work's or a shop's money going straight to her purchases, or a PB-22 → MP-01 arrow (the canvas draws states, not flow arrows), so there was nothing to reword. The rule as built is recorded here instead: PB-11 is asked every time money in is marked Paid back (Needs a look / Quick sort's tile, the deposit page's tile, a purchase's finder), with Pearl's read picked first so one tap confirms it; the one skip left is a purchase marked "Waiting to be reimbursed", which goes straight to Many purchases (MP-01, G2-Many) with the purchase ticked.
 **Not reflected, and why:**
 - The shop- and Other-current variants of PB-11: not drawn (same sheet, a different tile ringed).
+
+### [designBOT → engBOT] 2026-11-24 · REFRESH-15 · Boards brought in line with PRs #445 and #446 (Paid back: nothing pre-ticked, the whole row ticks)
+**Status:** Redesigned (as built; nothing new for engBOT to build)
+**Jira:** THL-289, THL-291, THL-181, THL-301, THL-303   **Design:** canvas "Pearl redesign" › Cash flow › G2-PB30 (PB-30), G2-Many (MP-02, MP-03), G2-AMany (MP-04)
+1. **Nothing pre-ticked** (#446, `PartsFlow`): the resting states now open with no row ticked and the total at the money's start:
+   - G2-PB30, PB-30 "Likely, nothing ticked yet": LIKELY · SAM keeps its rows and order, no tick, the Change slots empty, the total "$0.00 of $86.65 · $86.65 left over" in `muted`, the button "Mark paid back" dimmed until a tick. The "Other: all of it, Change", PB-30c and "After Change: part" states are after her ticks and stand.
+   - G2-Many, MP-02 "The shop refunds several": the three Costco rows unticked, no part yet, "$0.00 of $100.00 · $100.00 left over", "Mark refunded" dimmed. MP-03 stays the mid-way state its caption names (less ticked than it sent, MP-01's page) and now says the page opens with nothing ticked.
+2. **The whole row ticks**: tick box, name, line, price and the 64 pt Change slot are one tap target (`tickRow`, `unsplitRow`, `mineRow`); the PB-30, MP-02, MP-03 and MP-04 captions say so. Change stays tappable on its own after the price of a ticked share row (G2-PB30, unchanged).
+3. **MP-04's Change after the price** (G2-AMany): on the part-paid Costco row Change now sits after $54.50, and the other rows carry the empty slot so every price lines up.
+4. **Other opens her purchases** (#445): no screen changed. The canvas has no PB-11 → MP-01 flow arrow or note to correct (it draws states; REFRESH-14 recorded the rule), so nothing to redraw: from a deposit's What was this? › Paid back › PB-11, Other opens MP-01 "What did <payer> pay back?" (G2-Many), not PP-01's people.
+**Not reflected, and why:**
+- The "came from this purchase" variant (PQ-03's tile, PB-22 Mark as paid back) with its one purchase still ticked: no board draws PB-30 opened from a purchase, so no ticked-by-origin state exists to keep; the rule is noted here.
+- The older S-09 / S-35 "What did this pay back?" list (G2-APaidBack, G2-Settle): unchanged, as #446 left it.
