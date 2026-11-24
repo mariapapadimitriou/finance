@@ -1915,3 +1915,11 @@ G2-WhoPaid gains two pairs (now 8 phones, 3440 wide; G2-PB30, G2-HowMuch and G2-
 **Not reflected, and why:**
 - "Contacts are off for Pearl. Turn on" while typing: not drawn (one state per phone; it is the same line as G1-Asks T-14d).
 - The resting PP-01 keeps Someone new as the last row of its FROM PAST SPLITS card, as drawn before; the code gives it its own card, which the two new states show. Say if you want the resting state redrawn the same way.
+
+### [designBOT → engBOT] 2026-11-24 · REFRESH-14 · Boards brought in line with PR #443 (Paid back always asks who)
+**Status:** Redesigned (as built; nothing new for engBOT to build)
+**Jira:** THL-289, THL-291, THL-181, THL-301, THL-303   **Design:** canvas "Pearl redesign" › Cash flow › G2-WhoPaid (new PB-11p)
+- **PB-11 with Pearl's pick first**: G2-WhoPaid gains a pair, PB-11p "Who paid you back? Pearl's pick first: A person · On this split" (the board is now 4300 wide; G2-PB30, G2-HowMuch and G2-APaidBack moved right): the same three tiles, A person drawn `current` with "On this split" under it, as `PaidBackWhoSheet` draws the matching tile when the money is read as a named person's; The shop or Other would be the current one when it reads as a refund or work's.
+- **Nothing on the canvas said PB-11 was skipped.** No caption, board title or note mentions skipping PB-11, work's or a shop's money going straight to her purchases, or a PB-22 → MP-01 arrow (the canvas draws states, not flow arrows), so there was nothing to reword. The rule as built is recorded here instead: PB-11 is asked every time money in is marked Paid back (Needs a look / Quick sort's tile, the deposit page's tile, a purchase's finder), with Pearl's read picked first so one tap confirms it; the one skip left is a purchase marked "Waiting to be reimbursed", which goes straight to Many purchases (MP-01, G2-Many) with the purchase ticked.
+**Not reflected, and why:**
+- The shop- and Other-current variants of PB-11: not drawn (same sheet, a different tile ringed).
