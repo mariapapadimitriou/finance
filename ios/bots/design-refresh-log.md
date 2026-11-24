@@ -1905,3 +1905,13 @@ The product owner asked that the design file reflect the UI changes shipped on 2
 **Not reflected, and why:**
 - **One row for a deposit whose parts are all paybacks** (#439): no Cash flow list board draws several payback part rows on one date for one deposit (the S-10 list state was never drawn as a list), so nothing collapses. The one payback row the canvas has (G1-PearlSorted, "e-Transfer from Sam / Paid back · Sam") is a plain payback, not a deposit in parts; the server's line for a deposit in parts reads "Paid back · Denise · 6 purchases" / "… · Uber Eats" / "Paid back · 3 GoodLife Fitness purchases" with the chip Paid back and no count. Say if you want a list pair for it.
 - **No Always in What was this? from a page** (#438): no board draws the AnswerSheet opened from a transaction page with an Always card. G1-WhatWasThis (T-04n, T-08) is Needs a look's sheet and keeps its switch, as the code does; G1-Change (T-79) and G1-TxSheets (T-38b) are the page's CategorySheet, which #438 did not touch; the page's own Always (G1-TxSpend, G1-TxPage) stays.
+
+### [designBOT → engBOT] 2026-11-24 · REFRESH-13 · Boards brought in line with PR #441 (Who paid you back? searches her contacts)
+**Status:** Redesigned (as built; nothing new for engBOT to build)
+**Jira:** THL-289, THL-291, THL-181, THL-301, THL-303   **Design:** canvas "Pearl redesign" › Cash flow › G2-WhoPaid (PP-01, new PP-01t and PP-01n)
+G2-WhoPaid gains two pairs (now 8 phones, 3440 wide; G2-PB30, G2-HowMuch and G2-APaidBack moved right), drawn as G2-WhoWith's typing state was in REFRESH-08 and in the order `WhoPaidPicker.lists` draws them:
+- **PP-01t · typed "Pri"**: the Search people field in focus with "Pri", ON THIS SPLIT kept to the match (Priya S. · Owes you $26.65), FROM PAST SPLITS gone (nothing matches), then CONTACTS (Priyanka Rao, Prisha Mehta · In your contacts, the same rows), then the card with "+ Add “Pri” as a new name" (nobody listed or in contacts is exactly "Pri"), then the Someone new / Type their name card last.
+- **PP-01n · typed "Denise"**: no list matches, CONTACTS (Denise Arsenault), "+ Add “Denise” as a new name", then Someone new.
+**Not reflected, and why:**
+- "Contacts are off for Pearl. Turn on" while typing: not drawn (one state per phone; it is the same line as G1-Asks T-14d).
+- The resting PP-01 keeps Someone new as the last row of its FROM PAST SPLITS card, as drawn before; the code gives it its own card, which the two new states show. Say if you want the resting state redrawn the same way.
