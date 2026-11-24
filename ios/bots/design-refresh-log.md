@@ -1936,3 +1936,26 @@ G2-WhoPaid gains two pairs (now 8 phones, 3440 wide; G2-PB30, G2-HowMuch and G2-
 **Not reflected, and why:**
 - The "came from this purchase" variant (PQ-03's tile, PB-22 Mark as paid back) with its one purchase still ticked: no board draws PB-30 opened from a purchase, so no ticked-by-origin state exists to keep; the rule is noted here.
 - The older S-09 / S-35 "What did this pay back?" list (G2-APaidBack, G2-Settle): unchanged, as #446 left it.
+
+### [designBOT → engBOT] 2026-11-24 · REFRESH-16 · Savings are not always recurring: RQ-01b "From now on?" and the transaction page's Recurring row
+**Status:** Redesigned (approved by the product owner 2026-11-24: ready to build)
+**Jira:** THL-292, THL-295, THL-297, THL-122   **Design:** canvas "Pearl redesign" v94 › Cash flow › G1-RecurringFrom (RQ-01b), G1-TxRecurring (T-03t, RS-01, RS-01a, RS-01b); G1-Recurring (RQ-01) annotated
+The product owner's report: sorting a transfer as savings made a pattern out of it when it wasn't recurring, and undoing that meant sorting it all over again. Three changes, all approved:
+1. **RQ-01 asks later** (G1-Recurring, note under the board): Pearl asks "Is this a recurring transfer?" from the **third** monthly transfer, not the second. The tiles and the "No, it isn't regular · Ask about each one" row are unchanged; a tile no longer saves a rule by itself.
+2. **RQ-01b · Every month from now on?** (G1-RecurringFrom, 4 phones: light, dark, two-so-far every two weeks, after Something I pay for → a category). The same full sheet, one screen, shown after a tile is tapped (or a category picked after Something I pay for), before anything is saved. Nothing new in the design system: `shead` with the chosen answer as its title, the `who` row, the rhythm card, a Fraunces title2 question, one muted line, Primary and the secondary `btn2`.
+   - Sheet title (`shead h2`): the chosen answer — "Into savings" / "My other account" / "Rent" / the category ("Utilities").
+   - Heading: **"Every month from now on?"** — the cadence words vary: "Every two weeks from now on?", "Every payday from now on?", "Every week from now on?".
+   - Line: **"Pearl can sort the ones to come as Into savings, too."** (the chosen answer substituted).
+   - Primary: **"Yes, every month"** (… "every two weeks" / "every payday" / "every week"): saves the rule, sorts these N and the ones to come.
+   - Secondary: **"Just these 3"** (N from the series; 2 → **"Just both"**): sorts only these N as the chosen thing, no rule.
+   - ✕ (top right): back to the tiles, nothing saved.
+   The rhythm card on the board shows the real count ("Every month since September", Sep · Oct · Nov) so "these 3" matches what she sees.
+3. **The transaction page says there is a rule, and lets her leave it** (G1-TxRecurring, 6 phones).
+   - **T-03t · Transaction: a transfer the rule sorted** (light, dark): in the **category card, directly under the category row** ("Into savings · Change"), where a purchase carries "Always for this merchant", a row with the repeat icon: **"Recurring"** / sub-line **"Every month, around the 1st"**, chevron. It shows only on a transfer a rule sorted; her own answers get no row. Options and Details are as built.
+   - **RS-01 · the Recurring sheet** (light, dark): a small Pearl sheet (`sheet`, not full), title **"Every month, around the 1st"**, ✕, the line **"Into savings · 3 so far, since September"**, then one card with two Option rows:
+     - **"Not this one"** / **"Keeps Into savings as your own answer. The rule skips it."**
+     - **"Stop the rule"** (danger, like Profile's) / **"The 3 keep their category. Pearl stops sorting new ones."** — the same as Profile › Recurring transfers › Stop treating it as recurring.
+   - **RS-01a · after Not this one**: the row is gone, toast **"Left out of the rule"** · **Undo**.
+   - **RS-01b · after Stop the rule**: the row is gone, toast **"Rule stopped"** · **Undo**.
+   No iOS alert or confirmation dialog anywhere: the sheet is the confirmation, Undo is the way back.
+**Motion note (later, not now):** the follow-up slides in from the right inside the sheet as the tiles slide out (300 ms, spring, Reduce Motion: cross-fade); the Recurring row leaves by collapsing its height (250 ms) as the toast rises; a light success haptic on Yes and on Stop the rule.
