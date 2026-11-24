@@ -56,7 +56,14 @@ def test_no_one_owes_her_opens_pb30_other_purchases():
     assert "case .theirs, .purchases:" not in src
     answer = (ROOT / "ios/Pearl/Views/Review/AnswerSheet.swift").read_text()
     body = answer.split("private func paidBack(_ who: PaidBackWho)")[1].split("\n    }\n")[0]
-    assert "go(.charges)" not in body and "parting = true" in body
+    assert "go(.charges)" not in body and "parting = Parting(" in body
+    # Other opened A person's people (product owner, 2026-11-24): a flag's
+    # sheet read the state from before PB-11's pick. The sheet takes its
+    # start as an item, with who paid in it.
+    assert ".sheet(isPresented: $parting)" not in answer and ".sheet(item: $parting) { p in" in answer
+    assert "case .shop, .work:\n            parting = Parting(many: who)" in body
+    assert "many: p.many" in answer and "person: p.person, mustTick: p.mustTick" in answer
+    assert "manyWho" not in answer
     page = (ROOT / "ios/Pearl/Views/Transactions/WhoSentNamePage.swift").read_text()
     assert 'APSheetTitleBar(title: "Who sent this?")' in page
     assert "confirmationDialog" not in page and ".alert(" not in page

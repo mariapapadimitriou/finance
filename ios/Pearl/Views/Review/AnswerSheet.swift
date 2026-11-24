@@ -53,7 +53,17 @@ struct AnswerSheet: View {
     /// recurring payment): what to do with it.
     @State private var then: Then = .category
     /// "A refund or payback": the deposit's parts (THL-291, S-09 to S-12).
-    @State private var parting = false
+    /// PB-30 / MP-01 open from this, as the sheet's item: built on a flag,
+    /// the parts sheet read the state from before PB-11's pick when it opened
+    /// from that sheet's onDismiss, so Other showed A person's people
+    /// (product owner, 2026-11-24).
+    private struct Parting: Identifiable {
+        let id = UUID()
+        var many: PaidBackWho? = nil
+        var person: String? = nil
+        var mustTick: String? = nil
+    }
+    @State private var parting: Parting?
     /// TEST-31 S-11w: her share is saved and more came in; "What's the extra?".
     @State private var shareExtra: ShareExtraAsk?
     @State private var shareError: String?
@@ -105,7 +115,6 @@ struct AnswerSheet: View {
     @State private var mustTick: String?
     /// Many purchases (MP-01 / MP-02, 2026-11-17): PB-11's Work or The
     /// shop, ticking several of her purchases in the parts sheet.
-    @State private var manyWho: PaidBackWho?
     @State private var splitting = false
     /// T-06jr (JOINT-B): Whose was it? on a joint purchase, beside Split my part.
     @State private var whosing = false
@@ -301,21 +310,21 @@ struct AnswerSheet: View {
                 billing = nil
             }
         }
-        .sheet(isPresented: $parting) {
+        .sheet(item: $parting) { p in
             // PB-11 › A person: their shares ticked as they add up (PB-30),
             // or S-35's ticks, then part or all of each share (PB-13).
             PartsSheet(deposit: PartsDeposit(id: t.id, name: who, amount: t.amount, date: t.date), api: api,
-                       paidBack: manyWho == nil, payer: manyWho == nil ? partPerson ?? ask.item.from : nil,
-                       person: partPerson, mustTick: mustTick, many: manyWho,
+                       paidBack: p.many == nil, payer: p.many == nil ? p.person ?? ask.item.from : nil,
+                       person: p.person, mustTick: p.mustTick, many: p.many,
                        // PB-11 was skipped for a person Pearl knows: Change brings it back.
-                       onChangeWho: manyWho == nil && partPerson == nil ? {
-                           parting = false
+                       onChangeWho: p.many == nil && p.person == nil ? {
+                           parting = nil
                            Task {
                                try? await Task.sleep(nanoseconds: 450_000_000)
                                whoPaid = true
                            }
                        } : nil) { reply in
-                parting = false
+                parting = nil
                 onAnswer(.done(reply))
             }
         }
@@ -359,7 +368,6 @@ struct AnswerSheet: View {
         struct Likely: Decodable { let kind: String?; let person: String? }
         partPerson = nil
         mustTick = nil
-        manyWho = nil
         let likely: Likely? = try? await api.get("api/transactions/\(t.id)/paid-back-who")
         switch likely?.kind {
         case "person": likelyWho = .person
@@ -746,14 +754,12 @@ struct AnswerSheet: View {
     /// who owes her nothing (T-14 Who sent this? first when no one owes her
     /// and the money names no one). Not PB-15 any more (2026-11-18).
     private func paidBack(_ who: PaidBackWho) {
-        manyWho = nil
         switch who {
         case .shop, .work:
-            manyWho = who
-            parting = true
+            parting = Parting(many: who)
         case .person:
             // PQ-03's tiles name who on her splits it is: PB-30 for them.
-            parting = true
+            parting = Parting(person: partPerson, mustTick: mustTick)
         }
     }
 
@@ -1026,7 +1032,7 @@ struct AnswerSheet: View {
         if let from = await PaybackQuestion.partsPerson(api: api, id: t.id, amount: t.amount, tile: tile) {
             partPerson = from
             mustTick = tile.charge
-            parting = true
+            parting = Parting(person: from, mustTick: tile.charge)
             return
         }
         onAnswer(.payback(t.id, charge: tile.charge, toast: tile.toast, person: tile.person))
@@ -1388,7 +1394,7 @@ struct AnswerSheet: View {
         case .into:
             switch choice {
             case "earned": go(.kinds)
-            case "back": manyWho = nil; parting = true
+            case "back": parting = Parting(person: partPerson, mustTick: mustTick)
             case "own": onAnswer(.mark(t.id, ["case": "own", "remember": true]))
             case "loan": onAnswer(.mark(t.id, ["case": "borrowed"]))
             case "out_of_savings": onAnswer(.mark(t.id, ["case": "out_of_savings"]))
