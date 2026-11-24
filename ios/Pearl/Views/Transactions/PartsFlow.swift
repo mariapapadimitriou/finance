@@ -538,6 +538,8 @@ struct PartsSheet: View {
             // PB-11 from S-11 v2's Paid back tile: who paid back this part.
             PaidBackWhoSheet(face: deposit.name,
                              sub: "+\(Format.amount(deposit.whole ?? deposit.amount)) · \(deposit.name) · \(Format.short(deposit.date))",
+                             picked: sender != nil && !theirShares.isEmpty ? .person : nil,
+                             pickedPerson: sender != nil && !theirShares.isEmpty ? sender : nil,
                              onPick: { who in pendingWho = who; whoPaid = false },
                              onClose: { whoPaid = false })
         }
@@ -2620,10 +2622,10 @@ struct PartsSheet: View {
         case "other":
             otherAmount = amount
             step = .otherKind
-        // PB-10: the one Paid back tile asks who first (PB-11).
-        // PB-30 note: PB-11 is skipped when the e-Transfer names someone Pearl knows.
+        // PB-10: the one Paid back tile asks who first (PB-11), always
+        // (product owner, 2026-11-24), with Pearl's read picked first.
         case "paid_back":
-            if sender != nil && !theirShares.isEmpty { takePaidBack(.person) } else { whoPaid = true }
+            whoPaid = true
         case "own": add(Part(kind: "moved", amount: amount))
         case "loan": add(Part(kind: "loan", amount: amount))
         case "out_of_savings": add(Part(kind: "savings", amount: amount))

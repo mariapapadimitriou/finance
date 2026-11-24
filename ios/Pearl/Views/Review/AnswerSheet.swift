@@ -368,18 +368,9 @@ struct AnswerSheet: View {
         default: likelyWho = nil
         }
         likelyPerson = likely?.person
-        // PB-30 (Paybacks & undo, note 1397:4697): PB-11 is skipped when the
-        // e-Transfer names someone Pearl knows; straight to what they paid back.
-        if likelyWho == .person, likely?.person != nil {
-            paidBack(.person)
-            return
-        }
-        // Work's or a shop's money (the payer pays her, or refunded her
-        // before): straight to her purchases, no PB-11 (2026-11-21).
-        if let who = likelyWho, who != .person {
-            paidBack(who)
-            return
-        }
+        // PB-11 always asks (product owner, 2026-11-24): a person, the shop or
+        // other, with Pearl's read picked first. It used to skip straight to
+        // the person's purchases, or work's, which read as never being asked.
         whoPaid = true
     }
 
