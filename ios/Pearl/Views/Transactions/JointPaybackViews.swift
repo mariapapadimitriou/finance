@@ -138,6 +138,10 @@ struct WhoPaidPicker: View {
     @State private var query = ""
     @State private var recent: [Past]?
     @State private var typing = false
+    /// Her contacts, searched as she types (product owner, 2026-11-24: who
+    /// paid you back always looks in her contacts), where Someone new is
+    /// allowed; a name nobody matches is one row to add.
+    @StateObject private var contacts = ContactNames()
     /// PP-01 (G2-ALink): /api/people/recent didn't come back.
     @State private var loadFailed = false
     @State private var loading = false
@@ -165,7 +169,10 @@ struct WhoPaidPicker: View {
                 lists
             }
         }
-        .task { if pastSplits || onlyPast != nil { await load() } }
+        .task {
+            if pastSplits || onlyPast != nil { await load() }
+            if someoneNew { await contacts.load() }
+        }
         .sheet(isPresented: $typing) {
             // Someone new: the people picker's name entry (AM-08p3), one name.
             PeoplePicker(api: api, overline: "Paid back · Who paid", title: "Who paid you back?", sub: sub,
@@ -213,6 +220,20 @@ struct WhoPaidPicker: View {
                 APSheetLabel(text: "From past splits")
                 card(past)
             }
+        }
+        if someoneNew, !q.isEmpty {
+            // Her contacts that match what she typed, under the people Pearl
+            // knows; then the typed name itself when nobody matches it.
+            let listed = top.map(\.name) + (onlyPast ?? []).map(\.name) + (recent ?? []).map(\.name)
+            let fromContacts = contacts.matches(q, excluding: listed)
+            if !fromContacts.isEmpty {
+                APSheetLabel(text: "Contacts")
+                card(fromContacts.map { Row(name: $0, sub: "In your contacts") })
+            }
+            if !listed.contains(where: { $0.caseInsensitiveCompare(q) == .orderedSame }), !contacts.has(q) {
+                APCard { AddTypedNameRow(name: q, picked: false) { onPick(q) } }
+            }
+            if contacts.state == .off { ContactsOffLine() }
         }
         if someoneNew {
             APOptionCard {
