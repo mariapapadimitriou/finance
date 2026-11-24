@@ -1007,8 +1007,11 @@ struct PartsSheet: View {
 
     /// Pearl ticks the likely set (AI only suggests): the shares whose total
     /// is the deposit, or nearest under it; on a tie, the older ones.
+    /// What's ticked when PB-30 / MP-01 opens: only the purchase she came
+    /// from (PQ-03's tile, PB-22's purchase). Nothing else is picked for her
+    /// (product owner, 2026-11-24: "don't have anything pre-selected"); the
+    /// likely shares used to come ticked as they added up to the money.
     private func preTick() {
-        // PQ-03's tile, or the purchase she came from, stays ticked.
         let must = tickCharge.flatMap { c in tickPool.first { $0.charge == c } }
         // PB-22 from a purchase that isn't split (2026-11-18): ticked under
         // OTHER PURCHASES for as much of it as the money covers.
@@ -1016,34 +1019,7 @@ struct PartsSheet: View {
            !parts.contains(where: { $0.charge == c }), let u = unsplit.first(where: { $0.id == c }), leftCents > 0 {
             unsplitPaid[u.id] = min(cents(u.amount), leftCents)
         }
-        let rows = likely.filter { $0.id != must?.id }.sorted { $0.date < $1.date }
-        let room = leftCents - unsplitCents - (must.map { min(cents($0.owes), leftCents) } ?? 0)
-        var best: [Owing] = []
-        if rows.count <= 16 {
-            var bestSum = 0
-            var bestKey = 0
-            for mask in 1..<(1 << rows.count) {
-                var sum = 0
-                var key = 0
-                for (i, o) in rows.enumerated() where mask & (1 << i) != 0 {
-                    sum += cents(o.owes)
-                    key |= 1 << (rows.count - 1 - i)
-                }
-                guard sum <= room else { continue }
-                if sum > bestSum || (sum == bestSum && key > bestKey) {
-                    bestSum = sum
-                    bestKey = key
-                    best = rows.enumerated().filter { mask & (1 << $0.offset) != 0 }.map(\.element)
-                }
-            }
-        } else {
-            var left = room
-            for o in rows where cents(o.owes) <= left {
-                best.append(o)
-                left -= cents(o.owes)
-            }
-        }
-        ticks = Set(best.map(\.id) + (must.map { [$0.id] } ?? []))
+        ticks = Set(must.map { [$0.id] } ?? [])
     }
 
     /// G2-PB30-r (rethought, approved 2026-11-19): LIKELY first with the one
@@ -1192,7 +1168,9 @@ struct PartsSheet: View {
         let sub = part ? "Part: \(Format.amount(got)) of \(Format.amount(o.owes))"
             : over && on ? "\(day) · all of it"
             : "\(possessive(first)) share · \(day)"
-        return HStack(alignment: .center, spacing: 12) {
+        // The whole row ticks, the price and the empty slot too (product
+        // owner, 2026-11-24); Change sits over the slot when it's there.
+        return ZStack(alignment: .trailing) {
             Button { toggleTick(o) } label: {
                 HStack(spacing: 12) {
                     APTickBox(on: on)
@@ -1203,6 +1181,9 @@ struct PartsSheet: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 0)
+                    Text(Format.amount(o.owes)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
+                        .accessibilityHidden(true)
+                    changeGap
                 }
                 .contentShape(Rectangle())
             }
@@ -1211,14 +1192,16 @@ struct PartsSheet: View {
             .accessibilityLabel("\(possessive(first)) share of \(o.merchant), \(Format.amount(o.owes)), \(sub)"
                                 + (part ? ", \(first) still owes \(Format.amount(o.owes - got))" : ""))
             .accessibilityAddTraits(on ? .isSelected : [])
-            Text(Format.amount(o.owes)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
-                .accessibilityHidden(true)
             // G2-PB30 (approved-r7): Change after the price on every ticked
             // row; PB-13 asks how much of this one.
             changeSlot(on: on, label: "Change how much of \(possessive(first)) share of \(o.merchant)") { changePart(o) }
         }
         .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 64)
     }
+
+    /// The Change slot's width inside a row's button, so every price lines
+    /// up and a tap there still ticks the row.
+    private var changeGap: some View { Color.clear.frame(width: 64, height: 1) }
 
     /// G2-PB30: the 64 pt slot after a row's price, holding Change when the
     /// row is ticked and empty when it isn't, so every price lines up.
@@ -1328,7 +1311,7 @@ struct PartsSheet: View {
             : paid.map { "\(Format.amount(Double($0) / 100)) of it" } ?? Format.amount(u.amount))
         let day = u.pending == true ? "Pending" : Format.short(u.date)
         let line = all ? "\(day) · all of it" : paid.map { "\(Format.amount(Double($0) / 100)) of it · \(day)" } ?? day
-        return HStack(spacing: 12) {
+        return ZStack(alignment: .trailing) {
             Button { toggleUnsplit(u) } label: {
                 HStack(spacing: 12) {
                     APTickBox(on: on)
@@ -1337,6 +1320,9 @@ struct PartsSheet: View {
                         Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     }
                     Spacer(minLength: 0)
+                    Text(Format.amount(u.amount)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
+                        .accessibilityHidden(true)
+                    changeGap
                 }
                 .contentShape(Rectangle())
             }
@@ -1344,8 +1330,6 @@ struct PartsSheet: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(name), \(u.pending == true ? "Pending" : Format.monthDay(u.date))")
             .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
-            Text(Format.amount(u.amount)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
-                .accessibilityHidden(true)
             changeSlot(on: on, label: "Change how much of \(u.merchant)") { askUnsplit(u) }
         }
         .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 64)
@@ -1431,7 +1415,7 @@ struct PartsSheet: View {
     // MARK: MP-01 to MP-04 Many purchases (Proposals 1431:6590, note 1432:8062)
 
     /// Work or The shop said: her purchases (GET …/many-purchases), the
-    /// likely ones ticked as they add up, oldest first (PB-30's `preTick`).
+    /// likely ones listed first and nothing ticked (PB-30's `preTick`).
     private func startMany(_ who: PaidBackWho) async {
         manyKind = who
         mine = [:]
@@ -1528,7 +1512,9 @@ struct PartsSheet: View {
         let name = "\(o.merchant) · " + (share ? "your " : "") + Format.amount(o.owes)
         // G2-Many: "Your $60.00 · Nov 12" for her share, "$35.03 of it · Nov 7" part paid.
         let line = part ? "\(got) of it · \(day)" : share ? "Your \(Format.amount(o.owes)) · \(day)" : day
-        return HStack(spacing: 12) {
+        // The whole row ticks; MP-04's Change sits after the price, over
+        // the slot every row keeps while one is part paid, so prices line up.
+        return ZStack(alignment: .trailing) {
             Button { toggleTick(o) } label: {
                 HStack(spacing: 12) {
                     APTickBox(on: on)
@@ -1537,6 +1523,9 @@ struct PartsSheet: View {
                         Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     }
                     Spacer(minLength: 0)
+                    Text(Format.amount(o.owes)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
+                        .accessibilityHidden(true)
+                    if partPaid != nil { changeGap }
                 }
                 .contentShape(Rectangle())
             }
@@ -1544,15 +1533,10 @@ struct PartsSheet: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(part ? "\(name), \(Format.monthDay(o.date)), \(got) of it" : "\(name), \(Format.monthDay(o.date))")
             .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
-            if part {
-                // MP-04: Change opens PB-13 for this one.
-                Button("Change") { changePart(o) }
-                    .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline)).foregroundColor(Pearl.link)
-                    .frame(minHeight: 44).buttonStyle(.plain)
-                    .accessibilityLabel("Change how much of \(o.merchant)")
+            // MP-04: Change opens PB-13 for this one.
+            if partPaid != nil {
+                changeSlot(on: part, label: "Change how much of \(o.merchant)") { changePart(o) }
             }
-            Text(Format.amount(o.owes)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
-                .accessibilityHidden(true)
         }
         .padding(.horizontal, 16).padding(.vertical, 10).frame(minHeight: 64)
     }
