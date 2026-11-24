@@ -173,8 +173,9 @@ final class Test31UITests: XCTestCase {
             // PB-10 / PB-11: one Paid back tile, then Who paid you back? › Work.
             tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Paid back'")).firstMatch, "Paid back")
             sleep(2)
-            tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Work'")).firstMatch, "Work")
-            sleep(2)
+            // The third tile is "Other" (work, insurance or anyone else).
+            tap(app.buttons.matching(NSPredicate(format: "label CONTAINS 'insurance'")).firstMatch, "Other")
+            sleep(3)
             // MP-01 (Many purchases, replacing T-09w): her share as one row.
             step("MP-01 what did Northwind pay back")
             XCTAssertTrue(element(containing: "What did Northwind pay back?").exists, "MP-01's title")
