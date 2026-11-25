@@ -2982,7 +2982,15 @@ class Store:
                    if (t.category, t.category_source) != before[t.fingerprint]}
         if changed:
             self.write_categories(changed)
-        return count + len(changed)
+        # Money that moved between her own accounts stays a transfer whatever
+        # its name (2026-11-25): the match takes back what the rule shouldn't have.
+        from .transfers import apply_transfer_matches
+        moved = {t.fingerprint for t in txns if t.category_source == "merchant_override"
+                 and (t.merchant or "").strip().lower() == key}
+        apply_transfer_matches(self)
+        back = sum(1 for t in self.all_transactions()
+                   if t.fingerprint in moved and t.category_source != "merchant_override")
+        return max(count + len(changed) - back, 0)
 
     def restore_override(self, key: str, category: str | None) -> None:
         """Put one rule back as it was — by its stored key, rows untouched.

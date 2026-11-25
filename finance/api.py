@@ -1289,7 +1289,11 @@ def preview_category(txn_id: str):
     t = next((x for x in txns if x.fingerprint == txn_id), None)
     if t is None:
         return jsonify({"error": "No such transaction."}), 404
+    from .transfers import kept_from_rule, linked_accounts
+    # Her own transfers under the same name don't move (2026-11-25).
     rows = _merchant_rows(t, txns)
+    kept = kept_from_rule(txns, rows, category, linked_accounts(st)) - {txn_id}
+    rows = [x for x in rows if x.fingerprint not in kept]
     ids = {x.fingerprint for x in rows} if body.get("apply_to_merchant") else {txn_id}
     after = [replace(x, category=category, category_source="user")
              if x.fingerprint in ids else x for x in txns]
@@ -1317,6 +1321,11 @@ def update_transaction(txn_id: str):
     from .categorize import is_generic_transfer_name
     if body.get("apply_to_merchant") and not is_generic_transfer_name(txn.merchant):
         updated = st.set_override(txn.merchant, category)
+        # The rule leaves her own transfers alone; this one she is answering.
+        now = st.get_transaction(txn_id)
+        if now is not None and now.category != category and now.category_source != "user":
+            st.set_transaction_category(txn_id, category)
+            updated += 1
         out = {"ok": True, "updated": updated, "scope": "merchant",
                "merchant": txn.merchant}
     else:
