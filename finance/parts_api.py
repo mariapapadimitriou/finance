@@ -72,8 +72,8 @@ def _split_or_error(st, txn_id: str):
 
 
 def _person(split: dict, name: str) -> dict | None:
-    return next((p for p in split["people"] if p["name"] == name or sp.same_person(p["name"], name)),
-                None)
+    who = sp.pick([p["name"] for p in split["people"]], name)
+    return next((p for p in split["people"] if p["name"] == who), None) if who else None
 
 
 def _reshare(st, t, split: dict) -> None:

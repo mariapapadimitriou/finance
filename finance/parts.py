@@ -401,12 +401,12 @@ def rest_questions(st, transactions: list[Transaction]) -> list[dict]:
 def owed(st, transactions: list[Transaction], today: date) -> dict:
     """Owed to you (S-14): per person, what they still owe on your splits,
     what you owe them (they overpaid), and what they paid back this month."""
-    from .splits import people_status, same_person
+    from .splits import people_status, pick
     splits, payer = st.splits(), st.payback_people()
     by_id = {t.fingerprint: t for t in transactions}
 
     def person_key(name: str, names: list[str]) -> str:
-        return next((n for n in names if same_person(n, name)), name)
+        return pick(names, name) or name
 
     owes: dict[str, dict] = {}
     # A share lowered below what they'd paid (SPLIT-02, S-03e): she owes

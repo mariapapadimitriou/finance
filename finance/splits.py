@@ -50,18 +50,82 @@ def first_name(name: str) -> str:
     return words[0] if words else ""
 
 
+# Two people with one first name are told apart by surname from this day on
+# (2026-11-25). Paybacks dated before keep the old reading, so a split she
+# has already seen settled doesn't change.
+NAMES_FROM = "2026-11-25"
+
+
+def _surname(name: str) -> str:
+    """The last word of a full name, letters only; "" for a first name alone."""
+    words = [w for w in _WORD.findall((name or "").lower()) if not any(c.isdigit() for c in w)]
+    return words[-1].replace("'", "") if len(words) >= 2 else ""
+
+
+def surnames_fit(a: str, b: str) -> bool:
+    """Whether two surnames could be one person's: either isn't known, or
+    they start the same, an initial or a short form included ("S" and
+    "Shah", "Papas" and "Papadimitriou"). "Klev" and "Pappas" can't be."""
+    if not a or not b:
+        return True
+    n = min(3, len(a), len(b))
+    return a[:n] == b[:n]
+
+
 def same_person(a: str, b: str) -> bool:
-    """Two names for one person: the same first name, or a Wealthsimple Pay
-    handle that starts with the other's first name ("Anastasiapapas" and
-    "Anastasia", 2026-10-28)."""
+    """Two names that could be one person: the same first name and surnames
+    that fit, or a Wealthsimple Pay handle that starts with the other's first
+    name and goes on as their surname does ("Anastasiapapas" and
+    "Anastasia", 2026-10-28). Georgia Klev isn't Georgia Pappas (2026-11-25)."""
     fa, fb = first_name(a), first_name(b)
     if not fa or not fb:
         return False
     if fa == fb:
-        return True
+        return surnames_fit(_surname(a), _surname(b))
     one_word = lambda n: len(_WORD.findall((n or "").lower())) == 1
-    return ((one_word(a) and len(fb) >= 3 and fa.startswith(fb))
-            or (one_word(b) and len(fa) >= 3 and fb.startswith(fa)))
+    return ((one_word(a) and len(fb) >= 3 and fa.startswith(fb) and surnames_fit(_tail(fa, fb), _surname(b)))
+            or (one_word(b) and len(fa) >= 3 and fb.startswith(fa) and surnames_fit(_tail(fb, fa), _surname(a))))
+
+
+def _tail(tag: str, first: str) -> str:
+    """What a handle says after the first name: "klev" of "georgiaklev"."""
+    return re.sub(r"[^a-zà-ÿ]", "", tag[len(first):])
+
+
+def pick(names: list[str], who: str) -> str | None:
+    """The one of `names` that is `who`: exactly, or the one that fits. With
+    another of the same first name there, only a whole surname is clear, not
+    an initial; None when it isn't (product owner, 2026-11-16: always ask)."""
+    if who in names:
+        return who
+    hits = [n for n in names if same_person(n, who)]
+    if len(hits) == 1 and not _namesakes(names, hits[0]):
+        return hits[0]
+    full = [n for n in hits if _surname(n) and _surname(n) == _surname(who)]
+    return full[0] if len(full) == 1 else None
+
+
+def _namesakes(names: list[str], name: str) -> bool:
+    """Whether someone else in `names` has the same first name."""
+    return any(n != name and first_name(n) == first_name(name) for n in names)
+
+
+def _clear(names: list[str], name: str, sender_name: str) -> bool:
+    """Whether a sender is clearly `name`: no one else there has the first
+    name, or the sender's own words include the whole surname."""
+    if not _namesakes(names, name):
+        return True
+    last, first = _surname(name), first_name(name)
+    if len(last) < 2:
+        return False                    # an initial
+    # "GEORGIA KLEV", or a handle that runs it together, "georgiaklev".
+    words = [re.sub(r"[^a-zà-ÿ]", "", w) for w in _WORD.findall(sender_name.lower())]
+    return last in words or any(w.startswith(first + last) for w in words)
+
+
+def _loose(names: list[str], who: str) -> str | None:
+    """How names matched before `NAMES_FROM`: the first with the first name."""
+    return next((n for n in names if first_name(n) and first_name(n) == first_name(who)), None)
 
 
 def sender(t: Transaction) -> str:
@@ -71,17 +135,23 @@ def sender(t: Transaction) -> str:
                                        t.description) if x)
 
 
-def from_person(inflow: Transaction, name: str) -> bool:
-    """Did this money come from someone with this first name?"""
+def from_person(inflow: Transaction, name: str, loose: bool = False) -> bool:
+    """Did this money come from this person? `loose`: anyone with the first
+    name, as paybacks linked before `NAMES_FROM` were read."""
     first = first_name(name)
     if not first:
         return False
+    from .etransfers import handle, handle_matches, party
     if first in _WORD.findall(sender(inflow).lower()):
-        return True
+        # "E-TRANSFER FROM GEORGIA KLEV" isn't Georgia Pappas's money.
+        named = inflow.party or (party(inflow) or {}).get("name") or ""
+        return loose or first_name(named) != first or surnames_fit(_surname(named), _surname(name))
     # A Wealthsimple Pay handle runs the names together (2026-10-28):
     # "anastasiapapas" is Anastasia.
-    from .etransfers import handle_matches
-    return handle_matches(inflow, first)
+    if not handle_matches(inflow, first):
+        return False
+    tag = re.sub(r"[^a-zà-ÿ]", "", (handle(inflow) or "").lower())
+    return loose or surnames_fit(_tail(tag, first), _surname(name))
 
 
 def even_amounts(total: float, n_people: int) -> tuple[float, list[float]]:
@@ -380,7 +450,7 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
             continue
         if who not in paid and who:
             # "Sam Lee" paying back the Sam in the split.
-            who = next((n for n in names if same_person(n, who)), None)
+            who = pick(names, who) or (_loose(names, who) if t.date[:10] < NAMES_FROM else None)
             if who is None:
                 # Someone taken out of the split: their payback is still
                 # theirs, so it counts for nobody here.
@@ -392,7 +462,11 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
                     extras_named.append(t)
                 continue
         if who not in paid:
-            who = next((n for n in names if from_person(t, n)), None)
+            before = t.date[:10] < NAMES_FROM
+            fits = [n for n in names if from_person(t, n) and (before or _clear(names, n, sender(t)))] or \
+                [n for n in names if before and from_person(t, n, loose=True)]
+            # Two on the split who could have sent it: she says which.
+            who = fits[0] if len(fits) == 1 or (fits and before) else None
         if who is None:
             unnamed.append(t)
             continue
@@ -842,8 +916,13 @@ def sender_is(name: str, sender: str, inflow: Transaction | None = None) -> bool
         return True
     first = first_name(name)
     words = _WORD.findall(sender.lower())
-    if len(first) >= 3 and (first in words or "".join(words).startswith(first)):
-        return True
+    last = _surname(name)
+    if len(first) >= 3 and first in words:
+        rest = [w for w in words if w != first and not any(c.isdigit() for c in w)]
+        # "PAPAS ANASTASIA" is Anastasia Papas; "GEORGIA KLEV" isn't Georgia Pappas.
+        return not last or not rest or any(surnames_fit(w, last) for w in rest)
+    if len(first) >= 3 and "".join(words).startswith(first):
+        return surnames_fit(_tail("".join(words), first), last)
     return inflow is not None and from_person(inflow, name)
 
 
@@ -877,9 +956,13 @@ def payer_on_split(store, charge: Transaction, inflow: Transaction,
     exact = [p["name"] for p in people if p["name"] == person]
     if exact:
         return exact[0], None
-    hits = [p["name"] for p in people if sender_is(p["name"], person, inflow)]
+    everyone = [p["name"] for p in people]
+    hits = [n for n in everyone if sender_is(n, person, inflow)]
     if len(hits) == 1:
-        return hits[0], None
+        if _clear(everyone, hits[0], person):
+            return hits[0], None
+        # An initial among two of one first name isn't clear: both are asked about.
+        hits = [n for n in everyone if first_name(n) == first_name(hits[0])]
     owes = {}
     if split.get("mode") != UNSURE:
         owes = {s["name"]: round(s["owes"], 2)

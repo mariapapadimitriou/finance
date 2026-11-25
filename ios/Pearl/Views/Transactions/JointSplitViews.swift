@@ -27,14 +27,24 @@ struct RecentPerson: Decodable, Hashable, Identifiable {
     var id: String { name }
 }
 
-/// "Sam Lee" and "Sam": the same first name, as the server's split name
-/// matcher says (finance/splits.py same_person).
+/// "Sam Lee" and "Sam" could be one person; Georgia Klev and Georgia Pappas
+/// can't (2026-11-25): the same first name, and surnames that start the same
+/// where both are known, as the server's matcher says (finance/splits.py
+/// same_person, surnames_fit).
 func samePerson(_ a: String, _ b: String) -> Bool {
-    func first(_ s: String) -> String {
-        s.lowercased().split { !$0.isLetter && !$0.isNumber && $0 != "'" }.first.map(String.init) ?? ""
+    func words(_ s: String) -> [String] {
+        s.lowercased().split { !$0.isLetter && !$0.isNumber && $0 != "'" }.map(String.init)
     }
-    let x = first(a), y = first(b)
-    return !x.isEmpty && x == y
+    func surname(_ w: [String]) -> String {
+        let letters = w.filter { !$0.contains(where: \.isNumber) }
+        return letters.count >= 2 ? letters[letters.count - 1].replacingOccurrences(of: "'", with: "") : ""
+    }
+    let x = words(a), y = words(b)
+    guard let fx = x.first, let fy = y.first, fx == fy else { return false }
+    let lx = surname(x), ly = surname(y)
+    if lx.isEmpty || ly.isEmpty { return true }
+    let n = min(3, lx.count, ly.count)
+    return lx.prefix(n) == ly.prefix(n)
 }
 
 /// The one picker for "who": people she's split with (newest first), her
