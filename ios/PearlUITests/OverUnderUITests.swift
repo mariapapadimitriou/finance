@@ -99,14 +99,18 @@ final class OverUnderUITests: XCTestCase {
         }
     }
 
-    private func openBistro() {
+    private func openBistro() { openPurchase("Corner Bistro") }
+
+    private func openPurchase(_ merchant: String) {
         sleep(2)
         clearInterruptions()
         app.tabBars.buttons["Cash flow"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         sleep(2)
         clearInterruptions()
-        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Corner Bistro")).firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 15), "No Corner Bistro")
+        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", merchant)).firstMatch
+        // The list builds its rows as it scrolls.
+        for _ in 0..<8 where !row.waitForExistence(timeout: 3) { app.swipeUp(velocity: .slow) }
+        if !row.waitForExistence(timeout: 15) { step("NO ROW"); XCTFail("No \(merchant)") }
         bring(row)
         row.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
         sleep(2)
@@ -394,5 +398,51 @@ final class OverUnderUITests: XCTestCase {
         press("Unlink")
         see("Unlink")
         step("unlink")
+    }
+
+    /// Split my part is a row in Options, as Split with others is (product
+    /// owner, 2026-11-25): on "All mine", with none of it hers, and at 50/50,
+    /// where it opens the split.
+    func testJointSplitInOptions() {
+        launch()
+        for (merchant, label) in [("Lantern Books", "Split with others"), ("Harbour Furniture", "Split my part"),
+                                  ("Corner Bistro", "Split my part")] {
+            openPurchase(merchant)
+            step(merchant)
+            let rows = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", label))
+            XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 8), "\(merchant): no \(label)")
+            XCTAssertEqual(rows.count, 1, "\(merchant): \(label) more than once")
+            XCTAssertFalse(app.buttons["Split it with friends"].exists, merchant)
+            XCTAssertTrue(rows.firstMatch.isEnabled, merchant)
+            let options = app.staticTexts.matching(NSPredicate(format: "label ==[c] 'Options'")).firstMatch
+            XCTAssertTrue(options.exists, "\(merchant): no Options")
+            XCTAssertLessThan(options.frame.minY, rows.firstMatch.frame.minY, "\(merchant): not under Options")
+            if merchant == "Harbour Furniture" {
+                // Marked Sam's on its page: the row stays, dimmed, and says why.
+                let bar = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Half each'")).firstMatch
+                XCTAssertTrue(bar.exists, "No share bar")
+                bar.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.2)).tap()
+                let theirs = app.buttons["whose-theirs"]
+                XCTAssertTrue(theirs.waitForExistence(timeout: 8), "No Whose was it?")
+                theirs.tap()
+                sleep(3)
+                step("all Sams")
+                see("None of it is yours to split.")
+                XCTAssertFalse(rows.firstMatch.isEnabled, "None of it is hers")
+            }
+            if merchant != "Corner Bistro" { press("Back", exact: true) }
+        }
+        press("Split my part")
+        sleep(2)
+        clearInterruptions()
+        step("split my part")
+        press("Priya")
+        press("Next", exact: true)
+        step("how to split")
+        press("Save")
+        sleep(3)
+        see("Priya")
+        step("saved")
+        gone("Split my part")
     }
 }

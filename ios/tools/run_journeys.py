@@ -197,6 +197,33 @@ def seed_over(db_path: str, journey: str) -> None:
     store.set_transaction_category(cid, "Dining")
 
 
+# Split my part in Options: Corner Bistro and Harbour Furniture on a joint
+# card at 50/50, Lantern Books on one that's all hers unless she marks it.
+JOINT = "testJointSplitInOptions"
+
+
+def seed_joint(db_path: str) -> None:
+    from finance.ingest.base import IngestResult
+    from finance.models import Transaction
+    from finance.pipeline import ingest
+    from finance.store import Store
+    store = Store(db_path)
+    day = (date.today() - timedelta(days=1)).isoformat()
+    for account, rows in (("joint_half", [("CORNER BISTRO", 80.0), ("HARBOUR FURNITURE", 120.0)]),
+                          ("joint_mine", [("LANTERN BOOKS", 64.2)])):
+        ingest(store, IngestResult(account_id=account, transactions=[
+            Transaction(date=day, description=name, merchant=name.title(), amount=amount, category="Dining",
+                        account_id=account, account_name="Joint Visa", raw={"account_type": "credit"})
+            for name, amount in rows]))
+        store.set_joint(account, "Sister")
+    with store.conn() as c:
+        c.execute("UPDATE joint_accounts SET people = '[\"Sam\"]'")
+        c.execute("UPDATE joint_accounts SET share = 50 WHERE account_id = 'joint_half'")
+    for t in store.all_transactions():
+        if t.account_id in ("joint_half", "joint_mine"):
+            store.set_transaction_category(t.fingerprint, "Dining")
+
+
 def simulator(runtime: str, text: str) -> str:
     # One simulator at a time (product owner): PEARL_SIM_UDID reuses one
     # that is already booted instead of booting "Pearl journeys" as well.
@@ -252,6 +279,9 @@ def main() -> int:
                 seed(db_path)
                 if journey and journey.startswith(OLDER):
                     seed_older(db_path)
+                elif journey == JOINT:
+                    seed_joint(db_path)
+                    subprocess.run(["xcrun", "simctl", "uninstall", udid, "com.mariapapadimitriou.pearl"], capture_output=True)
                 if journey in OVER:
                     seed_over(db_path, journey)
                     # Each has its own rows, so nothing the app kept is right.
