@@ -122,3 +122,10 @@ def test_sheets_take_an_item_and_never_ios_alerts():
 def test_say_allowance():
     for path in (OVER, FLOW, MENUS):
         assert "safe to spend" not in src(path).lower()
+
+
+def test_unlink_from_the_deposit_says_the_share():
+    """Bug 3: "owes you $40.00 again", from either side, in the server's words."""
+    d = src(DETAIL)
+    assert "charge: t.repaysCharge?.id ?? t.id" in d and "paybacks.map { $0.again ?? $0.amount }" in d
+    assert "if let link = charge.link { unlinkingLink = link; return }" in d

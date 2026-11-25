@@ -1073,7 +1073,7 @@ class TestWhoSentThis:
         review = (self.IOS / "Views/Review/ReviewView.swift").read_text(encoding="utf-8")
         assert "} else if ask.item.credit != nil {" in review
         assert 'return try await api.post("api/transactions/\\(id)/credit", ["person": person])' in review
-        assert "paid back \\(Format.andList($0.paidBack))" in review
+        assert "paid back \\(Format.andList(credit.paidBack))" in review
         quick = (self.IOS / "Views/Review/QuickSortView.swift").read_text(encoding="utf-8")
         assert "drafts[ask.id] = CardDraft(label: answer.heldLabel, answer: answer)" in quick
         assert "if case .credit? = drafts[ask.id]?.answer { drafts[ask.id] = nil }" in quick
@@ -1262,7 +1262,7 @@ class TestNobodyLeftOwing:
         assert 'if item.extra != nil { return "What was this?" }' in models
         review = (self.IOS / "Views/Review/ReviewView.swift").read_text(encoding="utf-8")
         # S-21x: "Nov 16 · extra on Loblaws"; the chip opens S-11x.
-        assert "extra on \\(Format.andList($0.paidBack))" in review
+        assert "extra on \\(Format.andList(extra.paidBack))" in review
         assert "} else if let extra = ask.item.extra {" in review
         assert "whole: extra" in review
         parts = (self.IOS / "Views/Transactions/PartsFlow.swift").read_text(encoding="utf-8")
@@ -1449,7 +1449,7 @@ class TestExtraOnSome:
         assert "let credited: [Credited]?" in models and "var isPart: Bool" in models
         review = (self.IOS / "Views/Review/ReviewView.swift").read_text(encoding="utf-8")
         # S-21xm: "Nov 16 · $30.00 extra on Loblaws", two lines; one card per deposit.
-        assert "\\(Format.amount($0.amount)) extra on \\(Format.andList($0.paidBack))" in review
+        assert "\\(Format.amount(extra.amount)) extra on \\(Format.andList(extra.paidBack))" in review
         assert ".lineLimit(ask.item.extra != nil || ask.item.credit != nil ? 2 : 1)" in review
         assert ".part(of: extra)" in review
         parts = (self.IOS / "Views/Transactions/PartsFlow.swift").read_text(encoding="utf-8")

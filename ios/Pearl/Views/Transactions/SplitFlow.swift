@@ -974,6 +974,26 @@ struct SplitSheet: View {
         return max(0, Int((p.paid * 100).rounded()) - shareCents(key))
     }
 
+    /// What she'd owe them back if this were saved. An extra that's still a
+    /// question, or small, isn't owed until she says (REFRESH-18).
+    private func oweCents(_ key: String) -> Int {
+        let over = overCents(key)
+        guard over > 0, let p = saved(key), let extra = p.extra, extra.asks || extra.small,
+              shareCents(key) == Int((p.share * 100).rounded()) else { return over }
+        return Int((extra.owe * 100).rounded())
+    }
+
+    /// What stays let go on this share once it's saved, in cents: the same
+    /// while the share is, a small one of Pearl's comes back first, and one
+    /// she said never grows (REFRESH-18).
+    private func letGoCents(_ p: Transaction.Splitting.Person, share cents: Int) -> Int {
+        guard p.letGo != nil else { return 0 }
+        let left = Int((p.letGoLeft * 100).rounded())
+        if cents == Int((p.share * 100).rounded()) { return left }
+        if p.letGo?.auto == true { return 0 }
+        return max(0, min(left, cents - Int((p.paid * 100).rounded())))
+    }
+
     /// Under a name (REDESIGN-10, short): "Paid $20.00 · $8.04 let go",
     /// "Paid $28.04 · $8.04 over" (S-03e); "the odd cent" (S-15 v2, S-18
     /// v2); "2 shares · $42.06" (Shares).
@@ -1013,14 +1033,15 @@ struct SplitSheet: View {
                 // TEST-16 (THL-289): "Paid back $30.00" for a share paid in
                 // full, "Paid $10.00 of $30.00" for part of it.
                 let share = Double(cents) / 100
-                let letGo = p.letGo != nil && cents - Int((p.paid * 100).rounded()) > 0
+                let gone = letGoCents(p, share: cents)
+                let letGo = gone > 0
                 var line = over == 0 && p.paid >= share - 0.005 ? "Paid back \(Format.amount(p.paid))\(how)"
                     : over == 0 && !letGo ? "Paid \(Format.amount(p.paid)) of \(Format.amount(share))\(how)"
                     : "Paid \(Format.amount(p.paid))\(how)"
                 if over > 0 {
                     line += " · \(Format.amount(Double(over) / 100)) over"
                 } else if letGo {
-                    line += " · \(Format.amount(Double(cents) / 100 - p.paid)) let go"
+                    line += " · \(Format.amount(Double(gone) / 100)) let go"
                 } else if how.isEmpty, let day = p.paidOn {
                     line += " · \(Format.short(day))"
                 }
@@ -1037,7 +1058,7 @@ struct SplitSheet: View {
 
     /// S-03e (REFRESH-03): "you owe Priya $8.04", after "Adds up ✓ ·".
     private var overWords: String {
-        let over = people.map { ($0, overCents($0)) }.filter { $0.1 > 0 }
+        let over = people.map { ($0, oweCents($0)) }.filter { $0.1 > 0 }
         guard !over.isEmpty else { return "" }
         return over.map { name, c in "you owe \(name) \(Format.amount(Double(c) / 100))" }.joined(separator: " · ")
     }
@@ -1046,7 +1067,7 @@ struct SplitSheet: View {
     /// pronouns): "Priya paid $8.04 more than Priya’s share. It shows under
     /// You owe in Owed to you."
     private var overHint: String {
-        let over = people.map { ($0, overCents($0)) }.filter { $0.1 > 0 }
+        let over = people.map { ($0, oweCents($0)) }.filter { $0.1 > 0 }
         guard !over.isEmpty else { return "" }
         return over.map { name, c in "\(name) paid \(Format.amount(Double(c) / 100)) more than \(possessive(name)) share." }
             .joined(separator: " ") + " It shows under You owe in Owed to you."

@@ -440,7 +440,8 @@ struct TransactionDetailView: View {
         .sheet(item: $unlinkingPayback) { link in paybackUnlinkSheet(link) }
         .sheet(item: $unlinkingLink) { link in
             // S-34s / S-34k (SPLIT-25), then S-05t's toast with Undo.
-            UnlinkLinkSheet(link: link, charge: t.id, api: app.api, onCancel: { unlinkingLink = nil }) { title, undo in
+            // From the deposit's own page, off the purchase it paid back.
+            UnlinkLinkSheet(link: link, charge: t.repaysCharge?.id ?? t.id, api: app.api, onCancel: { unlinkingLink = nil }) { title, undo in
                 unlinkingLink = nil
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
                 Task {
@@ -1890,6 +1891,7 @@ struct TransactionDetailView: View {
                     .disabled(busy)
                 } else {
                     Button {
+                        if let link = charge.link { unlinkingLink = link; return }
                         // TEST-31: "all of it" is work's, not a person's.
                         unlinkingPayback = PaybackLink(charge: charge.id, inflow: t.id,
                                                        who: charge.person == "everyone" ? t.merchant : (charge.person ?? "They"),
@@ -1944,6 +1946,9 @@ struct TransactionDetailView: View {
     private func unlinkPaidBack() {
         if wholeSinglePart || !t.parts.isEmpty {
             unlinking = true
+        } else if let charge = t.repaysCharge, let link = charge.link {
+            // S-34kr1o: "Georgia Klev owes you $40.00 again on Corner Bistro."
+            unlinkingLink = link
         } else if let charge = t.repaysCharge {
             unlinkingPayback = PaybackLink(charge: charge.id, inflow: t.id, who: charge.person ?? "They",
                                            name: t.merchant, amount: t.amount, date: t.date)
@@ -2455,7 +2460,7 @@ struct TransactionDetailView: View {
     private var unlinkSheet: some View {
         let parts = !t.parts.isEmpty ? t.parts : (t.partOf?.parts ?? [])
         let paybacks = parts.filter { $0.kind == "payback" }
-        let back = paybacks.map(\.amount).reduce(0, +)
+        let back = paybacks.map { $0.again ?? $0.amount }.reduce(0, +)
         let person = paybacks.compactMap(\.person).first
         return VStack(spacing: 16) {
             CFSheetTitle(title: "Unlink?") { unlinking = false }

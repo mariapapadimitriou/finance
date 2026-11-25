@@ -840,6 +840,9 @@ def test_the_payback_question_says_it_first(client, pay, share, compare):
     item, tile = question(client, dep)
     assert (tile["charge"], tile["compare"]) == (cid, compare)
     assert tile["title"] == f"Corner Bistro · {KLEV}’s share"
+    # PQ-03c's toast is what marking it says (S-44s, S-44s2).
+    if " extra" in compare or " let go" in compare:
+        assert mark(client, dep, cid)["title"] == tile["toast"]
 
 
 def test_a_share_she_undid_isnt_promised_a_let_go(client):
@@ -883,6 +886,22 @@ def test_the_deposits_page_shows_its_extra(client, path):
     d = detail(client, dep)
     over = d["repays_charge"]["over"] if path == "mark" else d["parts"][0]["over"]
     assert (over["name"], over["back"], over["extra"], over["state"], over["charge"]) == (KLEV, 40.0, 15.0, "ask", cid)
+    # Bug 3, from the deposit's own Unlink.
+    if path == "mark":
+        assert "owes you $40.00 again on Corner Bistro" in d["repays_charge"]["link"]["sheet"]["line"]
+    else:
+        assert d["parts"][0]["again"] == 40.0
+
+
+@pytest.mark.parametrize("path", ["mark", "parts"])
+def test_unlinking_a_small_one_from_the_deposit(client, path):
+    cid, (dep,) = bistro(client, 19.0, people=((KLEV, 20.0),))
+    LINKS[path](client, dep, cid)
+    d = detail(client, dep)
+    if path == "mark":
+        assert "owes you $20.00 again" in d["repays_charge"]["link"]["sheet"]["line"]
+    else:
+        assert d["parts"][0]["again"] == 20.0
 
 
 def test_a_small_let_go_of_pearls_isnt_a_question(client):

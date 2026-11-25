@@ -164,17 +164,23 @@ def build(t: Transaction, transactions: list[Transaction], splits: dict | None =
             rest = round(r["owes"] - got, 2)
             name = r["name"]
             compare = f"{_money(got)} of {_whose(name)} {_money(r['owes'])}"
+            toast = f"{who} paid back {_money(got)} for {_shown(c)}"
+            # S-44s, S-44s2, S-04g2: the toast says what it settled.
             if r.get("let_go"):
                 compare = f"You let {_money(r['owes'])} go"
+                if rest < 0.005:
+                    toast = f"{name} paid back the {_money(r['owes'])} you let go"
             elif rest <= -0.005:
                 compare = f"{_money(r['owes'])} of {_money(got)} · {_money(rest)} extra"
+                toast = f"{name} paid back {_money(r['owes'])} · {_money(rest)} extra"
             elif is_small(rest, r["share"]) and not _hers(splits, r):
                 compare = f"{_money(got)} of {_money(r['owes'])} · {_money(rest)} let go"
+                toast = f"{name} paid back {_money(got)} · {_money(rest)} let go"
             elif rest >= 0.005:
                 compare += f" · {_money(rest)} still to come"
             tiles.append(_tile(c, cards, kind="split", person=name, owes=r["owes"],
                                title=f"{_shown(c)} · {_whose(name)} share",
-                               compare=compare, toast=f"{who} paid back {_money(got)} for {_shown(c)}"))
+                               compare=compare, toast=toast))
 
     # 2. The purchase the sender's message names.
     said = memo_match(t, transactions)

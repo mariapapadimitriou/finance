@@ -1347,6 +1347,8 @@ struct DepositPart: Decodable, Hashable, Identifiable {
     var small: Bool? = nil
     /// PB-41o: what of it is over the share.
     var over: Transaction.OverPayment? = nil
+    /// What they owe again once it's unlinked, when that isn't `amount`.
+    var again: Double? = nil
 
     struct Charge: Decodable, Hashable {
         let id: String
@@ -1357,7 +1359,7 @@ struct DepositPart: Decodable, Hashable, Identifiable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, kind, amount, person, category, charge, sorted, share, small, over
+        case id, kind, amount, person, category, charge, sorted, share, small, over, again
         case incomeKind = "income_kind"
         case cashIds = "cash_ids"
     }

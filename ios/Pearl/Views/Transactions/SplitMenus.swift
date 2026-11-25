@@ -1281,7 +1281,7 @@ struct PersonOptionsSheet: View {
     private var setBody: some View {
         APSheet {
             APSheetHeader(face: p.name, overline: "\(t.merchant) · split \(ways) ways", title: p.name,
-                             sub: headline, subTone: paidInFull ? Pearl.moneyIn : Pearl.muted, close: onClose)
+                             sub: headline, subTone: paidInFull && p.extra == nil ? Pearl.moneyIn : Pearl.muted, close: onClose)
             paymentsCard
             extraCard
             settledCard

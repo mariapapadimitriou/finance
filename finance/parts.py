@@ -386,6 +386,7 @@ def listed(st, deposit_id: str) -> list[dict]:
     """A deposit's parts as the detail shows them: kind, amount, and what it
     pays back or who it's for."""
     from .over_under import over_of
+    from .unlink import _again
     txns = st.all_transactions()
     by_id = {t.fingerprint: t for t in txns}
     splits, payer = st.splits(), st.payback_people()
@@ -407,6 +408,12 @@ def listed(st, deposit_id: str) -> list[dict]:
                     # S-10e: a cash part goes back with the same cash (SPLIT-03).
                     "cash_ids": d.get("cash_ids") or [],
                     "sorted": not (row is not None and row.excluded == REST) or bool(d.get("small")),
+                    # What they owe again once it's unlinked (S-34kr1o), when
+                    # that isn't what it paid: over the share, or a let go back.
+                    **({"again": again} if charge is not None and row is not None and p["kind"] == "payback"
+                       and charge.fingerprint in splits
+                       and abs((again := _again(st, charge, d.get("person"), p["amount"], txns, payer)) - p["amount"]) >= 0.005
+                       else {}),
                     # PB-41o: what of it is over the share.
                     **({"over": over} if charge is not None and row is not None and p["kind"] == "payback"
                        and (over := over_of(charge, splits.get(charge.fingerprint), row, txns, payer)) else {}),

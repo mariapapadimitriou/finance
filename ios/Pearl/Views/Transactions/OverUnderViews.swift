@@ -119,8 +119,11 @@ struct ExtraSheet: View {
         self.api = api
         self.onSaved = onSaved
         self.onClose = onClose
-        _amount = State(initialValue: SplitSheet.plain(ask.amount))
+        _amount = State(initialValue: ExtraSheet.typed(ask.amount))
     }
+
+    /// "15.00", as drawn.
+    static func typed(_ x: Double) -> String { String(format: "%.2f", x) }
 
     static let failed = "Couldn’t save that. Nothing changed. Try again."
 
@@ -183,7 +186,7 @@ struct ExtraSheet: View {
             Text("How much of it?").font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 4)
             HStack(spacing: 8) {
                 Text("$").font(Nacre.body).foregroundColor(Pearl.muted).accessibilityHidden(true)
-                TextField("", text: $amount, prompt: Text(SplitSheet.plain(ask.amount)).foregroundColor(Pearl.muted))
+                TextField("", text: $amount, prompt: Text(ExtraSheet.typed(ask.amount)).foregroundColor(Pearl.muted))
                     .font(Nacre.body).monospacedDigit().foregroundColor(Pearl.ink).tint(Pearl.action)
                     .keyboardType(.decimalPad)
                     .focused($typing)
@@ -341,9 +344,9 @@ struct OverPaidCard: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(merchant).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
                         Text("\(possessive(over.name)) share · \(Format.short(date))").font(Nacre.subheadline)
-                            .foregroundColor(Pearl.muted).lineLimit(1)
+                            .foregroundColor(Pearl.muted).fixedSize(horizontal: false, vertical: true)
                     }
-                    Spacer(minLength: 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     Text(Format.amount(over.back)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
                 }
                 .padding(.horizontal, 16).padding(.vertical, 12)

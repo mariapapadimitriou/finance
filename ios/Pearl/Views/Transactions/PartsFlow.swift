@@ -2185,6 +2185,8 @@ struct PartsSheet: View {
     /// S-11xm (THL-301): the sender credited on this deposit, "Jo overpaid"
     /// (Jo sent $60.00 and owed $30.00), the same rule: one person known.
     private var overpaidBy: String? {
+        // S-11e says "I owe it back" itself.
+        if saying != nil { return nil }
         guard let w = whole else { return who }
         var seen = Set<String>()
         let senders = (w.credited ?? []).map(\.person).filter { seen.insert($0.lowercased()).inserted }

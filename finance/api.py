@@ -641,6 +641,14 @@ def transaction_detail(txn_id: str):
                     over = over_of(charge, split, t, txns, payer)
                     if over:
                         r["repays_charge"]["over"] = over
+                    # S-34kr1o: Unlink from here says what they owe again: the
+                    # share, never what was over it, with a let go back.
+                    who = _credited(st, charge, t, txns)
+                    if who and who not in sp.SELF and not (t.raw or {}).get("part_of"):
+                        from . import unlink as ul
+                        r["repays_charge"]["link"] = ul.inflow_link(
+                            st, charge, t, who, {x.fingerprint: x for x in txns},
+                            st.payback_kinds(), st.parts())
                 if payer.get(txn_id) in sp.SELF:
                     # TEST-31 (T-41w): Unlink opens the same sheet as from the
                     # split card (S-34kr7, "Unlink? Work paying me back").
