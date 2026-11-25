@@ -280,7 +280,10 @@ def step(st, transactions: list[Transaction], today: date, txn_id: str, action: 
         if named and keeps_rule:
             st.set_override(t.merchant, category, move_rows=not exact)
             rule = True
-            if exact:
+            now = st.get_transaction(txn_id)
+            # Her own transfers stay put under a rule; this one she is answering.
+            if exact or (now is not None and now.category != category
+                         and now.category_source != "user"):
                 st.set_transaction_category(txn_id, category)
         else:
             st.set_transaction_category(txn_id, category)

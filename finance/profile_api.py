@@ -763,9 +763,12 @@ def _earlier(st, rule_id: str, category: str) -> list:
     txns = st.all_transactions()
     if kind == "merchant":
         confirmed = set(st.confirmed_categories())
-        return [t for t in txns if (t.merchant or "").strip().lower() == key
+        from .transfers import kept_from_rule, linked_accounts
+        rows = [t for t in txns if (t.merchant or "").strip().lower() == key
                 and t.category_source not in ("user", "range")
                 and t.fingerprint not in confirmed and t.category != category]
+        kept = kept_from_rule(txns, rows, category, linked_accounts(st))
+        return [t for t in rows if t.fingerprint not in kept]
     if kind == "destination":
         from .transfers import RULED, destination
         return [t for t in txns if t.category_source == RULED

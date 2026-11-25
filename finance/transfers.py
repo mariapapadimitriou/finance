@@ -91,6 +91,44 @@ def _theirs(t: Transaction) -> bool:
     return bool(getattr(t, "joint", None)) and t.joint_from == "them"
 
 
+def _plain_transfer(t: Transaction) -> bool:
+    """What the row is without any rule of hers: money moved, or not."""
+    from .categorize import categorize
+    raw = t.raw or {}
+    return categorize(t.merchant, t.description, raw.get("issuer_category", ""), None,
+                      confidence=str(raw.get("category_confidence", "") or ""))[0] == NEUTRAL
+
+
+def _ruled_spending(t: Transaction) -> bool:
+    """A transfer by its own words that a merchant rule of hers files as
+    spending ("Always Utilities for Maple Court", 2026-11-25)."""
+    from .categorize import is_spend_category
+    return (t.category_source == "merchant_override" and t.category != UNSORTED
+            and is_spend_category(t.category or "Other") and _plain_transfer(t))
+
+
+def _sure_arrival(t: Transaction) -> bool:
+    """An arrival sure enough to say a row with a spending rule was really a
+    transfer: money moved by its own words, and no e-Transfer (a friend's
+    $60 isn't the other end of her $60 bill)."""
+    from .income_bills import looks_like_etransfer
+    if t.joint_from == "them" or looks_like_etransfer(t):
+        return False
+    return t.category == NEUTRAL or _ruled_spending(t)
+
+
+def kept_from_rule(transactions: list[Transaction], rows: list[Transaction],
+                   category: str, accounts: dict | None = None) -> set[str]:
+    """Which of `rows` a merchant rule for `category` would leave alone: the
+    ends of her own transfers (2026-11-25)."""
+    from dataclasses import replace
+    ids = {t.fingerprint for t in rows if t.category_source not in ("user", "range")}
+    after = [replace(t, category=category, category_source="merchant_override")
+             if t.fingerprint in ids else t for t in transactions]
+    out = match_transfers(after, accounts=accounts)
+    return {i for i in ids if out.get(i) in (NEUTRAL, "Saved")}
+
+
 def _days(a: str, b: str) -> int:
     return abs((date.fromisoformat(a[:10]) - date.fromisoformat(b[:10])).days)
 
@@ -281,6 +319,10 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
     4. The day nets out — everything that left on a day equals everything
        that arrived in your other accounts that day.
 
+    A merchant rule of hers that files a row as spending stands, except when
+    that row is one end of a transfer between her accounts beyond doubt: one
+    to one, after everything else has had its arrival (`_sure_arrival`).
+
     Before any of that, rows she linked herself (`Transaction.transfer_link`,
     2026-11-22) are transfers, and their arrivals count as used.
 
@@ -378,6 +420,35 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
                 # list shows them as one line (2026-10-22).
                 if pairs_out is not None and not same_account:
                     pairs_out[t.fingerprint] = best[1].fingerprint
+
+    # 1 again, for rows a merchant rule files as spending (2026-11-25): a rule
+    # for a bill's name must not turn a move between her own accounts under
+    # that name into spending. Last in line, and only on a sure arrival.
+    ruled = sorted((t for t in transactions
+                    if t.amount > 0 and t.fingerprint not in out and _is_bank(t)
+                    and not others(t) and _ruled_spending(t)),
+                   key=lambda t: (t.date, t.fingerprint))
+    for t in ruled:
+        best = None
+        for other in by_amount.get(_cents(t.amount), []):
+            if (other.fingerprint in used or other.account_id == t.account_id
+                    or not near(t, other) or not _sure_arrival(other)):
+                continue
+            gap = _days(t.date, other.date)
+            if best is None or gap < best[0]:
+                best = (gap, other)
+        if best:
+            other = best[1]
+            used.add(other.fingerprint)
+            keep = (accounts or {}).get("savers") or set()
+            out[t.fingerprint] = ("Saved" if other.account_id in keep and t.account_id not in keep
+                                  else NEUTRAL)
+            if t.account_id in keep and other.account_id not in keep:
+                out[other.fingerprint] = "Saved"
+            elif other.category != NEUTRAL:
+                out[other.fingerprint] = NEUTRAL
+            if pairs_out is not None:
+                pairs_out[t.fingerprint] = other.fingerprint
 
     # 3: several outflows from one account adding up to one arrival elsewhere.
     for other in sorted(sure_in, key=lambda t: t.amount):
