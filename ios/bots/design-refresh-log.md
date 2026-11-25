@@ -1915,3 +1915,47 @@ G2-WhoPaid gains two pairs (now 8 phones, 3440 wide; G2-PB30, G2-HowMuch and G2-
 **Not reflected, and why:**
 - "Contacts are off for Pearl. Turn on" while typing: not drawn (one state per phone; it is the same line as G1-Asks T-14d).
 - The resting PP-01 keeps Someone new as the last row of its FROM PAST SPLITS card, as drawn before; the code gives it its own card, which the two new states show. Say if you want the resting state redrawn the same way.
+
+### [designBOT → engBOT] 2026-11-24 · REFRESH-14 · Boards brought in line with PR #443 (Paid back always asks who)
+**Status:** Redesigned (as built; nothing new for engBOT to build)
+**Jira:** THL-289, THL-291, THL-181, THL-301, THL-303   **Design:** canvas "Pearl redesign" › Cash flow › G2-WhoPaid (new PB-11p)
+- **PB-11 with Pearl's pick first**: G2-WhoPaid gains a pair, PB-11p "Who paid you back? Pearl's pick first: A person · On this split" (the board is now 4300 wide; G2-PB30, G2-HowMuch and G2-APaidBack moved right): the same three tiles, A person drawn `current` with "On this split" under it, as `PaidBackWhoSheet` draws the matching tile when the money is read as a named person's; The shop or Other would be the current one when it reads as a refund or work's.
+- **Nothing on the canvas said PB-11 was skipped.** No caption, board title or note mentions skipping PB-11, work's or a shop's money going straight to her purchases, or a PB-22 → MP-01 arrow (the canvas draws states, not flow arrows), so there was nothing to reword. The rule as built is recorded here instead: PB-11 is asked every time money in is marked Paid back (Needs a look / Quick sort's tile, the deposit page's tile, a purchase's finder), with Pearl's read picked first so one tap confirms it; the one skip left is a purchase marked "Waiting to be reimbursed", which goes straight to Many purchases (MP-01, G2-Many) with the purchase ticked.
+**Not reflected, and why:**
+- The shop- and Other-current variants of PB-11: not drawn (same sheet, a different tile ringed).
+
+### [designBOT → engBOT] 2026-11-24 · REFRESH-15 · Boards brought in line with PRs #445 and #446 (Paid back: nothing pre-ticked, the whole row ticks)
+**Status:** Redesigned (as built; nothing new for engBOT to build)
+**Jira:** THL-289, THL-291, THL-181, THL-301, THL-303   **Design:** canvas "Pearl redesign" › Cash flow › G2-PB30 (PB-30), G2-Many (MP-02, MP-03), G2-AMany (MP-04)
+1. **Nothing pre-ticked** (#446, `PartsFlow`): the resting states now open with no row ticked and the total at the money's start:
+   - G2-PB30, PB-30 "Likely, nothing ticked yet": LIKELY · SAM keeps its rows and order, no tick, the Change slots empty, the total "$0.00 of $86.65 · $86.65 left over" in `muted`, the button "Mark paid back" dimmed until a tick. The "Other: all of it, Change", PB-30c and "After Change: part" states are after her ticks and stand.
+   - G2-Many, MP-02 "The shop refunds several": the three Costco rows unticked, no part yet, "$0.00 of $100.00 · $100.00 left over", "Mark refunded" dimmed. MP-03 stays the mid-way state its caption names (less ticked than it sent, MP-01's page) and now says the page opens with nothing ticked.
+2. **The whole row ticks**: tick box, name, line, price and the 64 pt Change slot are one tap target (`tickRow`, `unsplitRow`, `mineRow`); the PB-30, MP-02, MP-03 and MP-04 captions say so. Change stays tappable on its own after the price of a ticked share row (G2-PB30, unchanged).
+3. **MP-04's Change after the price** (G2-AMany): on the part-paid Costco row Change now sits after $54.50, and the other rows carry the empty slot so every price lines up.
+4. **Other opens her purchases** (#445): no screen changed. The canvas has no PB-11 → MP-01 flow arrow or note to correct (it draws states; REFRESH-14 recorded the rule), so nothing to redraw: from a deposit's What was this? › Paid back › PB-11, Other opens MP-01 "What did <payer> pay back?" (G2-Many), not PP-01's people.
+**Not reflected, and why:**
+- The "came from this purchase" variant (PQ-03's tile, PB-22 Mark as paid back) with its one purchase still ticked: no board draws PB-30 opened from a purchase, so no ticked-by-origin state exists to keep; the rule is noted here.
+- The older S-09 / S-35 "What did this pay back?" list (G2-APaidBack, G2-Settle): unchanged, as #446 left it.
+
+### [designBOT → engBOT] 2026-11-24 · REFRESH-16 · Savings are not always recurring: RQ-01b "From now on?" and the transaction page's Recurring row
+**Status:** Redesigned (approved by the product owner 2026-11-24: ready to build)
+**Jira:** THL-292, THL-295, THL-297, THL-122   **Design:** canvas "Pearl redesign" v94 › Cash flow › G1-RecurringFrom (RQ-01b), G1-TxRecurring (T-03t, RS-01, RS-01a, RS-01b); G1-Recurring (RQ-01) annotated
+The product owner's report: sorting a transfer as savings made a pattern out of it when it wasn't recurring, and undoing that meant sorting it all over again. Three changes, all approved:
+1. **RQ-01 asks later** (G1-Recurring, note under the board): Pearl asks "Is this a recurring transfer?" from the **third** monthly transfer, not the second. The tiles and the "No, it isn't regular · Ask about each one" row are unchanged; a tile no longer saves a rule by itself.
+2. **RQ-01b · Every month from now on?** (G1-RecurringFrom, 4 phones: light, dark, two-so-far every two weeks, after Something I pay for → a category). The same full sheet, one screen, shown after a tile is tapped (or a category picked after Something I pay for), before anything is saved. Nothing new in the design system: `shead` with the chosen answer as its title, the `who` row, the rhythm card, a Fraunces title2 question, one muted line, Primary and the secondary `btn2`.
+   - Sheet title (`shead h2`): the chosen answer — "Into savings" / "My other account" / "Rent" / the category ("Utilities").
+   - Heading: **"Every month from now on?"** — the cadence words vary: "Every two weeks from now on?", "Every payday from now on?", "Every week from now on?".
+   - Line: **"Pearl can sort the ones to come as Into savings, too."** (the chosen answer substituted).
+   - Primary: **"Yes, every month"** (… "every two weeks" / "every payday" / "every week"): saves the rule, sorts these N and the ones to come.
+   - Secondary: **"Just these 3"** (N from the series; 2 → **"Just both"**): sorts only these N as the chosen thing, no rule.
+   - ✕ (top right): back to the tiles, nothing saved.
+   The rhythm card on the board shows the real count ("Every month since September", Sep · Oct · Nov) so "these 3" matches what she sees.
+3. **The transaction page says there is a rule, and lets her leave it** (G1-TxRecurring, 6 phones).
+   - **T-03t · Transaction: a transfer the rule sorted** (light, dark): in the **category card, directly under the category row** ("Into savings · Change"), where a purchase carries "Always for this merchant", a row with the repeat icon: **"Recurring"** / sub-line **"Every month, around the 1st"**, chevron. It shows only on a transfer a rule sorted; her own answers get no row. Options and Details are as built.
+   - **RS-01 · the Recurring sheet** (light, dark): a small Pearl sheet (`sheet`, not full), title **"Every month, around the 1st"**, ✕, the line **"Into savings · 3 so far, since September"**, then one card with two Option rows:
+     - **"Not this one"** / **"Keeps Into savings as your own answer. The rule skips it."**
+     - **"Stop the rule"** (danger, like Profile's) / **"The 3 keep their category. Pearl stops sorting new ones."** — the same as Profile › Recurring transfers › Stop treating it as recurring.
+   - **RS-01a · after Not this one**: the row is gone, toast **"Left out of the rule"** · **Undo**.
+   - **RS-01b · after Stop the rule**: the row is gone, toast **"Rule stopped"** · **Undo**.
+   No iOS alert or confirmation dialog anywhere: the sheet is the confirmation, Undo is the way back.
+**Motion note (later, not now):** the follow-up slides in from the right inside the sheet as the tiles slide out (300 ms, spring, Reduce Motion: cross-fade); the Recurring row leaves by collapsing its height (250 ms) as the toast rises; a light success haptic on Yes and on Stop the rule.
