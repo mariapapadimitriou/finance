@@ -66,14 +66,23 @@ def person_for(tag: str, people) -> str | None:
     "anastasiapapas" is the Anastasia of her splits or her joint account.
     Three letters at least, and only when it's one person: "al" could be
     anyone, and so could a handle two of her people's names fit."""
+    from .splits import _surname, surnames_fit
     tag = re.sub(r"[^a-zà-ÿ]", "", (tag or "").lower())
-    hits = {}
+    hits: list[tuple[str, str]] = []        # (first, name)
     for name in people or []:
         words = re.findall(r"[a-zà-ÿ']+", (name or "").lower())
         first = words[0] if words else ""
-        if len(first) >= 3 and tag.startswith(first):
-            hits.setdefault(first, name)
-    return next(iter(hits.values())) if len(hits) == 1 else None
+        # What the handle says after the first name has to fit the surname:
+        # "georgiaklev" isn't Georgia Pappas (2026-11-25).
+        if len(first) >= 3 and tag.startswith(first) and surnames_fit(tag[len(first):], _surname(name)):
+            hits.append((first, name))
+    if not hits or len({f for f, _ in hits}) > 1:
+        return None
+    # Georgia Klev and Georgia Pappas, and nothing in the handle to say which.
+    last = {_surname(n) for _, n in hits if _surname(n)}
+    if any(not surnames_fit(x, y) for x in last for y in last):
+        return None
+    return hits[0][1]
 
 
 def handle_matches(t: Transaction, first: str) -> bool:
