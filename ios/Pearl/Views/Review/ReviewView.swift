@@ -129,6 +129,11 @@ struct ReviewView: View {
                     asking = nil
                     Task { await send(.done(reply)) }
                 }
+            } else if let over = ask.item.over {
+                // S-21o's chip opens S-11e (REFRESH-18).
+                ReviewExtraSheet(over: over, t: ask.t, api: app.api, close: { asking = nil }) { reply in
+                    Task { await send(.done(reply)) }
+                }
             } else if ask.item.credit != nil {
                 // S-21u's chip opens S-35c: "Sam paid back $30.00 · Undo".
                 WhoSentSheet(id: ask.t.id, api: app.api) { reply in
@@ -313,10 +318,35 @@ struct ReviewView: View {
         guard ask.kind == .moneyIn else { return ask.chip }
         if ask.item.credit != nil { return "Who sent this?" }
         if ask.item.extra != nil { return "A gift?" }
+        // S-21p, S-21g (REFRESH-18): "Paid back for Corner Bistro?"
+        if let s = ask.item.split, s.unknown != true { return "Paid back for \(s.merchant)?" }
         if let q = ask.item.payback, ask.t.learnable != false || ask.item.from != nil {
             return "Paid back by \(q.who)?"
         }
         return ask.chip
+    }
+
+    /// The line under the name: its day and what Pearl knows about it.
+    static func rowMeta(_ ask: Ask) -> String {
+        let t = ask.t
+        let day = Format.relativeDay(t.date)
+        if ask.kind == .joint { return "Joint · \(day)" }
+        if let rest = ask.item.rest { return "\(day) · \(Format.amount(rest.sorted)) sorted" }
+        // S-21u: "Nov 16 · paid back Loblaws".
+        if let credit = ask.item.credit { return "\(day) · paid back \(Format.andList(credit.paidBack))" }
+        // S-21x: "Nov 16 · extra on Loblaws". S-21xm (THL-301), part of it:
+        // "Nov 16 · $30.00 extra on Loblaws", with the whole on the right.
+        if let extra = ask.item.extra {
+            return extra.isPart ? "\(day) · \(Format.amount(extra.amount)) extra on \(Format.andList(extra.paidBack))"
+                : "\(day) · extra on \(Format.andList(extra.paidBack))"
+        }
+        // S-21o (REFRESH-18): "Nov 20 · $15.00 extra".
+        if let over = ask.item.over { return "\(day) · \(Format.amount(over.amount)) extra" }
+        // S-21p "owes you $15.00", S-21g "you let $15.00 go".
+        if let s = ask.item.split, s.unknown != true {
+            return s.letGo == true ? "\(day) · you let \(Format.amount(s.owes)) go" : "\(day) · owes you \(Format.amount(s.owes))"
+        }
+        return [day, t.shareNote].compactMap { $0 }.joined(separator: " · ")
     }
 
     /// Initials, who, when, the question as a dashed chip, and the amount.
@@ -326,16 +356,7 @@ struct ReviewView: View {
             Initials(name: t.name)
             VStack(alignment: .leading, spacing: 2) {
                 Text(t.name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
-                Text(ask.kind == .joint ? "Joint · \(Format.relativeDay(t.date))"
-                     : ask.item.rest.map { "\(Format.relativeDay(t.date)) · \(Format.amount($0.sorted)) sorted" }
-                     // S-21u: "Nov 16 · paid back Loblaws".
-                     ?? ask.item.credit.map { "\(Format.relativeDay(t.date)) · paid back \(Format.andList($0.paidBack))" }
-                     // S-21x: "Nov 16 · extra on Loblaws". S-21xm (THL-301), part of it:
-                     // "Nov 16 · $30.00 extra on Loblaws", with the whole on the right.
-                     ?? ask.item.extra.map { $0.isPart
-                         ? "\(Format.relativeDay(t.date)) · \(Format.amount($0.amount)) extra on \(Format.andList($0.paidBack))"
-                         : "\(Format.relativeDay(t.date)) · extra on \(Format.andList($0.paidBack))" }
-                     ?? [Format.relativeDay(t.date), t.shareNote].compactMap { $0 }.joined(separator: " · "))
+                Text(Self.rowMeta(ask))
                     // S-21xw / S-21xm: the meta wraps to two lines rather than truncating.
                     .font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     .lineLimit(ask.item.extra != nil || ask.item.credit != nil ? 2 : 1)

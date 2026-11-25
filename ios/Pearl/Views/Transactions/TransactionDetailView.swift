@@ -337,6 +337,8 @@ struct TransactionDetailView: View {
     @State private var partsExtra: Review.Item.Extra?
 
     struct Crediting: Identifiable { let id: String }
+    /// S-11e (REFRESH-18): what the extra on someone's share is.
+    @State private var saying: ExtraAsk?
     /// S-10e: the parts sheet opened from S-33's Edit, with the parts filled in.
     @State private var editingParts = false
     /// PB-41 Change what it paid back: PB-30 again with today's ticks.
@@ -906,6 +908,10 @@ struct TransactionDetailView: View {
     /// change their share, remove them.
     private var personSheets: some View {
         OwnBody { splitSheets }
+        .modifier(ExtraSheetHost(ask: $saying, api: app.api) { saved in
+            // S-11e4: "You owe Georgia Klev $15.00", with Undo.
+            Task { await settled(saved.toast, undo: saved.undo.map { u in { try await postUndo(u); return nil } }) }
+        })
         .sheet(item: $marking) { person in
             MarkPaidSheet(t: t, person: person, api: app.api, onUndoable: { title, undo in
                 // SPLIT-19 (S-11c): Undo takes back the whole payment and its extra.
@@ -934,10 +940,10 @@ struct TransactionDetailView: View {
         .sheet(item: $lettingGo) { person in
             // S-08r → S-44c, whose Undo puts it back.
             LetGoSheet(t: t, person: person, onClose: { lettingGo = nil }) {
-                let said = try await letGo(person)
+                let reply = try await letGo(person)
                 lettingGo = nil
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
-                await settled(said, undo: { try await undoLetGo(person) })
+                await settled(reply.words, undo: undoOf(reply) ?? { try await undoLetGo(person)?.words })
             }
         }
         .sheet(item: $reminding) { person in
@@ -1841,6 +1847,8 @@ struct TransactionDetailView: View {
                                                    name: t.merchant, amount: paid, date: t.date)
                 }
             }
+        } else if let charge = t.repaysCharge, t.refundOf == nil, let over = charge.over {
+            overPaid(over, merchant: charge.merchant ?? charge.name, date: charge.date, open: charge.id)
         } else if let charge = t.repaysCharge, t.refundOf == nil {
             section("Pays back")
             // Just the purchase it paid back, opening it (product owner,
@@ -1893,6 +1901,52 @@ struct TransactionDetailView: View {
                     .disabled(busy)
                 }
             }
+        }
+    }
+
+    /// PB-41o (REFRESH-18): what paid the share, then Extra with its chip,
+    /// and Options: Change what it paid back, Unlink.
+    @ViewBuilder private func overPaid(_ over: Transaction.OverPayment, merchant: String, date: String,
+                                       open id: String) -> some View {
+        section("Paid back")
+        OverPaidCard(over: over, merchant: merchant, date: date, onOpen: { Task { await open(id) } },
+                     onSay: { saying = ExtraAsk(over: over, merchant: merchant, deposit: t) })
+            .disabled(busy)
+        section("Options")
+        APCard {
+            Button { changePaidBack() } label: {
+                row(title: "Change what it paid back", chevron: true, icon: "arrow.left.arrow.right")
+            }
+            .buttonStyle(.plain)
+            .disabled(busy)
+            APSeparator(afterFace: false)
+            Button { unlinkPaidBack() } label: { row(title: "Unlink", chevron: true, icon: "link") }
+                .buttonStyle(.plain)
+                .disabled(busy)
+        }
+    }
+
+    /// PB-30 again: in parts, with today's ticks; linked whole, What was this?
+    private func changePaidBack() {
+        if wholeSinglePart {
+            editingParts = true
+            repicking = true
+            parting = parentDeposit()
+        } else if !t.parts.isEmpty {
+            editingParts = true
+            repicking = true
+            parting = deposit(rest: false)
+        } else {
+            changeWhatItIs()
+        }
+    }
+
+    private func unlinkPaidBack() {
+        if wholeSinglePart || !t.parts.isEmpty {
+            unlinking = true
+        } else if let charge = t.repaysCharge {
+            unlinkingPayback = PaybackLink(charge: charge.id, inflow: t.id, who: charge.person ?? "They",
+                                           name: t.merchant, amount: t.amount, date: t.date)
         }
     }
 
@@ -2189,6 +2243,8 @@ struct TransactionDetailView: View {
         if wholeSinglePart {
             // Said once, by PAYS BACK and its Options (`wholeSinglePart`).
             EmptyView()
+        } else if paidBackOnly, paidParts.count == 1, let p = paidParts.first, let c = p.charge, let over = p.over {
+            overPaid(over, merchant: c.merchant, date: c.date, open: c.id)
         } else if paidBackOnly {
             paidBackParts
         } else if !parts.isEmpty {
@@ -2227,25 +2283,34 @@ struct TransactionDetailView: View {
 
     /// PB-41: a deposit that only pays back people's shares (PB-30's), all of it.
     private var paidBackOnly: Bool {
-        t.partOf == nil && !t.parts.isEmpty
-            && t.parts.allSatisfy { $0.kind == "payback" && $0.person != nil && $0.charge != nil }
+        t.partOf == nil && !paidParts.isEmpty
+            && paidParts.allSatisfy { $0.kind == "payback" && $0.person != nil && $0.charge != nil }
     }
+
+    /// Its parts without PB-41s's few cents, which are a line of their own.
+    private var paidParts: [DepositPart] { t.parts.filter { $0.small != true } }
+    private var smallExtra: Double? { t.parts.first { $0.small == true }?.amount }
 
     /// PB-41 (1395:4794, dark 1395:4922): PAID BACK · 2 PURCHASES, a row each
     /// opening PB-42; Options: Change what it paid back (PB-30 with today's
     /// ticks), Unlink both (asks first, as T-41b).
     @ViewBuilder private var paidBackParts: some View {
-        let n = t.parts.count
+        let n = paidParts.count
         // TP-04 (G2b-JointIn): "Paid back 3 of Mom’s shares".
         section(t.jointPayback.map { "Paid back \(n) of \(possessive($0.person)) share\(n == 1 ? "" : "s")" }
                 ?? "Paid back · \(n) purchase\(n == 1 ? "" : "s")")
         SolidCard {
-            ForEach(Array(t.parts.enumerated()), id: \.element.id) { index, p in
+            ForEach(Array(paidParts.enumerated()), id: \.element.id) { index, p in
                 if index > 0 { APSeparator() }
                 Button { Task { await openDepositLink(p) } } label: { paidBackRow(p) }
                     .buttonStyle(.plain)
                     .disabled(busy)
                     .accessibilityHint("How much, who, which purchase, or Unlink")
+            }
+            if let cents = smallExtra {
+                // PB-41s: "Extra", "$0.23", no chip.
+                APSeparator()
+                OverExtraRow(amount: cents, line: nil, ask: nil)
             }
         }
         section("Options")
@@ -3501,6 +3566,8 @@ struct TransactionDetailView: View {
         case .letGo: lettingGo = p
         case .changeShare: changingShare = p
         case .changeAnswer: changingAnswer = p
+        case .sayExtra: saying = ExtraAsk(charge: t.id, merchant: t.merchant, person: p)
+        case .changeExtra: saying = ExtraAsk(charge: t.id, merchant: t.merchant, person: p, again: true)
         case .view(let link): if let id = link.view?.id { Task { await open(id) } }
         case .unlink(let link): unlinkingLink = link
         // PB-42 (Paybacks & undo): S-40c's How much and Which purchase.
@@ -3510,8 +3577,10 @@ struct TransactionDetailView: View {
             // S-40d → S-44e at once; its Undo lets it go again.
             Task {
                 do {
-                    let said = try await undoLetGo(p)
-                    await settled(said ?? "\(p.name) owes you again", undo: { _ = try await letGo(p); return nil })
+                    // S-04s2 (REFRESH-18): its Undo puts the let go back as it was.
+                    let reply = try await undoLetGo(p)
+                    await settled(reply?.words ?? "\(p.name) owes you again",
+                                  undo: reply.flatMap { undoOf($0) } ?? { _ = try await letGo(p); return nil })
                 } catch {
                     showFailed("Couldn’t undo that. Nothing changed.") { choose(p, .undoLetGo) }
                 }
@@ -3568,17 +3637,24 @@ struct TransactionDetailView: View {
     }
 
     /// A split change's toast (S-44c, S-44e).
-    private struct Toasted: Decodable { let title: String?; let toast: String?; let undo: JSONValue? }
-
-    @discardableResult
-    private func letGo(_ p: Transaction.Splitting.Person) async throws -> String {
-        let reply: Toasted? = try await write("POST", "api/transactions/\(t.id)/split/let-go", ["name": p.name])
-        return reply?.toast ?? reply?.title ?? "Let go"
+    private struct Toasted: Decodable {
+        let title: String?; let toast: String?; let undo: JSONValue?
+        var words: String { toast ?? title ?? "Let go" }
     }
 
-    private func undoLetGo(_ p: Transaction.Splitting.Person) async throws -> String? {
-        let reply: Toasted? = try await write("DELETE", "api/transactions/\(t.id)/split/let-go", query: ["name": p.name])
-        return reply?.toast ?? reply?.title
+    /// The server's Undo, when it sent one.
+    private func undoOf(_ r: Toasted) -> (() async throws -> String?)? {
+        r.undo.map { u in { try await postUndo(u); return nil } }
+    }
+
+    @discardableResult
+    private func letGo(_ p: Transaction.Splitting.Person) async throws -> Toasted {
+        let reply: Toasted? = try await write("POST", "api/transactions/\(t.id)/split/let-go", ["name": p.name])
+        return reply ?? Toasted(title: nil, toast: nil, undo: nil)
+    }
+
+    private func undoLetGo(_ p: Transaction.Splitting.Person) async throws -> Toasted? {
+        try await write("DELETE", "api/transactions/\(t.id)/split/let-go", query: ["name": p.name])
     }
 
     /// S-40's Remove (handoff 1096:4498): PUT …/split without them, their

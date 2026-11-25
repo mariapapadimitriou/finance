@@ -22,6 +22,8 @@ struct PartsDeposit: Identifiable, Hashable {
     /// S-11xm (THL-301): the whole deposit, for the header ("$60.00 · Nov
     /// 16"), when `amount` is only the extra part of it.
     var whole: Double? = nil
+    /// S-11e3 (REFRESH-18): the header's "+$55.00 · e-Transfer · Nov 20".
+    var paidLine: String? = nil
 
     init(id: String, name: String, amount: Double, date: String, rest: Bool = false) {
         self.id = id
@@ -103,6 +105,13 @@ struct PartsSheet: View {
     /// e-transfer from someone she knew was work paying her back, and the
     /// page gave no way to say so).
     var onChangeWho: (() -> Void)? = nil
+    /// S-11e (REFRESH-18): saying what the extra on a share is. `.pays` is
+    /// PB-30 for that much with nothing ticked (S-11e3), `.other` S-11 v2's
+    /// tiles. Nothing is saved here: the parts go back as the pieces.
+    var saying: Saying? = nil
+    var onPieces: (([[String: Any]]) -> Void)? = nil
+    var onBack: (() -> Void)? = nil
+    enum Saying { case pays, other }
     let onSaved: (MarkReply) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -437,7 +446,8 @@ struct PartsSheet: View {
 
     private var sheet: some View {
         VStack(spacing: 0) {
-            APSheetTitleBar(title: title, short: shortTitle) {
+            APSheetTitleBar(title: title, short: shortTitle,
+                            back: saying != nil && [.whose, .kind, .loading].contains(step) ? onBack : nil) {
                 // S-11k: Close goes back to S-11 v2 with nothing added.
                 if step == .otherKind { otherAmount = nil; step = .kind; return }
                 // OTHER PURCHASES: Close on its amount leaves it as it was (all
@@ -461,7 +471,10 @@ struct PartsSheet: View {
                     // S-11xm (THL-301): the whole deposit here, "The $30.00" in the title.
                     // PB-12 / PB-13: "$15.00 · Paid back · Sam Lee".
                     // PB-30: "e-Transfer from Sam Lee" over "+$86.65 · Fri, Nov 14" in money-in green.
-                    if step == .howMuch, let u = unsplitAsk {
+                    if let line = deposit.paidLine {
+                        // S-11e3: Georgia Klev over "+$55.00 · e-Transfer · Nov 20".
+                        SayingWho(name: deposit.name, line: line)
+                    } else if step == .howMuch, let u = unsplitAsk {
                         // PB-30c: "$26.65 · Farm Boy · Nov 3" under who sent it.
                         APQuestionWho(name: deposit.name, amount: Format.amount(allOfIt ? u.amount : partValue),
                                       tone: Pearl.muted, sub: "\(u.merchant) · \(Format.short(u.date))", face: sender)
@@ -608,6 +621,7 @@ struct PartsSheet: View {
             if extra { return "\(who) sent extra" }
             return deposit.rest ? "The other \(Format.amount(deposit.amount))" : "Sort the \(Format.amount(deposit.amount))"
         case .otherKind: return "What kind of income?"
+        case .kind where saying != nil: return "What’s the extra \(Format.amount(left))?"
         case .kind:
             // S-11x: "The $30.00"; the whole of it is extra, so there's no "other".
             if whole != nil && (parts.isEmpty || leftCents == 0) {
@@ -620,6 +634,8 @@ struct PartsSheet: View {
         // refund?": the payee's tidy name (MANY-01; `shortTitle` if it won't fit).
         case .whose where manyKind == .shop: return "What did \(deposit.name) refund?"
         case .whose where manyKind == .work: return "What did \(deposit.name) pay back?"
+        // S-11e3: "What did the $15.00 pay back?"
+        case .whose where saying != nil: return "What did the \(Format.amount(deposit.amount)) pay back?"
         // PB-30: "What did Sam pay back?"
         case .whose: return "What did \(firstName(sender ?? who)) pay back?"
         // PB-13: "How much of Sam’s $60.00?"
@@ -1060,7 +1076,7 @@ struct PartsSheet: View {
             } else if !rows.isEmpty || !likelyOthers.isEmpty {
                 if typed.isEmpty, joint != nil {
                     jointLabel(first)
-                } else if typed.isEmpty, onChangeWho != nil {
+                } else if typed.isEmpty, onChangeWho != nil || saying != nil {
                     // "LIKELY · DENISE" with Change: back to Who paid you back?
                     personLabel(first)
                 } else if typed.isEmpty {
@@ -1112,7 +1128,9 @@ struct PartsSheet: View {
     /// "LIKELY · DENISE" with Change on the right (2026-11-21): back to Who
     /// paid you back?, for when it wasn't her after all (work, or the shop).
     private func personLabel(_ first: String) -> some View {
-        APSectionLabel(text: "Likely · \(first)", action: "Change") { onChangeWho?() }
+        APSectionLabel(text: "Likely · \(saying != nil ? deposit.name : first)", action: "Change") {
+            if saying != nil { changeWho() } else { onChangeWho?() }
+        }
             .accessibilityElement(children: .contain)
             .accessibilityHint("Change who paid you back")
             .padding(.top, 8)
@@ -1255,9 +1273,33 @@ struct PartsSheet: View {
                 await save(later: false)
                 if error != nil { step = .review }
             }
+        } else if saying != nil || smallLeft {
+            // S-11e: less than all of it is saved, and the rest is still asked.
+            // n-small: a few cents over the shares it paid settle by themselves.
+            Task { await save(later: true) }
         } else {
             step = .kind
         }
+    }
+
+    /// n-small (REFRESH-18): the cents left once every ticked share is paid
+    /// in full, small against all of them. The server decides.
+    private var smallLeft: Bool {
+        guard manyKind == nil, joint == nil, editing.isEmpty, unsplitPaid.isEmpty, !tickedShares.isEmpty,
+              tickedShares.count == parts.count, tickedShares.allSatisfy({ $0.unknown != true }),
+              parts.allSatisfy({ $0.kind == "payback" }) else { return false }
+        let full = tickedShares.allSatisfy { o in
+            parts.contains { $0.charge == o.charge && cents($0.amount) >= cents(o.owes) }
+        }
+        return full && Transaction.Splitting.Person.small(left, of: Double(tickedCents) / 100)
+    }
+
+    /// PP-01 from S-11e3's Change: someone else it was for.
+    private func changeWho() {
+        askWho = AskWho(rows: Array(Set(owing.compactMap(\.person))).sorted().map { name in
+            WhoPaidPicker.Row(name: name, sub: owing.filter { $0.person == name }.map(\.date).max()
+                .map { "Last split \(Format.short($0))" } ?? "")
+        })
     }
 
     /// PB-30's button: "Mark 2 paid back", or "Next: the other $13.35".
@@ -1267,7 +1309,7 @@ struct PartsSheet: View {
         let done = manyKind == .shop ? "refunded" : manyKind == .work ? "reimbursed" : "paid back"
         // TEST-46 (G2-PB30-r): nothing ticked, so nothing to go on to yet.
         if n == 0 { return "Mark \(done)" }
-        return tickedCents + unsplitCents >= leftCents
+        return tickedCents + unsplitCents >= leftCents || saying != nil
             ? "Mark \(n) \(done)"
             : "Next: the other \(Format.amount(Double(leftCents - tickedCents - unsplitCents) / 100))"
     }
@@ -2300,7 +2342,7 @@ struct PartsSheet: View {
                 // T-08k's error line: "Couldn't save that. Try again."
                 Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).padding(.horizontal, 4)
             }
-            if !parts.isEmpty || whole != nil {
+            if (!parts.isEmpty || whole != nil) && saying == nil {
                 // S-11 v2: "Sort the rest later" under Options. S-11x: "Sort it
                 // later" (the whole amount) leaves the row in Needs a look.
                 let later = whole != nil && parts.isEmpty
@@ -2626,6 +2668,11 @@ struct PartsSheet: View {
         guard part.amount > 0 else { return }
         parts.append(part)
         partAmount = ""
+        if saying == .other, next {
+            // S-11e: a tile answers at once, for as much of it as she said.
+            Task { await save(later: true) }
+            return
+        }
         if next { step = leftCents == 0 ? .review : then }
     }
 
@@ -2658,6 +2705,17 @@ struct PartsSheet: View {
             retryPick = false
             // LoadState's Try again button says it, so the line doesn't.
             loadError = "Couldn’t load who owes you."
+            return
+        }
+        if let saying = saying {
+            // S-11e3: PB-30 for who sent it, nothing ticked. Something else…: the tiles.
+            if saying == .pays {
+                if sender == nil { forPerson = person }
+                step = .whose
+            } else {
+                allTiles = true
+                step = .kind
+            }
             return
         }
         if whole != nil {
@@ -2800,6 +2858,11 @@ struct PartsSheet: View {
         if let held = heldSplit, parts.contains(where: { $0.held }) {
             // S-12c (SPLIT-07): the split and the link in one request.
             body["split"] = held.body.merging(["charge": held.charge]) { _, new in new }
+        }
+        if let onPieces = onPieces {
+            // S-11e: what it was, saved by the sheet it came from.
+            onPieces(parts.map(\.body))
+            return
         }
         if whole != nil, let onHeld = onHeld {
             // S-11x on a Quick sort card: "A gift?"; Yes sends this, Skip drops it.

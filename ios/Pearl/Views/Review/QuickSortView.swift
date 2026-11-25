@@ -254,6 +254,8 @@ struct QuickSortView: View {
                     asking = nil
                     Task { await answered(ask, .done(reply)) }
                 }
+            } else if ask.item.over != nil {
+                OwnBody { extraSheet(ask) }
             } else if ask.item.credit != nil {
                 // S-21u: Yes/Skip can't say who, so the card opens S-35c. The
                 // tick is held for the card as "Paid back by Sam?"; Yes saves
@@ -474,6 +476,16 @@ struct QuickSortView: View {
                     .accessibilityHint(drafts[ask.id]?.split != nil ? "Opens the page to change it." : "")
                     .accessibilityIdentifier("quick-sort-card")
                     .id(ask.id)
+            }
+        }
+    }
+
+    /// S-21o (REFRESH-18): Yes/Skip can't say what the extra was, so the
+    /// card opens S-11e, which saves it there, as S-28's sheet does.
+    @ViewBuilder private func extraSheet(_ ask: Ask) -> some View {
+        if let over = ask.item.over {
+            ReviewExtraSheet(over: over, t: ask.t, api: app.api, close: { asking = nil }) { reply in
+                Task { await answered(ask, .done(reply)) }
             }
         }
     }

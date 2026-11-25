@@ -518,6 +518,7 @@ struct APSheetHeader: View {
 struct APSheetTitleBar: View {
     let title: String
     var short: String? = nil
+    var back: (() -> Void)? = nil
     let close: () -> Void
 
     var body: some View {
@@ -539,6 +540,7 @@ struct APSheetTitleBar: View {
             .accessibilityLabel(title)
             .accessibilityAddTraits(.isHeader)
             HStack {
+                if let back = back { APGlassButton(symbol: "chevron.left", label: "Back", action: back) }
                 Spacer()
                 APGlassButton(action: close)
             }
@@ -1106,6 +1108,9 @@ struct PearlToast: View {
 /// sheet can open (handoff note 1096:4498).
 enum PersonChoice {
     case markPaid, remind, letGo, undoLetGo, changeShare, remove
+    /// S-11e (REFRESH-18): what the extra is, from the chip or the options;
+    /// `changeExtra` takes back what was said first (S-40e2).
+    case sayExtra, changeExtra
     /// S-48e (TEST-18b): change what she answered for a payer.
     case changeAnswer
     case view(Transaction.LinkInfo), unlink(Transaction.LinkInfo)
@@ -1192,7 +1197,7 @@ struct PersonOptionsSheet: View {
     var onOpen: (() -> Void)? = nil
 
     private var links: [Transaction.LinkInfo] { p.links ?? [] }
-    private var letGoAmount: Double { max(0, (p.letGo?.was ?? 0) - p.paid) }
+    private var letGoAmount: Double { p.letGoLeft }
     private var ways: Int { split.people.count + (split.you >= 0.005 ? 1 : 0) }
 
     var body: some View {
@@ -1277,14 +1282,12 @@ struct PersonOptionsSheet: View {
         APSheet {
             APSheetHeader(face: p.name, overline: "\(t.merchant) · split \(ways) ways", title: p.name,
                              sub: headline, subTone: paidInFull ? Pearl.moneyIn : Pearl.muted, close: onClose)
-            if answerExtra != nil {
-                settledCard
-            } else {
-                paymentsCard
-                stateCard
-                payBackCard
-                changeSplitCard
-            }
+            paymentsCard
+            extraCard
+            settledCard
+            stateCard
+            payBackCard
+            changeSplitCard
             openPurchase
         }
         .sheet(item: $payment, onDismiss: {
@@ -1303,10 +1306,9 @@ struct PersonOptionsSheet: View {
     /// G2-APersonStates (S-40c, S-40c2; Rethought, approved): PAID WITH /
     /// PAID SO FAR, every payment one row in one card; a tap opens its options.
     @ViewBuilder private var paymentsCard: some View {
-        // TEST-46 (G2-Person S-40a): while they still owe, the payments sit in
-        // the PAID SO FAR card with Mark the rest paid back (stateCard).
-        if !links.isEmpty && !(p.owes >= 0.005 && p.letGo == nil) {
-            APSheetLabel(text: paidInFull ? "Paid with" : "Paid so far")
+        // S-40b2 (REFRESH-18): the payments are a card of their own.
+        if !links.isEmpty {
+            APSheetLabel(text: p.settledInFull ? "Paid with" : "Paid so far")
             APOptionCard {
                 ForEach(Array(links.enumerated()), id: \.element.id) { i, link in
                     if i > 0 { APSeparator() }
@@ -1320,6 +1322,9 @@ struct PersonOptionsSheet: View {
     @ViewBuilder private var stateCard: some View {
         if p.letGo != nil {
             APOptionCard {
+                // S-40d2, S-40s (REFRESH-18): a payment takes the let go back by that much.
+                APOptionRow(symbol: "arrow.uturn.backward", title: "Add another payment") { onChoose(.markPaid) }
+                APSeparator()
                 APOptionRow(symbol: "arrow.triangle.2.circlepath", title: "Undo let it go",
                                sub: "\(p.name) owes you \(Format.amount(letGoAmount)) again", prominent: true) {
                     onChoose(.undoLetGo)
@@ -1330,25 +1335,44 @@ struct PersonOptionsSheet: View {
             // REFRESH-03 (S-40a, S-40b): subtitles that only described the
             // row are gone; VoiceOver keeps them as hints. The one that
             // costs money ("becomes your spending") stays.
-            // G2-Person S-40a (TEST-46): PAID SO FAR is one card, each payment
-            // then Mark the rest paid back, Remind and Let the rest go.
-            if !links.isEmpty { APSheetLabel(text: "Paid so far") }
+            // S-40b2 (REFRESH-18): Add another payment (was Mark the rest paid
+            // back), Let the $15.00 go, Remind.
             APOptionCard {
-                ForEach(links) { link in
-                    paymentRow(link)
-                    APSeparator()
-                }
-                APOptionRow(symbol: "arrow.uturn.backward", title: part ? "Mark the rest paid back" : "Mark paid back",
+                APOptionRow(symbol: "arrow.uturn.backward", title: part ? "Add another payment" : "Mark paid back",
                                prominent: true) { onChoose(.markPaid) }
                     .accessibilityHint("By bank, cash or another app")
                 APSeparator()
+                if part { letGoRow(part); APSeparator() }
                 APOptionRow(symbol: "pencil.line", title: "Remind \(p.name)") { onChoose(.remind) }
                     .accessibilityHint(part ? "Copies a message for the \(Format.amount(p.owes)) left"
                                             : "Copies a message for you to send")
-                APSeparator()
-                // G2-Person: the title alone; what it costs is the hint.
-                APOptionRow(symbol: "chevron.right", title: part ? "Let the rest go" : "Let it go") { onChoose(.letGo) }
-                    .accessibilityHint("The \(Format.amount(p.owes)) becomes your spending")
+                if !part { APSeparator(); letGoRow(part) }
+            }
+        }
+    }
+
+    /// G2-Person: the title alone; what it costs is the hint.
+    private func letGoRow(_ part: Bool) -> some View {
+        APOptionRow(symbol: part ? "arrow.uturn.forward" : "chevron.right",
+                    title: part ? "Let the \(Format.amount(p.owes)) go" : "Let it go") { onChoose(.letGo) }
+            .accessibilityHint("The \(Format.amount(p.owes)) becomes your spending")
+    }
+
+    /// S-40e "What’s the extra $15.00?", S-40e2 "Change what the extra is"
+    /// over "You owe it back", S-40s2 "What’s the extra $0.23?".
+    @ViewBuilder private var extraCard: some View {
+        if let extra = p.extra {
+            APOptionCard {
+                if extra.asks || extra.small {
+                    APOptionRow(symbol: "questionmark.circle", title: "What’s the extra \(Format.amount(extra.amount))?",
+                                prominent: extra.asks) { onChoose(.sayExtra) }
+                    if extra.asks, extra.line != nil { APSeparator() }
+                }
+                if !extra.small, let line = extra.line {
+                    APOptionRow(symbol: "arrow.left.arrow.right", title: "Change what the extra is",
+                                sub: extra.owe >= 0.005 && (extra.moved ?? 0) < 0.005 && !extra.asks ? "You owe it back" : line,
+                                prominent: true) { onChoose(.changeExtra) }
+                }
             }
         }
     }
@@ -1356,7 +1380,7 @@ struct PersonOptionsSheet: View {
     /// PB-42 note (1397:4698): S-40c keeps How much and Which purchase, each
     /// opening PB-42 on that step.
     @ViewBuilder private var payBackCard: some View {
-        if paidInFull, links.count == 1, let link = links.first, TransactionDetailView.personPayback(link) {
+        if paidInFull, p.extra == nil, links.count == 1, let link = links.first, TransactionDetailView.personPayback(link) {
             APOptionCard {
                 APOptionRow(symbol: "target", title: "How much", sub: "All of it · \(Format.amount(link.amount))") {
                     onChoose(.howMuch(link))
@@ -1388,28 +1412,17 @@ struct PersonOptionsSheet: View {
         }
     }
 
-    /// G2-BOptions S-48e: after settling with an extra, one card: Change what
-    /// the extra $6.67 is (reopens the question), View the payment, Unlink….
+    /// G2-BOptions S-48e: a gift said on Settle up before REFRESH-18 stored
+    /// what the extra was: Change what the extra $6.67 is reopens the
+    /// question. One said since is `extraCard`'s.
     @ViewBuilder private var settledCard: some View {
-        if let extra = answerExtra {
+        if p.extra == nil, let gift = p.gift, gift >= 0.005 {
             APOptionCard {
-                APOptionRow(symbol: "arrow.triangle.2.circlepath", title: "Change what the extra \(Format.amount(extra)) is",
+                APOptionRow(symbol: "arrow.triangle.2.circlepath", title: "Change what the extra \(Format.amount(gift)) is",
                                sub: "Reopens the question") {
                     onChoose(.changeAnswer)
                 }
-                .accessibilityHint((p.gift ?? 0) >= 0.005 ? "Now a gift" : "Now you owe \(p.name)")
-                ForEach(links) { link in
-                    if link.view != nil {
-                        APSeparator()
-                        APOptionRow(symbol: "eye", title: links.count == 1 ? "View the payment" : "View \(Format.amount(link.amount))") {
-                            onChoose(.view(link))
-                        }
-                    }
-                    APSeparator()
-                    APOptionRow(symbol: "link", title: links.count == 1 ? "Unlink…" : "Unlink \(Format.amount(link.amount))…") {
-                        onChoose(.unlink(link))
-                    }
-                }
+                .accessibilityHint("Now a gift")
             }
         }
     }
@@ -1428,24 +1441,31 @@ struct PersonOptionsSheet: View {
 
     private var paidInFull: Bool { p.owes < 0.005 && p.letGo == nil && p.paid >= 0.005 }
 
-    /// S-48e: the extra a payer sent, whether she owes it back or it's a gift.
-    private var answerExtra: Double? {
-        let extra = (p.over ?? 0) + (p.gift ?? 0)
-        return extra >= 0.005 ? extra : nil
-    }
-
     /// REDESIGN-10: "Owes you $30.00", "Paid $10.00 · owes $20.00",
     /// "✓ Paid back in full · Nov 16", "You let $30.00 go · Nov 20".
     private var headline: String {
-        if let gone = p.letGo { return "You let \(Format.amount(letGoAmount)) go · \(Format.short(gone.day))" }
+        if let gone = p.letGo {
+            // S-40d2, S-40s: "Paid $25.00 · $15.00 let go Nov 22".
+            return p.paid >= 0.005
+                ? "Paid \(Format.amount(p.paid)) · \(Format.amount(letGoAmount)) let go \(Format.short(gone.day))"
+                : "You let \(Format.amount(letGoAmount)) go · \(Format.short(gone.day))"
+        }
         if p.owes >= 0.005 {
             return p.paid >= 0.005
-                ? "Paid \(Format.amount(p.paid)) · owes \(Format.amount(p.owes))"
+                ? "Paid \(Format.amount(p.paid)) · \(Format.amount(p.owes)) left"
                 : "Owes you \(Format.amount(p.owes))"
         }
-        // S-48e: "Paid $40.00 · you owe Priya $6.67".
-        if let over = p.over, over >= 0.005 {
-            return "Paid \(Format.amount(p.paid)) · you owe \(p.name) \(Format.amount(over))"
+        // S-40e "Paid $55.00 · $15.00 extra", S-40e2 "Paid $55.00 · you owe
+        // $15.00 back". What went elsewhere is said under the payments.
+        if let extra = p.extra {
+            let paid = p.paid + (extra.moved ?? 0)
+            if extra.asks || extra.small {
+                return "Paid \(Format.amount(paid)) · \(Format.amount(extra.amount)) extra"
+            }
+            if extra.owe >= 0.005, (extra.moved ?? 0) < 0.005 {
+                return "Paid \(Format.amount(paid)) · you owe \(Format.amount(extra.owe)) back"
+            }
+            if let line = extra.line { return "Paid \(Format.amount(paid)) · \(line)" }
         }
         if let gift = p.gift, gift >= 0.005 {
             return "Paid \(Format.amount(p.paid)) · \(Format.amount(gift)) a gift"
