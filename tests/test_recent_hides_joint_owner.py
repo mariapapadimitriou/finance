@@ -28,3 +28,4 @@ def test_not_from_contacts_and_not_typed():
     assert "if !q.isEmpty, refusal == nil," in who
     assert "part is already off." in between("private var refusal", "private func addTyped")
     assert "refusal == nil else { return }" in between("private func addTyped()", "private func remove")
+    assert ".disabled(step == 0 ? refusal != nil ||" in between("private var footer: some View", "private func save()")

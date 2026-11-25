@@ -1228,7 +1228,7 @@ struct SplitSheet: View {
                 else { Task { await save() } }
             }
             .buttonStyle(APPrimaryButtonStyle(busy: busy))
-            .disabled(step == 0 ? people.isEmpty && typed.trimmingCharacters(in: .whitespaces).isEmpty
+            .disabled(step == 0 ? refusal != nil || people.isEmpty && typed.trimmingCharacters(in: .whitespaces).isEmpty
                       : mode == "unknown" ? (people.isEmpty || busy)
                       : (gapCents < 0 || blocksShort || busy))
             .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
