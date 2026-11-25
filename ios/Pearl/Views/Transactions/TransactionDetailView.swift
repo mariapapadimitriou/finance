@@ -612,7 +612,7 @@ struct TransactionDetailView: View {
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 0) {
                 guessActions
-                // S-01jr (G2b-Purchase) and TP-01 (G2b-JointIn): the page's one Primary.
+                // TP-01 (G2b-JointIn): the page's one Primary.
                 OwnBody { pagePrimary }
             }
         }
@@ -1255,14 +1255,14 @@ struct TransactionDetailView: View {
     }
 
     /// S-01jr: a joint purchase not split yet, sorted: the share bar in place
-    /// of Options' Whose was it?, and Split my part as the page's Primary.
+    /// of Options' Whose was it?. Split my part is in Options, where Split with
+    /// others is on any purchase (product owner, 2026-11-25; was the Primary).
     private var showsShareBar: Bool {
         jointCharge && t.splitting == nil && t.refundOf == nil && guessName == nil && !t.asks
             && t.parts.isEmpty && !jointAsks
     }
 
-    /// S-01jr "Split my part" / S-01jr2 "Split it with friends"; TP-01
-    /// "Mom paid me back" over the quiet "This isn’t a transfer".
+    /// TP-01 "Mom paid me back" over the quiet "This isn’t a transfer".
     @ViewBuilder private var pagePrimary: some View {
         if guessName == nil {
             if let transfer = t.transfer, guessing == nil, let joint = transfer.joint, t.inflow,
@@ -1280,11 +1280,6 @@ struct TransactionDetailView: View {
             } else if let transfer = t.transfer, guessing == nil, mineOnlyIn(transfer) {
                 // TP-05 (G2b-JointIn, rethought): the one quiet link.
                 notATransferLink
-                    .padding(.horizontal, 16).padding(.bottom, 8)
-            } else if showsShareBar && canSplitJoint && t.splitBase >= 0.005 {
-                Button(t.splitsMyPart ? "Split my part" : "Split it with friends") { splitting = true }
-                    .buttonStyle(APPrimaryButtonStyle(busy: busy))
-                    .disabled(busy)
                     .padding(.horizontal, 16).padding(.bottom, 8)
             }
         }
@@ -2166,8 +2161,7 @@ struct TransactionDetailView: View {
         let none = t.splitBase < 0.005
         return Button { splitting = true } label: {
             row(title: t.splitsMyPart ? "Split my part" : "Split with others",
-                sub: none ? "None of it is yours to split."
-                    : t.splitsMyPart ? nil : "Split it with friends",
+                sub: none ? "None of it is yours to split." : nil,
                 chevron: !none, icon: "person.2")
                 .opacity(none ? 0.45 : 1)
         }
@@ -2584,9 +2578,11 @@ struct TransactionDetailView: View {
         let incomeAlways: String? = nil
         // T-03r: on a sorted row Always is in the category card instead.
         let offersNewOnes = self.offersNewOnes && !alwaysInCategoryCard
-        // S-01jr (G2b-Purchase): the share bar and the Primary take Whose was
-        // it? and Split my part out of Options.
+        // S-01jr (G2b-Purchase): the share bar takes Whose was it? out of
+        // Options; Split my part stays, in Split with others' place.
         let jointCharge = self.jointCharge && !showsShareBar
+        let splitsJoint = showsShareBar && canSplitJoint
+        let canSplit = self.canSplit || splitsJoint
         // Mark as paid back from the purchase (product owner, 2026-11-22):
         // the finder that was only on a split's own row (PB-20).
         let canFindPayback = !t.inflow && t.transfer == nil && t.partOf == nil && t.excluded.isEmpty
@@ -2620,7 +2616,9 @@ struct TransactionDetailView: View {
                 }
                 // No Split into parts on money in (2026-11-09): a payback picks
                 // everything it paid back on Who paid you back?.
-                if canSplit {
+                if splitsJoint {
+                    jointSplitRow
+                } else if canSplit {
                     Button { splitting = true } label: {
                         row(title: "Split with others", chevron: true, icon: "person.2")
                     }
