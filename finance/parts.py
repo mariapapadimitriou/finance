@@ -151,11 +151,35 @@ def _clean(st, deposit: Transaction, parts: list, later: bool) -> list[dict]:
     given = sum(_cents(p["amount"]) for p in out)
     if given > whole:
         raise Problem(f"The parts add up to {_money((given - whole) / 100)} more than came in.")
-    if given < whole and not later:
-        raise Problem(f"{_money((whole - given) / 100)} left to sort.")
     if given < whole:
-        out.append({"kind": "rest", "amount": (whole - given) / 100, "detail": {}})
+        rest = (whole - given) / 100
+        # PB-41s (REFRESH-18): a few cents over several shares, all of them
+        # covered, is a quiet line on the deposit and counts for nothing.
+        small = _small_over(st, out, rest, by_id)
+        if not later and not small:
+            raise Problem(f"{_money(rest)} left to sort.")
+        out.append({"kind": "rest", "amount": rest, "detail": {"small": True} if small else {}})
     return out
+
+
+def _small_over(st, parts: list[dict], rest: float, by_id: dict) -> bool:
+    from . import over_under as ou
+    from .splits import UNSURE, people_status, pick
+    if len(parts) < 2 or any(p["kind"] != "payback" for p in parts):
+        return False
+    splits, payer, total = st.splits(), st.payback_people(), 0.0
+    for p in parts:
+        charge = by_id[p["detail"]["charge"]]
+        split = splits.get(charge.fingerprint)
+        if not split or split.get("mode") == UNSURE:
+            return False
+        name = pick([q["name"] for q in split["people"]], p["detail"].get("person") or "")
+        s = next((q for q in people_status(charge, split, list(by_id.values()), payer) if q["name"] == name), None)
+        if s is None or _cents(p["amount"]) < _cents(s["owes"]):
+            return False
+        person = next(q for q in split["people"] if q["name"] == name)
+        total = round(total + ou.whole_share(person, ou.factor_of(charge)), 2)
+    return ou.is_small(rest, total)
 
 
 def _category(kind: str, detail: dict, deposit: Transaction, by_id: dict) -> str:
@@ -221,7 +245,8 @@ def apply(st, deposit: Transaction, parts: list, later: bool = False, replace: b
             source="part", seq=SEQ + pos + (deposit.seq or 0) * MAX_PARTS,
             raw={"part_of": deposit.fingerprint, "part_kind": p["kind"],
                  "account_type": raw.get("account_type"), "counterparty": raw.get("counterparty"),
-                 **({"part_rest": True} if p["kind"] == "rest" else {})})
+                 **({"part_rest": True} if p["kind"] == "rest" else {}),
+                 **({"part_small": True} if p["detail"].get("small") else {})})
         rows.append(child)
         stored.append({"part_id": child.fingerprint, "kind": p["kind"], "amount": p["amount"],
                        "detail": p["detail"]})
@@ -258,8 +283,8 @@ def apply(st, deposit: Transaction, parts: list, later: bool = False, replace: b
             st.exclude(cid, NOT_MINE)
     st.exclude(deposit.fingerprint, SPLIT)
     st.set_parts(deposit.fingerprint, stored)
-    rest = next((p["amount"] for p in stored if p["kind"] == "rest"), 0.0)
-    n = len(stored) - (1 if rest else 0)
+    rest = next((p["amount"] for p in stored if p["kind"] == "rest" and not p["detail"].get("small")), 0.0)
+    n = sum(1 for p in stored if p["kind"] != "rest")
     title = (f"Sorted {n} part{'' if n == 1 else 's'}. {_money(rest)} left to sort."
              if rest else f"Sorted into {n} part{'' if n == 1 else 's'}.")
     out = {"parts": listed(st, deposit.fingerprint), "rest": rest, "title": title}
@@ -360,8 +385,10 @@ def undo(st, deposit_id: str) -> int:
 def listed(st, deposit_id: str) -> list[dict]:
     """A deposit's parts as the detail shows them: kind, amount, and what it
     pays back or who it's for."""
-    by_id = {t.fingerprint: t for t in st.all_transactions()}
-    splits = st.splits()
+    from .over_under import over_of
+    txns = st.all_transactions()
+    by_id = {t.fingerprint: t for t in txns}
+    splits, payer = st.splits(), st.payback_people()
     out = []
     for p in st.parts().get(deposit_id) or []:
         d = p["detail"]
@@ -379,7 +406,11 @@ def listed(st, deposit_id: str) -> list[dict]:
                                 "category": charge.category} if charge else None),
                     # S-10e: a cash part goes back with the same cash (SPLIT-03).
                     "cash_ids": d.get("cash_ids") or [],
-                    "sorted": not (row is not None and row.excluded == REST),
+                    "sorted": not (row is not None and row.excluded == REST) or bool(d.get("small")),
+                    # PB-41o: what of it is over the share.
+                    **({"over": over} if charge is not None and row is not None and p["kind"] == "payback"
+                       and (over := over_of(charge, splits.get(charge.fingerprint), row, txns, payer)) else {}),
+                    **({"small": True} if d.get("small") else {}),
                     "share": round(float(share), 2) if share is not None else None})
     return out
 
@@ -389,7 +420,7 @@ def rest_questions(st, transactions: list[Transaction]) -> list[dict]:
     by_id = {t.fingerprint: t for t in transactions}
     out = []
     for t in transactions:
-        if not (t.raw or {}).get("part_rest") or t.excluded != REST:
+        if not (t.raw or {}).get("part_rest") or t.excluded != REST or (t.raw or {}).get("part_small"):
             continue
         parent = by_id.get((t.raw or {}).get("part_of") or "")
         whole = -parent.amount if parent else -t.amount
@@ -417,9 +448,12 @@ def owed(st, transactions: list[Transaction], today: date) -> dict:
         if charge is None or charge.excluded:
             continue
         for p in people_status(charge, split, transactions, payer):
-            if p.get("over", 0.0) >= 0.005:
+            # REFRESH-18: only what she said she owes back (or what was over
+            # before Pearl asked). What's still a question isn't owed.
+            back_owed = (p.get("extra") or {}).get("owe", 0.0)
+            if back_owed >= 0.005:
                 over.append((p["name"], {"charge_id": cid, "merchant": charge.merchant,
-                                         "date": charge.date[:10], "amount": p["over"], "split": True}))
+                                         "date": charge.date[:10], "amount": back_owed, "split": True}))
             if p["owes"] < 0.005:
                 continue
             key = person_key(p["name"], list(owes))
@@ -444,14 +478,18 @@ def owed(st, transactions: list[Transaction], today: date) -> dict:
         row["total"] = round(row["total"] + item["amount"], 2)
         row["items"].append(item)
     month = today.strftime("%Y-%m")
+    from .over_under import over_of
     back = []
     for t in transactions:
         if not t.repays or t.amount >= 0 or not t.date.startswith(month):
             continue
         charge = by_id.get(t.repays)
+        # REFRESH-18 (S-14o): what paid the share back, not what was over it.
+        extra = sum(o["extra"] for c in t.repays_all if c in by_id
+                    and (o := over_of(by_id[c], splits.get(c), t, transactions, payer)))
         back.append({"name": payer.get(t.fingerprint) or t.party or t.merchant,
                      "merchant": charge.merchant if charge else "",
-                     "date": t.date[:10], "amount": round(t.paid_part, 2)})
+                     "date": t.date[:10], "amount": round(t.paid_part - extra, 2)})
     from .splits import payments
     dates = {t.fingerprint: t.date[:10] for t in transactions if (t.raw or {}).get("part_of")}
     merchants = {cid: by_id[cid].merchant for cid in splits if cid in by_id}

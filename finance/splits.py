@@ -564,6 +564,14 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
                                       if c.get("via") == "app" and c.get("app")), None),
                     "shared": shared.get(p["name"], []),
                     "let_go": p.get("let_go")})
+        # REFRESH-18: what they paid over, and what she has said of it.
+        from .over_under import extra_of
+        extra = extra_of(p, factor, out[-1]["paid"], out[-1]["over"])
+        if extra:
+            out[-1]["extra"] = extra
+        if (p.get("extra") or {}).get("hers"):
+            # She undid a small let go here: Pearl doesn't settle it again.
+            out[-1]["hers"] = True
     return out
 
 
@@ -785,7 +793,47 @@ def suggest(inflow: Transaction, transactions: list[Transaction], splits: dict[s
         gap = (when - bought_on(r["charge"])).days
         if -EARLY_DAYS <= gap <= MATCH_DAYS and r["still"] >= 0.005 and from_person(inflow, r["name"]):
             return unsure_brief(r)
-    return None if best is None else brief(best[1], exact=False)
+    if best is not None:
+        return brief(best[1], exact=False)
+    # REFRESH-18 (S-21g, T-99g): then a share she let go of, asked about and
+    # never done for her: "You let $15.00 go on Corner Bistro."
+    gone = let_go_rows(inflow, transactions, splits, payer)
+    if gone and abs(gone[0]["owes"] - got) <= MATCH_WITHIN + 0.005 and 0 <= _days_after(inflow, gone[0]) + EARLY_DAYS \
+            and _days_after(inflow, gone[0]) <= MATCH_DAYS:
+        return brief(gone[0], exact=abs(gone[0]["owes"] - got) < 0.005)
+    return None
+
+
+def _days_after(inflow: Transaction, r: dict) -> int:
+    return (date.fromisoformat(inflow.date[:10]) - bought_on(r["charge"])).days
+
+
+def let_go_rows(inflow: Transaction, transactions: list[Transaction], splits: dict[str, dict],
+                payer: dict[str, str]) -> list[dict]:
+    """REFRESH-18: the sender's shares she let the rest of go of, closest to
+    this money first (`owes` is what was let go). Never a small difference
+    Pearl settled, and never one with something still owed."""
+    from .over_under import factor_of, let_go_left, whole_share
+    by_id = {t.fingerprint: t for t in transactions}
+    out = []
+    for cid, split in splits.items():
+        charge = by_id.get(cid)
+        if charge is None or charge.excluded or not split.get("watch", True) or not is_open(split) \
+                or split.get("mode") == UNSURE:
+            continue
+        factor = factor_of(charge)
+        for p in split["people"]:
+            left = let_go_left(p, factor)
+            if left < 0.005 or (p.get("let_go") or {}).get("auto") or not from_person(inflow, p["name"]):
+                continue
+            s = next(q for q in people_status(charge, split, transactions, payer) if q["name"] == p["name"])
+            if s["owes"] >= 0.005 or s["over"] >= 0.005:
+                continue
+            out.append({"charge": charge, "name": p["name"], "owes": left, "amount": whole_share(p, factor),
+                        "let_go": True})
+    got = -inflow.amount
+    out.sort(key=lambda r: (abs(r["owes"] - got), abs(_days_after(inflow, r))))
+    return out
 
 
 def for_inflow(inflow: Transaction, transactions: list[Transaction], splits: dict[str, dict],
@@ -823,7 +871,7 @@ def brief(r: dict, exact: bool = False) -> dict:
     c = r["charge"]
     return {"charge_id": c.fingerprint, "merchant": c.merchant, "date": c.date[:10],
             "amount": round(c.amount, 2), "name": r["name"], "owes": r["owes"],
-            "share": r["amount"], "exact": exact}
+            "share": r["amount"], "exact": exact, **({"let_go": True} if r.get("let_go") else {})}
 
 
 # ── A payback that makes the split (THL-260, 2026-10-24) ─────────────────

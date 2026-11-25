@@ -108,13 +108,14 @@ class TestEditAfterPaying:
         split(client, i["LOBLAWS"], mode="even", people=[{"name": "Sam"}, {"name": "Priya"}])
         client.post(f"/api/transactions/{i['LOBLAWS']}/split/cash", json={"name": "Sam", "amount": 20, "day": day(2)})
         client.post(f"/api/transactions/{i['LOBLAWS']}/split/let-go", json={"name": "Sam"})
-        # Raised to $30: still $20 paid, and $10 let go.
+        # Raised to $30: the $8.04 she let go stays $8.04, and the other $1.96
+        # they owe (REFRESH-18: a let go never grows unsaid).
         r = split(client, i["LOBLAWS"], mode="amount", you=26.08,
                   people=[{"name": "Sam", "amount": 30}, {"name": "Priya", "amount": 28.04}])
         assert r.status_code == 200, r.get_json()
         sam = people(client, i["LOBLAWS"])["Sam"]
-        assert sam["let_go"]["was"] == 30 and sam["paid"] == 20 and sam["owes"] == 0
-        assert detail(client, i["LOBLAWS"])["splitting"]["you"] == round(84.12 - 20 - 28.04, 2)
+        assert sam["let_go"]["was"] == 30 and sam["paid"] == 20 and sam["owes"] == 1.96
+        assert detail(client, i["LOBLAWS"])["splitting"]["you"] == round(84.12 - 21.96 - 28.04, 2)
         # Lowered to $15: nothing let go, and $5 overpaid.
         split(client, i["LOBLAWS"], mode="amount", you=41.08,
               people=[{"name": "Sam", "amount": 15}, {"name": "Priya", "amount": 28.04}])

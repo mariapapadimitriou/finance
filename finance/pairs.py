@@ -96,8 +96,13 @@ def pair_for(item: dict, t: Transaction, txns: list[Transaction], outs: dict[str
     if guess.get("action") == "split" and split and split.get("exact"):
         half = abs(split["amount"] / 2 - got) < 0.01
         name = split["name"]
-        return {"kind": "split", "question": f"{'Half' if half else f'{_money(got)}'} of {split['merchant']}?",
-                "evidence": f"{name} owes you exactly {_money(got)} for {split['merchant']}, {_on(split['date'])}.",
+        # T-99p, T-99g (REFRESH-18): a second payment, or one after a let go.
+        second = split.get("let_go") or abs((split.get("share") or 0.0) - split["owes"]) >= 0.005
+        return {"kind": "split", "question": (f"{name} paying you back for {split['merchant']}?" if second else
+                                              f"{'Half' if half else f'{_money(got)}'} of {split['merchant']}?"),
+                "evidence": (f"You let ${got:,.2f} go on {split['merchant']}." if split.get("let_go") else
+                             f"{name} owes you ${got:,.2f} for {split['merchant']}." if second else
+                             f"{name} owes you exactly {_money(got)} for {split['merchant']}, {_on(split['date'])}."),
                 "line": f"Yes takes {_money(got)} off {split['merchant']}.",
                 "steps": [{"id": t.fingerprint, "body": {"case": "payback", "charge": split["charge_id"]}}],
                 "other": split["charge_id"]}
@@ -184,7 +189,7 @@ def annotate(st, review: dict, txns: list[Transaction], today: str | None) -> No
 def apply(st, review: dict, txn_id: str, today: date) -> dict | None:
     """Yes on a card the evidence asked: this row, and only this row. Worked
     out again from the ledger: the app never says what to do."""
-    from . import marks
+    from . import marks, over_under
     from .impact import snapshot, undo_payload
     rows = [i.get("pair") for i in review.get("money_in") or [] if i["txn"]["id"] == txn_id]
     rows += [t.get("pair") for t in (review.get("unsorted") or {}).get("transfers", []) if t["id"] == txn_id]
@@ -196,8 +201,7 @@ def apply(st, review: dict, txn_id: str, today: date) -> dict | None:
     by_id = {t.fingerprint: t for t in st.all_transactions()}
     for step in pair["steps"]:
         res = marks.apply(st, by_id[step["id"]], step["body"], today)
-        for k, v in res["marks"].items():
-            merged.setdefault(k, {}).update(v)
+        merged = over_under.merge(merged, res["marks"])
     undo = undo_payload(before, snapshot(st))
     if merged:
         undo["marks"] = merged

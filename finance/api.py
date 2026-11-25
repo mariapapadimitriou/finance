@@ -636,6 +636,11 @@ def transaction_detail(txn_id: str):
                 split = splits.get(charge.fingerprint)
                 if split and charge.amount > 0:
                     r["repays_charge"]["split"] = _splitting(charge, split, txns, payer)
+                    # PB-41o (REFRESH-18): what of it is over their share.
+                    from .over_under import over_of
+                    over = over_of(charge, split, t, txns, payer)
+                    if over:
+                        r["repays_charge"]["over"] = over
                 if payer.get(txn_id) in sp.SELF:
                     # TEST-31 (T-41w): Unlink opens the same sheet as from the
                     # split card (S-34kr7, "Unlink? Work paying me back").
@@ -721,8 +726,19 @@ def set_transaction_split(txn_id: str):
         st.set_share(txn_id, None)
     else:
         st.set_share(txn_id, sp.your_part(t, people, base))
+    from . import over_under as ou
     if extra:
-        edited = _merge_marks(edited, _settle_extra(st, txn_id, extra))
+        edited = ou.merge(edited, _settle_extra(st, txn_id, extra))
+        for name, pieces in extra.items():
+            ou.say(st, txn_id, name, pieces, edited, again=True)
+    if was["split"] is None:
+        # REFRESH-18: paid before it was split, and more than their share: a
+        # question, never You owe until she says.
+        split = st.splits().get(txn_id) or {"people": []}
+        for s in sp.people_status(t, split, st.all_transactions(), st.payback_people()) if split["people"] else []:
+            if s["over"] >= 0.005:
+                ou.set_extra(st, txn_id, next(q for q in split["people"] if q["name"] == s["name"]), edited,
+                             state=ou.ASK)
     # Split from the sort card (2026-10-23): a split is an answer, so the
     # category it counts toward is settled too — the one she picked, or the
     # guess it already had — and it stops being asked about.
@@ -1010,9 +1026,10 @@ def _edit_split(st, t, old: dict | None, people: list[dict]) -> tuple[dict, str 
     * Someone taken out: their e-Transfers on this purchase are unlinked
       (back to Needs a look), their cash or app records go, and so does
       what was let go. Cash a deposit holds has to be unlinked there first.
-    * Someone kept who was let go: what she typed is their share. Above what
-      they've paid, the let go grows or shrinks with it; at or below it,
-      the let go goes and anything paid over the share is "they overpaid".
+    * Someone kept who was let go: what she typed is their share. A small
+      let go of Pearl's comes back first; one she said stays as much as it
+      was, or less, and never grows (REFRESH-18); at or below what they've
+      paid it goes, and anything paid over the share is "they overpaid".
     * Changing `people` in place: the stored amount of a let-go person is
       what they paid, as Let it go writes it."""
     from . import splits as sp
@@ -1063,14 +1080,17 @@ def _edit_split(st, t, old: dict | None, people: list[dict]) -> tuple[dict, str 
             st.remove_split_cash(c["id"])
         if p.get("let_go"):
             st.clear_let_go(t.fingerprint, p["name"])
+        if p.get("extra"):
+            st.set_split_extra(t.fingerprint, p["name"], None)
+    from . import over_under as ou
     for p in people:
         before = next((q for q in old["people"] if q["name"] == p["name"]), None)
         if not before or not before.get("let_go"):
             continue
         paid = status[p["name"]]["paid"]
-        if p["amount"] > paid + 0.005:
-            st.set_let_go(t.fingerprint, p["name"], p["amount"], before["let_go"]["day"])
-            p["amount"] = round(paid, 2)
+        p["amount"], gone = ou.edited(before, p["amount"], paid, ou.factor_of(t))
+        if gone and p["amount"] < gone["was"] - 0.005:
+            st.set_let_go(t.fingerprint, p["name"], gone["was"], gone["day"], auto=bool(gone.get("auto")))
         else:
             st.clear_let_go(t.fingerprint, p["name"])
     return marks, None
@@ -1372,6 +1392,10 @@ def undo_change():
         problem = remove_payment(st, body["cash_payment"])
         if problem:
             return jsonify({"error": problem}), 400
+        if isinstance(body.get("marks"), dict):
+            # What it settled goes back with it (REFRESH-18).
+            from .marks import undo_marks
+            undo_marks(st, body["marks"])
         _reclassify(st)
         return jsonify({"ok": True})
     if isinstance(body.get("parts"), str):
@@ -1749,12 +1773,10 @@ def _invested_in(txns, month: str) -> float:
 
 def _names_person(sender: str | None, person: str | None) -> bool:
     """TEST-20: is this e-Transfer from them? "Priya Shah" is Priya's; Sam's
-    $30.00 never is, whatever the amount."""
-    if not sender or not person:
-        return False
-    s, p = sender.strip().lower(), person.strip().lower()
-    first = p.split()[0] if p.split() else p
-    return s == p or s.startswith(p) or first in s.replace(".", " ").split()
+    $30.00 never is, whatever the amount, and Georgia Pappas's never Georgia
+    Klev's (2026-11-25)."""
+    from .splits import sender_is
+    return bool(sender and person) and sender_is(person, sender)
 
 
 def _payback_candidates(charge, txns, person: str | None = None,
@@ -1762,10 +1784,11 @@ def _payback_candidates(charge, txns, person: str | None = None,
     """The money in that could pay this charge back, best first.
 
     TEST-20: for a person (S-06rb, "From Priya"), their own payments lead,
-    and only one of theirs is `likely` (pre-ticked): on a set split when it
-    is what they owe (`match` "amount", "Amount matches"), on Not sure yet
-    when it fits what still counts as hers. Someone else's money is never
-    likely, even when the amount would fit."""
+    and only theirs is `likely` (SUGGESTED, never ticked): on a set split any
+    amount, since what's over their share is asked about (REFRESH-18; `match`
+    "amount" when it is what they owe), on Not sure yet when it fits what
+    still counts as hers. Someone else's money is never likely, even when the
+    amount would fit. `owes` is what's left of their share, let go included."""
     from datetime import date as _date
     from .splits import bought_on
     start = bought_on(charge)
@@ -1776,6 +1799,8 @@ def _payback_candidates(charge, txns, person: str | None = None,
         # SPLIT-C: any amount, up to what it still costs her (decision 2).
         from .splits import still_yours
         remaining = still_yours(charge)
+    elif person is not None and owes is not None:
+        remaining = owes
     out = []
     for t in txns:
         if t.amount >= 0 or t.repays or t.fingerprint == charge.fingerprint:
@@ -1815,7 +1840,7 @@ def _payback_candidates(charge, txns, person: str | None = None,
         amount = -t.amount
         exact = owes is not None and abs(amount - owes) < 0.005
         fits = amount <= remaining + 0.005
-        likely = theirs and fits and (exact if owes is not None else True)
+        likely = theirs and (fits or owes is not None)
         rows.append(((0 if theirs else 1, 0 if exact else 1, a, b, gap), t, sender, likely,
                      "amount" if (theirs and exact) else None))
     rows.sort(key=lambda r: r[0])
@@ -1838,9 +1863,13 @@ def list_paybacks(txn_id: str):
     owes = None
     split = st.splits().get(txn_id) if person else None
     if person and split and charge.split_mode != "unknown":
+        from . import over_under as ou
         from . import splits as sp
         owes = next((p["owes"] for p in sp.people_status(charge, split, txns, st.payback_people())
                      if p["name"] == person), None)
+        theirs = next((p for p in split["people"] if p["name"] == person), None)
+        if owes is not None and theirs is not None:
+            owes = round(owes + ou.let_go_left(theirs, ou.factor_of(charge)), 2)
     return jsonify({
         "charge": _txn_brief(charge),
         "paid_back": round(charge.paid_back or 0.0, 2),
@@ -1878,13 +1907,24 @@ def add_payback(txn_id: str, inflow_id: str):
         part = _payback_part(inflow, body)
     except Problem as e:
         return jsonify({"error": str(e)}), 400
+    # REFRESH-18: on someone's share, all of it is theirs; what's over the
+    # share is extra, asked about, never money in and never refused.
+    from . import over_under as ou
+    from .etransfers import known_people, party as etransfer_party
+    txns = st.all_transactions()
+    sender = body.get("person") or (etransfer_party(inflow, known_people(
+        txns, st.splits(), st.payback_people())) or {}).get("name")
+    theirs = ou.covers(st, charge, inflow, sender, part)
+    if theirs:
+        part = None
+    had = ou.paid_now(st, inflow_id)
     paying = part if part is not None else -inflow.amount
     already = (charge.paid_back or 0.0) - (inflow.paid_part if inflow.repays == txn_id else 0.0)
     from .splits import cap_problem, reopen_closed
     problem = cap_problem(st, txn_id, paying, inflow_id)
     if problem:
         return jsonify({"error": problem}), 400
-    if already + paying > charge.amount + 0.005:
+    if not theirs and already + paying > charge.amount + 0.005:
         return jsonify({"error": "That's more than the charge — friends can't pay "
                                  "back more than it cost."}), 400
     person = body.get("person")
@@ -1903,6 +1943,8 @@ def add_payback(txn_id: str, inflow_id: str):
     st.link_payback(txn_id, inflow_id, person, part)
     closed: dict = {}
     reopened = reopen_closed(st, txn_id, closed)
+    ou.unpaid(st, had, closed)
+    rows = ou.settle(st, closed, links=[(inflow_id, txn_id)])
     # Never income: Plaid sometimes calls an e-transfer in "income".
     if inflow.category != "Transfers":
         st.set_transaction_category(inflow_id, "Transfers")
@@ -1912,9 +1954,11 @@ def add_payback(txn_id: str, inflow_id: str):
     data = out.get_json() if hasattr(out, "get_json") else None
     if isinstance(data, dict):
         undo = undo_payload(before, snapshot(st, st.all_transactions()))
-        undo["marks"] = {"paybacks": {inflow_id: was}, **({"splits": split_was} if split_was else {}), **closed}
+        undo["marks"] = ou.merge({"paybacks": {inflow_id: was}, **({"splits": split_was} if split_was else {})},
+                                 closed)
         # REFRESH-02 (S-44b): "Priya paid back $30.00", with this Undo.
-        toast = f"{person} paid back {_money2(paying)}" if person else f"Linked · {_money2(paying)} paid back"
+        toast = ou.line(rows) or (f"{person} paid back {_money2(paying)}" if person
+                                  else f"Linked · {_money2(paying)} paid back")
         if reopened:
             # SPLIT-C decision 4: "Pizza Nova is open again" with the same Undo.
             toast += f" · {charge.merchant} is open again"
@@ -1981,7 +2025,15 @@ def remove_payback(txn_id: str, inflow_id: str):
     who = _credited(st, charge, inflow, txns)
     said = ul.inflow_link(st, charge, inflow, who, by_id, st.payback_kinds(), st.parts()) if charge else {}
     before = snapshot(st, txns)
+    # REFRESH-18: a let go on a share it paid comes back.
+    from . import over_under as ou
+    had = {(c, name): 0.0 for c in (inflow.repays_all if whole else [txn_id])
+           if (name := ou.credited_name(st, inflow_id, c))}
     marks = ul.unlink_payback(st, txn_id, inflow, whole=whole)
+    back: dict = {}
+    for c, name in had:
+        ou.released(st, c, name, back)
+    marks = ou.merge(marks, back)
     apply_transfer_matches(st)
     _reclassify(st)
     title = said.get("toast")

@@ -688,6 +688,21 @@ CREATE TABLE IF NOT EXISTS txn_split_let_go (
     name   TEXT NOT NULL,
     was    REAL NOT NULL,
     day    TEXT NOT NULL,
+    auto   INTEGER,
+    PRIMARY KEY (txn_id, name)
+);
+-- REFRESH-18 (2026-11-25): what someone paid over their share, and whether
+-- their small differences are hers to settle (finance/over_under.py).
+-- `state` is 'small', 'ask' or 'owe'; a share with no row (or no state) is
+-- one linked before this, which reads as 'owe'. `said` is the JSON list of
+-- what she said each piece of the extra was. `hers` is 1 once she undid a
+-- let go on this share: Pearl never settles it by itself again.
+CREATE TABLE IF NOT EXISTS txn_split_extra (
+    txn_id TEXT NOT NULL,
+    name   TEXT NOT NULL,
+    state  TEXT,
+    said   TEXT,
+    hers   INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (txn_id, name)
 );
 -- A deposit split into parts (THL-291): each part is a row of its own,
@@ -885,7 +900,7 @@ _ROW_TABLES = ("txn_shares", "txn_invested", "piggy_allocations", "piggy_optouts
                "txn_exclusions", "txn_income_type", "txn_confirmed", "txn_notes",
                "txn_splits", "txn_split_people", "txn_oneoff", "txn_duplicates",
                "joint_deposits", "txn_party", "txn_tags", "txn_saved_to", "sorted_range_rows",
-               "txn_split_cash", "txn_split_let_go", "txn_split_not_me", "txn_parts", "txn_joint_parts",
+               "txn_split_cash", "txn_split_let_go", "txn_split_extra", "txn_split_not_me", "txn_parts", "txn_joint_parts",
                "txn_joint_paybacks", "transfer_links", "transfer_unpaired")
 
 # What friends have sent back for each charge, as a positive total.
@@ -1088,6 +1103,7 @@ class Store:
         self._migrate_split_closed()
         self._migrate_split_cash_via()
         self._migrate_split_cash_app_origin()
+        self._migrate_let_go_auto()
         self._migrate_joint_people()
         self._migrate_travel_ownership()
         self._drop_bank_funded_budgets()
@@ -1383,6 +1399,16 @@ class Store:
                     c.execute(f"ALTER TABLE txn_split_cash ADD COLUMN {col}")
             except Exception:                                    # noqa: BLE001
                 continue
+
+    def _migrate_let_go_auto(self) -> None:
+        """Add `txn_split_let_go.auto`: 1 when Pearl let a small difference go
+        itself (REFRESH-18), so an edit or a refund can take it back; null is
+        one she said. Tried, and a failure read as "already there", as above."""
+        try:
+            with self.conn() as c:
+                c.execute("ALTER TABLE txn_split_let_go ADD COLUMN auto INTEGER")
+        except Exception:                                        # noqa: BLE001
+            return
 
     def _migrate_joint_people(self) -> None:
         """Who a joint account is shared with (`joint_accounts.people`, a JSON
@@ -1723,6 +1749,8 @@ class Store:
             c.execute("DELETE FROM txn_notes WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_splits WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_split_people WHERE txn_id = ?", (txn_id,))
+            c.execute("DELETE FROM txn_split_let_go WHERE txn_id = ?", (txn_id,))
+            c.execute("DELETE FROM txn_split_extra WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_joint_parts WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_payback_person WHERE inflow_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_oneoff WHERE txn_id = ?", (txn_id,))
@@ -2216,11 +2244,15 @@ class Store:
         she let the rest go (`let_go`)."""
         with self.conn() as c:
             heads = c.execute("SELECT txn_id, mode, watch, closed_at FROM txn_splits").fetchall()
-            people = c.execute("SELECT txn_id, pos, name, amount, weight FROM txn_split_people "
-                               "ORDER BY txn_id, pos").fetchall()
+            # What she said of an extra (REFRESH-18) comes with its person, so
+            # a page reads no more than it did (tests/test_request_budget.py).
+            people = c.execute("SELECT p.txn_id, p.pos, p.name, p.amount, p.weight, x.state AS state, "
+                               "x.said AS said, x.hers AS hers FROM txn_split_people p "
+                               "LEFT JOIN txn_split_extra x ON x.txn_id = p.txn_id AND x.name = p.name "
+                               "ORDER BY p.txn_id, p.pos").fetchall()
             every = c.execute("SELECT id, txn_id, name, amount, day, deposit_id, via, app, origin, kind "
                               "FROM txn_split_cash ORDER BY id").fetchall()
-            gone = c.execute("SELECT txn_id, name, was, day FROM txn_split_let_go").fetchall()
+            gone = c.execute("SELECT txn_id, name, was, day, auto FROM txn_split_let_go").fetchall()
             not_me = {r["txn_id"] for r in c.execute("SELECT txn_id FROM txn_split_not_me").fetchall()}
         out = {r["txn_id"]: {"mode": r["mode"], "watch": bool(r["watch"]), "people": [],
                              # SPLIT-C (S-46): That's everything, on this day.
@@ -2233,6 +2265,9 @@ class Store:
                 person = {"name": r["name"], "amount": round(float(r["amount"]), 2)}
                 if r["weight"] is not None:
                     person["weight"] = float(r["weight"])
+                if r["hers"] is not None:
+                    person["extra"] = {"state": r["state"] or None, "said": json.loads(r["said"] or "[]"),
+                                       "hers": bool(r["hers"])}
                 out[r["txn_id"]]["people"].append(person)
         # SPLIT-19 (S-11c): what the whole payment was, and what of its extra
         # she gave back, so S-05 reads "$60.00, $17.94 given back".
@@ -2263,7 +2298,8 @@ class Store:
         for r in gone:
             for p in (out.get(r["txn_id"]) or {}).get("people", []):
                 if p["name"] == r["name"]:
-                    p["let_go"] = {"was": round(float(r["was"]), 2), "day": r["day"]}
+                    p["let_go"] = {"was": round(float(r["was"]), 2), "day": r["day"],
+                                   **({"auto": True} if r["auto"] else {})}
         return out
 
     # Cash in hand and Let the rest go (THL-291).
@@ -2277,11 +2313,14 @@ class Store:
         pays back nobody."""
         app = (" ".join(str(app).split())[:30] or None) if via == "app" and app else None
         with self.conn() as c:
-            cur = c.execute("INSERT INTO txn_split_cash (txn_id, name, amount, day, via, app, origin, kind) "
-                            "VALUES (?,?,?,?,?,?,?,?)",
-                            (txn_id, name, round(amount, 2), day, via if via == "app" else None, app, origin,
-                             kind if kind in ("gift", "returned") else None))
-            return int(cur.lastrowid)
+            sql = ("INSERT INTO txn_split_cash (txn_id, name, amount, day, via, app, origin, kind) "
+                   "VALUES (?,?,?,?,?,?,?,?)")
+            args = (txn_id, name, round(amount, 2), day, via if via == "app" else None, app, origin,
+                    kind if kind in ("gift", "returned") else None)
+            # Postgres has no lastrowid (see add_fixed_cost).
+            if self.is_postgres:
+                return int(c.execute(sql + " RETURNING id", args).fetchone()["id"])
+            return int(c.execute(sql, args).lastrowid)
 
     def split_apps(self, limit: int = 4) -> list[str]:
         """S-06 v3 "Used before": the app names she has typed, newest
@@ -2334,7 +2373,9 @@ class Store:
             for root in roots:
                 c.execute("DELETE FROM txn_split_cash WHERE COALESCE(origin, id) = ?", (int(root),))
             for r in rows:
-                c.execute("INSERT OR REPLACE INTO txn_split_cash (id, txn_id, name, amount, day, deposit_id, "
+                # Postgres has no INSERT OR REPLACE (finance/db.py).
+                c.execute("DELETE FROM txn_split_cash WHERE id = ?", (int(r["id"]),))
+                c.execute("INSERT INTO txn_split_cash (id, txn_id, name, amount, day, deposit_id, "
                           "via, app, origin, kind) VALUES (?,?,?,?,?,?,?,?,?,?)",
                           (int(r["id"]), r["txn_id"], r["name"], round(float(r["amount"]), 2), r["day"],
                            r.get("deposit_id") or None, r.get("via"), r.get("app"), r.get("origin"), r.get("kind")))
@@ -2353,14 +2394,26 @@ class Store:
         with self.conn() as c:
             c.execute("UPDATE txn_split_cash SET deposit_id = NULL WHERE deposit_id = ?", (deposit_id,))
 
-    def set_let_go(self, txn_id: str, name: str, was: float, day: str) -> None:
+    def set_let_go(self, txn_id: str, name: str, was: float, day: str, auto: bool = False) -> None:
+        """`auto` (REFRESH-18): a small difference Pearl settled by itself."""
         with self.conn() as c:
-            c.execute("INSERT OR REPLACE INTO txn_split_let_go (txn_id, name, was, day) VALUES (?,?,?,?)",
-                      (txn_id, name, round(was, 2), day))
+            c.execute("DELETE FROM txn_split_let_go WHERE txn_id = ? AND name = ?", (txn_id, name))
+            c.execute("INSERT INTO txn_split_let_go (txn_id, name, was, day, auto) VALUES (?,?,?,?,?)",
+                      (txn_id, name, round(was, 2), day, 1 if auto else None))
 
     def clear_let_go(self, txn_id: str, name: str) -> None:
         with self.conn() as c:
             c.execute("DELETE FROM txn_split_let_go WHERE txn_id = ? AND name = ?", (txn_id, name))
+
+    def set_split_extra(self, txn_id: str, name: str, row: dict | None) -> None:
+        """What someone paid over their share (REFRESH-18): {state, said,
+        hers}, or None for nothing said about it."""
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_split_extra WHERE txn_id = ? AND name = ?", (txn_id, name))
+            if row and (row.get("state") or row.get("said") or row.get("hers")):
+                c.execute("INSERT INTO txn_split_extra (txn_id, name, state, said, hers) VALUES (?,?,?,?,?)",
+                          (txn_id, name, row.get("state") or None, json.dumps(row.get("said") or []),
+                           1 if row.get("hers") else 0))
 
     # Deposits split into parts (THL-291).
     def parts(self) -> dict[str, list[dict]]:
@@ -2434,6 +2487,7 @@ class Store:
         with self.conn() as c:
             c.execute("DELETE FROM txn_split_people WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_split_not_me WHERE txn_id = ?", (txn_id,))
+            c.execute("DELETE FROM txn_split_extra WHERE txn_id = ?", (txn_id,))
             cur = c.execute("DELETE FROM txn_splits WHERE txn_id = ?", (txn_id,))
             return (cur.rowcount or 0) > 0
 
@@ -2739,6 +2793,7 @@ class Store:
             ("txn_split_people", "people in split charges"),
             ("txn_split_cash", "cash you were paid back"),
             ("txn_split_let_go", "shares you let go"),
+            ("txn_split_extra", "what you said about extra payments"),
             ("txn_split_not_me", "splits you weren't in"),
             ("txn_parts", "deposits split into parts"),
             ("transfer_destinations", "where transfers go"),

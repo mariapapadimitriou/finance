@@ -50,9 +50,11 @@ from datetime import date
 from flask import jsonify, request
 
 from . import api as core
+from . import over_under as ou
 from . import parts as dp
 from . import splits as sp
 from .api import bp, store
+from .models import Transaction
 
 
 def _today() -> date:
@@ -78,10 +80,7 @@ def _person(split: dict, name: str) -> dict | None:
 
 def _reshare(st, t, split: dict) -> None:
     """Write the split back and her share with it."""
-    people = [{"name": p["name"], "amount": p["amount"], "weight": p.get("weight")}
-              for p in split["people"]]
-    st.set_split(t.fingerprint, split["mode"], people, split["watch"])
-    st.set_share(t.fingerprint, sp.your_part(t, people))
+    ou.reshare(st, t, split)
 
 
 def _gifts_on(st, charge_id: str, name: str) -> list[tuple[str, int, int]]:
@@ -138,6 +137,11 @@ def split_answer(txn_id: str):
         st.link_payback(txn_id, deposit, name, amount=(gift + payback) / 100)
     if gifts:
         core._reclassify(st)
+    # REFRESH-18: her answer is about their whole share, so a let go comes
+    # back first, and it says what any extra is.
+    said: dict = {}
+    ou.take_back(st, txn_id, name, said)
+    t = st.get_transaction(txn_id)
     split = st.splits()[txn_id]
     p = _person(split, name)
     status = next(s for s in sp.people_status(t, split, st.all_transactions(), st.payback_people())
@@ -169,6 +173,9 @@ def split_answer(txn_id: str):
     _reshare(st, t, split)
     if answer == "gift":
         core._settle_extra(st, txn_id, {name: [{"kind": "gift", "amount": round((sent - share) / 100, 2)}]})
+    over = {"kind": answer, "amount": round((sent - share) / 100, 2)}
+    ou.set_extra(st, txn_id, _person(st.splits()[txn_id], name), said,
+                 state="owe" if answer == "owe" else None, said=[over] if answer in ("owe", "gift") else [])
     core._reclassify(st)
     words = {"ask": f"{name} owes you ${(share - sent) / 100:,.2f}",
              "share": f"{possessive(name)} share is ${sent / 100:,.2f}",
@@ -196,12 +203,12 @@ def split_let_go(txn_id: str):
                   if s["name"] == p["name"])
     if status["owes"] < 0.005:
         return jsonify({"error": f"{p['name']} doesn’t owe anything on this."}), 400
-    st.set_let_go(txn_id, p["name"], p["amount"], _today().isoformat())
-    p["amount"] = round(status["paid"], 2)
-    _reshare(st, t, split)
+    marks: dict = {}
+    ou.let_go(st, txn_id, p["name"], _today().isoformat(), marks)
     core._reclassify(st)
-    # REFRESH-02 (S-44c): the toast, whose Undo is the DELETE below.
-    return jsonify({"ok": True, "title": f"Let it go. {p['name']}’s ${status['owes']:,.2f} is yours now.",
+    # REFRESH-02 (S-44c): the toast. Its Undo puts the share back as it was
+    # (REFRESH-18): the DELETE below also says the share is hers to settle.
+    return jsonify({"ok": True, "undo": {"rows": [], "marks": marks}, "title": f"Let it go. {p['name']}’s ${status['owes']:,.2f} is yours now.",
                     "toast": f"Let go · ${status['owes']:,.2f}",
                     "detail": core.transaction_detail(txn_id).get_json()})
 
@@ -217,13 +224,15 @@ def split_let_go_undo(txn_id: str):
         return jsonify({"error": "Nothing was let go."}), 404
     paid = next((s["paid"] for s in sp.people_status(t, split, st.all_transactions(), st.payback_people())
                  if s["name"] == p["name"]), 0.0)
-    owes = max(0.0, p["let_go"]["was"] - paid)
-    p["amount"] = p["let_go"]["was"]
-    st.clear_let_go(txn_id, p["name"])
-    _reshare(st, t, split)
+    owes = max(0.0, ou.whole_share(p, ou.factor_of(t)) - paid)
+    marks: dict = {}
+    ou.take_back(st, txn_id, p["name"], marks)
+    # REFRESH-18 (S-40s): Pearl doesn't settle this share by itself again.
+    ou.set_extra(st, txn_id, _person(st.splits()[txn_id], p["name"]), marks, hers=True)
     core._reclassify(st)
-    # REFRESH-02 (S-44e): "Alex owes you $30.00 again"; its Undo is the POST.
-    return jsonify({"ok": True, "title": f"{p['name']} owes you again.",
+    # REFRESH-02 (S-44e): "Alex owes you $30.00 again"; its Undo puts the
+    # let go back as it was (S-04s2).
+    return jsonify({"ok": True, "undo": {"rows": [], "marks": marks}, "title": f"{p['name']} owes you again.",
                     "toast": f"{p['name']} owes you ${owes:,.2f} again",
                     "detail": core.transaction_detail(txn_id).get_json()})
 
@@ -273,10 +282,312 @@ def split_cash(txn_id: str):
         cid = _record_extra(st, t, p["name"], amount, day, via, app, pieces)
     title = (f"{p['name']} paid ${amount:,.2f} through {app or 'another app'}." if via
              else f"{p['name']} paid ${amount:,.2f} in cash.")
+    # REFRESH-18: cash and other apps settle the same way. What she said the
+    # extra is, she said; a share it paid back is settled too.
+    marks: dict = {}
+    over = sum(_cents(x["amount"]) for x in pieces or [])
+    pays = [(txn_id, p["name"], (_cents(amount) - over) / 100)]
+    pays += [(x["charge"], x["person"], x["amount"]) for x in pieces or [] if x["kind"] == "payback"]
+    rows = ou.settle(st, marks, cash=pays, day=_today().isoformat())
+    if pieces:
+        ou.say(st, txn_id, p["name"], pieces, marks)
+    elif ou.line(rows):
+        title = ou.line(rows)
+    core._reclassify(st)
     return jsonify({"ok": True, "id": cid, "title": title,
-                    # The Sorted toast's Undo takes the whole payment back.
-                    "undo": {"cash_payment": cid},
+                    **({"toast": ou.line(rows)} if not pieces and ou.line(rows) else {}),
+                    # The Sorted toast's Undo takes the whole payment back,
+                    # and what it settled.
+                    "undo": {"cash_payment": cid, **({"marks": marks} if marks else {})},
                     "detail": core.transaction_detail(txn_id).get_json()}), 201
+
+
+# ── What's the extra $15.00? from the purchase (S-11e, REFRESH-18) ───────
+# The same sheet from the card, the person, the deposit and Needs a look.
+# "I owe it back" only says so. A gift, money she sent back, another share or
+# S-11 v2's tiles take that much off the payments that paid it, newest first:
+# a deposit becomes parts through save_parts, cash becomes SPLIT-19's records.
+
+SAID_CASH = ("payback", "gift", "returned")
+# What a piece is as a part of a deposit, and S-11 v2's names for the rest.
+_AS_PART = {"returned": "moved", "overpaid": None}
+_SAID_LABELS = {"income": "Income", "moved": "From my own accounts", "savings": "Out of savings",
+                "loan": "Lent me this", "lent_back": "Money I lent, back", "refund": "Refund",
+                "reimbursement": "Work"}
+
+
+@bp.post("/transactions/<txn_id>/split/extra")
+def split_extra(txn_id: str):
+    """S-11e: {name, pieces, again?}. Each piece is {kind, amount} with what a
+    part of that kind needs (`charge`, `person`, `income_kind`…): "overpaid"
+    (I owe it back), "payback", "gift", "returned" (I sent it back), or one of
+    S-11 v2's parts. Less than all of it is saved, and the rest still asked.
+    `again` (Change what the extra is) takes back what was said first."""
+    from . import unlink as ul
+    st = store()
+    t, split, err = _split_or_error(st, txn_id)
+    if err:
+        return err
+    body = _body()
+    p = _person(split, str(body.get("name") or ""))
+    if p is None or split.get("mode") == sp.UNSURE:
+        return jsonify({"error": "They aren’t in this split."}), 404
+    said = _say_extra(st, t, split, p, body.get("pieces"), bool(body.get("again")))
+    if not isinstance(said, dict):
+        return said
+    return jsonify({"ok": True, "toast": said["toast"], "undo": {"rows": [], "marks": said["marks"]},
+                    "detail": core.transaction_detail(txn_id).get_json()})
+
+
+def _say_extra(st, t, split: dict, p: dict, asked_pieces, again: bool = False):
+    """Save what the extra on `p`'s share is: {toast, marks}, or an error reply."""
+    txn_id, name = t.fingerprint, p["name"]
+    row = p.get("extra") or {}
+    status = next(s for s in sp.people_status(t, split, st.all_transactions(), st.payback_people())
+                  if s["name"] == name)
+    old = [q for q in row.get("said") or [] if q.get("kind") != ou.OWE] if again else []
+    shown = status.get("extra") or {}
+    room = _cents(status["over"]) + sum(_cents(q["amount"]) for q in old) if again \
+        else _cents(shown.get("amount") or 0) or (_cents(status["over"]) if shown.get("state") == ou.OWE else 0)
+    pieces, problem = _said_pieces(st, t, name, asked_pieces, room)
+    if problem:
+        return jsonify({"error": problem}), 400
+    plan, problem = _say_plan(st, t, name, split, pieces, old)
+    if problem:
+        return jsonify({"error": problem}), 400
+    marks: dict = {}
+    title = None
+    skip = [(txn_id, name)]
+    for x, asked, later in plan["deposits"]:
+        made = _drop_said(st, x, asked)
+        reply = save_parts(st, st.get_transaction(x.fingerprint),
+                           {"parts": asked, "later": later, "saying": True,
+                            "replace": bool(st.parts().get(x.fingerprint))}, skip=skip)
+        if isinstance(reply, tuple):
+            # Nothing is left half said.
+            from .marks import undo_marks
+            if made:
+                undo_marks(st, {"splits": made})
+            undo_marks(st, marks)
+            core._reclassify(st)
+            return reply
+        data = reply.get_json()
+        undo = data["undo"]
+        marks = ou.merge(marks, ou.merge({"unparts": [undo["parts"]]}, ou.merge({"splits": made} if made else {},
+                                                                              undo.get("marks"))))
+        title = data.get("title")
+    paid = plan["cash"](marks) if plan["cash"] else []
+    if paid:
+        rows = ou.settle(st, marks, cash=paid, day=_today().isoformat())
+        title = ou.line(rows) or title
+    ou.say(st, txn_id, name, pieces, marks, again=again)
+    core._reclassify(st)
+    return {"toast": _said_toast(name, pieces, title), "marks": marks}
+
+
+def _said_toast(name: str, pieces: list[dict], title: str | None) -> str:
+    total = sum(_cents(q["amount"]) for q in pieces) / 100
+    kinds = {q["kind"] for q in pieces}
+    if kinds == {"overpaid"}:
+        return f"You owe {name} ${total:,.2f}"
+    if kinds == {"gift"}:
+        return f"${total:,.2f} from {name} is a gift"
+    if kinds == {"payback"}:
+        charges = {str(q.get("charge")) for q in pieces}
+        many = f"{len(charges)} purchases · " if len(charges) > 1 else ""
+        return f"{name} paid back {many}${total:,.2f}"
+    return ou.line_of(pieces) or title or ""
+
+
+def _said_pieces(st, t, name: str, pieces, room: int) -> tuple[list | None, str | None]:
+    if room < 1:
+        return None, "That’s been answered already. Pull to refresh."
+    if not isinstance(pieces, list) or not pieces or len(pieces) > dp.MAX_PARTS:
+        return None, "Say what the extra is."
+    out, given = [], 0
+    for q in pieces:
+        kind = q.get("kind") if isinstance(q, dict) else None
+        if kind not in EXTRA_KINDS and (kind not in dp.KINDS or kind in ("rest", "cash")):
+            return None, "Say what each piece of the extra is."
+        try:
+            cents = _cents(q.get("amount"))
+        except (TypeError, ValueError):
+            return None, "Give each piece of the extra an amount."
+        if cents < 1:
+            return None, "A piece of the extra has to be more than nothing."
+        piece = {k: q[k] for k in ("charge", "person", "income_kind", "category", "share", "new_split")
+                 if q.get(k) is not None}
+        if kind == "payback":
+            piece.setdefault("person", name)
+            # Someone else's share of the same purchase is one she can pay.
+            if str(piece.get("charge") or "") == t.fingerprint and sp.same_name(str(piece["person"]), name):
+                return None, "Pick the share it pays back."
+        label = q.get("category") if kind == "category" else _SAID_LABELS.get(kind)
+        if label:
+            piece["label"] = str(label)
+        out.append({"kind": kind, "amount": cents / 100, **piece})
+        given += cents
+    if given > room:
+        return None, f"Only ${room / 100:,.2f} is extra. Make it ${room / 100:,.2f} or less."
+    return out, None
+
+
+def _part_of(q: dict) -> dict:
+    """A piece of the extra as a part of its deposit."""
+    part = {k: v for k, v in q.items() if k not in ("label", "merchant", "src", "from")}
+    part["kind"] = _AS_PART.get(q["kind"], q["kind"])
+    return part
+
+
+def _say_plan(st, t, name: str, split: dict, pieces: list[dict], old: list[dict]) -> tuple[dict | None, str | None]:
+    """Where each piece comes from, before anything is saved: the payments
+    that paid this share, newest first. Each piece is told its source
+    (`src`), so Change what the extra is can put it back."""
+    cid = t.fingerprint
+    txns = {x.fingerprint: x for x in st.all_transactions()}
+    credited: dict[str, str] = {}
+    sp.people_status(t, split, list(txns.values()), st.payback_people(), credited_to=credited)
+    deposits: dict[str, dict] = {}
+    order: list[tuple[str, str, str]] = []              # (day, "deposit" | "cash", key)
+    for i, who in credited.items():
+        x = txns.get(i)
+        if who != name or x is None:
+            continue
+        whole = txns.get((x.raw or {}).get("part_of") or "") or x
+        if whole.fingerprint in deposits:
+            continue
+        asked = _as_parts(st, whole)
+        if asked is None:
+            continue
+        deposits[whole.fingerprint] = {"x": whole, "asked": [dict(a) for a in asked[0]], "later": asked[1],
+                                       "changed": False}
+        order.append((whole.date[:10], "deposit", whole.fingerprint))
+    person = next(q for q in split["people"] if q["name"] == name)
+    every = {c["id"]: dict(c) for c in st.split_cash()}
+    amounts = {c["id"]: _cents(c["amount"]) for c in person.get("cash") or [] if not c.get("deposit_id")}
+    order += [(every[i]["day"], "cash", str(i)) for i in amounts]
+    order.sort(key=lambda o: (o[0], o[2]), reverse=True)
+
+    def mine(d: dict) -> dict | None:
+        return next((a for a in d["asked"] if a.get("kind") == "payback" and a.get("charge") == cid
+                     and (not a.get("person") or a["person"] == name)), None)
+
+    gone: list[int] = []
+    for q in old:
+        src = q.get("src") or {}
+        for key, cents in (src.get("deposits") or {}).items():
+            d = deposits.get(key)
+            part = _part_of(q)
+            at = next((i for i, a in enumerate(d["asked"]) if a["kind"] == part["kind"]
+                       and a.get("charge") == part.get("charge") and _cents(a["amount"]) == cents), None) if d else None
+            if at is None or mine(d) is None:
+                return None, f"Part of what {name} paid has changed since. Change it on the payment."
+            d["asked"].pop(at)
+            mine(d)["amount"] = (_cents(mine(d)["amount"]) + cents) / 100
+            d["changed"] = True
+        for nid, back in (src.get("cash") or {}).items():
+            c = every.get(int(nid))
+            if c is None or int(back) not in amounts or c["deposit_id"]:
+                return None, f"Part of what {name} paid has changed since. Change it on the payment."
+            amounts[int(back)] += _cents(c["amount"])
+            gone.append(int(nid))
+    cash_new: list[tuple[dict, int, int]] = []          # (piece, from record, cents)
+    for q in pieces:
+        if q["kind"] == "overpaid":
+            continue
+        left, q["src"] = _cents(q["amount"]), {}
+        for _, how, key in order:
+            if left < 1:
+                break
+            if how == "deposit":
+                d = deposits[key]
+                base = mine(d)
+                take = min(left, _cents(base["amount"])) if base else 0
+                if take < 1:
+                    continue
+                base["amount"] = (_cents(base["amount"]) - take) / 100
+                d["asked"].append({**_part_of(q), "amount": take / 100})
+                d["changed"] = True
+                q["src"].setdefault("deposits", {})[key] = take
+            elif q["kind"] in SAID_CASH and not q.get("new_split"):
+                take = min(left, amounts[int(key)])
+                if take < 1:
+                    continue
+                amounts[int(key)] -= take
+                cash_new.append((q, int(key), take))
+            else:
+                continue
+            left -= take
+        if left >= 1:
+            return None, f"Part of what {name} paid is in a deposit. Say you owe it back, or change it there first."
+    out = []
+    for d in deposits.values():
+        if d["changed"]:
+            asked = [a for a in d["asked"] if _cents(a["amount"]) >= 1]
+            out.append((d["x"], asked, d["later"]))
+
+    def write_cash(marks: dict) -> list[tuple[str, str, float]]:
+        roots = sorted({int(every[i].get("origin") or i) for i in list(amounts)})
+        rows = [c for c in every.values() if int(c.get("origin") or c["id"]) in roots]
+        marks["cash_rows"] = {"roots": roots, "rows": rows,
+                              "gifts": [c["id"] for c in rows if c.get("kind") == "gift"]}
+        _drop_gifts(st, set(gone))
+        for i in gone:
+            st.remove_split_cash(i)
+        for i, cents in amounts.items():
+            if cents != _cents(every[i]["amount"]):
+                st.set_split_cash_amount(i, cents / 100)
+        paid = []
+        for q, i, cents in cash_new:
+            c = every[i]
+            root = int(c.get("origin") or i)
+            if q["kind"] == "payback":
+                nid = st.add_split_cash(q["charge"], q["person"], cents / 100, c["day"], c.get("via"), c.get("app"), root)
+                paid.append((q["charge"], q["person"], cents / 100))
+            else:
+                nid = st.add_split_cash(cid, name, cents / 100, c["day"], c.get("via"), c.get("app"), root, q["kind"])
+                if q["kind"] == "gift":
+                    _gift_row(st, nid, root, name, cents / 100, c["day"], c.get("via"), c.get("app"))
+            q["src"].setdefault("cash", {})[str(nid)] = i
+        return paid
+    for q, _, cents in cash_new:
+        if q["kind"] == "payback":
+            problem = _owes_problem(st, q, cents)
+            if problem:
+                return None, problem
+    return {"deposits": out, "cash": write_cash if cash_new or gone else None}, None
+
+
+def _owes_problem(st, q: dict, cents: int) -> str | None:
+    charge = st.get_transaction(str(q.get("charge") or ""))
+    other = st.splits().get(str(q.get("charge") or ""))
+    who = _person(other, str(q.get("person") or "")) if other else None
+    if charge is None or who is None:
+        return "Pick the share it pays back."
+    q["person"] = who["name"]
+    owes = _owes_on(st, charge, who["name"]) or 0
+    return f"That’s more than {who['name']} owes on {charge.merchant}." if cents > owes else None
+
+
+def _drop_gifts(st, ids: set[int]) -> None:
+    for x in st.all_transactions():
+        if x.source == GIFT_SOURCE and (x.raw or {}).get("split_gift") in ids:
+            st.delete_transaction(x.fingerprint)
+
+
+def _drop_said(st, x: Transaction, asked: list[dict]) -> dict:
+    """Before a deposit's parts are saved again without a piece that split a
+    purchase with its person: they come off it (THL-260). What to put back."""
+    keep = {a.get("charge") for a in asked if a["kind"] == "payback"}
+    out = {}
+    for q in st.parts().get(x.fingerprint) or []:
+        cid = (q.get("detail") or {}).get("charge")
+        if q["kind"] == "payback" and cid not in keep and st.payback_kinds().get(q["part_id"]) == sp.MADE_SPLIT:
+            row = st.get_transaction(q["part_id"])
+            was = sp.drop_payer(st, row, cid) if row is not None else None
+            if was is not None:
+                out[cid] = was
+    return out
 
 
 EXTRA_KINDS = ("overpaid", "payback", "gift", "returned")
@@ -292,7 +603,8 @@ def _extra_pieces(st, t, split: dict, p: dict, amount: float, extra) -> tuple[li
     txns = st.all_transactions()
     payer = st.payback_people()
     status = next(s for s in sp.people_status(t, split, txns, payer) if s["name"] == p["name"])
-    over = _cents(amount) - _cents(status["owes"])
+    # REFRESH-18: what she let go of their share is theirs to pay first.
+    over = _cents(amount) - _cents(status["owes"]) - _cents(ou.let_go_left(p, ou.factor_of(t)))
     if over < 1:
         return None, f"{p['name']} didn’t pay more than they owe."
     if not isinstance(extra, list) or not extra or len(extra) > dp.MAX_PARTS:
@@ -416,6 +728,7 @@ def split_cash_undo(txn_id: str, cash_id: int):
     marks, problem = ul.unlink_cash(st, txn_id, root)
     if problem:
         return jsonify({"error": problem}), 404
+    ou.released(st, txn_id, name, marks)
     core._reclassify(st)
     owes = core._owes_now(st, txn_id, name)
     title = f"Unlinked · {name} owes ${owes:,.2f}" if name and owes is not None else "Unlinked"
@@ -536,10 +849,13 @@ def _joint_payback(st, t, body: dict):
     return jsonify({**data, "undo": undo})
 
 
-def save_parts(st, t, body: dict):
-    """POST …/parts, and the web's What was this? on S-21xm (THL-301)."""
+def save_parts(st, t, body: dict, skip=()):
+    """POST …/parts, and the web's What was this? on S-21xm (THL-301).
+    `skip` are shares whose extra is being said in this save (REFRESH-18)."""
     txn_id = t.fingerprint
     kept = 0
+    body = _whole_share(st, t, body)
+    had = ou.paid_now(st, txn_id)
     if body.get("extra"):
         # S-11xm (THL-301): the answer is for the extra part only.
         body = dict(body)
@@ -605,12 +921,18 @@ def save_parts(st, t, body: dict):
     made_marks, problem = _new_split_after(st, txn_id, making)
     if problem:
         return jsonify({"error": problem}), 400
+    # REFRESH-18: a let go on a share this pays less of now comes back, then
+    # each share it credits settles.
+    settled: dict = {}
+    ou.unpaid(st, had, settled)
     let_marks, let_total = _let_go_after(st, letting)
+    settled = ou.merge(settled, let_marks)
+    rows = ou.settle(st, settled, links=ou.links_of(st, txn_id), skip=skip)
     core._reclassify(st)
     undo: dict = {"parts": txn_id}
-    if let_marks:
+    if settled:
         # One Undo: the parts go, and what they owed is theirs again.
-        undo["marks"] = let_marks
+        undo["marks"] = settled
     if made_marks:
         # One Undo: the splits it made go too, and B is as it was.
         marks = undo.get("marks") or {}
@@ -623,6 +945,17 @@ def save_parts(st, t, body: dict):
         many_title = _many_title(body.get("payer"), body.get("parts"))
         if many_title:
             out["title"] = many_title
+    if not (kept or held) and let_total < 0.005 and ou.line(rows) and all(
+            isinstance(p, dict) and p.get("kind") == "payback" for p in body.get("parts") or []):
+        out["title"] = ou.line(rows)
+        small = _small_rest(st, txn_id)
+        if small and not any(r["let_go"] for r in rows):
+            out["title"] += f" · ${small:,.2f} extra"
+    elif not (kept or held) and _small_rest(st, txn_id):
+        # PB-41s: a few cents over, on the deposit only.
+        paid = _paid_back_title(body.get("parts"), 0.0)
+        if paid:
+            out["title"] = f"{paid} · ${_small_rest(st, txn_id):,.2f} extra"
     if kept:
         # The toast counts her answer, not the credit it kept (S-11xm).
         n = len(out["parts"]) - kept - (1 if out["rest"] else 0)
@@ -641,6 +974,34 @@ def save_parts(st, t, body: dict):
         # SPLIT-C decision 4: Undo closes the split it opened again.
         undo["marks"] = {**(undo.get("marks") or {}), "split_closed": out.pop("reopened")}
     return jsonify({"ok": True, **out, "undo": undo})
+
+
+def _whole_share(st, t, body: dict) -> dict:
+    """REFRESH-18: one payback part that covers the share, with the rest
+    left for later, is all of it on that share: what's over is the extra,
+    asked about on the card, however it was linked. A part of it, several
+    shares or anything said about the rest stay as asked."""
+    parts = body.get("parts")
+    if not body.get("later") or not isinstance(parts, list) or len(parts) != 1 or not isinstance(parts[0], dict):
+        return body
+    p = parts[0]
+    if p.get("kind") != "payback" or p.get("new_split") or p.get("let_go") or body.get("extra"):
+        return body
+    charge = st.get_transaction(str(p.get("charge") or ""))
+    try:
+        amount = round(float(p.get("amount")), 2)
+    except (TypeError, ValueError):
+        return body
+    name = ou.covers(st, charge, t, " ".join(str(p.get("person") or "").split()), amount) if charge else None
+    if name is None or _cents(amount) >= _cents(-t.amount):
+        return body
+    return {**body, "parts": [{**p, "amount": round(-t.amount, 2)}], "later": False}
+
+
+def _small_rest(st, deposit_id: str) -> float:
+    """PB-41s: what a deposit over several shares came to over them, small."""
+    rest = next((q for q in st.parts().get(deposit_id) or [] if q["kind"] == "rest"), None)
+    return rest["amount"] if rest and (rest.get("detail") or {}).get("small") else 0.0
 
 
 # ── Paid back: split and unsplit purchases (product owner, 2026-11-18) ──
@@ -733,7 +1094,7 @@ def _new_split_asks(st, body: dict) -> tuple[list[tuple[str, str, float]], str |
         return out, None
     splits = st.splits()
     asked = [p for p in parts if isinstance(p, dict) and p.get("new_split")]
-    if asked and body.get("replace"):
+    if asked and body.get("replace") and not body.get("saying"):
         return [], "Unlink it first, then mark it paid back again."
     held = str((body.get("split") or {}).get("charge") or "") if isinstance(body.get("split"), dict) else ""
     for p in asked:
@@ -854,13 +1215,7 @@ def _let_go_after(st, asks: list[tuple[str, str]]) -> tuple[dict, float]:
                        if s["name"] == name), None)
         if p is None or status is None or status["owes"] < 0.005 or p.get("let_go"):
             continue
-        was = {"split": st.splits().get(cid), "share": t.my_share if t.share_set else None}
-        marks.setdefault("splits", {}).setdefault(cid, was)
-        marks.setdefault("let_go", {}).setdefault(cid, {})[name] = None
-        st.set_let_go(cid, name, p["amount"], _today().isoformat())
-        p["amount"] = round(status["paid"], 2)
-        _reshare(st, t, split)
-        total += _cents(status["owes"])
+        total += _cents(ou.let_go(st, cid, name, _today().isoformat(), marks))
     return marks, total / 100
 
 
@@ -983,12 +1338,17 @@ def paid_back_from_purchase(txn_id: str):
     # shares from the purchase side too. Once the first is linked the deposit
     # is in parts with the rest left to sort, and that rest is still free.
     left = _left_to_sort(st, deposit) if deposit is not None else 0
-    if deposit is None or not (_free_deposit(st, deposit) or left):
+    # REFRESH-18: all of it is on the first share, so what's over there, and
+    # still a question, is what the next share can take.
+    over = _asked_over(st, deposit) if deposit is not None and not left else None
+    if deposit is None or not (_free_deposit(st, deposit) or left or over):
         return jsonify({"error": "Pick the money that paid it back."}), 400
+    # REFRESH-18: what she let go of their share is theirs to pay back.
+    owes = round(owes + ou.let_go_left(p, ou.factor_of(t)), 2)
     if owes < 0.005:
         return jsonify({"error": f"{p['name']} doesn’t owe anything on this."}), 400
     whole = round(-deposit.amount, 2)
-    room = min(left or _cents(whole), _cents(owes))
+    room = min(left or (over[2] if over else _cents(whole)), _cents(owes))
     if body.get("amount") is None:
         amount = room
     else:
@@ -999,8 +1359,24 @@ def paid_back_from_purchase(txn_id: str):
         if amount < 1 or amount > room:
             return jsonify({"error": f"Make it between $0.01 and ${room / 100:,.2f}."}), 400
     part = {"kind": "payback", "amount": amount / 100, "charge": t.fingerprint, "person": p["name"]}
+    if over:
+        first, on, _ = over
+        said = _say_extra(st, first, on["split"], on["person"], [part])
+        if not isinstance(said, dict):
+            return said
+        marks = said["marks"]
+        letting, _ = _let_go_asks(st, [{**part, "let_go": True}] if body.get("let_go") else [])
+        more, total = _let_go_after(st, letting)
+        core._reclassify(st)
+        return jsonify({"ok": True, "title": _paid_back_title([part], total),
+                        "undo": {"rows": [], "marks": ou.merge(marks, more)}})
     if body.get("let_go"):
         part["let_go"] = True
+    if not left and amount == _cents(owes):
+        # REFRESH-18: it covers the share, so all of it is linked there and
+        # what's over is the extra, asked about ("$55 on $40").
+        part["amount"] = whole
+        amount = _cents(whole)
     if not left:
         return save_parts(st, deposit, {"parts": [part], "later": amount < _cents(whole)})
     # Already in parts: the deposit is saved again with this share added, and
@@ -1018,9 +1394,29 @@ def paid_back_from_purchase(txn_id: str):
     if problem:
         return jsonify({"error": problem}), 400
     let_marks, let_total = _let_go_after(st, letting)
+    rows = ou.settle(st, let_marks, links=ou.links_of(st, deposit.fingerprint, t.fingerprint))
     core._reclassify(st)
-    return jsonify({"ok": True, "title": _paid_back_title([part], let_total),
-                    "undo": {"parts": deposit.fingerprint, "marks": {**let_marks, **marks}}})
+    title = _paid_back_title([part], let_total) if let_total >= 0.005 or not ou.line(rows) else ou.line(rows)
+    return jsonify({"ok": True, "title": title,
+                    "undo": {"parts": deposit.fingerprint, "marks": ou.merge(let_marks, marks)}})
+
+
+def _asked_over(st, x: Transaction) -> tuple | None:
+    """(purchase, {split, person}, cents) when all of `x` is on one share and
+    what's over it is still a question."""
+    links = ou.links_of(st, x.fingerprint)
+    if len(links) != 1:
+        return None
+    inflow_id, cid = links[0]
+    charge, split = st.get_transaction(cid), st.splits().get(cid)
+    inflow = st.get_transaction(inflow_id)
+    if charge is None or inflow is None:
+        return None
+    over = ou.over_of(charge, split, inflow, st.all_transactions(), st.payback_people())
+    if not over or over["state"] != ou.ASK:
+        return None
+    person = next(q for q in split["people"] if q["name"] == over["name"])
+    return charge, {"split": split, "person": person}, min(_cents(over["extra"]), _cents(over["asked"]))
 
 
 def _left_to_sort(st, x: Transaction) -> int:
@@ -1413,13 +1809,18 @@ def paid_back_take(txn_id: str):
             out.append(a)
         return out + [_part_for(row["kind"], f.t.fingerprint, (now + more) / 100, row["person"])]
 
+    had = ou.paid_now(st, x.fingerprint)
     marks, problem = _relink(st, x, change)
     if problem:
         return jsonify({"error": problem}), 400
+    settled: dict = {}
+    ou.unpaid(st, had, settled)
+    rows = ou.settle(st, settled, links=ou.links_of(st, x.fingerprint, f.t.fingerprint))
     core._reclassify(st)
     title = (f"Moved ${more / 100:,.2f} from {taken['other']['merchant']}" if more
              else f"Linked ${now / 100:,.2f} · {f.t.merchant or f.t.description}")
-    return jsonify({"ok": True, "title": title, "undo": {"parts": x.fingerprint, "marks": marks}})
+    return jsonify({"ok": True, "title": ou.line(rows) or title,
+                    "undo": {"parts": x.fingerprint, "marks": ou.merge(settled, marks)}})
 
 
 # ── PB-42: one link's options (Paybacks & undo, approved 2026-11-16) ──────
@@ -1529,11 +1930,18 @@ def change_payback(txn_id: str, inflow_id: str):
 
     def change(parts: list[dict]) -> list[dict]:
         return parts[:at] + [new] + parts[at + 1:]
+    had = ou.paid_now(st, x.fingerprint)
     marks, problem = _relink(st, x, change)
     if problem:
         return jsonify({"error": problem}), 400
+    settled: dict = {}
+    ou.unpaid(st, had, settled)
     let_marks, let_total = _let_go_after(st, letting)
+    let_marks = ou.merge(settled, let_marks)
+    rows = ou.settle(st, let_marks, links=ou.links_of(st, x.fingerprint, new["charge"]))
     core._reclassify(st)
+    if title is None and let_total < 0.005:
+        title = ou.line(rows)
     if moved:
         # PP-02: "Priya paid this back, not Sam. Sam owes $26.65 again."
         now_by, was_by = _first_name(moved[0]), _first_name(moved[1])
@@ -1544,7 +1952,7 @@ def change_payback(txn_id: str, inflow_id: str):
     if title is None:
         title = _paid_back_title([new], let_total) or f"Linked ${_cents(new['amount']) / 100:,.2f}"
     return jsonify({"ok": True, "title": title,
-                    "undo": {"parts": x.fingerprint, "marks": {**let_marks, **marks}}})
+                    "undo": {"parts": x.fingerprint, "marks": ou.merge(let_marks, marks)}})
 
 
 def extra_parts(st, t, given) -> tuple[list | None, str | None]:
@@ -1680,6 +2088,7 @@ def unlink_parts(txn_id: str):
     deposit = (t.raw or {}).get("part_of") if not st.parts().get(txn_id) else txn_id
     if not deposit or not st.parts().get(deposit):
         return jsonify({"error": "This isn’t in parts."}), 404
+    had = ou.paid_now(st, deposit)
     # A purchase a part split with its person (`new_split`, add_payer) is
     # as it was before: they come off it, and it's unsplit if no one's left.
     for p in st.parts().get(deposit) or []:
@@ -1688,6 +2097,7 @@ def unlink_parts(txn_id: str):
             if row is not None:
                 sp.drop_payer(st, row, (p.get("detail") or {}).get("charge"))
     n = dp.undo(st, deposit)
+    ou.unpaid(st, had, {})
     # TP-04 Unlink all: the joint money out is as it was, so it's a transfer again.
     from .joint import release_payback
     again = bool(release_payback(st, deposit))
@@ -1857,9 +2267,16 @@ def credit_payback(txn_id: str):
         return round(total, 2)
 
     before = paid()
+    had = ou.paid_now(st, txn_id)
     was = st.payback_people().get(txn_id)
     st.set_payback_person(txn_id, name)
     got = round(paid() - before, 2)
     title = f"{name} paid back ${got:,.2f}" if got >= 0.005 else f"Sent by {name}."
+    marks: dict = {}
+    ou.unpaid(st, had, marks)
+    rows = ou.settle(st, marks, links=ou.links_of(st, txn_id))
+    title = ou.line(rows) or title
+    if marks:
+        core._reclassify(st)
     return jsonify({"ok": True, "title": title, "credited": got,
-                    "undo": {"marks": {"payback_person": {txn_id: was}}}})
+                    "undo": {"marks": {**marks, "payback_person": {txn_id: was}}}})

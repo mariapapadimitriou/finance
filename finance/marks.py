@@ -812,6 +812,10 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
     title = ""
     cat_to = old_cat
 
+    # REFRESH-18: what each share this money paid had been paid, so a let go
+    # on one it's taken off comes back.
+    from . import over_under
+    had = over_under.paid_now(store, t.fingerprint) if not out_ else {}
     # A new answer replaces the old one: links an earlier answer left (a
     # payback, a refund, "not mine" on a joint row) go first, and Undo puts
     # them back (the logic review, gap 24).
@@ -1006,7 +1010,7 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
         # One payback, several purchases (2026-10-28): her sister's lump sum
         # for months of gym. Each purchase takes what's still unpaid on it,
         # up to what's left of the money, in the order she picked them.
-        title, detail = _payback_many(store, t, body, marks)
+        title, detail = _payback_many(store, t, body, marks, day=today.isoformat(), had=had, before=un_exclude)
         un_exclude()
     elif case == "payback":
         if isinstance(body.get("charges"), list) and body["charges"]:
@@ -1027,7 +1031,16 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
         problem = cap_problem(store, charge_id, part if part is not None else -t.amount, t.fingerprint)
         if problem:
             raise Problem(problem)
-        if left > 0.005 and (part if part is not None else -t.amount) > left + 0.005:
+        from .etransfers import known_people, party as etransfer_party
+        people = known_people(store.all_transactions(), store.splits(), store.payback_people())
+        person = (" ".join(str(body.get("person") or "").split())
+                  or (etransfer_party(t, people) or {}).get("name") or None)
+        # REFRESH-18: on someone's share of a split, all of it is theirs;
+        # what's over the share is extra, asked about, never money in.
+        theirs = over_under.covers(store, charge, t, person, part)
+        if theirs:
+            part, person = None, theirs
+        elif left > 0.005 and (part if part is not None else -t.amount) > left + 0.005:
             part = left
         marks.setdefault("paybacks", {})[t.fingerprint] = {
             "charge": t.repays, "kind": store.payback_kinds().get(t.fingerprint),
@@ -1036,10 +1049,6 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
         # drops the second; Undo puts it back too.
         marks.setdefault("payback_more", {})[t.fingerprint] = store.payback_more(t.fingerprint)
         _drop_made_split(store, t, marks)
-        from .etransfers import known_people, party as etransfer_party
-        people = known_people(store.all_transactions(), store.splits(), store.payback_people())
-        person = (" ".join(str(body.get("person") or "").split())
-                  or (etransfer_party(t, people) or {}).get("name") or None)
         store.link_payback(charge_id, t.fingerprint, person, part)
         store.set_payback_kind(t.fingerprint, None)
         reopen_closed(store, charge_id, marks)
@@ -1065,6 +1074,11 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
                       f"is ${share:,.2f}. Not income."
                       + (f" The other ${-t.amount - part:,.2f} counts as money in."
                          if part is not None else ""))
+        over_under.unpaid(store, had, marks)
+        said = over_under.line(over_under.settle(store, marks, links=[(t.fingerprint, charge_id)],
+                                                 day=today.isoformat()))
+        if said:
+            title, detail = said, ""
     elif case == "reimbursement" and isinstance(body.get("charges"), list) and len(body["charges"]) > 1:
         # One deposit, several work expenses (2026-10-29).
         title, detail = _payback_many(store, t, body, marks, kind=REIMBURSEMENT)
@@ -1166,6 +1180,7 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
             store.unlink_payback(t.fingerprint)
             store.set_payback_kind(t.fingerprint, None)
         store.link_refund(t.fingerprint, charge.fingerprint if charge else None)
+        over_under.refunded(store, charge.fingerprint if charge else None, marks)
         recat(cat)
         title = (f"Refund of {charge.merchant}. Comes off {cat}." if charge
                  else f"Refund. Comes off {cat}.")
@@ -1191,6 +1206,7 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
     if case not in ("joint_them", "not_mine"):
         from .joint import claim_deposit
         claim_deposit(store, t, marks)
+    over_under.unpaid(store, had, marks)
     out = {"title": title, "from": old_cat, "to": cat_to, "remember": remember,
            "marks": marks, "detail": detail}
     if share_extra:
@@ -1290,7 +1306,8 @@ def _drop_made_split(store, t: Transaction, marks: dict) -> None:
 
 
 def _payback_many(store, t: Transaction, body: dict, marks: dict,
-                  kind: str | None = None) -> tuple[str, str]:
+                  kind: str | None = None, day: str | None = None, had: dict | None = None,
+                  before=lambda: None) -> tuple[str, str]:
     """Link one payback to several purchases — or, with `kind`
     REIMBURSEMENT, one reimbursement to several work expenses. Returns
     (title, detail)."""
@@ -1315,8 +1332,21 @@ def _payback_many(store, t: Transaction, body: dict, marks: dict,
         picks.append((charge, asked))
     parts: list[tuple[Transaction, float]] = []
     left_over = budget
+    people = known_people(txns, store.splits(), store.payback_people())
+    person = None if kind == REIMBURSEMENT else (
+        " ".join(str(body.get("person") or "").split())
+        or (etransfer_party(t, people) or {}).get("name") or None)
+    from . import over_under
+    # What the sender still owes on each purchase they have a share of.
+    shares = {} if kind else {c.fingerprint: owes for c, _ in picks
+                              if (owes := over_under.owed_on(store, c, person)) is not None and owes >= 0.005}
     for charge, asked in picks:
         room = round(charge.amount - (charge.paid_back or 0.0) + t.part_for(charge.fingerprint), 2)
+        theirs = shares.get(charge.fingerprint)
+        if theirs is not None and asked is None:
+            # REFRESH-18: a share takes what's left of it, never the rest of
+            # the purchase.
+            room = min(room, theirs)
         if left_over <= 0.005:
             raise Problem("They’ve all been paid for: that’s more purchases than the money covers.")
         if room <= 0.005:
@@ -1343,10 +1373,13 @@ def _payback_many(store, t: Transaction, body: dict, marks: dict,
         "person": store.payback_people().get(t.fingerprint), "amount": t.repays_amount}
     marks.setdefault("payback_more", {})[t.fingerprint] = store.payback_more(t.fingerprint)
     _drop_made_split(store, t, marks)
-    people = known_people(txns, store.splits(), store.payback_people())
-    person = None if kind == REIMBURSEMENT else (
-        " ".join(str(body.get("person") or "").split())
-        or (etransfer_party(t, people) or {}).get("name") or None)
+    if shares and len(shares) == len(parts) and left_over >= 0.005 and total is None and all(
+            use >= shares[c.fingerprint] - 0.005 for c, use in parts):
+        # REFRESH-18: more than every share it covers. The rest is extra on
+        # the deposit, asked about there and in Needs a look (PB-41s when
+        # it's small), never money in.
+        before()
+        return _payback_shares(store, t, parts, person, marks, day, had or {})
     (first, first_use), rest = parts[0], parts[1:]
     store.link_payback(first.fingerprint, t.fingerprint, person, first_use)
     store.set_payback_more(t.fingerprint, [(c.fingerprint, use) for c, use in rest])
@@ -1383,12 +1416,43 @@ def _payback_many(store, t: Transaction, body: dict, marks: dict,
         was = add_payer(store, store.get_transaction(charge.fingerprint) or charge, fresh_in, person, use)
         if was is not None:
             marks.setdefault("splits", {}).setdefault(charge.fingerprint, was)
+    over_under.unpaid(store, had or {}, marks)
+    said = over_under.line(over_under.settle(
+        store, marks, links=[(t.fingerprint, c.fingerprint) for c, _ in parts], day=day))
     title = f"Linked to {len(parts)} purchases at {what}. Not income." if len(names) == 1 \
         else f"Linked to {len(parts)} purchases: {what}. Not income."
     detail = f"${used:,.2f} comes off what you spent on them."
     if whole - used > 0.005:
         detail += f" The other ${whole - used:,.2f} counts as money in, not income."
+    if said:
+        title, detail = said, ""
     return title, detail
+
+
+def _payback_shares(store, t: Transaction, parts: list, person: str | None, marks: dict,
+                    day: str | None, had: dict) -> tuple[str, str]:
+    """One payment over several shares with some left: the shares as parts
+    of the deposit, and the rest left to sort (REFRESH-18)."""
+    from . import over_under, parts as dp
+    from .splits import pick, reopen_closed
+    asked = []
+    for c, use in parts:
+        names = [p["name"] for p in store.splits()[c.fingerprint]["people"]]
+        asked.append({"kind": "payback", "charge": c.fingerprint, "amount": use, "person": pick(names, person or "")})
+    store.unlink_payback(t.fingerprint)
+    try:
+        dp.apply(store, store.get_transaction(t.fingerprint) or t, asked, later=True)
+    except dp.Problem as exc:
+        raise Problem(str(exc)) from None
+    marks.setdefault("unparts", []).append(t.fingerprint)
+    for c, _ in parts:
+        reopen_closed(store, c.fingerprint, marks)
+    over_under.unpaid(store, had, marks)
+    rows = over_under.settle(store, marks, links=over_under.links_of(store, t.fingerprint), day=day)
+    used = round(sum(use for _, use in parts), 2)
+    title = f"{asked[0]['person']} paid back {len(parts)} purchases · ${used:,.2f}"
+    title += f" · ${-t.amount - used:,.2f} extra"
+    return over_under.line(rows) or title, ""
 
 
 def _link_reimbursing(store, charge: Transaction, inflow_id: str, marks: dict) -> tuple[Transaction, float]:
@@ -1550,6 +1614,14 @@ def _payback_part(t: Transaction, body: dict) -> float | None:
     return None if abs(part - whole) < 0.005 else part
 
 
+def _clean_extra(row: dict) -> dict:
+    """An extra's row as an Undo sends it back (REFRESH-18)."""
+    from .over_under import ASK, OWE, SMALL
+    return {"state": row.get("state") if row.get("state") in (ASK, OWE, SMALL) else None,
+            "said": [q for q in row.get("said") or [] if isinstance(q, dict)][:50],
+            "hers": bool(row.get("hers"))}
+
+
 def undo_marks(store, marks: dict) -> int:
     """Put back what `apply` recorded in `marks`. Returns how many."""
     if not isinstance(marks, dict):
@@ -1664,7 +1736,10 @@ def undo_marks(store, marks: dict) -> int:
                 for q in split["people"]:
                     gone = q.get("let_go")
                     if isinstance(gone, dict) and gone.get("day"):
-                        store.set_let_go(tid, q["name"], float(gone.get("was") or 0), gone["day"])
+                        store.set_let_go(tid, q["name"], float(gone.get("was") or 0), gone["day"],
+                                         auto=bool(gone.get("auto")))
+                    if isinstance(q.get("extra"), dict):
+                        store.set_split_extra(tid, q["name"], _clean_extra(q["extra"]))
             else:
                 store.clear_split(tid)
             share = was.get("share")
@@ -1681,9 +1756,18 @@ def undo_marks(store, marks: dict) -> int:
             continue
         for name, was in people.items():
             if isinstance(was, dict) and was.get("day"):
-                store.set_let_go(tid, str(name), float(was.get("was") or 0), str(was["day"]))
+                store.set_let_go(tid, str(name), float(was.get("was") or 0), str(was["day"]),
+                                 auto=bool(was.get("auto")))
             else:
                 store.clear_let_go(tid, str(name))
+            n += 1
+    # REFRESH-18: what an extra was said to be, and whose a share is to
+    # settle, as it was.
+    for tid, people in (marks.get("extra") or {}).items():
+        if tid not in known or not isinstance(people, dict):
+            continue
+        for name, was in people.items():
+            store.set_split_extra(tid, str(name), _clean_extra(was) if isinstance(was, dict) else None)
             n += 1
     # SPLIT-C (S-46): That's everything, or a payback that reopened it.
     for tid, day in (marks.get("split_closed") or {}).items():

@@ -292,7 +292,7 @@ class TestSwiftWiring:
         card = split[split.index("struct SplitPeople"):split.index("// MARK: - Mark paid back")]
         assert "PaidBackBar(segments: barSegments" in card and "PaidBar(" not in card
         assert "See who else owes you" in card
-        for words in ("Mark paid back", "Mark the rest paid back", "Let the rest go", "Undo let it go",
+        for words in ("Mark paid back", "Add another payment", "Let the \\(Format.amount(p.owes)) go", "Undo let it go",
                       "Change the split", "Paid so far", "Paid with"):
             assert words in menus, words
 
@@ -379,7 +379,8 @@ class TestLessWords:
             "share becomes \\(Format.amount(p.shareNow))", "still owe the same", "no one has paid yet",
             "are worked out again", "Nothing is sent to them", "isn’t joint any more\"",
             "No amounts for now", "isn’t needed here", "Amounts not set", "Set what each person owes now",
-            "Keep the rest as yours and close it", "Track paybacks for", "Add another payment",
+            # "Add another payment" is back as a title (S-40b2, REFRESH-18).
+            "Keep the rest as yours and close it", "Track paybacks for",
             "no amount in it", "nothing to let go", "because you haven’t set one", "How do you want to settle?",
             "Shares become", "stay linked either way", "more than their share. Next, you’ll say",
             "stays linked. The other", "nobody shows as owing", "so that’s the most it can take. You’ll say",
