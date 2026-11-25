@@ -97,6 +97,13 @@ def _tile(c: Transaction, cards: dict[str, str], **extra) -> dict:
             "date": c.date[:10], "category": c.category or "Other", "card": _card(c, cards), **extra}
 
 
+def _hers(splits: dict, r: dict) -> bool:
+    """She undid a small let go on this share: Pearl doesn't settle it."""
+    people = (splits.get(r["charge_id"]) or {}).get("people") or []
+    p = next((q for q in people if q["name"] == r["name"]), {})
+    return bool((p.get("extra") or {}).get("hers") or p.get("let_go"))
+
+
 def build(t: Transaction, transactions: list[Transaction], splits: dict | None = None,
           payer: dict | None = None, people: list[str] | None = None,
           cards: dict[str, str] | None = None, sender: str | None = None,
@@ -129,11 +136,24 @@ def build(t: Transaction, transactions: list[Transaction], splits: dict | None =
     seen: set[str] = set()
 
     # 1. Splits the sender is on and still owes on (PQ-03b): the closest to
-    # what they owe first, then the latest. Never one they'd overpay.
+    # what they owe first, then the latest. One they'd overpay says the extra
+    # (PQ-03o, REFRESH-18), and one a small difference settles says so first
+    # (PQ-03s); then a share she let go of.
     if splits:
+        from .over_under import is_small
+        from .splits import brief, let_go_rows
         rows, theirs = for_inflow(t, transactions, splits, payer or {})
-        owed = [r for r in rows if theirs and not r.get("unknown")
-                and r["owes"] >= 0.005 and got <= r["owes"] + 0.005]
+        owed = [r for r in rows if theirs and not r.get("unknown") and r["owes"] >= 0.005]
+        if any(got <= r["owes"] + 0.005 for r in owed):
+            # Never one they'd overpay, when another takes all of it.
+            owed = [r for r in owed if got <= r["owes"] + 0.005]
+        else:
+            owed.sort(key=lambda r: abs(r["owes"] - got))
+        for r in let_go_rows(t, transactions, splits, payer or {}):
+            c = r["charge"]
+            if any(c.fingerprint == o["charge_id"] for o in owed) or got < 0.005:
+                continue
+            owed.append(brief(r))
         # for_inflow lists the latest first; a stable sort keeps that.
         owed.sort(key=lambda r: abs(r["owes"] - got) >= 0.005)
         for r in owed:
@@ -144,11 +164,23 @@ def build(t: Transaction, transactions: list[Transaction], splits: dict | None =
             rest = round(r["owes"] - got, 2)
             name = r["name"]
             compare = f"{_money(got)} of {_whose(name)} {_money(r['owes'])}"
-            if rest >= 0.005:
+            toast = f"{who} paid back {_money(got)} for {_shown(c)}"
+            # S-44s, S-44s2, S-04g2: the toast says what it settled.
+            if r.get("let_go"):
+                compare = f"You let {_money(r['owes'])} go"
+                if rest < 0.005:
+                    toast = f"{name} paid back the {_money(r['owes'])} you let go"
+            elif rest <= -0.005:
+                compare = f"{_money(r['owes'])} of {_money(got)} · {_money(rest)} extra"
+                toast = f"{name} paid back {_money(r['owes'])} · {_money(rest)} extra"
+            elif is_small(rest, r["share"]) and not _hers(splits, r):
+                compare = f"{_money(got)} of {_money(r['owes'])} · {_money(rest)} let go"
+                toast = f"{name} paid back {_money(got)} · {_money(rest)} let go"
+            elif rest >= 0.005:
                 compare += f" · {_money(rest)} still to come"
             tiles.append(_tile(c, cards, kind="split", person=name, owes=r["owes"],
                                title=f"{_shown(c)} · {_whose(name)} share",
-                               compare=compare, toast=f"{who} paid back {_money(got)} for {_shown(c)}"))
+                               compare=compare, toast=toast))
 
     # 2. The purchase the sender's message names.
     said = memo_match(t, transactions)
@@ -194,7 +226,7 @@ def build(t: Transaction, transactions: list[Transaction], splits: dict | None =
     return {
         "who": who, "named": named, "tiles": tiles,
         # PQ-03b: a part payment stays on the split.
-        "part": best["kind"] == "split" and abs(best["owes"] - got) >= 0.005,
+        "part": best["kind"] == "split" and best["owes"] - got >= 0.005,
         "card": {"title": f"Paying you back for {m}?",
                  "line": f"Pearl’s guess · {guess}" if guess else "Pearl’s guess"},
     }

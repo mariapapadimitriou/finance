@@ -57,10 +57,11 @@ class TestOneDepositTwoPeopleFromThePurchase:
         self.link(client, pai, dep, "Sam")
         second = self.link(client, pai, dep, "Jo")
         undo(client, second.get_json())
-        assert owing(client, pai) == {"Sam": (40.0, 0.0), "Jo": (0.0, 40.0)}
+        # REFRESH-18: all $80.00 is Sam's again, $40.00 of it still asked about.
+        assert owing(client, pai) == {"Sam": (80.0, 0.0), "Jo": (0.0, 40.0)}
         kinds = _paybacks(client, dep)
-        assert ("payback", 40.0, "Sam", "PAI NORTHERN THAI") in kinds
-        assert ("rest", 40.0, None, None) in kinds
+        assert ("payback", 80.0, "Sam", "PAI NORTHERN THAI") in kinds
+        assert not any(k[0] == "rest" for k in kinds)
 
     def test_only_what_is_left_of_it(self, client):
         pai, dep = self.setup(client)

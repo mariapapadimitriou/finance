@@ -242,8 +242,9 @@ def build(transactions: list[Transaction], today: str | None = None,
                       f"{on}, ${said['amount']:,.2f}.")
         elif match:
             guess = {"action": "split", "split": match}
-            reason = (f"{match['name']} owes you {_money(match['owes'])} for "
-                      f"{match['merchant']}.")
+            reason = (f"You let {_money(match['owes'])} go on {match['merchant']}." if match.get("let_go")
+                      else f"{match['name']} owes you {_money(match['owes'])} for "
+                           f"{match['merchant']}.")
         elif candidates and candidates[0]["likely"]:
             top = candidates[0]
             guess = {"action": "payback", "charge": top}
@@ -267,6 +268,9 @@ def build(transactions: list[Transaction], today: str | None = None,
             reason = f"From {person}. It didn’t pair with any of your accounts."
         money_in.append({"key": key, "txn": _brief(t, people), "guess": guess,
                          "candidates": candidates, "reason": reason,
+                         # S-21p, S-21g (REFRESH-18): "Nov 23 · owes you
+                         # $15.00", "Paid back for Corner Bistro?".
+                         **({"split": match} if guess["action"] == "split" else {}),
                          **({"from": person} if person else {})})
 
     # 3a. Money back from a store she bought from, not yet called a refund:
@@ -396,6 +400,19 @@ def build(transactions: list[Transaction], today: str | None = None,
                           f"so ${q['amount']:,.2f} of this is extra.")
             money_in.append({"key": key, "txn": _brief(t), "guess": {"action": "extra"},
                              "candidates": [], "extra": extra, "reason": reason})
+
+    # 3f. What's the extra? (S-21o, REFRESH-18): a payment over someone's
+    # share, until she says what it is. One row for the payment, "Nov 20 ·
+    # $15.00 extra"; its chip opens S-11e. Never a small one.
+    if splits:
+        from .over_under import asked
+        for q in asked(transactions, splits, payer or {}):
+            key = q["key"]
+            if key in dismissed:
+                continue
+            money_in.append({"key": key, "txn": _brief(q["txn"], people), "guess": {"action": "over"},
+                             "candidates": [], "over": q["over"],
+                             "reason": f"{_money(q['over']['amount'])} extra"})
 
     # 4. Income whose type is a guess.
     income = []

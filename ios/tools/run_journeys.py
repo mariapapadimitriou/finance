@@ -156,6 +156,47 @@ def seed_older(db_path: str) -> None:
         c.execute("UPDATE joint_accounts SET share = 50, people = '[\"Sam\"]' WHERE account_id = 'joint_1123'")
 
 
+# Overpaid and underpaid shares (REFRESH-18): Corner Bistro with Georgia Klev,
+# and what she and the others sent, for each journey.
+OVER = {
+    "testOverRoundedUp": (59.54, {"Georgia Klev": 19.77, "Priya": 20.0}, [("Georgia Klev", 20.0)]),
+    "testOverRoundedDown": (59.54, {"Georgia Klev": 19.77, "Priya": 20.0}, [("Priya", 19.0)]),
+    "testOverSaidFromThePurchase": (80.0, {"Georgia Klev": 40.0}, [("Georgia Klev", 55.0)]),
+    "testOverTwoPayments": (80.0, {"Georgia Klev": 40.0}, [("Georgia Klev", 25.0), ("Georgia Klev", 15.0)]),
+    "testOverLetGoThenPaid": (80.0, {"Georgia Klev": 40.0}, [("Georgia Klev", 25.0), ("Georgia Klev", 15.0)]),
+    "testOverTwoGeorgias": (120.0, {"Georgia Klev": 40.0, "Georgia Pappas": 40.0},
+                            [("Georgia Klev", 55.0), ("Georgia Pappas", 25.0)]),
+    "testOverDeposit": (80.0, {"Georgia Klev": 40.0}, [("Georgia Klev", 55.0)]),
+    "testOverNeedsALook": (80.0, {"Georgia Klev": 40.0}, [("Georgia Klev", 55.0)]),
+}
+
+
+def seed_over(db_path: str, journey: str) -> None:
+    from finance.ingest.base import IngestResult
+    from finance.models import Transaction
+    from finance.pipeline import ingest
+    from finance.store import Store
+    whole, people, sent = OVER[journey]
+    store = Store(db_path)
+    today = date.today()
+    # Only these people's money in is Suggested, so the demo's own goes.
+    store.forget_rows({t.fingerprint for t in store.all_transactions()
+                       if t.account_id == "td_chq_2210" and "PRIYA" in t.description.upper()})
+    bistro = Transaction(date=(today - timedelta(days=1)).isoformat(), description="CORNER BISTRO", merchant="Corner Bistro",
+                         amount=whole, category="Dining", account_id="amex_1004",
+                         account_name="American Express ••1004", raw={"account_type": "credit"})
+    ingest(store, IngestResult(transactions=[bistro], account_id="amex_1004"))
+    ingest(store, IngestResult(transactions=[
+        Transaction(date=today.isoformat() if i else (today - timedelta(days=1)).isoformat(),
+                    description=f"E-TRANSFER FROM {name.upper()}", amount=-amount, account_id="td_chq_2210",
+                    account_name="TD Chequing ••2210", raw={"account_type": "depository"})
+        for i, (name, amount) in enumerate(sent)], account_id="td_chq_2210"))
+    cid = next(t.fingerprint for t in store.all_transactions() if t.description == "CORNER BISTRO")
+    store.set_split(cid, "amount", [{"name": n, "amount": a} for n, a in people.items()], True)
+    store.set_share(cid, round(whole - sum(people.values()), 2))
+    store.set_transaction_category(cid, "Dining")
+
+
 def simulator(runtime: str, text: str) -> str:
     # One simulator at a time (product owner): PEARL_SIM_UDID reuses one
     # that is already booted instead of booting "Pearl journeys" as well.
@@ -211,6 +252,10 @@ def main() -> int:
                 seed(db_path)
                 if journey and journey.startswith(OLDER):
                     seed_older(db_path)
+                if journey in OVER:
+                    seed_over(db_path, journey)
+                    # Each has its own rows, so nothing the app kept is right.
+                    subprocess.run(["xcrun", "simctl", "uninstall", udid, "com.mariapapadimitriou.pearl"], capture_output=True)
                 env = {**env_base, "LEDGER_DB": db_path, "PORT": str(SERVER_PORT), "PEARL_PWNED_CHECK": "0",
                        "SPENDIE_SECRET_KEY": "ui-test-key-that-is-definitely-long-enough"}
                 log_path = os.path.join(args.out, f"server-{journey or 'all'}.log")

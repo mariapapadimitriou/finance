@@ -103,7 +103,12 @@ def test_45_select_target_and_guess_said_once():
 
 def test_46_smaller_things():
     menus = read("Views", "Transactions", "SplitMenus.swift")
-    assert "if !links.isEmpty { APSheetLabel(text: \"Paid so far\") }\n            APOptionCard {\n                ForEach(links)" in menus
+    # REFRESH-18 (S-40b2): the payments are a card of their own, still with no
+    # label and no card when nothing is paid.
+    assert "if !links.isEmpty {\n            APSheetLabel(text: p.settledInFull ? \"Paid with\" : \"Paid so far\")\n" \
+           "            APOptionCard {\n                ForEach(Array(links.enumerated())" in menus
+    assert "if !links.isEmpty { APSheetLabel(text: \"Paid so far\") }\n                APOptionCard {\n" \
+           "                    ForEach(links)" in menus
     parts = read("Views", "Transactions", "PartsFlow.swift")
     assert "tickedShares.count + unsplitPaid.count > 0\n            && tickedShares.allSatisfy" in parts
     assert "private var likelyUnsplit: [UnsplitRow]" in parts

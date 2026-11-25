@@ -974,6 +974,26 @@ struct SplitSheet: View {
         return max(0, Int((p.paid * 100).rounded()) - shareCents(key))
     }
 
+    /// What she'd owe them back if this were saved. An extra that's still a
+    /// question, or small, isn't owed until she says (REFRESH-18).
+    private func oweCents(_ key: String) -> Int {
+        let over = overCents(key)
+        guard over > 0, let p = saved(key), let extra = p.extra, extra.asks || extra.small,
+              shareCents(key) == Int((p.share * 100).rounded()) else { return over }
+        return Int((extra.owe * 100).rounded())
+    }
+
+    /// What stays let go on this share once it's saved, in cents: the same
+    /// while the share is, a small one of Pearl's comes back first, and one
+    /// she said never grows (REFRESH-18).
+    private func letGoCents(_ p: Transaction.Splitting.Person, share cents: Int) -> Int {
+        guard p.letGo != nil else { return 0 }
+        let left = Int((p.letGoLeft * 100).rounded())
+        if cents == Int((p.share * 100).rounded()) { return left }
+        if p.letGo?.auto == true { return 0 }
+        return max(0, min(left, cents - Int((p.paid * 100).rounded())))
+    }
+
     /// Under a name (REDESIGN-10, short): "Paid $20.00 · $8.04 let go",
     /// "Paid $28.04 · $8.04 over" (S-03e); "the odd cent" (S-15 v2, S-18
     /// v2); "2 shares · $42.06" (Shares).
@@ -1013,14 +1033,15 @@ struct SplitSheet: View {
                 // TEST-16 (THL-289): "Paid back $30.00" for a share paid in
                 // full, "Paid $10.00 of $30.00" for part of it.
                 let share = Double(cents) / 100
-                let letGo = p.letGo != nil && cents - Int((p.paid * 100).rounded()) > 0
+                let gone = letGoCents(p, share: cents)
+                let letGo = gone > 0
                 var line = over == 0 && p.paid >= share - 0.005 ? "Paid back \(Format.amount(p.paid))\(how)"
                     : over == 0 && !letGo ? "Paid \(Format.amount(p.paid)) of \(Format.amount(share))\(how)"
                     : "Paid \(Format.amount(p.paid))\(how)"
                 if over > 0 {
                     line += " · \(Format.amount(Double(over) / 100)) over"
                 } else if letGo {
-                    line += " · \(Format.amount(Double(cents) / 100 - p.paid)) let go"
+                    line += " · \(Format.amount(Double(gone) / 100)) let go"
                 } else if how.isEmpty, let day = p.paidOn {
                     line += " · \(Format.short(day))"
                 }
@@ -1037,7 +1058,7 @@ struct SplitSheet: View {
 
     /// S-03e (REFRESH-03): "you owe Priya $8.04", after "Adds up ✓ ·".
     private var overWords: String {
-        let over = people.map { ($0, overCents($0)) }.filter { $0.1 > 0 }
+        let over = people.map { ($0, oweCents($0)) }.filter { $0.1 > 0 }
         guard !over.isEmpty else { return "" }
         return over.map { name, c in "you owe \(name) \(Format.amount(Double(c) / 100))" }.joined(separator: " · ")
     }
@@ -1046,7 +1067,7 @@ struct SplitSheet: View {
     /// pronouns): "Priya paid $8.04 more than Priya’s share. It shows under
     /// You owe in Owed to you."
     private var overHint: String {
-        let over = people.map { ($0, overCents($0)) }.filter { $0.1 > 0 }
+        let over = people.map { ($0, oweCents($0)) }.filter { $0.1 > 0 }
         guard !over.isEmpty else { return "" }
         return over.map { name, c in "\(name) paid \(Format.amount(Double(c) / 100)) more than \(possessive(name)) share." }
             .joined(separator: " ") + " It shows under You owe in Owed to you."
@@ -1500,7 +1521,9 @@ struct SplitPeople: View {
             out.append(mine.full ? .paid : .part(mine.reimbursed / max(mine.amount, 0.01)))
         }
         for p in split.people {
-            if p.letGo != nil { out.append(.letGo) }
+            if p.letGo != nil {
+                out.append(p.paid >= 0.005 ? .partLetGo(p.paid / max(p.share, 0.01)) : .letGo)
+            }
             else if p.owes < 0.005 && p.paid >= 0.005 { out.append(.paid) }
             else if p.paid >= 0.005 { out.append(.part(p.paid / max(p.amount, 0.01))) }
             else { out.append(.owes) }
@@ -1511,8 +1534,13 @@ struct SplitPeople: View {
     /// "Paid back so far: Jo all, Sam $10.00 of $30.00, Priya nothing yet, Alex let go".
     private var barSpoken: String {
         let each = split.people.map { p -> String in
+            if p.letGo != nil, p.paid >= 0.005 {
+                return "\(p.name) \(Format.amount(p.paid)) of \(Format.amount(p.share)), \(Format.amount(p.letGoLeft)) let go"
+            }
             if p.letGo != nil { return "\(p.name) let go" }
-            if p.owes < 0.005 && p.paid >= 0.005 { return "\(p.name) all" }
+            if p.owes < 0.005 && p.paid >= 0.005 {
+                return "\(p.name) all" + (p.extra?.asks == true ? ", \(Format.amount(p.extra?.amount ?? 0)) extra" : "")
+            }
             if p.paid >= 0.005 { return "\(p.name) \(Format.amount(p.paid)) of \(Format.amount(p.amount))" }
             return "\(p.name) nothing yet"
         }
@@ -1522,9 +1550,16 @@ struct SplitPeople: View {
     /// An A+ payment row on the split card (kit `.prow`): face 40, name over
     /// its line, the amount on the right edge; the whole row is the button.
     private func splitRow(face: String, name: String, line: String, lineTone: Color = Pearl.muted,
-                          amount: String?, amountTone: Color, extra: String? = nil) -> some View {
-        let figure = amount.map {
-            Text($0).font(Nacre.headline).monospacedDigit().foregroundColor(amountTone).pearlAmountFit()
+                          amount: String?, amountTone: Color, extra: String? = nil,
+                          under: String? = nil, chip: Double? = nil) -> some View {
+        // REFRESH-18: "left", "let go" or "$0.23 extra" under the amount.
+        let figure = amount.map { a in
+            VStack(alignment: amountsUnder ? .leading : .trailing, spacing: 0) {
+                Text(a).font(Nacre.headline).monospacedDigit().foregroundColor(amountTone).pearlAmountFit()
+                if let under = under {
+                    Text(under).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                }
+            }
         }
         return HStack(spacing: 12) {
             APFace(name: face)
@@ -1534,8 +1569,15 @@ struct SplitPeople: View {
                     .fixedSize(horizontal: false, vertical: true)
                 if let extra = extra {
                     Text(extra).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 if amountsUnder { figure }
+                if let chip = chip {
+                    // S-04o: the chip's place; the button itself is over it,
+                    // so it isn't inside the row's.
+                    GuessChip(label: "What’s the extra \(Format.amount(chip))?", question: false)
+                        .padding(.top, 4).hidden().accessibilityHidden(true)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if !amountsUnder { figure }
@@ -1679,21 +1721,41 @@ struct SplitPeople: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    /// What they still owe (ink); what they paid (money in); what she let go (muted).
-    private func owedFigure(_ p: Transaction.Splitting.Person) -> (String, Color) {
-        (Format.amount(p.owes >= 0.005 ? p.owes : p.letGo.map { $0.was - p.paid } ?? p.paid),
-         p.letGo != nil ? Pearl.muted : p.owes >= 0.005 ? Pearl.ink : Pearl.moneyIn)
+    /// REFRESH-18 (S-04x): the right says what's left (ink), let go (muted)
+    /// or covered (green), with "left", "let go" or the small difference
+    /// under it.
+    private func owedFigure(_ p: Transaction.Splitting.Person) -> (String, Color, String?) {
+        if p.owes >= 0.005 { return (Format.amount(p.owes), Pearl.ink, p.paid >= 0.005 ? "left" : nil) }
+        if p.letGo != nil, !p.settledInFull { return (Format.amount(p.letGoLeft), Pearl.muted, "let go") }
+        // S-04s: what covered the share, over the cents of the difference.
+        if p.letGo != nil { return (Format.amount(p.paid), Pearl.moneyIn, "\(Format.amount(p.letGoLeft)) let go") }
+        return (Format.amount(min(p.paid, p.amount)), Pearl.moneyIn,
+                p.extra?.small == true ? "\(Format.amount(p.extra?.amount ?? 0)) extra" : nil)
     }
 
     private func person(_ p: Transaction.Splitting.Person) -> some View {
-        let full = p.owes < 0.005 && p.letGo == nil && p.paid >= 0.005
+        let chip = p.extra?.asks == true ? p.extra?.amount : nil
+        return personButton(p, chip: chip)
+            .overlay(alignment: .bottomLeading) {
+                if let chip = chip {
+                    // S-04o: under the name, in line with it (16 + 40 + 12).
+                    ExtraChip(amount: chip) { onChoose(p, .sayExtra) }
+                        .padding(.leading, 68)
+                }
+            }
+    }
+
+    private func personButton(_ p: Transaction.Splitting.Person, chip: Double?) -> some View {
+        let full = p.settledInFull
         let figure = owedFigure(p)
         return Button { options = p } label: {
             // Bar only (1284:230, S-44b–i): the status line, no "what paid
             // it back" line under it (product owner, Nov 13). The payments
             // are in the row's options.
             splitRow(face: p.name, name: p.name, line: (full ? "✓ " : "") + status(p),
-                     lineTone: full ? Pearl.moneyIn : Pearl.muted, amount: figure.0, amountTone: figure.1)
+                     lineTone: full ? Pearl.moneyIn : Pearl.muted, amount: figure.0, amountTone: figure.1,
+                     // S-04o2, S-04o3: what she said the extra was.
+                     extra: p.extra?.asks == true ? nil : p.extra?.line, under: figure.2, chip: chip)
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
@@ -1708,10 +1770,12 @@ struct SplitPeople: View {
     private func spoken(_ p: Transaction.Splitting.Person) -> String {
         // Note 1096:4483: "Priya, owes you 30 dollars."
         if p.owes >= 0.005 && p.paid < 0.005 { return "\(p.name), owes you \(Format.amount(p.owes))" }
-        guard p.owes < 0.005, p.letGo == nil, p.paid >= 0.005 else {
-            return [p.name, status(p), Format.amount(p.owes >= 0.005 ? p.owes : p.paid)].joined(separator: ", ")
+        let figure = owedFigure(p)
+        guard p.settledInFull else {
+            return [p.name, status(p), [figure.0, figure.2].compactMap { $0 }.joined(separator: " ")].joined(separator: ", ")
         }
-        return [p.name, "paid back", p.paidOn.map { Format.monthDay($0) }, Format.amount(p.paid)]
+        return [p.name, "paid back", p.paidOn.map { Format.monthDay($0) }, figure.0, figure.2,
+                p.extra?.asks == true ? nil : p.extra?.line]
             .compactMap { $0 }.joined(separator: ", ")
     }
 
@@ -1742,15 +1806,18 @@ struct SplitPeople: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    /// "Owes you", "Paid $15.00 of $60.00 · owes $45.00" (PB-14, Paid back
-    /// 1351:10402), "Cash · Nov 13", "Let go · Nov 20".
+    /// "Owes you", "Paid $25.00 of $40.00" (S-04l, REFRESH-18: what's left is
+    /// on the right), "Paid back · 2 payments" (S-04p), "Cash · Nov 13",
+    /// "Let go · Nov 20".
     private func status(_ p: Transaction.Splitting.Person) -> String {
-        if let gone = p.letGo { return "Let go · \(Format.short(gone.day))" }
-        if p.owes >= 0.005 {
-            return p.paid >= 0.005
-                ? "Paid \(Format.amount(p.paid)) of \(Format.amount(p.amount)) · owes \(Format.amount(p.owes))"
-                : "Owes you"
+        if let gone = p.letGo, !p.settledInFull {
+            return p.paid >= 0.005 ? "Paid \(Format.amount(p.paid)) of \(Format.amount(p.share))"
+                : "Let go · \(Format.short(gone.day))"
         }
+        if p.owes >= 0.005 {
+            return p.paid >= 0.005 ? "Paid \(Format.amount(p.paid)) of \(Format.amount(p.amount))" : "Owes you"
+        }
+        if let n = p.links?.count, n > 1 { return "Paid back · \(n) payments" }
         let how = (p.cash ?? 0) >= p.paid - 0.005 && (p.cash ?? 0) > 0 ? "Cash" : "Paid back"
         // SPLIT-14 (S-06 v3): "Paid back · PayPal · Nov 13", or "Another app" when unnamed.
         let app: String? = (p.app ?? 0) >= p.paid - 0.005 && (p.app ?? 0) > 0 ? (p.appName ?? "Another app") : nil
@@ -1876,13 +1943,23 @@ struct MarkPaidSheet: View {
         self.onDone = onDone
         self.onUndoable = onUndoable
         // SPLIT-C (S-06uc): on Not sure yet the amount is typed, no "of $x".
-        _amount = State(initialValue: t.splitting?.unsure == true ? "" : SplitSheet.plain(person.owes))
+        _amount = State(initialValue: t.splitting?.unsure == true ? ""
+                        : SplitSheet.plain(person.owes >= 0.005 ? person.owes : person.letGoLeft))
     }
 
     /// SPLIT-C: Not sure yet takes any amount, up to what the purchase still
     /// costs her (decision 2); a set split, what they owe.
     private var unsure: Bool { t.splitting?.unsure == true }
-    private var limit: Double { unsure ? (t.splitting?.still ?? 0) : person.owes }
+    /// What she let go of their share is theirs to pay back (REFRESH-18).
+    private var limit: Double { unsure ? (t.splitting?.still ?? 0) : person.owes + person.letGoLeft }
+    /// S-06ra2: not the first payment on this share.
+    private var adding: Bool { !unsure && (person.paid >= 0.005 || person.letGo != nil) }
+    /// "$15.00 left on Corner Bistro"; after a let go, S-21g's words.
+    private var leftLine: String {
+        person.letGo != nil && person.owes < 0.005
+            ? "You let \(Format.amount(person.letGoLeft)) go on \(t.merchant)"
+            : "\(Format.amount(person.owes)) left on \(t.merchant)"
+    }
 
     var body: some View {
         if extraPage { extraSheet } else { markSheet }
@@ -1905,10 +1982,10 @@ struct MarkPaidSheet: View {
     private var howSheet: some View {
         APSheet(dismissDisabled: busy) {
             // G2-Person: "How did Priya pay?" centred, then Priya and what's owed.
-            APSheetHeader(heading: "How did \(person.name) pay?", face: person.name, overline: "Mark paid back",
-                          title: person.name,
+            APSheetHeader(heading: "How did \(person.name) pay?", face: person.name,
+                          overline: adding ? "Add another payment" : "Mark paid back", title: person.name,
                           sub: unsure ? "Any amount · \(Format.amount(limit)) still counts as yours"
-                              : "\(Format.amount(person.owes)) owed on \(t.merchant)") { dismiss() }
+                              : adding ? leftLine : "\(Format.amount(person.owes)) owed on \(t.merchant)") { dismiss() }
             // REFRESH-03 (S-06ra): three titles; only Cash keeps a line.
             APOptionCard {
                 APOptionRow(symbol: "creditcard", title: "Bank or e-Transfer", prominent: true) {
@@ -1953,7 +2030,7 @@ struct MarkPaidSheet: View {
             // sheet's who: BANK OR E-TRANSFER, Priya, "$30.00 owed on Loblaws".
             APSheetHeader(heading: "Which payment was it?", face: person.name, overline: "Bank or e-Transfer",
                           title: person.name,
-                          sub: unsure ? "Any amount, on \(t.merchant)" : "\(Format.amount(person.owes)) owed on \(t.merchant)",
+                          sub: unsure ? "Any amount, on \(t.merchant)" : leftLine,
                           back: back) { dismiss() }
             PearlField(placeholder: "Search by name or amount", text: $query, kind: .search)
             .task(id: query) {
@@ -1972,7 +2049,11 @@ struct MarkPaidSheet: View {
                 if !likely.isEmpty { depositSection("Suggested", likely) }
                 if !rest.isEmpty { depositSection("Other money in", rest) }
             }
-            if inParts && !picked.isEmpty && !unsure {
+            if let line = settlesLine {
+                // S-06rb3 "$15.00 extra", S-06rb4 "$1.00 let go": said before Link.
+                Text(line).font(.custom("Figtree-SemiBold", size: 15, relativeTo: .subheadline)).monospacedDigit()
+                    .foregroundColor(Pearl.ink).frame(maxWidth: .infinity).multilineTextAlignment(.center)
+            } else if inParts && !picked.isEmpty && !unsure {
                 VStack(alignment: .leading, spacing: 6) {
                     PaidBackBar(segments: [.part((person.paid + paying) / max(person.amount, 0.01))], spoken: "")
                         .accessibilityHidden(true)
@@ -1983,7 +2064,7 @@ struct MarkPaidSheet: View {
             }
             if let error = error { CautionBanner(text: error) }
         } footer: {
-            PearlSheetButtons(primary: error != nil ? "Try again" : "Link \(Format.amount(paying))", busy: busy,
+            PearlSheetButtons(primary: error != nil ? "Try again" : picked.isEmpty ? "Link" : "Link \(Format.amount(paying))", busy: busy,
                               busyLabel: "Linking…") { Task { await primary() } }
                 .disabled(picked.isEmpty)
         }
@@ -2014,13 +2095,10 @@ struct MarkPaidSheet: View {
                 // G2-AMarkPaid: the money-in icon first, the tick at the end.
                 APIcon(symbol: "creditcard", tone: Pearl.moneyIn)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(d.name) · \(Format.short(d.date))").font(Nacre.body)
-                        .foregroundColor(Pearl.ink)
-                    // TEST-20: "Amount matches" only when it's theirs and it does.
-                    let sub = [d.match == "amount" ? "Amount matches" : d.accountName, how].compactMap { $0 }
-                    if !sub.isEmpty {
-                        Text(sub.joined(separator: " · ")).font(Nacre.subheadline).foregroundColor(Pearl.muted)
-                    }
+                    // S-06rb2 (REFRESH-18): the name over the day.
+                    Text(d.name).font(Nacre.body).foregroundColor(Pearl.ink)
+                    Text([Format.short(d.date), how].compactMap { $0 }.joined(separator: " · "))
+                        .font(Nacre.subheadline).foregroundColor(Pearl.muted)
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
@@ -2067,7 +2145,7 @@ struct MarkPaidSheet: View {
             VStack(spacing: 8) {
                 HStack(spacing: 6) {
                     Text("$").foregroundColor(Pearl.muted).accessibilityHidden(true)
-                    TextField("", text: $amount, prompt: Text(String(format: "%.2f", unsure ? 0 : person.owes)).foregroundColor(Pearl.muted))
+                    TextField("", text: $amount, prompt: Text(String(format: "%.2f", unsure ? 0 : limit)).foregroundColor(Pearl.muted))
                         .foregroundColor(Pearl.ink).tint(Pearl.action)
                         .keyboardType(.decimalPad).fixedSize()
                         .focused($typingAmount)
@@ -2082,6 +2160,7 @@ struct MarkPaidSheet: View {
                 // G2-BMarkPaid S-06uc: "Any amount Sam gave you"; the most it
                 // can take is said if she types more.
                 Text(unsure ? "Any amount \(person.name) gave you"
+                     : person.owes < 0.005 && person.letGo != nil ? leftLine
                      : "\(person.name) owes \(Format.amount(person.owes))").font(Nacre.footnote).foregroundColor(Pearl.muted)
                     .multilineTextAlignment(.center)
             }
@@ -2107,13 +2186,13 @@ struct MarkPaidSheet: View {
                 Text(line).font(Nacre.footnote).foregroundColor(Pearl.muted)
                     .multilineTextAlignment(.center).frame(maxWidth: .infinity)
                     .fixedSize(horizontal: false, vertical: true)
-            } else if how == "cash" && overBy < 0.005 {
+            } else if how == "cash" && !asksExtra {
                 // S-06rc (REFRESH-03), G2-CashRemind: one centred line, no card.
                 Text("Deposit it later? Pearl won’t count it twice.")
                     .font(Nacre.footnote).foregroundColor(Pearl.muted)
                     .multilineTextAlignment(.center).frame(maxWidth: .infinity)
             }
-            if overBy >= 0.005 {
+            if asksExtra {
                 // S-06 v2 (SPLIT-11): more than they owe; S-11c says what. Ink, not red.
                 Text("\(Format.amount(overBy)) more than \(person.name) owes. You’ll say what the extra is next.")
                     .font(Nacre.subheadline).foregroundColor(Pearl.ink)
@@ -2122,8 +2201,8 @@ struct MarkPaidSheet: View {
             if let error = error { CautionBanner(text: error) }
         } footer: {
             // G2-BMarkPaid: Mark … paid back (or Next), then Cancel.
-            PearlSheetButtons(primary: overBy >= 0.005 ? "Next"
-                                       : "Mark \(Format.amount(typed ?? (unsure ? 0 : person.owes))) paid back",
+            PearlSheetButtons(primary: asksExtra ? "Next"
+                                       : "Mark \(Format.amount(typed ?? (unsure ? 0 : limit))) paid back",
                               busy: busy, busyLabel: "Saving…", secondary: "Cancel",
                               onPrimary: handPrimary, onSecondary: { dismiss() })
         }
@@ -2131,7 +2210,7 @@ struct MarkPaidSheet: View {
     }
 
     private func handPrimary() {
-        if overBy >= 0.005 {
+        if asksExtra {
             pieces = []
             extraAmount = ""
             error = nil
@@ -2205,23 +2284,26 @@ struct MarkPaidSheet: View {
         var out: [String: Double] = [:]
         for id in picked {
             guard let d = deposits.first(where: { $0.id == id }), left >= 0.005 else { continue }
-            let use = min(d.whole, d.part ?? d.whole, left)
+            // REFRESH-18: on a share all of it is theirs, and what's over is
+            // asked on the card; Not sure yet takes what still counts as hers.
+            let use = unsure ? min(d.whole, d.part ?? d.whole, left) : d.whole
             out[id] = (use * 100).rounded() / 100
             left -= use
         }
         return out
     }
 
-    private var paying: Double { uses.values.reduce(0, +) }
-
-    /// TEST-20: an e-Transfer that names this person ("Priya Shah" for Priya).
-    private func theirs(_ d: Candidate) -> Bool {
-        guard let party = d.party?.lowercased(), !party.isEmpty else { return false }
-        let name = person.name.lowercased()
-        let first = name.split(separator: " ").first.map(String.init) ?? name
-        return party == name || party.hasPrefix(name)
-            || party.replacingOccurrences(of: ".", with: " ").split(separator: " ").map(String.init).contains(first)
+    /// S-06rb3, S-06rb4: what linking these does to the share.
+    private var settlesLine: String? {
+        guard !unsure, !picked.isEmpty else { return nil }
+        let over = Double(cents(paying) - cents(limit)) / 100
+        if over >= 0.005 { return "\(Format.amount(over)) extra" }
+        guard person.hers != true, person.letGo == nil,
+              Transaction.Splitting.Person.small(-over, of: person.share) else { return nil }
+        return "\(Format.amount(-over)) let go"
     }
+
+    private var paying: Double { uses.values.reduce(0, +) }
 
     /// S-26 when it takes more than one deposit (or part of one); S-29,
     /// one payment that looks like theirs, otherwise.
@@ -2255,8 +2337,12 @@ struct MarkPaidSheet: View {
     /// What they paid over what they owe, for cash or an app.
     private var overBy: Double {
         guard how != "bank", !unsure, let value = typed else { return 0 }
-        return max(0, Double(cents(value) - cents(person.owes)) / 100)
+        return max(0, Double(cents(value) - cents(limit)) / 100)
     }
+
+    /// S-06 (n-small): a small extra settles itself, so it isn't asked next.
+    private var smallOver: Bool { Transaction.Splitting.Person.small(overBy + (person.over ?? 0), of: person.share) }
+    private var asksExtra: Bool { overBy >= 0.005 && !smallOver }
 
     private var extraLeft: Double {
         Double(max(0, cents(overBy) - pieces.map { cents($0.amount) }.reduce(0, +))) / 100
@@ -2336,7 +2422,8 @@ struct MarkPaidSheet: View {
                      chosen: Binding(get: { nil }, set: { key in if let key = key { takeExtra(key) } }))
                 .disabled(busy)
             // S-11c (REFRESH-03): the one fact; the tiles say the rest.
-            Text("\(person.name) owes \(Format.amount(person.owes)) for \(t.merchant).")
+            Text(person.owes < 0.005 && person.letGo != nil ? "\(leftLine)."
+                 : "\(person.name) owes \(Format.amount(person.owes)) for \(t.merchant).")
                 .font(Nacre.footnote).foregroundColor(Pearl.ink)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -2491,24 +2578,19 @@ struct MarkPaidSheet: View {
             if finding {
                 let linking = uses
                 let order = picked
-                // Every link at once (perf rehaul, 2026-11-19), each through
-                // the outbox with its own op id, in the order she ticked them;
-                // the answers are read back in that order too.
+                // Each through the outbox with its own op id, one after the
+                // other in the order she ticked them: each is judged on what's
+                // paid so far, and Undo goes back the other way (REFRESH-18).
                 var answers: [String: Outbox.Sent<Saved>] = [:]
                 let outbox = app.outbox
                 let charge = t.id
-                try await withThrowingTaskGroup(of: (String, Outbox.Sent<Saved>?).self) { group in
-                    for id in order {
-                        guard let use = linking[id], let d = deposits.first(where: { $0.id == id }) else { continue }
-                        var body: [String: Any] = ["person": person.name]
-                        if use < d.whole - 0.005 { body["amount"] = use }
-                        group.addTask { @MainActor in
-                            (id, try await outbox.send("POST", "api/transactions/\(charge)/paybacks/\(id)", body))
-                        }
-                    }
-                    for try await (id, sent) in group {
-                        if let sent = sent { answers[id] = sent }
-                    }
+                for id in order {
+                    guard let use = linking[id], let d = deposits.first(where: { $0.id == id }) else { continue }
+                    var body: [String: Any] = ["person": person.name]
+                    if use < d.whole - 0.005 { body["amount"] = use }
+                    let sent: Outbox.Sent<Saved>? = try await outbox.send(
+                        "POST", "api/transactions/\(charge)/paybacks/\(id)", body)
+                    if let sent = sent { answers[id] = sent }
                 }
                 var undos: [JSONValue] = []
                 var said: String?
@@ -2536,8 +2618,8 @@ struct MarkPaidSheet: View {
                     let x = a.element.name.lowercased().contains(first), y = b.element.name.lowercased().contains(first)
                     return x != y ? x : a.offset < b.offset
                 }.map(\.element)
-                // TEST-20: pre-tick only one of theirs that fits.
-                picked = deposits.first(where: { $0.likely == true && theirs($0) }).map { [$0.id] } ?? []
+                // S-06rb2 (REFRESH-18; product owner, 2026-11-24): nothing ticked.
+                picked = []
                 finding = true
                 chosen = true
             } else {
@@ -2559,7 +2641,7 @@ struct MarkPaidSheet: View {
                 let named = appName.trimmingCharacters(in: .whitespaces)
                 if how == "app" && !named.isEmpty { body["app"] = named }
                 let sent: Outbox.Sent<Saved>? = try await app.outbox.send("POST", "api/transactions/\(t.id)/split/cash", body)
-                let title = "\(person.name) paid back \(Format.amount(value))"
+                let title = sent?.body.toast ?? "\(person.name) paid back \(Format.amount(value))"
                 if let onLinked = onLinked {
                     onLinked(title, sent?.body.undo.map { [$0] } ?? [], sent?.changed)
                 } else {

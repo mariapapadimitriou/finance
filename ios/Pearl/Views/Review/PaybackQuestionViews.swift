@@ -42,7 +42,8 @@ struct PaybackQuestionBody: View {
                           onName: question.named ? nil : onName)
             QuestionCaption(text: "Looks like")
             ForEach(question.tiles) { tile in
-                AnswerTile(title: tile.title, line: tile.line, symbol: CategorySheet.symbol(for: tile.category),
+                // PQ-03o, PQ-03s: "Yes, Corner Bistro · Georgia Klev’s share".
+                AnswerTile(title: tile.guess == true && tile.kind == "split" ? "Yes, \(tile.title)" : tile.title, line: tile.line, symbol: CategorySheet.symbol(for: tile.category),
                            guess: tile.guess == true) { onTile(tile) }
             }
             AnswerGrid {

@@ -213,6 +213,12 @@ def rescale(t, split: dict, old_base: float, new_base: float) -> tuple[list[dict
     people = [dict(p) for p in split["people"]]
     if mode == sp.UNSURE:
         return people, None, mode
+    if mode != "amount":
+        # REFRESH-18: a share that changes takes a small let go of Pearl's
+        # back first (save_plan clears it); one she said stays.
+        for p in people:
+            if (p.get("let_go") or {}).get("auto"):
+                p["amount"] = p.pop("let_go")["was"]
     theirs = sum(sp._cents(p["amount"]) for p in people)
     had_me = sp._cents(old_base) - theirs >= 1
     if mode == "amount":
@@ -313,6 +319,9 @@ def save_plan(store, plan: list[tuple], marks: dict, joint: bool = True) -> None
             store.set_joint_part(t.fingerprint, None)
             if mode != sp.UNSURE:
                 mode = "amount"
+        for p, q in zip(split["people"], people):
+            if p.get("let_go") and not q.get("let_go"):
+                store.clear_let_go(t.fingerprint, p["name"])
         store.set_split(t.fingerprint, mode, people, split["watch"], split.get("closed_at"))
         if mode == sp.UNSURE:
             store.set_share(t.fingerprint, None)

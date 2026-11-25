@@ -70,13 +70,34 @@ def _owes(name: str, amount: float, merchant: str | None = None) -> str:
     """G2-AUnlink: "Sam owes you $30.00 again on Loblaws." ("They owe you"
     when Pearl doesn't know who sent it)."""
     on = f" on {merchant}" if merchant else ""
+    if amount < 0.005:
+        return ""                           # all of it was over their share
     return f"{name} {'owe' if name == 'They' else 'owes'} you {_money(amount)} again{on}."
 
 
 def _only(charge: Transaction, amount: float, others: list[str], then: str) -> str:
     """G2-AUnlink S-34sr: "Only Loblaws’ $30.00 comes off. Pizza Nova stays
     paid back, and Jo owes you $30.00 again." """
+    if not then:
+        return f"Only {_of(charge.merchant)} {_money(amount)} comes off. {_stay(others)}."
     return f"Only {_of(charge.merchant)} {_money(amount)} comes off. {_stay(others)}, and {then}"
+
+
+def _again(st, charge: Transaction, who: str | None, here: float, txns, payer: dict | None = None) -> float:
+    """REFRESH-18 (S-34kr1o): what `who` owes again once this payment is
+    unlinked: what it covers of their share, never what was over it, and
+    with a let go back (over_under.released)."""
+    from . import over_under as ou
+    split = st.splits().get(charge.fingerprint)
+    if not split or not who or split.get("mode") == sp.UNSURE or split.get("closed_at"):
+        return here
+    p = next((q for q in split["people"] if q["name"] == who), None)
+    s = next((q for q in sp.people_status(charge, split, txns, payer if payer is not None else st.payback_people())
+              if q["name"] == who), None)
+    if p is None or s is None:
+        return here
+    share = ou.whole_share(p, ou.factor_of(charge))
+    return round(max(share - max(round(s["paid"] - here, 2), 0.0), 0.0) - s["owes"], 2)
 
 
 def _whose(name: str | None) -> str:
@@ -143,6 +164,7 @@ def _inflow_link(st, charge: Transaction, x: Transaction, who: str | None, by_id
     parent = by_id.get((x.raw or {}).get("part_of") or "")
     sender = who or sp.sender_name(x)
     name = who or sender or "They"
+    again = _again(st, charge, who, here, list(by_id.values()))
     out: dict = {"id": x.fingerprint, "inflow": x.fingerprint, "cash_id": None, "amount": here,
                  "whole": whole, "date": x.date[:10], "person": who, "others": others,
                  "made_split": made, "was_waiting": False, "deposit": None}
@@ -189,10 +211,10 @@ def _inflow_link(st, charge: Transaction, x: Transaction, who: str | None, by_id
                    dialog=f"{name} paid back {_money(here)}")
         # G2-AUnlink (S-34kr9): "Dad owes you $228.00 again on Loblaws. This
         # $228.00 goes back to Needs a look."
-        owe = f"{name} comes off the split too." if made else _owes(name, here, charge.merchant)
+        owe = f"{name} comes off the split too." if made else _owes(name, again, charge.merchant)
         out["sheet"] = {"title": "Unlink?", "name": f"Part of {of}", "sub": f"{_money(here)} · {_day(x.date)}",
                         "ask": None,
-                        "line": f"{owe} This {_money(here)} goes back to Needs a look.",
+                        "line": f"{owe} This {_money(here)} goes back to Needs a look.".strip(),
                         "button": "Unlink"}
         out["toast"] = f"Unlinked · {name} taken off the split" if made else None
         card = (f"Part of {_money(total)} from {sender} · {_day(x.date)}" if sender
@@ -205,14 +227,14 @@ def _inflow_link(st, charge: Transaction, x: Transaction, who: str | None, by_id
                dialog=f"{name} paid back {_money(here)}")
     # G2-AUnlink: each consequence once (who owes again, on what; what goes
     # back to Needs a look), and "Priya comes off the split too." for THL-260.
-    owe = f"{name} comes off the split too." if made else _owes(name, here, charge.merchant)
+    owe = f"{name} comes off the split too." if made else _owes(name, again, charge.merchant)
     if others:
         # S-05o / S-05or: "Part of $60.00 · also paid back Pizza Nova".
         out.update(goes="left_to_sort",
                    message=f"Part of {_money(whole)} · also paid back {sp.and_list(others)}")
         # G2-AUnlink S-34sr: "Unlink Jo’s $30.00?" over "Only Loblaws’ $30.00
         # comes off. Pizza Nova stays paid back, and Jo owes you $30.00 again."
-        then = f"{name} comes off the split." if made else _owes(name, here)
+        then = f"{name} comes off the split." if made else _owes(name, again)
         out["sheet"] = {"title": "Unlink?", "name": f"{word} from {sender}" if sender else x.merchant,
                         "sub": f"{_money(whole)} · {_day(x.date)}",
                         "ask": f"Unlink only {_of(charge.merchant)} {_money(here)}?",
@@ -222,7 +244,7 @@ def _inflow_link(st, charge: Transaction, x: Transaction, who: str | None, by_id
         out.update(goes="needs_a_look", message=f"{title} · {_day(x.date)}")
         out["sheet"] = {"title": "Unlink?", "name": f"{word} from {sender}" if sender else x.merchant,
                         "sub": f"{_money(here)} · {_day(x.date)}", "ask": None,
-                        "line": f"{owe} The {_money(here)} goes back to Needs a look.", "button": "Unlink"}
+                        "line": f"{owe} The {_money(here)} goes back to Needs a look.".strip(), "button": "Unlink"}
     out["toast"] = f"Unlinked · {name} taken off the split" if made else None
     card = f"{word} from {sender} · {_day(x.date)}" if sender else f"{x.merchant} · {_day(x.date)}"
     if others:
@@ -253,6 +275,7 @@ def cash_link(st, charge: Transaction, name: str, pay: dict, by_id: dict) -> dic
         if parent is not None:
             deposit = {"id": parent.fingerprint, "amount": round(-parent.amount, 2), "date": parent.date[:10]}
     what = f"{app_name} payment" if app else "cash"
+    again = _again(st, charge, name, here, list(by_id.values()))
     head = f"{app_name} from {name}" if app else f"Cash from {name}"
     out: dict = {"id": f"cash:{pay['id']}", "inflow": None, "cash_id": pay["id"], "amount": here,
                  "whole": whole, "date": pay["day"], "person": name, "others": others,
@@ -270,21 +293,21 @@ def cash_link(st, charge: Transaction, name: str, pay: dict, by_id: dict) -> dic
                    message=f"Part of {_money(whole)} · also paid back {sp.and_list(others)}")
         out["sheet"] = {"title": "Unlink?", "name": head, "sub": sub,
                         "ask": f"Unlink only {_of(charge.merchant)} {_money(here)}?",
-                        "line": _only(charge, here, others, _owes(name, here)),
+                        "line": _only(charge, here, others, _owes(name, again)),
                         "button": f"Unlink {_money(here)}"}
     elif deposit:
         out.update(goes="left_to_sort",
                    message=f"Cash · {_day(pay['day'])} · deposited {_day(deposit['date'])}")
         out["sheet"] = {"title": "Unlink?", "name": head, "sub": sub, "ask": None,
-                        "line": f"{_owes(name, here, charge.merchant)} This {_money(held_amount)} "
-                                f"goes back to Needs a look.",
+                        "line": f"{_owes(name, again, charge.merchant)} This {_money(held_amount)} "
+                                f"goes back to Needs a look.".strip(),
                         "button": "Unlink"}
     else:
         out.update(goes="forgotten", message=f"{app_name if app else 'Cash'} · {_day(pay['day'])}")
         # G2-AUnlink S-34kr3: "Forget the cash?" says what happens to it, so
         # the line is only "Sam owes you $10.00 again on Loblaws."
         out["sheet"] = {"title": "Unlink?", "name": head, "sub": sub, "ask": None,
-                        "line": _owes(name, here, charge.merchant), "button": "Forget it"}
+                        "line": _owes(name, again, charge.merchant), "button": "Forget it"}
     out["sheet"]["face"] = name
     label = app_name if app else "Cash"
     if others:
@@ -542,6 +565,11 @@ def undo(st, marks: dict) -> int:
         st.restore_split_cash(sorted(roots), list(rows.values()))
     if cash:
         from .parts_api import GIFT_SOURCE, _gift_row
+        # A gift said after (S-11e, REFRESH-18) goes with the records it was.
+        for t in st.all_transactions():
+            raw = t.raw or {}
+            if t.source == GIFT_SOURCE and raw.get("origin") in roots and raw.get("split_gift") not in rows:
+                st.delete_transaction(t.fingerprint)
         have = {(t.raw or {}).get("split_gift") for t in st.all_transactions() if t.source == GIFT_SOURCE}
         for r in rows.values():
             if r.get("kind") == "gift" and r["id"] in (cash.get("gifts") or []) and r["id"] not in have:

@@ -494,6 +494,9 @@ struct PaidBackBar: View {
         case part(Double)
         case owes
         case letGo
+        /// REFRESH-18 (S-04g, S-04s): what was paid, in green, and the rest
+        /// let go, muted. 0…1 of their share paid.
+        case partLetGo(Double)
     }
 
     let segments: [Segment]
@@ -505,7 +508,7 @@ struct PaidBackBar: View {
             ForEach(Array(segments.enumerated()), id: \.offset) { _, s in
                 GeometryReader { g in
                     ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 4, style: .continuous).fill(APlus.trackSoft)
+                        RoundedRectangle(cornerRadius: 4, style: .continuous).fill(PaidBackBar.track(s))
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
                             .fill(PaidBackBar.fill(s))
                             .frame(width: g.size.width * PaidBackBar.filled(s))
@@ -521,15 +524,21 @@ struct PaidBackBar: View {
     static func filled(_ s: Segment) -> CGFloat {
         switch s {
         case .yours, .paid, .letGo: return 1
-        case .part(let p): return CGFloat(min(1, max(0, p)))
+        case .part(let p), .partLetGo(let p): return CGFloat(min(1, max(0, p)))
         case .owes: return 0
         }
+    }
+
+    /// Under the filled part: the empty track, or what was let go.
+    static func track(_ s: Segment) -> Color {
+        if case .partLetGo = s { return Pearl.muted.opacity(0.35) }
+        return APlus.trackSoft
     }
 
     static func fill(_ s: Segment) -> Color {
         switch s {
         case .yours: return Pearl.moneyOut
-        case .paid: return Pearl.moneyIn
+        case .paid, .partLetGo: return Pearl.moneyIn
         case .part: return Pearl.action
         case .owes: return .clear
         case .letGo: return Pearl.muted.opacity(0.35)

@@ -961,8 +961,7 @@ def cost_now(t: Transaction, split: dict) -> dict:
     * `to_come`: what they still owe (`split_owed`);
     * `work`: what work paid of her own share (`split_reimbursed`, TEST-31);
     * `ways`: her and the people in it;
-    * `share`: her share as split, before any share she let go (RC-02's
-      "your share $30.00");
+    * `share`: her share now, with any share she let go (S-04g, REFRESH-18);
     * `line`: the row's words, "$127.50 split · $30.00 back · $57.50 to come";
     * `header`: the page's (RC-02), which names the ways from three up,
       "$150.00 split 5 ways · $40.00 back · $50.00 to come".
@@ -986,9 +985,7 @@ def cost_now(t: Transaction, split: dict) -> dict:
     refunded = getattr(t, "refunded", 0.0) or 0.0
     factor = max(1.0 - refunded / t.amount, 0.0) if t.amount > 0 and refunded else 1.0
     back = round(max((whole - mine) * factor - owed, 0.0), 2)
-    gone = sum(max(float((p.get("let_go") or {}).get("was") or 0.0) - float(p.get("amount") or 0.0), 0.0)
-               for p in people if p.get("let_go"))
-    share = round(max(mine - gone, 0.0), 2)
+    share = round(max(mine, 0.0), 2)
     parts = [f"work paid your {money(work)}"] if work >= 0.005 else []
     if back >= 0.005:
         parts.append(f"{money(back)} back")

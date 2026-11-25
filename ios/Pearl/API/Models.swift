@@ -793,6 +793,24 @@ struct Transaction: Decodable, Identifiable, Hashable {
         }
     }
 
+    /// PB-41o (REFRESH-18): a payment over the share it paid: what paid the
+    /// share, the extra, and whether it's still a question.
+    struct OverPayment: Decodable, Hashable {
+        let charge: String
+        let name: String
+        let share: Double
+        let back: Double
+        let extra: Double
+        let state: String
+        let line: String?
+        /// What's still a question of it, S-11e2's line, and "e-Transfer" or "payment".
+        var asked: Double? = nil
+        var note: String? = nil
+        var word: String? = nil
+
+        var asks: Bool { state == "ask" }
+    }
+
     /// Another transaction, briefly: a payback, or the charge one repays.
     struct Brief: Decodable, Hashable {
         let id: String
@@ -811,9 +829,11 @@ struct Transaction: Decodable, Identifiable, Hashable {
         /// T-41w: how the deposit was answered: "reimbursement" for Work
         /// paying me back; nil for a friend paying her back.
         var kind: String? = nil
+        /// PB-41o (REFRESH-18): what of it is over the share it paid.
+        @Boxed var over: OverPayment? = nil
 
         enum CodingKeys: String, CodingKey {
-            case id, date, merchant, description, amount, person, paid, split, link, kind
+            case id, date, merchant, description, amount, person, paid, split, link, kind, over
             case accountName = "account_name"
         }
 
@@ -925,7 +945,51 @@ struct Transaction: Decodable, Identifiable, Hashable {
             var gift: Double? = nil
             var id: String { name }
 
-            struct LetGo: Decodable, Hashable { let was: Double; let day: String }
+            /// REFRESH-18: what they paid over, until she has said what it is.
+            var extra: Extra? = nil
+
+            struct LetGo: Decodable, Hashable {
+                let was: Double
+                let day: String
+                /// REFRESH-18 (S-04s): a small difference Pearl settled itself.
+                var auto: Bool? = nil
+            }
+
+            /// What they paid over their share (finance/over_under.py): "ask"
+            /// (the chip), "small" (a quiet line), "owe", or "said" once it
+            /// has all gone somewhere.
+            struct Extra: Decodable, Hashable {
+                let state: String
+                /// What's still a question, or the small one.
+                let amount: Double
+                /// What she owes back.
+                let owe: Double
+                /// "You owe $15.00 back", "$10.00 gift · $5.00 for Pizza Nova".
+                let line: String?
+                /// S-11e2: "$10.00 was a gift.".
+                var note: String? = nil
+                /// What of it has gone somewhere (a gift, sent back, another share).
+                var moved: Double? = nil
+
+                var asks: Bool { state == "ask" && amount >= 0.005 }
+                var small: Bool { state == "small" }
+            }
+
+            /// She undid a small let go here, so Pearl doesn't settle it again.
+            var hers: Bool? = nil
+
+            /// The cutoff for a difference that settles itself (SMALL_MAX,
+            /// SMALL_SHARE in finance/over_under.py; both must hold), to say
+            /// it before she confirms. The server decides.
+            static func small(_ difference: Double, of share: Double) -> Bool {
+                let d = Int((difference * 100).rounded()), s = Int((share * 100).rounded())
+                return d > 0 && d <= 200 && d * 10 <= s
+            }
+
+            /// What of their share she let go, now.
+            var letGoLeft: Double { max(0, (((letGo?.was ?? amount) - amount) * 100).rounded() / 100) }
+            /// Paid back in full, or settled with a small difference (S-04s).
+            var settledInFull: Bool { owes < 0.005 && paid >= 0.005 && (letGo == nil || letGo?.auto == true) }
 
             /// "$250.00 cash · Nov 3", and "$200.00 deposited Nov 12 · $50.00 still cash".
             struct Payment: Decodable, Hashable {
@@ -964,7 +1028,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
             var share: Double { letGo?.was ?? amount }
 
             enum CodingKeys: String, CodingKey {
-                case name, amount, paid, owes, cash, app, over, weight, payments, shared, links, gift
+                case name, amount, paid, owes, cash, app, over, weight, payments, shared, links, gift, extra, hers
                 case appName = "app_name"
                 case paidOn = "paid_on"
                 case cashIds = "cash_ids"
@@ -1279,6 +1343,12 @@ struct DepositPart: Decodable, Hashable, Identifiable {
     var cashIds: [Int]? = nil
     /// PB-41: the person's share of the purchase a payback part pays back.
     var share: Double? = nil
+    /// PB-41s (REFRESH-18): a few cents over several shares; counts for nothing.
+    var small: Bool? = nil
+    /// PB-41o: what of it is over the share.
+    var over: Transaction.OverPayment? = nil
+    /// What they owe again once it's unlinked, when that isn't `amount`.
+    var again: Double? = nil
 
     struct Charge: Decodable, Hashable {
         let id: String
@@ -1289,7 +1359,7 @@ struct DepositPart: Decodable, Hashable, Identifiable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, kind, amount, person, category, charge, sorted, share
+        case id, kind, amount, person, category, charge, sorted, share, small, over, again
         case incomeKind = "income_kind"
         case cashIds = "cash_ids"
     }
@@ -1701,6 +1771,34 @@ struct Review: Decodable {
         /// Boxed so Item stays small (Boxed.swift; stack check).
         @Boxed var payback: PaybackQuestion? = nil
 
+        /// S-21o (REFRESH-18): a payment over someone's share. Its "What’s
+        /// the extra?" opens S-11e.
+        @Boxed var over: Over? = nil
+        /// S-21p, S-21g: the share it could be paying back.
+        @Boxed var split: SplitMatch? = nil
+
+        struct Over: Decodable, Hashable {
+            let charge: String
+            let merchant: String
+            let name: String
+            let amount: Double
+            /// "e-Transfer" or "payment"; what they paid and their share.
+            var word: String? = nil
+            var share: Double? = nil
+            var note: String? = nil
+        }
+
+        struct SplitMatch: Decodable, Hashable {
+            let merchant: String
+            let name: String
+            let owes: Double
+            /// A share she let the rest of go of.
+            var letGo: Bool? = nil
+            /// A Not sure yet split: no amount anyone owes.
+            var unknown: Bool? = nil
+            enum CodingKeys: String, CodingKey { case merchant, name, owes, unknown; case letGo = "let_go" }
+        }
+
         struct Extra: Decodable, Hashable {
             /// Every purchase it was linked to: "extra on Loblaws".
             let paidBack: [String]
@@ -1769,7 +1867,7 @@ struct Review: Decodable {
 
         enum CodingKeys: String, CodingKey {
             case key, txn, reason, skipped, from, guess, label, people, candidates, series, rest, share, twin
-            case siblings, pair, credit, extra, unsure, payback
+            case siblings, pair, credit, extra, unsure, payback, over, split
             case guessLabel = "guess_label"
         }
 
@@ -1806,6 +1904,8 @@ struct Review: Decodable {
             pair = opt(Pair.self, .pair)
             credit = opt(Credit.self, .credit)
             extra = opt(Extra.self, .extra)
+            over = opt(Over.self, .over)
+            split = opt(SplitMatch.self, .split)
             unsure = opt(Unsure.self, .unsure)
             payback = opt(PaybackQuestion.self, .payback)
         }
@@ -1982,6 +2082,8 @@ struct Ask: Identifiable, Hashable {
         case .moneyIn:
             // S-21x: the extra on a paid-back purchase.
             if item.extra != nil { return "What was this?" }
+            // S-21o (REFRESH-18).
+            if item.over != nil { return "What’s the extra?" }
             if item.rest != nil { return "\(Format.amount(t.amount)) left to sort" }
             if item.guess?.action == "refund" { return "Whose refund?" }
             // A payment network isn't a person: never "Is Interac paying you back?".

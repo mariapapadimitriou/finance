@@ -24,6 +24,8 @@ struct OwedView: View {
     @State private var owed: OwedOverview?
     @State private var error: String?
     @State private var person: String?
+    /// S-14o2 (REFRESH-18): the You owe row that was tapped.
+    @State private var oweBack: OwedOverview.Row?
 
     var body: some View {
         ScrollView {
@@ -31,7 +33,7 @@ struct OwedView: View {
                 OwedTitle(title: "Owed to you")
                 if let owed = owed {
                     OwedHeader(owed: owed)
-                    OwedSections(owed: owed) { person = $0 }
+                    OwedSections(owed: owed, openPerson: { person = $0 }, openOwed: { oweBack = $0 })
                 } else if error != nil {
                     // G2-BOwed S-14ux: Couldn't load who owes you, with Try again.
                     OwedLoadFailed { Task { await load() } }.padding(.top, 60)
@@ -47,6 +49,7 @@ struct OwedView: View {
         .navigationDestination(isPresented: Binding(get: { person != nil }, set: { if !$0 { person = nil } })) {
             if let name = person { OwedPersonView(name: name) }
         }
+        .modifier(OweBackOptions(row: $oweBack))
         .task { await load() }
         .reloads { await load() }
     }
@@ -156,6 +159,7 @@ private struct OwedSections: View {
     @EnvironmentObject private var app: AppModel
     let owed: OwedOverview
     let openPerson: (String) -> Void
+    let openOwed: (OwedOverview.Row) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -193,8 +197,13 @@ private struct OwedSections: View {
                 APCard {
                     ForEach(Array(owed.youOwe.enumerated()), id: \.element.id) { i, r in
                         if i > 0 { APSeparator() }
-                        OwedRow(name: r.name, line: "Overpaid for " + (r.items.first?.merchant ?? "a purchase"),
-                                amount: Format.amount(r.total))
+                        // S-14o (REFRESH-18): opens their options on that purchase.
+                        Button { openOwed(r) } label: {
+                            OwedRow(name: r.name, line: "Overpaid for " + (r.items.first?.merchant ?? "a purchase"),
+                                    amount: Format.amount(r.total))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(r.items.first?.chargeId == nil)
                     }
                 }
             }
@@ -449,6 +458,44 @@ private struct OwedOptionsSheet: View {
         }, onOpen: {
             go(OwedPersonView.Open(id: o.t.id))
         })
+    }
+}
+
+/// S-14o2 (REFRESH-18): a You owe row's person on the purchase they overpaid,
+/// with Open Corner Bistro under their options.
+private struct OweBackOptions: ViewModifier {
+    @EnvironmentObject private var app: AppModel
+    @Binding var row: OwedOverview.Row?
+    @State private var options: OwedPersonView.Options?
+    @State private var after: (() -> Void)?
+    @State private var open: OwedPersonView.Open?
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: row) { r in if let r = r { row = nil; Task { await load(r) } } }
+            .sheet(item: $options, onDismiss: {
+                let next = after
+                after = nil
+                next?()
+            }) { o in
+                OwedOptionsSheet(o: o, close: { options = nil }) { next in
+                    after = { open = next }
+                    options = nil
+                }
+            }
+            .navigationDestination(isPresented: Binding(get: { open != nil }, set: { if !$0 { open = nil } })) {
+                if let o = open { OwedOpenPurchase(open: o) }
+            }
+    }
+
+    private func load(_ r: OwedOverview.Row) async {
+        guard let id = r.items.first?.chargeId else { return }
+        guard let t: Transaction = try? await app.api.get("api/transactions/\(id)") else { return }
+        if let split = t.splitting, let p = split.people.first(where: { $0.name == r.name }) {
+            options = OwedPersonView.Options(t: t, split: split, p: p)
+        } else {
+            open = OwedPersonView.Open(id: id)
+        }
     }
 }
 

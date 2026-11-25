@@ -137,18 +137,20 @@ class TestParts:
         assert r.status_code == 400 and r.get_json()["error"] == "$172.00 left to sort."
         income = month_totals(client)["income"]
         r = client.post(f"/api/transactions/{dep}/parts", json={"parts": [payback], "later": True}).get_json()
-        assert r["rest"] == 172
+        # REFRESH-18: one share, all of it covered: the $172 is Dad's extra,
+        # the same as from every other path, and still a question.
+        assert r["rest"] == 0
         dad = detail(client, i["FLIGHT TO ATHENS"])["splitting"]["people"][0]
-        assert dad["owes"] == 0
-        rest = next(q for q in client.get("/api/review").get_json()["money_in"] if q.get("rest"))
-        assert rest["rest"] == {"whole": 600.0, "sorted": 428.0}
+        assert dad["owes"] == 0 and dad["extra"]["state"] == "ask" and dad["extra"]["amount"] == 172
+        ask = next(q for q in client.get("/api/review").get_json()["money_in"] if q.get("over"))
+        assert ask["over"]["amount"] == 172.0 and ask["txn"]["id"] == dep
         assert month_totals(client)["income"] == income, "the $172 counts as nothing until sorted"
         # The $172 is a gift: safe to spend's income grows by it.
-        rid = rest["txn"]["id"]
-        r = client.post(f"/api/transactions/{rid}/parts", json={"parts": [{"kind": "gift", "amount": 172}]})
+        r = client.post(f"/api/transactions/{i['FLIGHT TO ATHENS']}/split/extra",
+                        json={"name": "Dad", "pieces": [{"kind": "gift", "amount": 172}]})
         assert r.status_code == 200, r.get_json()
         assert month_totals(client)["income"] == income + 172
-        assert not any(q.get("rest") for q in client.get("/api/review").get_json()["money_in"])
+        assert not any(q.get("over") or q.get("rest") for q in client.get("/api/review").get_json()["money_in"])
 
     def test_the_172_in_two_parts_one_owed_back(self, client):
         i = self.setup_flight(client)
@@ -246,7 +248,9 @@ class TestFindingPayments:
                         json={"person": "Dad", "amount": 228})
         assert r.status_code == 200, r.get_json()
         dad = detail(client, i["FLIGHT"])["splitting"]["people"][0]
-        assert (dad["paid"], dad["owes"]) == (428.0, 0.0)
+        # REFRESH-18: it covers the share, so all $600 is linked and the $372
+        # is asked about, never money in unsaid.
+        assert (dad["paid"], dad["owes"], dad["extra"]["amount"]) == (800.0, 0.0, 372.0)
 
     def test_a_deposit_splits_and_links_a_purchase(self, client):
         """S-24: Costco wasn't split; Dad's half of it is part of his $600."""
