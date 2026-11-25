@@ -331,6 +331,136 @@ final class PersonJourneysUITests: XCTestCase {
         }
     }
 
+    // MARK: 2b Also 8 older ones? (REFRESH-17)
+
+    private func olderSheet() -> XCUIElement { app.staticTexts["Also 8 older ones?"] }
+
+    /// Where it is on screen: the glass bars make a visible row "not hittable".
+    private func press(_ e: XCUIElement) {
+        e.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    }
+
+    private func openNeedsALook() {
+        step("home")
+        let list = app.buttons["See the list"].firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 15), "No See the list")
+        press(list)
+    }
+
+    /// Needs a look: the newest Maple Court is Utilities; Yes, all 8, then Undo.
+    func testOlderOnesFromNeedsALook() {
+        for scheme in ["light", "dark"] {
+            launch(scheme)
+            openNeedsALook()
+            let chip = button("Where it went")
+            XCTAssertTrue(chip.waitForExistence(timeout: 15), "No Where it went chip")
+            press(chip)
+            step("needs a look")
+            XCTAssertTrue(button("Maple Court").waitForExistence(timeout: 8), "No Maple Court row")
+            press(button("Maple Court"))
+            step("maple court asked")
+            if !app.buttons["Utilities"].exists { tapIf(anyButton(containing: "Something else"), "Something else") }
+            step("every answer")
+            tap(button("Utilities"), "Utilities")
+            if scheme == "light" {
+                XCTAssertTrue(olderSheet().waitForExistence(timeout: 12), "OT-01 didn't come")
+                step("OT-01")
+                tap(app.buttons["Yes, all 8"], "Yes, all 8")
+                XCTAssertTrue(text(containing: "8 more moved to Utilities").waitForExistence(timeout: 8), "No OT-02 toast")
+                step("OT-02")
+                tap(app.buttons["Undo"], "Undo")
+                XCTAssertTrue(text(containing: "Undone").waitForExistence(timeout: 8), "Undo didn't answer")
+                step("after undo")
+            } else {
+                // The older waiting one, sorted: the same 8 are asked about again.
+                XCTAssertTrue(olderSheet().waitForExistence(timeout: 12), "OT-01 didn't come again")
+                step("OT-01")
+                tap(app.buttons["Leave them in Transfers"], "Leave them")
+                XCTAssertTrue(olderSheet().waitForNonExistence(timeout: 6), "OT-01 stayed")
+                step("after leave them")
+            }
+        }
+    }
+
+    /// Quick sort: the card's answer, the sheet, then "Undo 8".
+    func testOlderOnesFromQuickSort() {
+        launch()
+        openNeedsALook()
+        press(button("Quick sort"))
+        let card = app.descendants(matching: .any)["quick-sort-card"]
+        XCTAssertTrue(card.waitForExistence(timeout: 15), "Quick sort has no card")
+        var n = 0
+        while !card.label.contains("Maple Court") && n < 25 {
+            press(app.buttons["Skip"].firstMatch)
+            sleep(2)
+            n += 1
+        }
+        note("card: \(card.label)")
+        step("maple court card")
+        press(card)
+        step("answers")
+        if !app.buttons["Utilities"].exists { tapIf(anyButton(containing: "Something else"), "Something else") }
+        tap(button("Utilities"), "Utilities")
+        step("picked")
+        if !olderSheet().exists { press(app.buttons["Yes"].firstMatch) }
+        XCTAssertTrue(olderSheet().waitForExistence(timeout: 12), "OT-01q didn't come")
+        step("OT-01q")
+        tap(app.buttons["Yes, all 8"], "Yes, all 8")
+        XCTAssertTrue(app.buttons["Undo the 8"].waitForExistence(timeout: 8), "No Undo 8")
+        step("OT-02q")
+        tap(app.buttons["Undo the 8"], "Undo 8")
+        XCTAssertTrue(app.buttons["Undo the last answer"].waitForExistence(timeout: 8), "Her own Undo isn't next")
+        step("undo again")
+    }
+
+    /// The page, with ✕: nothing moves, and it asks again.
+    func testOlderOnesFromThePage() {
+        launch()
+        press(app.tabBars.buttons["Cash flow"])
+        let field = app.textFields["Search"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 15), "No Search")
+        press(field)
+        field.typeText("Maple")
+        XCTAssertTrue(button("Maple Court").waitForExistence(timeout: 10), "No Maple Court")
+        press(button("Maple Court"))
+        step("page")
+        tapIf(button("Not sorted yet"), "the category row")
+        step("what was this")
+        if !app.buttons["Utilities"].exists { tapIf(anyButton(containing: "Something else"), "Something else") }
+        tap(button("Utilities"), "Utilities")
+        XCTAssertTrue(olderSheet().waitForExistence(timeout: 12), "OT-01p didn't come")
+        step("OT-01p")
+        tap(app.buttons["Close"].firstMatch, "Close")
+        XCTAssertTrue(olderSheet().waitForNonExistence(timeout: 6), "OT-01p stayed")
+        step("after close")
+    }
+
+    /// T-03r: a name too common for a rule; no switch, and the line instead.
+    func testOlderOnesCommonName() {
+        for scheme in ["light", "dark"] {
+            launch(scheme)
+            press(app.tabBars.buttons["Cash flow"])
+            let field = app.textFields["Search"].firstMatch
+            XCTAssertTrue(field.waitForExistence(timeout: 15), "No Search")
+            press(field)
+            field.typeText("Internet")
+            XCTAssertTrue(button("Internet").waitForExistence(timeout: 10), "No Internet Withdrawal")
+            press(button("Internet"))
+            step("page")
+            if scheme == "light" {
+                tapIf(button("Not sorted yet"), "the category row")
+                if !app.buttons["Utilities"].exists { tapIf(anyButton(containing: "Something else"), "Something else") }
+                XCTAssertFalse(app.staticTexts["This name is too common for a rule"].exists, "The sheet says nothing")
+                tap(button("Utilities"), "Utilities")
+                sleep(3)
+                XCTAssertFalse(app.buttons["Leave them in Transfers"].exists, "OT-01 asked for a common name")
+            }
+            XCTAssertTrue(app.staticTexts["This name is too common for a rule"].waitForExistence(timeout: 8), "No line")
+            XCTAssertFalse(app.switches["Always for this merchant"].exists, "A switch that does nothing")
+            step("T-03r", settle: 5)
+        }
+    }
+
     // MARK: 3 What was this? and Leave out
 
     /// A transaction's category, changed on its page; then Leave out from Select.

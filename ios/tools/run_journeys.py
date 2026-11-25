@@ -128,6 +128,34 @@ def seed(db_path: str) -> None:
     store.set_setting(quick_sort.SHOWN_KEY, today.isoformat())
 
 
+# Journeys about the older ones (REFRESH-17) start from this bill too.
+OLDER = "testOlderOnes"
+
+
+def seed_older(db_path: str) -> None:
+    """A bill from a joint account, a different amount each month: two still
+    asked about, eight left as transfers for their age."""
+    from finance.ingest.base import IngestResult
+    from finance.models import Transaction
+    from finance.pipeline import ingest
+    from finance.store import Store
+    store = Store(db_path)
+    today = date.today()
+    rows = [Transaction(date=(today - timedelta(days=15 + 30 * i)).isoformat(), description="MAPLE COURT",
+                        amount=70.20 + 4 * i, account_id="joint_1123", account_name="Joint ••1123",
+                        raw={"account_type": "depository",
+                             "issuer_category": "TRANSFER_OUT_ACCOUNT_TRANSFER"}) for i in range(10)]
+    ingest(store, IngestResult(transactions=rows, account_id="joint_1123"))
+    # A name every transfer shares: no rule, and the page says so (T-03r).
+    common = Transaction(date=(today - timedelta(days=3)).isoformat(), description="INTERNET WITHDRAWAL",
+                         amount=95.0, account_id="td_chq_2210", account_name="TD Chequing ••2210",
+                         raw={"account_type": "depository", "issuer_category": "TRANSFER_OUT_ACCOUNT_TRANSFER"})
+    ingest(store, IngestResult(transactions=[common], account_id="td_chq_2210"))
+    store.set_joint("joint_1123", "Sister")
+    with store.conn() as c:
+        c.execute("UPDATE joint_accounts SET share = 50, people = '[\"Sam\"]' WHERE account_id = 'joint_1123'")
+
+
 def simulator(runtime: str, text: str) -> str:
     # One simulator at a time (product owner): PEARL_SIM_UDID reuses one
     # that is already booted instead of booting "Pearl journeys" as well.
@@ -181,6 +209,8 @@ def main() -> int:
             with tempfile.TemporaryDirectory(prefix="pearl-journeys") as tmp:
                 db_path = os.path.join(tmp, "ledger.db")
                 seed(db_path)
+                if journey and journey.startswith(OLDER):
+                    seed_older(db_path)
                 env = {**env_base, "LEDGER_DB": db_path, "PORT": str(SERVER_PORT), "PEARL_PWNED_CHECK": "0",
                        "SPENDIE_SECRET_KEY": "ui-test-key-that-is-definitely-long-enough"}
                 log_path = os.path.join(args.out, f"server-{journey or 'all'}.log")
