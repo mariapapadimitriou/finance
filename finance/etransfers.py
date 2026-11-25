@@ -69,20 +69,27 @@ def person_for(tag: str, people) -> str | None:
     from .splits import _surname, surnames_fit
     tag = re.sub(r"[^a-zà-ÿ]", "", (tag or "").lower())
     hits: list[tuple[str, str]] = []        # (first, name)
+    last = {}                               # first → the surnames she knows for it
     for name in people or []:
         words = re.findall(r"[a-zà-ÿ']+", (name or "").lower())
         first = words[0] if words else ""
         # What the handle says after the first name has to fit the surname:
         # "georgiaklev" isn't Georgia Pappas (2026-11-25).
-        if len(first) >= 3 and tag.startswith(first) and surnames_fit(tag[len(first):], _surname(name)):
+        if len(first) < 3 or not tag.startswith(first):
+            continue
+        if _surname(name):
+            last.setdefault(first, set()).add(_surname(name))
+        if surnames_fit(tag[len(first):], _surname(name)):
             hits.append((first, name))
     if not hits or len({f for f, _ in hits}) > 1:
         return None
-    # Georgia Klev and Georgia Pappas, and nothing in the handle to say which.
-    last = {_surname(n) for _, n in hits if _surname(n)}
-    if any(not surnames_fit(x, y) for x in last for y in last):
-        return None
-    return hits[0][1]
+    first = hits[0][0]
+    # Georgia Klev and Georgia Pappas: the handle has to say which, with more
+    # than an initial; otherwise it names neither.
+    known = last.get(first) or set()
+    if any(not surnames_fit(x, y) for x in known for y in known):
+        hits = [h for h in hits if len(tag) - len(first) >= 3 and _surname(h[1])]
+    return hits[0][1] if hits else None
 
 
 def handle_matches(t: Transaction, first: str) -> bool:

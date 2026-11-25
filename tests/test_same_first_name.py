@@ -118,12 +118,16 @@ def test_pick():
     assert sp.pick([KLEV, PAPPAS], PAPPAS) == PAPPAS
     assert sp.pick(["Georgia", KLEV], KLEV) == KLEV
     assert sp.pick([KLEV, PAPPAS], "Georgia") is None
+    # An initial isn't clear where two share the first name.
+    assert sp.pick([KLEV, PAPPAS], "Georgia K.") is None
+    assert sp.pick([KLEV, PAPPAS], "GEORGIA KLEV") == KLEV
     assert sp.pick(["Georgia"], KLEV) == "Georgia"
 
 
 @pytest.mark.parametrize("tag,people,who", [
     ("georgiaklev", [PAPPAS, KLEV], KLEV), ("georgiaklev", [KLEV, PAPPAS], KLEV), ("georgiaklev", [PAPPAS], None),
-    ("georgia", [PAPPAS, KLEV], None), ("georgiak", [PAPPAS, KLEV], KLEV), ("georgia", [KLEV], KLEV),
+    ("georgia", [PAPPAS, KLEV], None), ("georgiak", [PAPPAS, KLEV], None), ("georgia", [KLEV], KLEV),
+    ("georgiak", [KLEV], KLEV),
     ("anastasiapapas", ["Anastasia Papadimitriou"], "Anastasia Papadimitriou"),
 ])
 def test_a_handle_names_one_person_or_nobody(tag, people, who):
@@ -178,3 +182,18 @@ def test_both_georgias_on_one_split(client):
     assert client.post(f"/api/transactions/{by['DINNER']}/split/let-go", json={"name": PAPPAS}).status_code == 200
     people = client.get(f"/api/transactions/{by['DINNER']}").get_json()["splitting"]["people"]
     assert {p["name"]: p["amount"] for p in people} == {KLEV: 30.0, PAPPAS: 25.0}
+
+
+def test_an_initial_is_not_clear_where_two_share_the_first_name(client):
+    ingest(client.st, IngestResult([tx("DINNER", 90, 5, "card", "credit")], "card"))
+    ingest(client.st, IngestResult([tx("Cash Received - georgiak", -30, 3), tx("E-TRANSFER FROM GEORGIA K", -30, 2)],
+                                   "chq"))
+    by = {t.description: t.fingerprint for t in client.st.all_transactions()}
+    client.put(f"/api/transactions/{by['DINNER']}/split",
+               json={"mode": "even", "people": [{"name": KLEV}, {"name": PAPPAS}]})
+    r = pay(client, by["E-TRANSFER FROM GEORGIA K"], by["DINNER"])
+    assert r.status_code == 409
+    assert [p["name"] for p in r.get_json()["who_paid"]["people"]] == [KLEV, PAPPAS]
+    assert shown(client, by["Cash Received - georgiak"]) not in (KLEV, PAPPAS)
+    pay(client, by["Cash Received - georgiak"], by["DINNER"])
+    assert paid(client, by["DINNER"]) == {KLEV: 0.0, PAPPAS: 0.0}

@@ -94,14 +94,33 @@ def _tail(tag: str, first: str) -> str:
 
 def pick(names: list[str], who: str) -> str | None:
     """The one of `names` that is `who`: exactly, or the one that fits. With
-    two that fit, the one whose surname says so; None when nothing does."""
+    another of the same first name there, only a whole surname is clear, not
+    an initial; None when it isn't (product owner, 2026-11-16: always ask)."""
     if who in names:
         return who
     hits = [n for n in names if same_person(n, who)]
-    if len(hits) < 2:
-        return hits[0] if hits else None
+    if len(hits) == 1 and not _namesakes(names, hits[0]):
+        return hits[0]
     full = [n for n in hits if _surname(n) and _surname(n) == _surname(who)]
     return full[0] if len(full) == 1 else None
+
+
+def _namesakes(names: list[str], name: str) -> bool:
+    """Whether someone else in `names` has the same first name."""
+    return any(n != name and first_name(n) == first_name(name) for n in names)
+
+
+def _clear(names: list[str], name: str, sender_name: str) -> bool:
+    """Whether a sender is clearly `name`: no one else there has the first
+    name, or the sender's own words include the whole surname."""
+    if not _namesakes(names, name):
+        return True
+    last, first = _surname(name), first_name(name)
+    if len(last) < 2:
+        return False                    # an initial
+    # "GEORGIA KLEV", or a handle that runs it together, "georgiaklev".
+    words = [re.sub(r"[^a-zà-ÿ]", "", w) for w in _WORD.findall(sender_name.lower())]
+    return last in words or any(w.startswith(first + last) for w in words)
 
 
 def _loose(names: list[str], who: str) -> str | None:
@@ -444,7 +463,7 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
                 continue
         if who not in paid:
             before = t.date[:10] < NAMES_FROM
-            fits = [n for n in names if from_person(t, n)] or \
+            fits = [n for n in names if from_person(t, n) and (before or _clear(names, n, sender(t)))] or \
                 [n for n in names if before and from_person(t, n, loose=True)]
             # Two on the split who could have sent it: she says which.
             who = fits[0] if len(fits) == 1 or (fits and before) else None
@@ -937,9 +956,13 @@ def payer_on_split(store, charge: Transaction, inflow: Transaction,
     exact = [p["name"] for p in people if p["name"] == person]
     if exact:
         return exact[0], None
-    hits = [p["name"] for p in people if sender_is(p["name"], person, inflow)]
+    everyone = [p["name"] for p in people]
+    hits = [n for n in everyone if sender_is(n, person, inflow)]
     if len(hits) == 1:
-        return hits[0], None
+        if _clear(everyone, hits[0], person):
+            return hits[0], None
+        # An initial among two of one first name isn't clear: both are asked about.
+        hits = [n for n in everyone if first_name(n) == first_name(hits[0])]
     owes = {}
     if split.get("mode") != UNSURE:
         owes = {s["name"]: round(s["owes"], 2)
