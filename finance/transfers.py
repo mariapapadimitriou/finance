@@ -303,7 +303,8 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
                     used_out: set[str] | None = None,
                     accounts: dict | None = None,
                     pairs_out: dict[str, str] | None = None,
-                    recurring: list[dict] | None = None) -> dict[str, str]:
+                    recurring: list[dict] | None = None,
+                    aged_out: set[str] | None = None) -> dict[str, str]:
     """The category each sortable outflow should have: Transfers when its
     other end is here, Unsorted transfers when it isn't.
 
@@ -525,7 +526,12 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
             # sorted yet": the one question about it is "Is Questrade where
             # you save?" (finance/checks.py, 2026-11-20).
             from .categorize import looks_like_saving
-            out[t.fingerprint] = NEUTRAL if not recent or looks_like_saving(t.merchant, t.description) else UNSORTED
+            saving = looks_like_saving(t.merchant, t.description)
+            out[t.fingerprint] = NEUTRAL if not recent or saving else UNSORTED
+            # Nothing placed it and it's too old to ask about: the only reason
+            # it is a transfer is its age (finance/older_transfers.py).
+            if aged_out is not None and not recent and not saving:
+                aged_out.add(t.fingerprint)
     if used_out is not None:
         # Which arrivals were the other end of something: the rest is money
         # that came from somewhere you can't see, and worth asking about.

@@ -23,6 +23,9 @@ struct ReviewView: View {
     @State private var sortedRows: [SortedRow]?
     @State private var sorting = false
     @State private var toast: Toast?
+    /// OT-01, and her answer's own toast, held until it closes.
+    @State private var older: OlderOnes?
+    @State private var heldToast: Toast?
     @State private var busy = false
     /// PP-01 for a payback the server couldn't place on the split.
     @State private var whoPaid: WhoPaidAsk?
@@ -139,6 +142,20 @@ struct ReviewView: View {
                     Task { await send(answer) }
                 }
             }
+        }
+        .sheet(item: $older, onDismiss: {
+            if let held = heldToast { withAnimation { toast = held } }
+            heldToast = nil
+        }) { o in
+            OlderOnesSheet(ask: o, api: app.api, onSorted: { reply in
+                // OT-02: "8 more moved to Utilities", whose Undo takes back those only.
+                heldToast = Toast(title: reply.title ?? "Sorted.", undo: reply.undo)
+                older = nil
+                Task {
+                    await load()
+                    app.apply(reply.changed)
+                }
+            }, onClose: { older = nil })
         }
         .sheet(item: $whoPaid) { w in
             WhoPaidAskSheet(ask: w, api: app.api, onPick: { answer in
@@ -555,8 +572,18 @@ struct ReviewView: View {
         busy = true
         defer { busy = false }
         do {
+            let asked = review?.shownAsks.first { $0.kind == .transfer && $0.t.id == answer.rowID }
             let reply = try await answer.send(app.api)
-            withAnimation { toast = Toast(title: reply.title ?? answer.done, undo: reply.undo) }
+            let said = Toast(title: reply.title ?? answer.done, undo: reply.undo)
+            if let t = asked?.t, !t.inflow,
+               let found = await OlderOnes.after(answer, id: t.id, name: t.name, api: app.api) {
+                heldToast = said
+                // The sheet that just closed has to be gone first.
+                try? await Task.sleep(nanoseconds: 450_000_000)
+                older = found
+            } else {
+                withAnimation { toast = said }
+            }
             error = nil
             await load()
             // What it changed goes to the rest of the app (the Allowance, the
