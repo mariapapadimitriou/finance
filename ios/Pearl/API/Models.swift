@@ -584,7 +584,9 @@ struct Transaction: Decodable, Identifiable, Hashable {
         let learnable: Bool?
         let mixed: Bool?
         let hasRule: Bool?
-        enum CodingKeys: String, CodingKey { case learnable, mixed; case hasRule = "has_rule" }
+        /// "common": the name is one every transfer shares, so no rule.
+        var why: String? = nil
+        enum CodingKeys: String, CodingKey { case learnable, mixed, why; case hasRule = "has_rule" }
     }
     /// Pearl's guess at the category, waiting for her yes (a dashed chip).
     var suggested: Bool
@@ -1937,7 +1939,10 @@ struct Ask: Identifiable, Hashable {
     /// waits for the merchant's last open row: by then her answers have either
     /// agreed, or they disagreed and the merchant varies.
     func savesRule(_ accounts: [AccountsOverview.Account]) -> Bool {
-        canRule(accounts) && !varies(accounts) && item.siblings.isEmpty
+        // A bank transfer out starts with Always off (product owner,
+        // 2026-11-25): OT-01 asks about the older ones instead of moving them.
+        if kind == .transfer && !t.inflow && savedTo(accounts) == nil { return false }
+        return canRule(accounts) && !varies(accounts) && item.siblings.isEmpty
     }
 
     /// Yes: this row, and the rule when `newOnes` says so. Every merchant gets
@@ -2259,6 +2264,8 @@ struct MarkReply: Decodable {
     var extra: ShareExtra? = nil
     /// What the write changed (perf rehaul, 2026-11-19).
     var changed: Changed? = nil
+    /// OT-01: how many of the older ones moved.
+    var moved: Int? = nil
 
     struct ShareExtra: Decodable, Hashable {
         let amount: Double

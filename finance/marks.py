@@ -125,6 +125,11 @@ def _mixed(store, t) -> bool:
                                                              store.confirmed_categories())
 
 
+def _no_rule_why(t: Transaction) -> str | None:
+    from .api import _no_rule_why as why
+    return why(t)
+
+
 def _generic(t: Transaction) -> bool:
     from .categorize import is_generic_transfer_name
     return is_generic_transfer_name(t.merchant)
@@ -625,6 +630,7 @@ def cases(store, t: Transaction, txns: list[Transaction]) -> dict:
         # Whether a rule for this name could ever match the right rows: not
         # for a name every transfer shares (2026-10-23).
         "learnable": not _generic(t),
+        "why": _no_rule_why(t),
         "mixed": _mixed(store, t),
         # Whether a rule already sorts this merchant (the Always switch).
         "has_rule": _key(t.merchant) in store.overrides(),

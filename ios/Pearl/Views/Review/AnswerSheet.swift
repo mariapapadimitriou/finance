@@ -49,9 +49,6 @@ struct AnswerSheet: View {
     @State private var choice: String?
     @State private var text = ""
     @State private var charges: [BriefTransaction] = []
-    /// For a category picked as part of another answer (a purchase, a
-    /// recurring payment): what to do with it.
-    @State private var then: Then = .category
     /// "A refund or payback": the deposit's parts (THL-291, S-09 to S-12).
     /// PB-30 / MP-01 open from this, as the sheet's item: built on a flag,
     /// the parts sheet read the state from before PB-11's pick when it opened
@@ -160,8 +157,6 @@ struct AnswerSheet: View {
         case guess, out, into, accounts, charges, kinds, otherKinds, cadence, joint, sender, recurring, payback, category
     }
 
-    enum Then { case category, spending, recurring }
-
     /// `start` opens on one step, for the transaction page (THL-198):
     /// the kind of income, how often it pays, or What was this?.
     init(ask: Ask, categories: [CategoryList.Category], accounts: [AccountsOverview.Account], names: [String],
@@ -241,7 +236,9 @@ struct AnswerSheet: View {
                               extras: fromPage ? nil : AnyView(outOptions),
                               answersAtOnce: true,
                               // Off where other rows are open or it varies: her answer here is for this row.
-                              newOnesOn: pageAlways ?? (!fromPage && learnable == true && t.mixed != true && ask.item.siblings.isEmpty),
+                              // And off for a bank transfer out (2026-11-25): OT-01 asks instead.
+                              newOnesOn: pageAlways ?? (!fromPage && ask.kind != .transfer && learnable == true
+                                                        && t.mixed != true && ask.item.siblings.isEmpty),
                               showsAlways: pageAlways == nil && !fromPage,
                               // G1-WhatWasThis-r (T-04n): Pearl's guess leads, then her
                               // four likeliest; every other answer under Something else….
@@ -256,23 +253,15 @@ struct AnswerSheet: View {
             } else if step == .into {
                 intoSheet
             } else if step == .category {
+                // RQ-01 › Something I pay for: the only way here (REFRESH-17).
                 CategorySheet(name: who, amount: amountText, tone: tone, categories: categories,
                               current: t.category ?? ask.item.guess?.text ?? "Other",
-                              merchant: then == .recurring ? nil : who,
-                              preview: then == .recurring ? nil : CategorySheet.preview(api: api, id: t.id, merchant: who),
-                              confirmsCurrent: ask.kind == .category && then == .category) { name, remember in
-                    switch then {
-                    case .category where ask.kind == .category && name == (t.category ?? ask.item.guess?.text) && !remember:
-                        onAnswer(.confirm(t.id))
-                    case .category: onAnswer(.category(t.id, name: name, remember: remember))
-                    case .spending: onAnswer(.mark(t.id, ["case": "spending", "category": name, "remember": remember]))
-                    case .recurring:
-                        // RQ-01b after Something I pay for: back to the tiles' page,
-                        // where "from now on?" is drawn (the category page stayed up
-                        // and Save did nothing, product owner, 2026-11-24).
-                        recurring(nil, name, category: name)
-                        go(.recurring)
-                    }
+                              merchant: nil) { name, _ in
+                    // RQ-01b: back to the tiles' page, where "from now on?"
+                    // is drawn (the category page stayed up and Save did
+                    // nothing, product owner, 2026-11-24).
+                    recurring(nil, name, category: name)
+                    go(.recurring)
                 }
             } else if step == .guess {
                 guessSheet
@@ -629,9 +618,7 @@ struct AnswerSheet: View {
         case .check: onAnswer(.check(ask.item.key, yes: false))
         case .moneyIn: go(.into)
         case .transfer: go(.out)
-        default:
-            then = .category
-            go(.category)
+        default: break
         }
     }
 
@@ -875,7 +862,6 @@ struct AnswerSheet: View {
             }
             // Opens the category step, as before.
             AnswerTile(title: "Something I pay for", line: "Pick a category next", symbol: "bag") {
-                then = .recurring
                 go(.category)
             }
         }
@@ -1441,30 +1427,12 @@ struct AnswerSheet: View {
     private func primary() {
         guard let choice = choice ?? (step == .sender ? "typed" : nil) else { return }
         switch step {
-        case .out:
-            switch choice {
-            case "paid": then = .spending; go(.category)
-            case "moved": go(.accounts)
-            case "lent": onAnswer(.mark(t.id, ["case": "lent", "remember": true]))
-            default: onAnswer(.mark(t.id, ["case": "work"]))
-            }
         case .accounts:
             // A savings account, or one Pearl can't see, is money put away;
             // anything else is her money moving.
             let account = (accounts.isEmpty ? fetchedAccounts : accounts).first { "acct:" + $0.id == choice }
             let saved = choice == "elsewhere" || ["savings", "investment"].contains(account?.kind ?? "")
             onAnswer(.mark(t.id, ["case": saved ? "saved" : "moved", "remember": rememberAnswer]))
-        case .into:
-            switch choice {
-            case "earned": go(.kinds)
-            case "back": parting = Parting(person: partPerson, mustTick: mustTick)
-            case "own": onAnswer(.mark(t.id, ["case": "own", "remember": true]))
-            case "loan": onAnswer(.mark(t.id, ["case": "borrowed"]))
-            case "out_of_savings": onAnswer(.mark(t.id, ["case": "out_of_savings"]))
-            case "lent_back": onAnswer(.mark(t.id, ["case": "lent_back"]))
-            case "else": then = .category; go(.category)
-            default: onAnswer(.mark(t.id, ["case": "not_mine", "reason": "Holding it for someone"]))
-            }
         case .kinds:
             if choice == "regular" { go(.cadence); return }
             // T-08k (SPLIT-18): Other income asks which kind.
@@ -1489,7 +1457,7 @@ struct AnswerSheet: View {
                 : text.trimmingCharacters(in: .whitespaces)
             guard !name.isEmpty else { return }
             onAnswer(.party(t.id, name: name))
-        case .guess, .category, .cadence, .joint, .recurring, .payback:
+        case .out, .into, .guess, .category, .cadence, .joint, .recurring, .payback:
             break
         }
     }

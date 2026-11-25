@@ -104,6 +104,9 @@ struct QuickSortView: View {
     /// over Skip and Yes on every card when sorting quickly. Cleared by the
     /// next answer, so Undo only ever goes one card back.
     @State private var lastAnswer: LastAnswer?
+    /// OT-01q: the older ones of the card just sorted, and that answer.
+    @State private var older: OlderOnes?
+    @State private var olderFor: Sorted?
 
     enum LastAnswer {
         /// T-86: a Yes, with the ledger's Undo and the deck as it was.
@@ -114,6 +117,9 @@ struct QuickSortView: View {
         case trip(MadeTrip)
         /// AI-18y: the pattern just said Yes to.
         case pattern(PatternAsk)
+        /// OT-02q: the older ones just moved with the last answer; after its
+        /// Undo, or a second one, the answer itself.
+        case older(undo: JSONValue?, count: Int, answer: Sorted)
     }
 
     struct MadeTrip: Identifiable, Equatable {
@@ -209,6 +215,15 @@ struct QuickSortView: View {
                 onDraft: { drafts[ask.id] = $0 },
                 draft: drafts[ask.id] ?? CardDraft()),
                       categories: categories)
+        }
+        .sheet(item: $older, onDismiss: { olderFor = nil }) { o in
+            OlderOnesSheet(ask: o, api: app.api, onSorted: { reply in
+                if let answer = olderFor {
+                    withAnimation { lastAnswer = .older(undo: reply.undo, count: reply.moved ?? o.older.count, answer: answer) }
+                }
+                older = nil
+                app.apply(reply.changed, by: nil, bump: false)
+            }, onClose: { older = nil })
         }
         .sheet(item: $whoPaid) { w in
             WhoPaidAskSheet(ask: w.who, api: app.api, onPick: { answer in
@@ -706,7 +721,8 @@ struct QuickSortView: View {
             Button { Task { await undoLast() } } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "arrow.uturn.backward").font(.system(size: 12, weight: .semibold))
-                    Text("Undo").font(.custom("Figtree-Medium", size: 14, relativeTo: .subheadline))
+                    Text(olderUndo.map { "Undo \($0)" } ?? "Undo")
+                        .font(.custom("Figtree-Medium", size: 14, relativeTo: .subheadline))
                 }
                 .foregroundColor(Pearl.link)
                 .padding(.horizontal, 8).frame(minHeight: 44)
@@ -714,9 +730,32 @@ struct QuickSortView: View {
             }
             .buttonStyle(.plain)
             .disabled(busy)
-            .accessibilityLabel("Undo the last answer")
+            .accessibilityLabel(olderUndo.map { "Undo the \($0)" } ?? "Undo the last answer")
             .accessibilityIdentifier("quick-sort-undo")
             .transition(.opacity)
+        }
+    }
+
+    /// OT-02q: how many "Undo 8" takes back.
+    private var olderUndo: Int? {
+        if case .older(_, let count, _)? = lastAnswer { return count }
+        return nil
+    }
+
+    /// "Undo 8": those only; her own answer stays, with its own Undo next.
+    private func undoOlder(_ payload: JSONValue?, _ count: Int, _ answer: Sorted) async {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            if let body = payload?.any as? [String: Any] {
+                let _: OK = try await app.api.post("api/transactions/undo", body)
+            }
+            withAnimation(Self.undoEase) { lastAnswer = .sorted(answer) }
+            error = nil
+            app.changed()
+        } catch {
+            self.error = app.handle(error)
         }
     }
 
@@ -728,6 +767,7 @@ struct QuickSortView: View {
         case .skipped(let s): await undoSkip(s)
         case .trip(let made): await undoTrip(made)
         case .pattern(let p): await undoYes(p)
+        case .older(let payload, let count, let answer): await undoOlder(payload, count, answer)
         }
     }
 
@@ -1017,10 +1057,19 @@ struct QuickSortView: View {
                     deck.insert(follow, at: index + 1)
                 }
                 await step(ask, ["action": "marked", "title": reply.title ?? answer.done], quiet: true)
-                withAnimation {
-                    lastAnswer = .sorted(Sorted(
-                        text: always.map { QuickSortStep.always($0, sorted: 1) } ?? reply.title ?? answer.done,
-                        ask: ask, undo: reply.undo, deck: before, index: at))
+                let sorted = Sorted(
+                    text: always.map { QuickSortStep.always($0, sorted: 1) } ?? reply.title ?? answer.done,
+                    ask: ask, undo: reply.undo, deck: before, index: at)
+                withAnimation { lastAnswer = .sorted(sorted) }
+                if ask.kind == .transfer, !ask.t.inflow,
+                   let found = await OlderOnes.after(answer, id: ask.t.id, name: ask.t.name, api: app.api) {
+                    // OT-01q: the next card is in, then the sheet. Not over
+                    // another question she has opened meanwhile.
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    if asking == nil, leaving == nil {
+                        olderFor = sorted
+                        older = found
+                    }
                 }
             }
         } catch let e where e.whoPaid != nil {

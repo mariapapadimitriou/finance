@@ -283,9 +283,21 @@ def _with_rules(st, rows) -> list[dict]:
             r = {**r, "splitting": _splitting(t, split, txns, payer)}
         out.append({**r, "rule": {
             "learnable": not is_generic_transfer_name(t.merchant),
+            "why": _no_rule_why(t),
             "mixed": merchant_key(t.merchant or "") in mixed,
             "has_rule": " ".join((t.merchant or "").lower().split()) in rules}})
     return out
+
+
+def _no_rule_why(t) -> str | None:
+    """Why no rule can be made, when the page can say it truthfully:
+    "common" for a name every transfer shares ("Interac e-Transfer"). Not for
+    an e-Transfer the page shows by a person's name (REFRESH-17)."""
+    from .categorize import is_generic_transfer_name
+    from .etransfers import party
+    if not is_generic_transfer_name(t.merchant) or (party(t) or {}).get("name"):
+        return None
+    return "common"
 
 
 class _Lazy:
@@ -3813,6 +3825,7 @@ from . import many_api  # noqa: E402,F401
 from . import pattern_sort_api  # noqa: E402,F401
 from . import trips_api  # noqa: E402,F401
 from . import recurring_api  # noqa: E402,F401
+from . import older_transfers_api  # noqa: E402,F401
 from . import chat_api  # noqa: E402,F401
 from . import your_plan_api  # noqa: E402,F401
 from . import worth_a_look  # noqa: E402,F401

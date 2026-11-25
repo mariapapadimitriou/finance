@@ -377,6 +377,8 @@ struct TransactionDetailView: View {
     /// so the Always switch is there as the page opens.
     @State private var cases: Cases?
     private var learnable: Bool { cases?.learnable ?? transaction.rule?.learnable ?? false }
+    /// Why there's no Always here, once the server has said (REFRESH-17).
+    private var commonName: Bool { (cases?.why ?? detail?.rule?.why ?? transaction.rule?.why) == "common" }
     private var varies: Bool { cases?.mixed ?? transaction.rule?.mixed ?? false }
     /// Pay from a piggy bank.
     @State private var payingFromBank = false
@@ -397,6 +399,9 @@ struct TransactionDetailView: View {
     @State private var newOnes: Bool?
     /// T-38b / T-40b: "Dining out · Undo" after a guess is confirmed.
     @State private var toast: (title: String, undo: (() -> Void)?)?
+    /// OT-01p, and her answer's own toast, held until it closes.
+    @State private var older: OlderOnes?
+    @State private var heldToast: (title: String, undo: (() -> Void)?)?
     /// PB-22 to PB-24: where Find what paid it back is.
     @State private var paidBackStep: PaidBackStep?
     /// T-41b: Unlink? before a refund goes back to Needs a look.
@@ -712,11 +717,30 @@ struct TransactionDetailView: View {
                     let other = otherSide
                     otherSide = nil
                     Task {
+                        let was = t.category
                         await answered(answer)
-                        if let other = other { await askOtherSide(other) }
+                        if let other = other {
+                            await askOtherSide(other)
+                        } else if here, answer.sortsSpendingAlone {
+                            await askOlder(was: was)
+                        }
                     }
                 }
             }
+        }
+        .sheet(item: $older, onDismiss: {
+            if let held = heldToast { withAnimation { splitToast = nil; toast = held } }
+            heldToast = nil
+        }) { o in
+            OlderOnesSheet(ask: o, api: app.api, onSorted: { reply in
+                // OT-02p: its Undo takes back those only.
+                heldToast = (reply.title ?? "Sorted.", undoing(reply.undo))
+                older = nil
+                Task {
+                    await load()
+                    app.apply(reply.changed, by: screenKey)
+                }
+            }, onClose: { older = nil })
         }
         .sheet(item: $asking) { a in
             AnswerSheet(ask: a.step == .joint ? jointAsk : moneyIn, categories: categories, accounts: [],
@@ -1377,6 +1401,12 @@ struct TransactionDetailView: View {
                 APSeparator(afterFace: false)
                 // A+ (REDESIGN-09 fix): no line repeating the row's title.
                 alwaysToggle(sub: nil)
+            } else if noRuleInCategoryCard {
+                // T-03r (G1-NoRule): where the switch would be, in line with the name.
+                Text(Self.noRule).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 64).padding(.trailing, 16).padding(.top, -6).padding(.bottom, 14)
             }
             if isIncome, let payer = t.incomeRule?.payer {
                 // Income's Always too (product owner, 2026-11-21: under the
@@ -1390,6 +1420,21 @@ struct TransactionDetailView: View {
     /// T-03r: the sorted spending row's Always switch is in the category card.
     private var alwaysInCategoryCard: Bool {
         offersNewOnes && guessName == nil && t.parts.isEmpty && !jointAsks && !t.asks && !isIncome
+            && t.transfer == nil
+    }
+
+    static let noRule = "This name is too common for a rule"
+
+    /// Where the switch would have been, but for the name (T-03r, T-96).
+    private var wouldOfferRule: Bool {
+        guard commonName, !learnable, (t.category ?? "Other") != "Other" else { return false }
+        if isIncome && t.incomeRule?.payer != nil { return false }
+        if let guessing = guessing { return guessing.ask.item.pair == nil }
+        return guessName != nil || (!t.inflow && t.transfer == nil && t.excluded.isEmpty)
+    }
+
+    private var noRuleInCategoryCard: Bool {
+        wouldOfferRule && guessName == nil && t.parts.isEmpty && !jointAsks && !t.asks && !isIncome
             && t.transfer == nil
     }
 
@@ -2604,6 +2649,13 @@ struct TransactionDetailView: View {
                 }
             }
         }
+        if wouldOfferRule, guessName != nil {
+            // T-96 (G1-NoRule): under Options, where a guess's switch is.
+            Text(Self.noRule).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16).padding(.top, 12)
+        }
     }
 
     /// Income's Always (2026-11-08): new ones from the payer count as this
@@ -3135,7 +3187,8 @@ struct TransactionDetailView: View {
 
     private struct Cases: Decodable {
         let learnable: Bool?; let mixed: Bool?; let hasRule: Bool?
-        enum CodingKeys: String, CodingKey { case learnable, mixed; case hasRule = "has_rule" }
+        var why: String? = nil
+        enum CodingKeys: String, CodingKey { case learnable, mixed, why; case hasRule = "has_rule" }
     }
     private struct Bill: Decodable {
         let billKey: String?
@@ -3343,11 +3396,26 @@ struct TransactionDetailView: View {
             let said = remember ? "Always \(name) for \(merchant)." : "Moved to \(name)."
             withAnimation { splitToast = nil; toast = (said, nil) }
             error = nil
-            if let sent = sent { take(sent.changed) }
+            if let sent = sent {
+                take(sent.changed)
+                if !remember { Task { await askOlder(was: (before ?? transaction).category) } }
+            }
         } catch {
             withAnimation { detail = before }
             self.error = app.handle(error)
         }
+    }
+
+    /// OT-01p: a transfer just sorted as spending, for this one; the older
+    /// ones of its name Pearl had left as transfers, asked once the sheet
+    /// that answered has gone. The server says which, and whether to ask.
+    private func askOlder(was: String?) async {
+        guard !t.inflow, was == "Unsorted transfers" || was == "Transfers",
+              let found = await OlderOnes.after(id: t.id, name: t.merchant, api: app.api) else { return }
+        heldToast = toast
+        withAnimation { toast = nil }
+        try? await Task.sleep(nanoseconds: 450_000_000)
+        older = found
     }
 
     private func putBack() async {

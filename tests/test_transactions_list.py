@@ -504,8 +504,10 @@ def test_each_row_says_what_its_always_switch_needs(client):
     client.st.set_override("Dina's Tavern", "Dining", move_rows=False)
     rows = by_desc(listing(client))
     dina, etransfer = rows["DINAS TAVERN"]["rule"], rows["E-TRANSFER SENT"]["rule"]
-    assert dina == {"learnable": True, "mixed": False, "has_rule": True}
+    # `why` (REFRESH-17): what the page says where there can be no rule.
+    assert dina == {"learnable": True, "why": None, "mixed": False, "has_rule": True}
     assert etransfer["learnable"] is False and etransfer["has_rule"] is False
+    assert etransfer["why"] == "common"
 
 
 def test_a_split_row_carries_its_people(client):
