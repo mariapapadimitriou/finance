@@ -313,9 +313,10 @@ class TestPlan:
 
 class TestSubscriptions:
     def test_recurring_that_isnt_a_bill(self, client):
-        first = TODAY.replace(day=1)
-        add(client, *[tx("STREAMFLIX", 16.99, (first - timedelta(days=30 * i)).replace(day=3),
-                         raw={"issuer_category": "ENTERTAINMENT_TV_AND_MOVIES"}) for i in range(1, 5)])
+        # Counted back from today: on fixed days of past months, the last one
+        # was over 48 days old late in a month, so rightly lapsed.
+        add(client, *[tx("STREAMFLIX", 16.99, TODAY - timedelta(days=10 + 30 * i),
+                         raw={"issuer_category": "ENTERTAINMENT_TV_AND_MOVIES"}) for i in range(4)])
         r = client.get("/api/chat/subscriptions").get_json()
         assert r["count"] == 1 and r["rows"][0]["merchant"] == "Streamflix"
         assert r["line"].startswith("You have 1 subscription, about $17 a month")
