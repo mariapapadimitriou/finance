@@ -19,7 +19,12 @@ def test_the_tiles_ask_from_now_on_before_saving():
     body = body.split("\n    }\n")[0]
     assert "repeatAsk = RepeatAsk(kind: kind, category: category, label: label)" in body
     assert "onAnswer(.recurring(" not in body
-    assert "case .recurring: recurring(nil, name, category: name)" in answer
+    # After Something I pay for › a category, the sheet goes back to the
+    # tiles' page where "from now on?" is drawn; left on the category page,
+    # Save was a dead button (product owner, 2026-11-24).
+    assert "case .recurring:\n                        // RQ-01b after Something I pay for" in answer
+    after = answer.split("case .recurring:\n                        // RQ-01b after Something I pay for")[1][:400]
+    assert "recurring(nil, name, category: name)\n                        go(.recurring)" in after
     # G1-RecurringFrom: in the tiles' place, under the rhythm card; ✕ goes back.
     assert "if let r = repeatAsk {\n            fromNowOn(r)\n        } else {\n            recurringChoices\n        }" in answer
     assert '" from now on?")' in answer
