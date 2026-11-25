@@ -1008,7 +1008,7 @@ extension View {
 
 struct PearlToast: View {
     struct Model: Equatable {
-        let id = UUID()
+        var id = UUID()
         let text: String
         /// "Undo", "Try again", or none.
         var action: String? = nil

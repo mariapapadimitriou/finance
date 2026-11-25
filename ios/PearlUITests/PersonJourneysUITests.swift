@@ -370,6 +370,7 @@ final class PersonJourneysUITests: XCTestCase {
                 step("OT-02")
                 tap(app.buttons["Undo"], "Undo")
                 XCTAssertTrue(text(containing: "Undone").waitForExistence(timeout: 8), "Undo didn't answer")
+                XCTAssertTrue(app.buttons["Undo"].waitForNonExistence(timeout: 2), "Undone. kept an Undo that does nothing")
                 step("after undo")
             } else {
                 // The older waiting one, sorted: the same 8 are asked about again.

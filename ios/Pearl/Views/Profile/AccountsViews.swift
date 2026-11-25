@@ -142,24 +142,18 @@ struct UndoToast: View {
     /// UN-01: the info icon for "Couldn’t undo" and other failures.
     var failed = false
     let done: () -> Void
-    @State private var model: PearlToast.Model
-
-    init(text: String, undo: (() -> Void)? = nil, stays: Bool = false, failed: Bool = false,
-         done: @escaping () -> Void) {
-        self.text = text
-        self.undo = undo
-        self.stays = stays
-        self.failed = failed
-        self.done = done
-        _model = State(initialValue: PearlToast.Model(text: text, action: undo == nil ? nil : "Undo",
-                                                      failed: failed, run: undo))
-    }
+    /// One per toast: a new one is announced and gets its own few seconds.
+    @State private var id = UUID()
 
     var body: some View {
-        PearlToast(model: model, stays: stays, done: done)
-            .onChange(of: text) { t in
-                model = PearlToast.Model(text: t, action: undo == nil ? nil : "Undo", failed: failed, run: undo)
-            }
+        // Always from what it's given now. It used to be rebuilt in onChange,
+        // whose closure still held the toast before: "Undone." kept that one's
+        // Undo, which did nothing (2026-11-25).
+        PearlToast(model: PearlToast.Model(id: id, text: text, action: undo == nil ? nil : "Undo",
+                                           failed: failed, run: undo),
+                   stays: stays, done: done)
+            .onChange(of: text) { _ in id = UUID() }
+            .onChange(of: undo == nil) { _ in id = UUID() }
     }
 }
 
