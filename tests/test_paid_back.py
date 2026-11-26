@@ -378,12 +378,21 @@ class TestFromThePurchase:
 
 
 def _two(tmp_path):
-    """Two apps with the same rows, to link one from each side."""
+    """Two apps with the same rows, to link one from each side.
+
+    Each needs a ledger of its own. On SQLite the two files are; on Postgres
+    (SPENDIE_TEST_DATABASE_URL) the path is ignored and both stores would
+    open the one `public` schema, so the second link found the deposit the
+    first had already used. The second app gets an account schema."""
     from app import create_app
+    from finance import db
+    from finance.store import Store
     out = []
-    for n in ("deposit", "purchase"):
+    for n, schema in (("deposit", "public"), ("purchase", "u_2")):
         app = create_app(str(tmp_path / f"{n}.db"))
         app.config.update(TESTING=True)
+        if db.database_url() and schema != "public":
+            app.config["STORE"] = Store(str(tmp_path / f"{n}.db"), schema=schema)
         c = app.test_client()
         c.st = app.config["STORE"]
         out.append(c)

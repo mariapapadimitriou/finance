@@ -69,7 +69,8 @@ def test_an_old_sqlite_ledger_keeps_its_challenges(tmp_path):
                 "VALUES ('coffee', 'Coffee for a month', 115, '2026-10-15', '2026-10-31')")
     con.commit()
     con.close()
-    st = store_mod.Store(str(path))
+    # The old file itself, even when the suite runs on Postgres.
+    st = store_mod.Store(str(path), url="")
     c = st.challenges()[0]
     assert (c["start"], c["end"], c["title"]) == ("2026-10-15", "2026-10-31", "Coffee for a month")
     cid = st.add_challenge("cook_at_home", "Cook-at-home week", 35, "2026-10-15", "2026-10-21")

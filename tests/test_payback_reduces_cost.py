@@ -149,6 +149,8 @@ def test_a_named_payback_from_either_side(tmp_path, kind):
     """The four ways she links Sam's money (the deposit's parts, the
     purchase's Paid back, Mark paid back from the bank, cash) agree."""
     from app import create_app
+    from finance import db
+    from finance.store import Store
     sent = 60.0 if kind == "full" else 15.0
     seen = []
     for n, link in enumerate((
@@ -160,6 +162,10 @@ def test_a_named_payback_from_either_side(tmp_path, kind):
                                        json={"name": "Sam", "amount": sent, "via": "cash"}))):
         app = create_app(str(tmp_path / f"{n}.db"))
         app.config.update(TESTING=True)
+        if n and db.database_url():
+            # A ledger of its own on Postgres too, where the path is ignored
+            # and all four would share `public` (and the one deposit).
+            app.config["STORE"] = Store(str(tmp_path / f"{n}.db"), schema=f"u_{n + 1}")
         c = app.test_client()
         c.st = app.config["STORE"]
         c.st.set_setting("home_income", "4300")

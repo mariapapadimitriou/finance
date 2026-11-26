@@ -25,8 +25,11 @@ Decisions this follows (THL-9 comment, 2026-10-12):
   answers replace the guesses — confirmed or edited pay is what comes in,
   an unticked bill stops counting, a bill she adds counts. Before that,
   nothing changes. See `income_bills`.
-* S5: set aside is what a monthly saving goal still needs this month: the
-  goal less what has already been saved. No goal, no row.
+* S5, Saving (product owner, 2026-11-26): her savings % from set-up
+  (`savings_rate`) of the month's income is set aside automatically; money
+  she actually moved to savings this month counts toward it, so the larger
+  of the two comes off, never both. No share: only what she moved. See
+  `saving_row`.
 * S6: days left include today.
 * E1: with no income detected and none given there is no number at all;
   Home asks for her income instead of guessing. Once she has skipped the
@@ -794,12 +797,32 @@ def from_last_month(transactions: list[Transaction], today: date) -> dict | None
     return {"amount_c": total_c, "lines": lines} if total_c else None
 
 
+def saving_row(income_c: int, rate: float | None, moved_c: int) -> dict:
+    """The Saving row (key "saved", kept so How it adds up still reads it):
+    what comes off the Allowance for saving this month.
+
+    The rule (2026-11-26): set aside the larger of her target (her savings
+    share of the month's income, the same income the Allowance starts from)
+    and what she has actually moved to savings this month. Money she moves
+    fills the target first, so it never comes off twice: $300 target and
+    $100 moved takes off $300; $500 moved takes off $500. With no share
+    chosen (or 0%) the target is 0 and only money actually moved comes off,
+    as before."""
+    rate = float(rate or 0.0)
+    rate = min(max(rate, 0.0), 1.0)
+    target_c = int(rate * max(income_c, 0) + 0.5) if rate else 0
+    moved_c = max(moved_c, 0)
+    return {"key": "saved", "amount_c": max(target_c, moved_c),
+            "rate": rate or None, "target": _dollars(target_c),
+            "moved": _dollars(moved_c), "lines": []}
+
+
 def compute(transactions: list[Transaction], today: date, *,
             entered_income: float = 0.0, told_income: float = 0.0,
             told_rent: float = 0.0, overridden: bool = False,
             debt_bills: dict | None = None, confirm: dict | None = None,
             carry: dict | None = None, moved_to_savings: float | None = None,
-            plan: dict[str, float] | None = None) -> dict:
+            plan: dict[str, float] | None = None, saving_rate: float = 0.0) -> dict:
     """Safe to spend this month and the four rows behind it.
 
     `debt_bills` (from `debts.bills`) adds this month's debt minimums: the
@@ -816,7 +839,10 @@ def compute(transactions: list[Transaction], today: date, *,
     `plan` is Your plan while it's in use ({category: amount a month},
     `your_plan.in_use`; YP-02): each category's amount, less what's been
     spent on it this month, is set aside in a "plan" row, as a bill is. With
-    no plan in use nothing here changes."""
+    no plan in use nothing here changes.
+    `saving_rate` is the share of her pay she chose to save in set-up
+    (O-10s, `savings_rate`, 0 to 0.5): that share of the month's income is
+    set aside automatically. See `saving_row`."""
     month = today.strftime("%Y-%m")
     left = days_left(today)
     income = income_this_month(transactions, today, entered_income,
@@ -841,7 +867,9 @@ def compute(transactions: list[Transaction], today: date, *,
             "overridden": income["overridden"]}
     if income["amount"] is None:
         return {**base, "state": "needs_income", "amount": None, "shown": None,
-                "per_day": None, "over_by": None, "rows": []}
+                "per_day": None, "over_by": None, "rows": [],
+                "saving": None, "saving_rate": None, "saving_target": None,
+                "saving_moved": None}
 
     bills = bills_to_come(transactions, today, told_rent, confirm)
     spent = already_spent(transactions, today, _bill_parts(transactions, today, confirm),
@@ -866,11 +894,13 @@ def compute(transactions: list[Transaction], today: date, *,
         {"key": "spent", "amount_c": spent["amount_c"], "pending": spent["pending"],
          "debt_paid": _dollars(debt_paid_c), "lines": spent["lines"]},
     ]
-    # Moved to savings this month (THL-230): only money she actually put
-    # away comes off the month. The one saving figure (finance/savings.py).
+    # Saving (2026-11-26, product owner): her savings % of the month's
+    # income is set aside on its own; money she actually moved to savings
+    # this month (THL-230, finance/savings.py) counts toward it.
     saved_c = max(_cents(moved_to_savings if moved_to_savings is not None
                          else invested_in(transactions, month)), 0)
-    rows.append({"key": "saved", "amount_c": saved_c, "lines": []})
+    saving = saving_row(rows[0]["amount_c"], saving_rate, saved_c)
+    rows.append(saving)
     # Your plan, once she uses it (YP-02, YP-03): the rest of each planned
     # category's amount this month is held back, so the Allowance follows it.
     if plan:
@@ -909,6 +939,11 @@ def compute(transactions: list[Transaction], today: date, *,
         # among them, count with the bills, so spent is everything else.
         # `bills_paid` is that part of the spent row, for How it adds up.
         "bills_paid": _dollars(spent["bills_c"] + debt_paid_c),
+        # The Saving line of How it adds up (the "saved" row): what comes
+        # off for saving, the share she chose (None with none), the target
+        # that share comes to, and what she actually moved this month.
+        "saving": saving["amount"], "saving_rate": saving["rate"],
+        "saving_target": saving["target"], "saving_moved": saving["moved"],
         **gauge(_cents(shown), spent["amount_c"] - spent["bills_c"] - debt_paid_c),
     }
 
