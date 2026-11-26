@@ -47,11 +47,10 @@ private struct AddsUpCards: View {
             APCard {
                 line("Came in", "+" + Format.whole(row("income") ?? 0), tone: Pearl.moneyIn, first: true)
                 line("Bills", "−" + Format.whole(bills))
-                // Between Bills and the Allowance: the savings share set aside
-                // each pay ("Saving", fix/savings-rate-and-pg, product owner
-                // 2026-11-26). Shown only when the server sends its row.
-                if let saving = row("saving"), saving >= 0.5 { line("Saving", "−" + Format.whole(saving)) }
-                if let saved = row("saved"), saved >= 0.5 { line("Moved to savings", "−" + Format.whole(saved)) }
+                // P1b / #467 (product owner, 2026-11-26): the savings share
+                // comes off the Allowance, max(rate × income, moved this
+                // month); the row is still "saved", its amount the Saving.
+                if let saved = row("saved"), saved >= 0.5 { line("Saving", "−" + Format.whole(saved)) }
                 if let plan = row("plan"), plan >= 0.5 { line("Your plan", "−" + Format.whole(plan)) }
                 if let carried = row("from_last_month"), abs(carried) >= 0.5 {
                     line("From last month", (carried < 0 ? "−" : "+") + Format.whole(carried))

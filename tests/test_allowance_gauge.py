@@ -38,7 +38,7 @@ def test_cash_flow_card_is_this_months_allowance_only():
 
 
 def test_how_it_adds_up_uses_the_rows():
-    for words in ('"Came in"', '"Bills"', '"Moved to savings"', '"Allowance"', '"Spent so far"'):
+    for words in ('"Came in"', '"Bills"', '"Saving"', '"Allowance"', '"Spent so far"'):
         assert words in ADDS, words
     assert '(row("bills") ?? 0) + (allowance.billsPaid ?? 0)' in ADDS
 
