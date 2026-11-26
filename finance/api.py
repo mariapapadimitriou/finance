@@ -363,18 +363,31 @@ def _needs_a_look(st):
 def transactions_months():
     """T-47 Choose a month (G1-Months, TEST-41): each month's result in one
     call, the same numbers as the month card: Came in, Spent and Saved, and
-    Leftover = came in - spent - saved (negative is Over)."""
+    Leftover = came in - spent - saved (negative is Over).
+
+    This month, once Home has an Allowance, `left` is Home's Left (the tap
+    audit, 2026-11-26: the picker said "Leftover $1,851 so far" beside the
+    tab's "Left $7,622"): what the Allowance has left, negative when over,
+    with `allowance: true`. Past months keep came in - spent - saved."""
+    from datetime import date as _date
     from . import txlist
     st = store()
     rows = _txlist_rows(st)
     every = st.all_transactions()
     months = sorted({t.date[:7] for t, _ in rows}, reverse=True)[:24]
+    today = _date.fromisoformat(_today_iso())
+    sts = _home_sts(st, every, today)
     out = []
     for m in months:
         tot = txlist.totals(txlist.select(rows, month=m))
         saved = round(_invested_in(every, m), 2)
-        out.append({"month": m, "income": tot["income"], "spent": tot["spent"], "saved": saved,
-                    "left": round(tot["income"] - tot["spent"] - saved, 2)})
+        row = {"month": m, "income": tot["income"], "spent": tot["spent"], "saved": saved,
+               "left": round(tot["income"] - tot["spent"] - saved, 2), "allowance": False}
+        if m == sts.get("month") and sts.get("state") in ("ok", "over"):
+            row["left"] = (-sts["over_by"] if sts["state"] == "over"
+                           else sts.get("shown") if sts.get("shown") is not None else sts["amount"])
+            row["allowance"] = True
+        out.append(row)
     return jsonify({"months": out})
 
 

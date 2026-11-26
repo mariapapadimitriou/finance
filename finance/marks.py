@@ -113,6 +113,9 @@ IN_CASES = (
      "effect": "Left out of all your numbers.", "remember": "exclusion"},
 )
 
+# The answers that make money in her pay: never offered for a card payment.
+PAY_CASES = ("pay", "regular_pay")
+
 SAVINGS_SUBTYPES = {"savings", "money market", "hsa", "cash management", "hisa", "tfsa savings",
                     "tfsa", "rrsp", "fhsa", "resp", "brokerage", "rrif", "lira"}
 
@@ -522,6 +525,11 @@ def best_guess(t: Transaction) -> str | None:
             where = destination(t)
             return "saved" if where and where[0].startswith(("acct:", "to:")) else "moved"
         return "spending"
+    from .txlist import never_pay
+    if never_pay(t):
+        # Never pay (the tap audit, P8): a card payment is her own money
+        # moving; anything else onto a card is money back from a shop.
+        return "own" if cat == "Transfers" else "refund"
     return "pay"
 
 
@@ -555,10 +563,15 @@ def cases(store, t: Transaction, txns: list[Transaction]) -> dict:
     kinds = store.payback_kinds()
     out_ = t.amount > 0
     where = destination(t)
+    from .txlist import never_pay
+    # A card payment is never pay (the tap audit, P8): no "This is my regular pay".
+    no_pay = never_pay(t)
     items = []
     for c in (OUT_CASES if out_ else IN_CASES):
         item = dict(c)
         if c.get("hidden"):
+            continue
+        if no_pay and c["key"] in PAY_CASES:
             continue
         if c["key"] == "joint_them" and not t.joint:
             continue
@@ -803,6 +816,10 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
     keys = {c["key"] for c in (OUT_CASES if out_ else IN_CASES)}
     if case not in keys:
         raise Problem("Say what this was.")
+    if not out_ and case in PAY_CASES:
+        from .txlist import never_pay
+        if never_pay(t):
+            raise Problem("Money onto a card is never pay.")
     if case == "payback" and not out_:
         body = _payer_on_splits(store, t, body)
     old_cat = t.category or "Other"

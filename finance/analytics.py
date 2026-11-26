@@ -128,6 +128,20 @@ def counts_as_spending(t: Transaction) -> bool:
     return abs(spend_amount(t)) >= 0.005
 
 
+def in_history(t: Transaction) -> bool:
+    """Whether a row may shape anything worked out from past spending: an
+    average, a usual month, a median, a trend, a baseline (P14, product
+    owner 2026-11-26). A one-off she left out ("Exclude from usual month")
+    never does, in any month, its own included; it still counts as
+    spending in its own month's totals (`counts_as_spending`)."""
+    return counts_as_spending(t) and not t.one_off
+
+
+def history_only(transactions: list[Transaction]) -> list[Transaction]:
+    """The rows every past-spending figure is made of: one-offs left out."""
+    return [t for t in transactions if not t.one_off]
+
+
 def spend_only(transactions: list[Transaction]) -> list[Transaction]:
     """Rows that represent consumption, netting refunds against purchases.
 
@@ -303,6 +317,8 @@ def typical_month_spend(transactions: list[Transaction],
         # has already had those categories taken out as commitments.
         transactions = [t for t in transactions
                         if (t.category or "Other") not in exclude]
+    # A normal month is made without one-offs (P14).
+    transactions = history_only(transactions)
     monthly = monthly_totals(transactions)
     months = month_range(transactions)
     latest = months[-1] if months else None
@@ -444,7 +460,8 @@ def category_baselines(transactions: list[Transaction], exclude_month: str | Non
     holiday month doesn't quietly raise the bar it's being judged against.
     """
     per_month: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
-    for t in spend_only(transactions):
+    # The yardstick leaves one-offs out (P14).
+    for t in spend_only(history_only(transactions)):
         per_month[t.month][t.category or "Other"] += t.amount
 
     months = sorted(per_month)
@@ -516,8 +533,9 @@ def daily_series(transactions: list[Transaction], days: int = 90) -> list[dict]:
 
 
 def weekday_profile(transactions: list[Transaction]) -> list[dict]:
-    """Average spend by day of week — where the discretionary bulges sit."""
-    rows = [t for t in spend_only(transactions) if t.amount > 0]
+    """Average spend by day of week — where the discretionary bulges sit.
+    One-offs are left out of the averages (P14)."""
+    rows = [t for t in spend_only(history_only(transactions)) if t.amount > 0]
     if not rows:
         return []
 
@@ -609,7 +627,8 @@ def summary(transactions: list[Transaction], budgets: dict[str, float] | None = 
     avg_spend = typical_month_spend(transactions)
 
     latest_spend = next((m["spend"] for m in monthly if m["month"] == latest), 0.0)
-    spend_rows = [t for t in spend_only(transactions) if t.amount > 0]
+    # An average purchase is made without one-offs (P14).
+    spend_rows = [t for t in spend_only(history_only(transactions)) if t.amount > 0]
 
     return {
         "empty": False,

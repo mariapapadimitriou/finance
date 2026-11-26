@@ -211,13 +211,17 @@ def set_always(txn_id: str):
         return jsonify({"error": "No such transaction."}), 404
     if not (t.merchant or "").strip() or is_generic_transfer_name(t.merchant):
         return jsonify({"error": "That name is too general for a rule."}), 400
+    from .impact import snapshot, undo_payload
+    before = snapshot(st)
     if body.get("on"):
         if (t.category or "Other") == "Other":
             return jsonify({"error": "Choose a category first."}), 400
         st.set_override(t.merchant, t.category, move_rows=False)
     else:
         st.clear_override(t.merchant)
-    return jsonify({"ok": True})
+    # P10 (the tap audit): Undo on its toast too. POST /transactions/undo
+    # with this puts the rule back as it was (none, or the one before).
+    return jsonify({"ok": True, "undo": undo_payload(before, snapshot(st))})
 
 
 @bp.post("/review/check/<path:key>")

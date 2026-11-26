@@ -243,7 +243,8 @@ def cautious_income(transactions: list[Transaction], today: date) -> dict | None
         return None
     totals = {m: 0 for m in months}
     for t in transactions:
-        if t.month in totals and _counts_as_income(t):
+        # A one-off isn't what a month usually brings (P14), as in usual_income.
+        if t.month in totals and _counts_as_income(t) and not t.one_off:
             totals[t.month] += _cents(-_mine(t))
     if min(totals.values()) <= 0:
         return None

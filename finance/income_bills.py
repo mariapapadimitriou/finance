@@ -194,6 +194,11 @@ def could_be_pay(t: Transaction, own: set[str] | frozenset = frozenset()) -> boo
     transfer (`own`) and isn't a refund; she's asked, never told."""
     if t.repays or is_others(t) or t.amount >= 0 or t.excluded:
         return False
+    # A card payment is never pay (the tap audit, P6): set-up asked "Your
+    # pay?" about "Online Payment - Thank You", and Continue said Yes to it.
+    from .txlist import never_pay
+    if never_pay(t):
+        return False
     if not is_income(t):
         from .pay_rules import key_of
         return ((t.category or "Other") in UNLABELLED_PAY and t.fingerprint not in own
@@ -233,6 +238,7 @@ def pay_asks(transactions: list[Transaction], today: date, state: dict | None = 
     O-10g): pay into a joint account nobody has said whose it is ("Whose
     pay?"), and someone's regular e-Transfers ("What is it?")."""
     from .etransfers import party
+    from .txlist import never_pay
     state = state or empty()
     skip = (set(state.get("pay_no") or []) | set(state.get("etransfer_done") or [])
             | {p.get("payer") for p in state.get("pays") or []})
@@ -240,7 +246,7 @@ def pay_asks(transactions: list[Transaction], today: date, state: dict | None = 
     groups: dict[tuple[str, str], dict] = {}
     for t in transactions:
         if (t.amount >= 0 or t.date[:10] < since or t.date[:10] > today.isoformat()
-                or t.repays or t.excluded):
+                or t.repays or t.excluded or never_pay(t)):
             continue
         payer = payer_of(t)
         if not payer or payer in skip:

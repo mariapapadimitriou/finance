@@ -420,7 +420,9 @@ def _month_compare(ctx: _Ctx) -> list[dict]:
         d = t.date[:10]
         if first.isoformat() <= d <= ctx.today.isoformat():
             now[t.category] = now.get(t.category, 0.0) + spend_amount(t)
-        elif last_start.isoformat() <= d <= upto.isoformat():
+        elif last_start.isoformat() <= d <= upto.isoformat() and not t.one_off:
+            # Last month is history: a one-off there isn't what she usually
+            # spends (P14); this month it still counts.
             then[t.category] = then.get(t.category, 0.0) + spend_amount(t)
     month = ctx.today.strftime("%Y-%m")
     out = []

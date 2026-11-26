@@ -42,6 +42,11 @@ def key_of(t: Transaction) -> tuple[str, str] | None:
 def matches(t: Transaction, rules: dict[str, str]) -> bool:
     if t.amount >= 0 or not rules:
         return False
+    # A rule never makes a card payment pay (the tap audit, P6/P8): set-up
+    # once wrote one for "Online Payment - Thank You".
+    from .txlist import never_pay
+    if never_pay(t):
+        return False
     found = key_of(t)
     return bool(found) and found[0] in rules
 
@@ -60,7 +65,13 @@ def apply(store, transactions: list[Transaction] | None = None) -> int:
         return 0                # no rules, no reading the ledger (metered on a hosted one)
     txns = transactions if transactions is not None else store.all_transactions()
     changes = {}
+    from .txlist import never_pay
     for t in txns:
+        if (t.category, t.category_source) == ("Income", SOURCE) and never_pay(t):
+            # Sorted as pay by a rule before card payments were kept out of
+            # them: back to the transfer it is.
+            changes[t.fingerprint] = ("Transfers", "card_inflow")
+            continue
         if not matches(t, rules):
             continue
         claim_joint(store, t)

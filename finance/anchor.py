@@ -75,7 +75,8 @@ def essentials(transactions, today: str, months: int = PACE_MONTHS,
         return None
     totals = {m: 0.0 for m in chosen}
     for t in transactions:
-        if t.month not in totals or t.excluded:
+        # A usual month of Essentials: one-offs left out (P14).
+        if t.month not in totals or t.excluded or t.one_off:
             continue
         category = t.category or "Other"
         if is_spend_category(category) and group_of(category) == "essentials":

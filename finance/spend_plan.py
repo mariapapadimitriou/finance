@@ -246,7 +246,8 @@ def suggest_monthly_amount(transactions) -> float:
     import statistics
     per_month: dict[str, float] = {}
     for t in transactions:
-        if counts_toward_plan(t):
+        # A median of past months: one-offs left out (P14).
+        if counts_toward_plan(t) and not t.one_off:
             per_month[t.month] = per_month.get(t.month, 0.0) + spend_amount(t)
     if not per_month:
         return 0.0

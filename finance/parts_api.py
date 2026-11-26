@@ -45,7 +45,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from flask import jsonify, request
 
@@ -1509,6 +1509,9 @@ def _relink(st, x: Transaction, change) -> tuple[dict | None, str | None]:
 # links at once; taking more from the other purchase always asks first.
 
 FIND_NEAR = 100   # cents: "within $1" of her share or the whole purchase
+# P5: a person's money for part of a purchase that isn't split is likely
+# when it comes within this many days of it.
+PERSON_DAYS_AFTER = 60
 
 
 def _query_amount(q: str) -> int | None:
@@ -1676,12 +1679,29 @@ class _Find:
         elif kind is None and abs(amount - _cents(self.whole)) <= FIND_NEAR:
             why = "the whole purchase"
         near = abs(amount - _cents(self.share)) <= FIND_NEAR or abs(amount - _cents(self.whole)) <= FIND_NEAR
+        # P5 (the tap audit, 2026-11-26): on a purchase that isn't split,
+        # money a person sent soon after, for any part of it, is likely too:
+        # "No money in matches" came back for Priya's $42.50 on a $127.50
+        # dinner. Who sent it is only a suggestion (`sender`): the payback is
+        # theirs only once she says so (payback sender matching).
+        sender = self.sender(x) if kind is None else None
+        part_of_it = (self.unsplit and sender is not None and amount <= _cents(self.whole) + FIND_NEAR
+                      and x.date[:10] <= (date.fromisoformat(self.after)
+                                          + timedelta(days=PERSON_DAYS_AFTER)).isoformat())
         return {"id": x.fingerprint, "date": x.date[:10], "payer": self.payer(x, kind, person),
                 "amount": amount / 100, "kind": kind, "person": person, "why": why or "",
+                "sender": sender,
                 # On a purchase that isn't split, money in for about the whole
                 # of it is likely too (2026-11-22): nobody is on it to match.
-                "likely": kind == "person" or (kind is not None and near) or (self.unsplit and near),
+                "likely": (kind == "person" or (kind is not None and near) or (self.unsplit and near)
+                           or part_of_it),
                 "taken": taken}
+
+    def sender(self, x) -> str | None:
+        """The person an e-Transfer (or an app payment) names, if any."""
+        from .etransfers import party as etransfer_party
+        who = " ".join(str(x.party or (etransfer_party(x, self.people) or {}).get("name") or "").split())
+        return who or None
 
     def payer(self, x, kind: str | None, person: str | None) -> str:
         """LT-01's tidy name: someone on the split by their first name
@@ -1742,6 +1762,9 @@ def paid_back_find(txn_id: str):
         if keep:
             rows.append(r)
     rows.sort(key=lambda r: (r["date"], r["id"]), reverse=True)
+    # P5: money from the split's people first, then from anyone a person
+    # sent, then the rest; newest first within each.
+    rows.sort(key=lambda r: 0 if r["kind"] == "person" else 1 if r.get("sender") else 2)
     return jsonify({"merchant": f.t.merchant or f.t.description, "date": f.after, "amount": f.whole,
                     "share": f.share, "left": round(f.left, 2), "query": q,
                     "about": (wanted / 100) if wanted is not None else f.share,
