@@ -41,3 +41,22 @@ def test_how_it_adds_up_uses_the_rows():
     for words in ('"Came in"', '"Bills"', '"Moved to savings"', '"Allowance"', '"Spent so far"'):
         assert words in ADDS, words
     assert '(row("bills") ?? 0) + (allowance.billsPaid ?? 0)' in ADDS
+
+
+def test_matches_the_boards_measured():
+    # The 2026-11-26 audit (board renders against the app at 390 × 844).
+    meter = GAUGE[GAUGE.index("struct AllowanceMeter"):GAUGE.index("struct AllowanceMonthSummary")]
+    assert ".frame(width: max((w - 6) * [80, 20, 15][i] / 115, 0), height: 10)" in meter
+    # The tick goes under the fill, 20 tall on a 10 pt bar.
+    assert meter.index(".frame(width: 2, height: 20)") < meter.index(".frame(width: fill, height: 10)")
+    assert "meter: true" in meter
+    assert "static let gap = 1.6 / 250" in GAUGE and "AllowanceBead(size: 28" in GAUGE
+    assert "ChipTick()" in GAUGE and 'systemName: "checkmark"' not in GAUGE
+    assert "MonthChevron()" in GAUGE and 'systemName: "chevron.down"' not in GAUGE
+
+
+def test_how_it_adds_up_matches_px_addsup():
+    assert '"Left is the same number on Home and in Cash flow."' in ADDS
+    assert "Pearl.action.opacity(0.08)" in ADDS and "cornerRadius: 16" in ADDS
+    assert "tone: Color = Pearl.muted" in ADDS and "tone: Pearl.moneyIn" in ADDS
+    assert 'Rectangle().fill(APlus.separator).frame(height: 0.5)' in ADDS

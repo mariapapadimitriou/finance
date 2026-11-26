@@ -65,17 +65,21 @@ enum Nacre {
 /// the nacre softened with a white veil in light, the night with a lilac
 /// glow in dark (APGround). The Pearl dust, auras and bubbles are gone.
 struct NacreBackground: View {
+    var kind: APGroundKind = .flat
+
     var body: some View {
-        APGround()
+        APGround(kind: kind)
     }
 }
 
 extension View {
     /// A screen on the A+ ground; its switches are the A+ switch. TEST-38:
-    /// what scrolls under the status bar fades into the ground.
-    func nacreScreen() -> some View {
-        scrollEdgeFade()
-            .background(NacreBackground())
+    /// what scrolls under the status bar fades into the ground. `ground`
+    /// (dirA.css): flat for working screens and pushed pages, `.wash` for a
+    /// tab root with the profile circle, `.nacre` for a moment.
+    func nacreScreen(_ ground: APGroundKind = .flat) -> some View {
+        scrollEdgeFade(ground)
+            .background(NacreBackground(kind: ground))
             .foregroundColor(Pearl.ink)
             .tint(Pearl.ink)
             .toggleStyle(APToggleStyle())
@@ -559,7 +563,7 @@ struct NacreScreen<Content: View, Actions: View>: View {
             }
             actions()
         }
-        .nacreScreen()
+        .nacreScreen(.nacre)
         .navigationBarTitleDisplayMode(.inline)
     }
 }

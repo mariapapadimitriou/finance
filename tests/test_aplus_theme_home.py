@@ -31,7 +31,7 @@ class TestSharedStyles:
             "dark primary is the action pink, not the nacre gradient"
         aplus = code(read("Theme", "APlus.swift"))
         look = aplus[aplus.index("struct APPrimaryLook"):aplus.index("struct APSecondaryLook")]
-        assert "minHeight: 50" in look and "Pearl.action.opacity(0.22)" in look
+        assert "minHeight: sortCard ? 48 : 50" in look and "Pearl.action.opacity(0.22)" in look
 
     def test_quiet_actions_are_link(self):
         nacre = code(read("Theme", "Nacre.swift"))
@@ -56,10 +56,14 @@ class TestSharedStyles:
         comps = code(read("Views", "Components", "Components.swift"))
         assert "lineWidth: on ? 7 : 1.5" in comps and "width: 24, height: 24" in comps
 
-    def test_light_tab_bar_is_see_through_with_the_lilac_lozenge(self):
+    def test_tab_bar_is_the_boards(self):
+        # shared.css `.A.phone .tabs.lg`: white 80% / #151B44 @78% over a
+        # blur, black / white words, #9C1F4B / #FFB8CE selected on a lens.
         app = code(read("App", "PearlApp.swift"))
         assert "tabs.configureWithTransparentBackground()" in app
-        assert "selectionIndicatorTintColor = UIColor(APlus.tabLozenge)" in app
+        assert "UIColor(white: 1, alpha: 0.80)" in app and "alpha: 0.78" in app
+        assert "0xFFB8CE : 0x9C1F4B" in app
+        assert "tabs.selectionIndicatorTintColor" in app
         assert "badgeBackgroundColor = UIColor(Pearl.action)" in app, "the badge uses the tint"
 
 
@@ -70,8 +74,8 @@ class TestHome:
         for gone in ("MonthCard", "PearlSortedCard", "so far\")", "patternWeek"):
             assert gone not in self.home, gone
         assert 'APSectionLabel(text: "Needs a look", action: "See the list"' in self.home
-        # AP-Home (approved r7): the Needs a look card has no streak dashes.
-        assert "SortStreak(" not in self.home
+        # H-00r v2 (supersedes r7's "no streak dashes"): the 12 dashes are back.
+        assert "SortStreak(sorted: sorted, toSort: count, sortCard: true)" in self.home
         assert '"Sort now"' in self.home
         assert "sorted: home.sorted ?? home.pearlSorted ?? 0" in self.home, "REDESIGN-18"
         assert "people owe you" in self.home and "OwedCard(" in self.home

@@ -15,9 +15,10 @@ PEARL = ROOT / "ios/Pearl"
 
 def test_nacre_screen_adds_the_fade():
     nacre = (PEARL / "Theme/Nacre.swift").read_text()
-    body = nacre[nacre.index("func nacreScreen()"):]
+    body = nacre[nacre.index("func nacreScreen("):]
     body = body[:body.index("\n    }\n")]
-    assert "scrollEdgeFade()" in body and "NacreBackground()" in body
+    # The page's ground (dirA.css: flat, wash or nacre) and the band match.
+    assert "scrollEdgeFade(ground)" in body and "NacreBackground(kind: ground)" in body
 
 
 def _block(src: str, opener: str) -> str:
@@ -50,7 +51,7 @@ def test_no_full_screen_layer_over_the_page():
     accessibility."""
     src = FADE.read_text()
     overlay = _block(src, ".overlay(alignment: .top)")
-    assert "ScrollEdgeFadeBand(top: top, ground: ground)" in overlay
+    assert "ScrollEdgeFadeBand(top: top, ground: ground, kind: kind)" in overlay
     for full in ("GeometryReader", "maxHeight: .infinity", "Spacer", "APGround()", "Color."):
         assert full not in overlay, full
     assert src.count(".overlay") == 1
@@ -63,7 +64,7 @@ def test_no_full_screen_layer_over_the_page():
 
 def test_the_band_lines_up_with_the_page_ground():
     band = FADE.read_text()[FADE.read_text().index("struct ScrollEdgeFadeBand"):]
-    assert "if top > 0" in band and "APGround()" in band
+    assert "if top > 0" in band and "APGround(kind: kind)" in band
     assert ".frame(width: ground.width, height: ground.height)" in band
 
 
@@ -72,7 +73,7 @@ def test_every_screen_named_in_test_38_is_on_the_a_plus_ground():
                  "Views/Transactions/TransactionDetailView.swift",     # a transaction's page
                  "Views/Profile/ProfileView.swift",                    # Profile
                  "Views/Profile/ProfileParts.swift"]:                  # ProfilePage: Sign-in and security
-        assert ".nacreScreen()" in (PEARL / path).read_text(), path
+        assert ".nacreScreen(" in (PEARL / path).read_text(), path
     assert "SettingsPage(title: \"Sign-in and security\")" in (PEARL / "Views/Profile/SettingsViews.swift").read_text()
 
 

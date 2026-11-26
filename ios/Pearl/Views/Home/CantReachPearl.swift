@@ -45,7 +45,7 @@ struct CantReachPearlView: View {
         .padding(.horizontal, Pearl.gutter)
         .padding(.bottom, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .nacreScreen()
+        .nacreScreen(.nacre)
     }
 }
 

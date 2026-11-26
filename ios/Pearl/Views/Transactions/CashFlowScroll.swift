@@ -277,6 +277,20 @@ extension View {
     }
 }
 
+/// Cash flow's profile circle: level with the large title (16 down,
+/// AP-CashFlow) and, once the title has folded, on the bar's centre line
+/// (`ProfileSlot.top`).
+struct CFProfileSlot: ViewModifier {
+    @ObservedObject var tracker: CFScrollTracker
+    let shown: Bool
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+        content.profileCircleSlot(shown: shown, enabled: enabled,
+                                  top: tracker.folded ? ProfileSlot.top : ProfileSlot.cashFlowTop)
+    }
+}
+
 enum CFScroll {
     static let space = "cash-flow-scroll"
 }

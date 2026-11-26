@@ -32,18 +32,35 @@ struct PearlApp: App {
         // Liquid Glass everywhere, so the page shows through it, with a
         // lilac-tinted lozenge under the selected tab (`tab-lozenge`).
         // Before iOS 26 the bar keeps its usual frosted background.
-        let tabs = UITabBarAppearance()
-        if #available(iOS 26, *) {
+        // shared.css `.A.phone .tabs.lg` (2026-11-25 audit): the bar is
+        // white 80% (light) or #151B44 @78% (dark) over a 20 pt blur; the
+        // words and icons black / white, the selected tab #9C1F4B / #FFB8CE
+        // on its lens (white to lilac in light, white 12% in dark).
+        func pearlBar(_ tabs: UITabBarAppearance) -> UITabBarAppearance {
             tabs.configureWithTransparentBackground()
-            tabs.selectionIndicatorTintColor = UIColor(APlus.tabLozenge)
-        } else {
-            tabs.configureWithDefaultBackground()
+            tabs.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterial)
+            tabs.backgroundColor = UIColor { t in
+                t.userInterfaceStyle == .dark ? UIColor(red: 21 / 255, green: 27 / 255, blue: 68 / 255, alpha: 0.78)
+                                              : UIColor(white: 1, alpha: 0.80)
+            }
+            if #available(iOS 26, *) {
+                tabs.selectionIndicatorTintColor = UIColor { t in
+                    t.userInterfaceStyle == .dark ? UIColor(white: 1, alpha: 0.12)
+                                                  : UIColor(red: 226 / 255, green: 214 / 255, blue: 1, alpha: 0.62)
+                }
+            }
+            let ink = UIColor { t in t.userInterfaceStyle == .dark ? .white : .black }
+            let on = UIColor { t in UIColor(hex: t.userInterfaceStyle == .dark ? 0xFFB8CE : 0x9C1F4B) }
+            for layout in [tabs.stackedLayoutAppearance, tabs.inlineLayoutAppearance, tabs.compactInlineLayoutAppearance] {
+                layout.normal.iconColor = ink
+                layout.normal.titleTextAttributes = [.foregroundColor: ink]
+                layout.selected.iconColor = on
+                layout.selected.titleTextAttributes = [.foregroundColor: on]
+            }
+            return badged(tabs)
         }
-        let edge = UITabBarAppearance()
-        edge.configureWithTransparentBackground()
-        if #available(iOS 26, *) { edge.selectionIndicatorTintColor = UIColor(APlus.tabLozenge) }
-        UITabBar.appearance().standardAppearance = badged(tabs)
-        UITabBar.appearance().scrollEdgeAppearance = badged(edge)
+        UITabBar.appearance().standardAppearance = pearlBar(UITabBarAppearance())
+        UITabBar.appearance().scrollEdgeAppearance = pearlBar(UITabBarAppearance())
     }
 
     var body: some Scene {
@@ -67,7 +84,7 @@ struct RootView: View {
         Group {
             switch app.phase {
             case .starting:
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity).nacreScreen()
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity).nacreScreen(.nacre)
             case .offline:
                 // G6-Offline (REDESIGN-14, new function): Can't reach Pearl at launch.
                 CantReachPearlView { await app.start() }
@@ -194,7 +211,10 @@ struct MainTabs: View {
                 }
                 .tag(Tab.pearl)
         }
-        .tint(Pearl.action)
+        // shared.css: the selected tab is #9C1F4B light, #FFB8CE dark (iOS 26
+        // colours the selected item from the TabView's tint). Every screen
+        // sets its own tint (`nacreScreen`), so the pages don't take it.
+        .tint(Pearl.dynamic(light: 0x9C1F4B, dark: 0xFFB8CE))
         .environment(\.goHome, { tab = .home })
         .task(id: app.version) {
             await loadCount()
@@ -346,7 +366,7 @@ private struct BlankTab: View {
     var body: some View {
         Color.clear
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .nacreScreen()
+            .nacreScreen(.wash)
             .profileCircleSlot()
             .navigationBarHidden(true)
     }

@@ -53,6 +53,8 @@ struct PearlPrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     var busy = false
     var busyLabel: String? = nil
+    /// Home's Sort now (H-00r v2): 48 high with its one glow.
+    var sortCard = false
 
     func makeBody(configuration: Configuration) -> some View {
         ZStack {
@@ -65,7 +67,7 @@ struct PearlPrimaryButtonStyle: ButtonStyle {
             }
         }
         // A+ `.btn` (APPrimaryLook).
-        .modifier(APPrimaryLook(enabled: isEnabled || busy, pressed: configuration.isPressed))
+        .modifier(APPrimaryLook(enabled: isEnabled || busy, pressed: configuration.isPressed, sortCard: sortCard))
     }
 }
 

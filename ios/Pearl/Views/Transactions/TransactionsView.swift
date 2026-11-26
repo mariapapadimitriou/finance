@@ -139,11 +139,11 @@ struct TransactionsView: View {
                 if selecting { selectionBar }
             }
         }
-        .nacreScreen()
+        .nacreScreen(inTrip ? .flat : .wash)
         // Pinned over the scroll and its folding bar, so it stays put when
         // the title folds. G1-Select: while selecting, the circle goes; a
         // trip's pick (TR-11, TR-12) keeps it, but only Select answers.
-        .profileCircleSlot(shown: !selecting || inTrip, enabled: !inTrip)
+        .modifier(CFProfileSlot(tracker: tracker, shown: !selecting || inTrip, enabled: !inTrip))
         .navigationBarHidden(true)
         .onChange(of: selecting) { on in if !inTrip { app.hidesTabBar = on } }
         .onDisappear { if !inTrip { app.hidesTabBar = false } }
@@ -372,7 +372,8 @@ struct TransactionsView: View {
                 Color.clear.frame(width: ProfileSlot.size - 4, height: ProfileSlot.size)
             }
             .frame(minHeight: ProfileSlot.size)
-            .padding(.top, ProfileSlot.top)
+            // AP-CashFlow: the title row is 16 down (Home's is 6).
+            .padding(.top, ProfileSlot.cashFlowTop)
             if noTransactionsYet {
                 emptyLedger
             } else if selecting && !inTrip {
@@ -2604,7 +2605,11 @@ struct MonthSummary: View {
                 Button(action: pickMonth) {
                     HStack(spacing: 6) {
                         Text(month).font(Nacre.headline)
-                        Image(systemName: "chevron.down").font(.system(size: 12, weight: .bold))
+                        // AP-CashFlow: the board's 11 × 8 chevron, stroke 2.
+                        MonthChevron()
+                            .stroke(Pearl.ink, style: StrokeStyle(lineWidth: 2 * 11 / 12, lineCap: .round, lineJoin: .round))
+                            .frame(width: 11, height: 8)
+                            .accessibilityHidden(true)
                     }
                     .foregroundColor(Pearl.ink)
                     .frame(minHeight: 44).contentShape(Rectangle())

@@ -47,7 +47,8 @@ class TestOneSharedPlacement(unittest.TestCase):
         slot = circle[circle.index("func profileCircleSlot"):circle.index("enum ProfileName")]
         self.assertIn("ProfileCircle()", slot)
         self.assertIn("overlay(alignment: .topTrailing)", slot)
-        self.assertIn(".padding(.top, ProfileSlot.top)", slot)
+        self.assertIn("top: CGFloat = ProfileSlot.top", slot)
+        self.assertIn(".padding(.top, top)", slot)
         self.assertIn(".padding(.trailing, ProfileSlot.trailing)", slot)
 
     def test_one_spot(self):
@@ -56,10 +57,13 @@ class TestOneSharedPlacement(unittest.TestCase):
         self.assertIn("static let trailing: CGFloat = Pearl.gutter - 4", circle)
         self.assertIn("static let size: CGFloat = 44", circle)
 
+    # Cash flow pins it through CFProfileSlot (16 down until it folds).
+    SLOT = {tab: ("CFProfileSlot(" if tab == "Cash flow" else ".profileCircleSlot(") for tab in TABS}
+
     def test_every_main_tab_pins_it(self):
         for tab, path in TABS.items():
             with self.subTest(tab=tab):
-                self.assertIn(".profileCircleSlot(", code(read(*path)))
+                self.assertIn(self.SLOT[tab], code(read(*path)))
         app = code(read("App", "PearlApp.swift"))
         blank = app[app.index("private struct BlankTab"):]
         self.assertIn(".profileCircleSlot()", blank)
@@ -71,13 +75,19 @@ class TestOneSharedPlacement(unittest.TestCase):
         for tab, path in TABS.items():
             with self.subTest(tab=tab):
                 src = code(read(*path))
-                at = src.index(".profileCircleSlot(")
+                at = src.index(self.SLOT[tab])
                 before = src[:at].rstrip()
-                self.assertTrue(before.endswith(".nacreScreen()"), tab)
+                # dirA.css: a tab root is on the wash, a moment on the nacre.
+                if tab == "Cash flow":
+                    before = before[:before.rindex(".modifier")].rstrip()
+                self.assertRegex(before, r"\.nacreScreen\([^)]*\)$", tab)
 
     def test_cash_flow_select_and_trip(self):
         tv = code(read("Views", "Transactions", "TransactionsView.swift"))
-        self.assertIn(".profileCircleSlot(shown: !selecting || inTrip, enabled: !inTrip)", tv)
+        self.assertIn(".modifier(CFProfileSlot(tracker: tracker, shown: !selecting || inTrip, enabled: !inTrip))", tv)
+        # AP-CashFlow: 16 down with the title, on the bar's line once folded.
+        scroll = code(read("Views", "Transactions", "CashFlowScroll.swift"))
+        self.assertIn("top: tracker.folded ? ProfileSlot.top : ProfileSlot.cashFlowTop", scroll)
 
 
 class TestHeadersLevelWithIt(unittest.TestCase):
@@ -95,7 +105,8 @@ class TestHeadersLevelWithIt(unittest.TestCase):
     def test_cash_flow_title_and_folded_bar(self):
         tv = code(read("Views", "Transactions", "TransactionsView.swift"))
         top = tv[tv.index('Text("Cash flow").font(Nacre.largeTitle)'):]
-        self.assertIn(".padding(.top, ProfileSlot.top)", top[:600])
+        # AP-CashFlow: the title row has margin-top 16 (Home keeps 6).
+        self.assertIn(".padding(.top, ProfileSlot.cashFlowTop)", top[:700])
         scroll = code(read("Views", "Transactions", "CashFlowScroll.swift"))
         bar = scroll[scroll.index("private var bar: some View"):scroll.index("private func pin(")]
         # Product owner (2026-11-19): "Cash flow" small on the left, then a

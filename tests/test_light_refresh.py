@@ -104,13 +104,19 @@ class TestLightIridescent:
         assert "struct PearlDust: View" in dust, "kept, but no page draws it in A+"
         nacre = code(src(self.NACRE))
         background = nacre[nacre.index("struct NacreBackground"):nacre.index("extension View")]
-        assert "APGround()" in background and "PearlDust" not in background
+        assert "APGround(kind: kind)" in background and "PearlDust" not in background
         assert 'Image("Bubbles")' not in background
         aplus = code(src("ios/Pearl/Theme/APlus.swift"))
         ground = aplus[aplus.index("struct APGround"):aplus.index("struct APSheetGround")]
         assert "0xFFB6CC" in ground and "0xCDB9FF" in ground and "0xA8E9DF" in ground
         assert ".white.opacity(0.50)" in ground and ".white.opacity(0.22)" in ground and ".white.opacity(0.34)" in ground
-        assert "0x12163F" in ground and "0x172566" in ground and "0x1D4A7D" in ground
+        assert "0x12163F" in ground and "0x172566" in ground and "0x1A3F6E" in ground
+        # dirA.css "Ground refresh": flat #F6F2F6, the wash on a tab root,
+        # the nacre on a moment.
+        assert "case flat, wash, nacre" in aplus and "Color(hex: 0xF6F2F6)" in aplus
+        wash = aplus[aplus.index("struct APGroundWash"):aplus.index("struct APSheetGround")]
+        assert "location: 0.44" in wash and "location: 0.88" in wash and "130 / Self.height" in wash
+        assert "300 / Self.height" in wash and "static let height: CGFloat = 320" in wash
         assert ".accessibilityHidden(true)" in ground
 
     def test_allowance_gauge_replaces_the_orb_and_home_uses_it(self):

@@ -116,7 +116,7 @@ struct WelcomeView: View {
             }
             .padding(.horizontal, 16).padding(.bottom, 4)
         }
-        .nacreScreen()
+        .nacreScreen(.nacre)
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showServer) { ServerSheet() }
         .docSheet($doc)

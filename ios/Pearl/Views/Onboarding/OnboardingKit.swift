@@ -76,7 +76,7 @@ struct OnbScreen<Content: View, Actions: View>: View {
             VStack(spacing: 12, content: actions)
                 .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 4)
         }
-        .nacreScreen()
+        .nacreScreen(.nacre)
         .toolbar(.hidden, for: .navigationBar)
     }
 
