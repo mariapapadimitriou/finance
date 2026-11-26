@@ -117,7 +117,7 @@ def test_46_smaller_things():
     tv = read("Views", "Transactions", "TransactionsView.swift")
     assert 'CFGlassButton(label: "Add a transaction", action: { adding = true })' in tv
     answer = read("Views", "Review", "AnswerSheet.swift")
-    assert "leadsWithLikely: !(fromPage && ask.kind == .category) || otherGuess" in answer
+    assert "leadsWithLikely: !opensPicker && (!(fromPage && ask.kind == .category) || otherGuess)" in answer
 
 
 # ── Round 6 follow-ups ──────────────────────────────────────────────────────

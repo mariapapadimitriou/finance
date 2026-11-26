@@ -122,7 +122,7 @@ class TestQuestionsPearlWasntAsking:
         t.category = "Other"
         ledger(client, [t])
         item = next(i for i in review(client)["money_in"] if i["txn"]["merchant"] == "ATM Deposit")
-        assert item["guess"]["action"] == "unknown" and "nothing to refund" in item["reason"]
+        assert item["guess"]["action"] == "unknown" and "couldn’t find what this refunds" in item["reason"]
 
     def test_money_out_of_savings_is_not_called_a_refund(self, client):
         t = inflow("2026-10-14", "Questrade", 800.00)

@@ -396,7 +396,20 @@ struct TransactionDetailView: View {
     private var hasRule: Bool { cases?.hasRule ?? transaction.rule?.hasRule ?? false }
     /// The bill this merchant is on, and the sheet that adds it.
     @State private var billKey: String?
+    /// P9: the bill's next date, for "Every month · around the 2nd".
+    @State private var billNext: String?
     @State private var addingBill = false
+    /// P2 (TP-P2-Purchase): the More sheet, and what a row opens once it has gone.
+    @State private var showingMore = false
+    @State private var afterMore: (() -> Void)?
+    /// P10: a switch under More toasts in the sheet, which stays open.
+    @State private var moreToast: (title: String, undo: (() -> Void)?)?
+    /// P9: More › I pay this every month.
+    @State private var billing = false
+    /// P3d: Something else opens the P15 picker, not What was this? again.
+    @State private var picking = false
+    /// A trip opened from More (TR-06).
+    @State private var tripId: String?
     /// The Always switch, once she's touched it.
     @State private var newOnes: Bool?
     /// T-38b / T-40b: "Dining out · Undo" after a guess is confirmed.
@@ -554,6 +567,9 @@ struct TransactionDetailView: View {
             }
         }
         .navigationDestination(isPresented: $seeingOwed) { OwedView() }
+        .navigationDestination(isPresented: Binding(get: { tripId != nil }, set: { if !$0 { tripId = nil } })) {
+            if let id = tripId { TripPage(id: id) }
+        }
         .sheet(isPresented: $editingNote) {
             NoteSheet(note: t.myNote, name: t.merchant,
                       line: (t.inflow ? "+" : "\u{2212}") + Format.amount(t.amount) + " · " + Format.weekdayDay(t.date)) { note in
@@ -597,8 +613,10 @@ struct TransactionDetailView: View {
                     OwnBody { jointRow }
                     OwnBody { splitPeople }
                     OwnBody { depositParts }
-                    OwnBody { options }
-                    OwnBody { details }
+                    // P2 (TP-P2-Purchase): Split with others, then everything
+                    // else behind one More row. No Options or Details groups.
+                    OwnBody { splitRow }
+                    OwnBody { moreRow }
                 }
                 if let error = error {
                     Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
@@ -656,6 +674,7 @@ struct TransactionDetailView: View {
     private var sortSheets: some View {
         OwnBody { page }
         .sheet(item: $sorting, onDismiss: {
+            picking = false
             // Closed without an answer: TF-01c doesn't go on to the other end.
             otherSide = nil
             Task { await load() }
@@ -675,7 +694,7 @@ struct TransactionDetailView: View {
                                 sorting = nil
                                 if name == guessing.label { guessing.onYes(remember && offersNewOnes) }
                                 else { answer(with: name, always: remember && offersNewOnes) }
-                            }, fromPage: true, holds: guessing.onDraft != nil) { answer in
+                            }, fromPage: true, holds: guessing.onDraft != nil, opensPicker: picking) { answer in
                     sorting = nil
                     if guessing.onDraft != nil, let label = answer.heldLabel {
                         // Not saved yet: the card agrees to it.
@@ -714,7 +733,7 @@ struct TransactionDetailView: View {
                                     }
                                 }
                             } : nil,
-                            confirmsGuess: false, fromPage: true) { answer in
+                            confirmsGuess: false, fromPage: true, opensPicker: picking) { answer in
                     sorting = nil
                     // TF-01c: then what the other end was.
                     let other = otherSide
@@ -1066,6 +1085,19 @@ struct TransactionDetailView: View {
                 Task { await run { said } }
             }
         }
+        .sheet(isPresented: $showingMore, onDismiss: {
+            moreToast = nil
+            let next = afterMore
+            afterMore = nil
+            next?()
+        }) { moreSheet }
+        .sheet(isPresented: $billing) {
+            // P9b: filled in from the purchase; Undo takes the bill away.
+            MonthlyBillSheet(t: t, api: app.api) { key in
+                billing = false
+                Task { await billAdded(key) }
+            }
+        }
         .sheet(isPresented: $payingFromBank) {
             PiggyPaySheet(t: t, api: app.api) { said in
                 payingFromBank = false
@@ -1159,6 +1191,29 @@ struct TransactionDetailView: View {
             CFPill(text: "Pending · amount may change", symbol: "clock", symbolTone: Pearl.muted)
                 .padding(.top, 10)
         }
+        OwnBody { morePills }
+    }
+
+    /// P2d (TP-P2-Purchase), P9c, P14c: what is on under More shows as a
+    /// small pill under the amount, so she never has to open More to see it.
+    @ViewBuilder private var morePills: some View {
+        let oneOffOn = oneOff ?? t.oneOff
+        let every = billKey != nil
+        let rule = guessName == nil && hasRule && !t.inflow && t.transfer == nil
+        if oneOffOn || every || rule {
+            HStack(spacing: 8) {
+                if oneOffOn { CFPill(text: "One-off") }
+                if every {
+                    CFPill(text: billNext.flatMap(Format.localDay).map {
+                        "Every month · around the \(ordinal(Calendar.current.component(.day, from: $0)))"
+                    } ?? "Every month", symbol: "calendar", symbolTone: Pearl.action)
+                }
+                if rule { CFPill(text: CategorySheet.everyTime, symbol: "repeat", symbolTone: Pearl.action) }
+            }
+            .padding(.top, 10)
+            .transition(.scale(scale: 0.9).combined(with: .opacity))
+            .accessibilityIdentifier("page-pills")
+        }
     }
 
     /// T-03's Counts pill: Spending, Income, Refund or Not counted. PQ-03p
@@ -1171,12 +1226,21 @@ struct TransactionDetailView: View {
             CFPill(text: "Doesn’t count", symbol: "arrow.left.arrow.right", symbolTone: Pearl.muted)
         } else if namesSender {
             EmptyView()
+        } else if !showsCountsPill {
+            // P2 / P8c (fewer taps): a purchase or a refund shows no Counts
+            // pill; its amount's colour says it.
+            EmptyView()
         } else {
             // G2-BPayback (S-33 v2, T-41w, T-41m): "↑ Payback", "↑ Paid back",
             // "↑ Refund"; otherwise the Counts arrow.
             CFPill(text: countsPill.label, symbol: countsPill.up ? "arrow.up" : "arrow.down",
                    symbolTone: countsPill.tone)
         }
+    }
+
+    /// P2: the Counts pill only on money in that isn't a refund, or on a row left out.
+    private var showsCountsPill: Bool {
+        !t.excluded.isEmpty || (t.inflow && t.refundOf == nil)
     }
 
     /// PQ-03p: the payback question's sender has no name of hers yet.
@@ -1234,12 +1298,14 @@ struct TransactionDetailView: View {
     /// The card that says what it is: Pearl's guess, its parts, a joint
     /// deposit's question, Needs a look's question, or its category.
     @ViewBuilder private var whatItIs: some View {
-        if let label = guessName { guessCard(label) }
+        if let label = guessName { if noGuess { OwnBody { tilesCard } } else { guessCard(label) } }
         // S-33 v2 (G2-BPayback): the parts' label says what it was; PB-41 keeps its card.
         else if !t.parts.isEmpty { if paidBackOnly { partsCard } } else if jointAsks { jointGuessCard }
         else if t.asks { askingOrPayback }
         // T-41w / T-41m (G2-BPayback): the PAID BACK / REFUND FOR card and
         // its Options say it; no category card.
+        // P8c: a refund's page is its amount, what it refunds, and More.
+        else if t.refundOf != nil { EmptyView() }
         else if !sharePaidBack {
             if showsShareBar {
                 // S-01jr / S-01jr2 (G2b-Purchase): whose it was, as a bar, over the category.
@@ -1251,7 +1317,7 @@ struct TransactionDetailView: View {
 
     /// The page shows the category card (whatItIs), which carries TR-06's trip.
     private var showsCategoryCard: Bool {
-        t.transfer == nil && guessName == nil && t.parts.isEmpty && !jointAsks && !t.asks && !sharePaidBack
+        t.transfer == nil && guessName == nil && t.parts.isEmpty && !jointAsks && !t.asks && !sharePaidBack && t.refundOf == nil
     }
 
     /// S-01jr: a joint purchase not split yet, sorted: the share bar in place
@@ -1360,7 +1426,7 @@ struct TransactionDetailView: View {
             .buttonStyle(.plain)
             .disabled(busy)
             .accessibilityHint(isIncome || paidBackAnswer != nil ? "Changes what it was" : "Changes the category")
-            if paidBackAnswer == nil, t.split, let full = t.fullAmount {
+            if paidBackAnswer == nil, t.split, t.splitting == nil, let full = t.fullAmount {
                 // S-05 (2026-11-20): "Your share $42.06" as a pill, "of $84.12"
                 // beside it in muted, under the category and in line with it.
                 HStack(spacing: 8) {
@@ -1397,25 +1463,8 @@ struct TransactionDetailView: View {
                 .disabled(busy)
                 .accessibilityHint("Not this one, or stop the rule")
             }
-            if alwaysInCategoryCard {
-                // T-03r (1074:698, dark 1074:814): Always for the merchant is
-                // part of what it is, so it sits under the category, not in Options.
-                APSeparator(afterFace: false)
-                // A+ (REDESIGN-09 fix): no line repeating the row's title.
-                alwaysToggle(sub: nil)
-            } else if noRuleInCategoryCard {
-                // T-03r (G1-NoRule): where the switch would be, in line with the name.
-                Text(Self.noRule).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, 64).padding(.trailing, 16).padding(.top, -6).padding(.bottom, 14)
-            }
-            if isIncome, let payer = t.incomeRule?.payer {
-                // Income's Always too (product owner, 2026-11-21: under the
-                // category on every page, never in Options).
-                APSeparator(afterFace: false)
-                incomeAlwaysToggle(payer)
-            }
+            // P2 (fewer taps): Do this every time (was Always for this
+            // merchant) and income's own switch are under More now.
         }
     }
 
@@ -1460,6 +1509,52 @@ struct TransactionDetailView: View {
         if let guessing = guessing { return chosenCategory ?? guessing.label }
         guard t.transfer == nil, t.parts.isEmpty, !jointAsks, !t.asks, t.suggested else { return nil }
         return chosenCategory ?? t.label
+    }
+
+    /// P3 / P4 (TP-P3-NoGuess): Pearl has no real guess (its best is Other),
+    /// so the page asks What was this? with four tiles that answer at once.
+    private var noGuess: Bool {
+        guard guessName == "Other", chosenCategory == nil, !t.inflow else { return false }
+        if let guessing = guessing { return guessing.ask.guessesOther && guessing.draft.label == nil }
+        return true
+    }
+
+    /// P3d: "What was this?", her four likeliest as tiles, and Something else.
+    private var tilesCard: some View {
+        let cats = CategorySheet.likeliest(CategorySheet.spending(categories.isEmpty ? app.categories : categories))
+        return VStack(alignment: .leading, spacing: 0) {
+            APSectionLabel(text: "What was this?").padding(.top, 10).padding(.bottom, 8)
+            CFTileGrid {
+                ForEach(cats) { c in
+                    CFTile(symbol: CategorySheet.symbol(for: c.name), title: c.name) { pickTile(c.name) }
+                        .accessibilityLabel(c.name)
+                }
+            }
+            .disabled(busy)
+            APCard {
+                Button {
+                    picking = true
+                    sorting = guessing?.ask ?? sortAsk(.category)
+                } label: {
+                    CFRowLabel(symbol: "ellipsis", title: "Something else", trailing: .chevron)
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+                .accessibilityIdentifier("Something else")
+            }
+            .padding(.top, 12)
+        }
+    }
+
+    /// A tile with no guess: this row, at once, with Undo (P3d, P4d). From
+    /// Quick sort it closes the page and lands on the next card.
+    private func pickTile(_ name: String) {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        if let guessing = guessing {
+            guessing.onAnswer(.tile(t.id, merchant: t.merchant, name: name))
+        } else {
+            Task { await change(to: name, remember: false, said: "\(t.merchant) is \(name).") }
+        }
     }
 
     /// From the list, whether a rule is possible at all.
@@ -1523,7 +1618,7 @@ struct TransactionDetailView: View {
     /// the list the tab bar goes so they have the bottom (REDESIGN-09).
     /// Skip leaves it in Needs a look; from the list it goes back.
     @ViewBuilder private var guessActions: some View {
-        if let label = guessName, guessing?.onDraft == nil, guessing != nil || !t.asks {
+        if let label = guessName, !noGuess, guessing?.onDraft == nil, guessing != nil || !t.asks {
             HStack(spacing: 12) {
                 Button("Skip") {
                     if let skip = guessing?.onSkip { skip() } else { dismiss() }
@@ -1546,7 +1641,7 @@ struct TransactionDetailView: View {
     }
 
     /// A guess opened from the list hides the tab bar (REDESIGN-09).
-    private var guessFromList: Bool { guessing == nil && guessName != nil && !t.asks }
+    private var guessFromList: Bool { guessing == nil && guessName != nil && !t.asks && !noGuess }
 
     private var isIncome: Bool { t.inflow && t.counts == "income" && t.transfer == nil }
 
@@ -1777,13 +1872,19 @@ struct TransactionDetailView: View {
             }
             shareOptions(change: "Change what it refunded") { unlinkingRefund = true }
         } else if let charge = t.refundOf {
-            section("Refund for")
-            SolidCard {
-                let category = siblings.first { $0.id == charge.id }?.label
-                linkedRow(name: charge.merchant,
-                          sub: [category, Format.short(charge.date)].compactMap { $0 }.joined(separator: " · "),
-                          amount: charge.amount, inflow: false)
+            // P8c (TP-P8-CardPay): one row, "Refund for Nopa" over
+            // "−$75.48 · Nov 24"; it opens the purchase.
+            APCard {
+                Button { Task { await open(charge.id) } } label: {
+                    row(title: "Refund for \(charge.merchant)",
+                        sub: "\u{2212}\(Format.amount(charge.amount)) · \(Format.short(charge.date))",
+                        chevron: true, icon: "arrow.uturn.backward")
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+                .accessibilityHint("Opens the purchase")
             }
+            .padding(.top, 10)
         }
         if !t.refundedBy.isEmpty {
             section("Refunded by")
@@ -2541,7 +2642,7 @@ struct TransactionDetailView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     // One label whatever the merchant is called (2026-11-20):
                     // a bank's long descriptor made it a paragraph.
-                    Text("Always for this merchant").font(Nacre.body).foregroundColor(Pearl.ink)
+                    Text(CategorySheet.everyTime).font(Nacre.body).foregroundColor(Pearl.ink)
                         .fixedSize(horizontal: false, vertical: true)
                     if let sub = sub {
                         Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
@@ -2569,160 +2670,269 @@ struct TransactionDetailView: View {
         }
     }
 
-    @ViewBuilder private var options: some View {
-        // T-41m's Unlink is in its own Options under REFUND FOR (G2-BPayback).
-        let unlink = t.refundOf != nil && t.refundOf?.share != true
-        // Income can be left out of the usual month too (2026-11-08).
-        let canOneOff = t.canOneOff && (!t.inflow || isIncome)
-        // Income's Always is in the category card too (2026-11-21).
-        let incomeAlways: String? = nil
-        // T-03r: on a sorted row Always is in the category card instead.
-        let offersNewOnes = self.offersNewOnes && !alwaysInCategoryCard
-        // S-01jr (G2b-Purchase): the share bar takes Whose was it? out of
-        // Options; Split my part stays, in Split with others' place.
-        let jointCharge = self.jointCharge && !showsShareBar
-        let splitsJoint = showsShareBar && canSplitJoint
-        let canSplit = self.canSplit || splitsJoint
-        // Mark as paid back from the purchase (product owner, 2026-11-22):
-        // the finder that was only on a split's own row (PB-20).
-        let canFindPayback = !t.inflow && t.transfer == nil && t.partOf == nil && t.excluded.isEmpty
-            && t.counts == "spending" && t.refundOf == nil
-        if canSplit || canFindPayback || couldBePay || unlink || canLink || canOneOff || canPayFromBank || offersNewOnes
-            || incomeAlways != nil || jointCharge {
-            section("Options")
-            APCard {
-                if jointCharge {
-                    // S-01jr (JOINT-B, supersedes S-01j): Whose was it?, then Split my part.
-                    Button { whose = true } label: {
-                        row(title: "Whose was it?", sub: whoseSub, chevron: true, icon: "person.2")
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(busy)
-                    if canSplitJoint {
-                        APSeparator(afterFace: false)
-                        jointSplitRow
-                    }
-                    if canPayFromBank || canSplit || couldBePay || unlink || canOneOff || offersNewOnes
-                        || incomeAlways != nil { APSeparator(afterFace: false) }
-                }
-                if canPayFromBank {
-                    Button { payingFromBank = true } label: {
-                        row(title: t.bankId == nil ? "Pay from a piggy bank" : "Paid from a piggy bank",
-                            chevron: true, icon: "banknote")
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(busy)
-                    if canSplit || couldBePay || unlink || canOneOff || offersNewOnes { APSeparator(afterFace: false) }
-                }
-                // No Split into parts on money in (2026-11-09): a payback picks
-                // everything it paid back on Who paid you back?.
-                if splitsJoint {
-                    jointSplitRow
-                } else if canSplit {
-                    Button { splitting = true } label: {
-                        row(title: "Split with others", chevron: true, icon: "person.2")
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(busy)
-                }
-                if canFindPayback {
-                    if canSplit { APSeparator(afterFace: false) }
-                    Button { paidBackStep = .find } label: {
-                        row(title: "Mark as paid back", sub: "Find the money that paid it back", chevron: true,
-                            icon: "arrow.uturn.backward")
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(busy)
-                }
-                if couldBePay {
-                    if canSplit || canFindPayback { APSeparator(afterFace: false) }
-                    Button { asking = Asking(step: .cadence) } label: {
-                        if let pay = t.regularPay {
-                            // T-37: "Every 2 weeks · next on Fri, Nov 21".
-                            row(title: "Regular pay",
-                                sub: [Format.cadence(pay.cadence ?? ""),
-                                      pay.next.map { "next on \(Format.weekdayDay($0))" }]
-                                    .compactMap { $0 }.joined(separator: " · "),
-                                chevron: true, icon: "briefcase")
-                        } else {
-                            row(title: "This is my regular pay", chevron: true, icon: "briefcase")
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(busy)
-                }
-                if unlink {
-                    if canSplit || canFindPayback || couldBePay { APSeparator(afterFace: false) }
-                    Button { unlinkingRefund = true } label: {
-                        row(title: "Unlink refund", chevron: true, icon: "link")
-                    }
+    // MARK: P2 (TP-P2-Purchase): Split, and More
 
-                    .buttonStyle(.plain)
-                    .disabled(busy)
+    /// T-41m's Unlink, for a refund of the purchase (not of her share).
+    private var unlinkRefundRow: Bool { t.refundOf != nil && t.refundOf?.share != true }
+    /// Income can be left out of the usual month too (2026-11-08).
+    private var canOneOffHere: Bool { t.canOneOff && (!t.inflow || isIncome) }
+    /// Someone paid me back (was Mark as paid back, 2026-11-22): the finder.
+    private var canFindPayback: Bool {
+        !t.inflow && t.transfer == nil && t.partOf == nil && t.excluded.isEmpty
+            && t.counts == "spending" && t.refundOf == nil
+    }
+    /// P9: money out that can be one of her bills.
+    private var canBill: Bool {
+        !t.inflow && t.transfer == nil && t.excluded.isEmpty && t.refundOf == nil && t.counts == "spending"
+            && t.partOf == nil
+    }
+    /// "This is my regular pay": never on money that can't be pay (P8).
+    private var payRow: Bool { couldBePay && !t.neverPay }
+
+    /// P2a: Split with others on its own card; on a joint purchase, Split my part.
+    @ViewBuilder private var splitRow: some View {
+        if canSplitJoint && (showsShareBar || jointCharge) {
+            APCard { jointSplitRow }.padding(.top, 4)
+        } else if canSplit {
+            APCard {
+                Button { splitting = true } label: {
+                    row(title: "Split with others", chevron: true, icon: "person.2")
                 }
-                if canLink {
-                    // Link transfers (2026-11-22): a leg with no other end
-                    // paired, or the legs it's linked with.
-                    if canSplit || canFindPayback || couldBePay || unlink { APSeparator(afterFace: false) }
-                    Button { linking = true } label: {
-                        row(title: t.links.isEmpty ? "Link to another transfer" : "Linked transfers",
-                            sub: t.links.isEmpty ? nil : Format.shortList(t.links.compactMap(\.accountName)),
-                            chevron: true, icon: "link")
+                .buttonStyle(.plain)
+                .disabled(busy)
+                .accessibilityIdentifier("Split with others")
+            }
+            .padding(.top, 4)
+        }
+    }
+
+    /// P2a: one More row for every rarer option.
+    private var moreRow: some View {
+        APCard {
+            Button { showingMore = true } label: {
+                row(title: "More", chevron: true, icon: "ellipsis")
+            }
+            .buttonStyle(.plain)
+            .disabled(busy)
+            .accessibilityIdentifier("More")
+            .accessibilityHint(moreHint)
+        }
+        .padding(.top, 4)
+    }
+
+    /// VoiceOver: what's behind More, in a few words.
+    private var moreHint: String {
+        t.inflow ? "Note and other options" : "Paid back, every month, one-off and a note"
+    }
+
+    /// P2b (TP-P2-Purchase): a Pearl sheet with every other option, in plain
+    /// words. Switches flip in place and toast here (P10); the sheet stays.
+    private var moreSheet: some View {
+        VStack(spacing: 0) {
+            CFSheetTitle(title: "More") { showingMore = false }.sheetPart()
+            ScrollView {
+                VStack(spacing: 12) {
+                    OwnBody { moreRows }
+                    OwnBody { moreSwitches }
+                    OwnBody { moreNote }
+                }
+                .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 16)
+                .sheetPart()
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let m = moreToast {
+                UndoToast(text: m.title, undo: m.undo) { withAnimation { moreToast = nil } }
+                    .padding(.bottom, 8)
+            }
+        }
+        .cfSheet()
+        .fitsContent()
+        .presentationDragIndicator(.visible)
+    }
+
+    private struct MoreItem: Identifiable {
+        let id: String
+        let title: String
+        var sub: String? = nil
+        let icon: String
+        var chevron = true
+        let action: () -> Void
+    }
+
+    /// Closes More, then runs `next` once it has gone (its sheet can open then).
+    private func leaveMore(_ next: @escaping () -> Void) -> () -> Void {
+        { afterMore = next; showingMore = false }
+    }
+
+    /// Card 1: what she can say about it, each a row that opens its own step.
+    private var moreItems: [MoreItem] {
+        var out: [MoreItem] = []
+        if canFindPayback {
+            out.append(MoreItem(id: "paidback", title: "Someone paid me back", icon: "arrow.uturn.backward",
+                                action: leaveMore { paidBackStep = .find }))
+        }
+        if canBill {
+            if billKey == nil {
+                out.append(MoreItem(id: "bill", title: "I pay this every month", icon: "calendar",
+                                    action: leaveMore { billing = true }))
+            } else {
+                out.append(MoreItem(id: "bill", title: "I pay this every month", sub: everyMonthLine,
+                                    icon: "calendar", chevron: false, action: {}))
+            }
+        }
+        // P2b: on any purchase too, as drawn (was only on a leg left unpaired).
+        if canLink || (!t.inflow && t.transfer == nil && t.partOf == nil && t.parts.isEmpty
+                       && t.refundOf == nil && t.repaysCharge == nil) {
+            out.append(MoreItem(id: "link", title: "Moved between my accounts",
+                                sub: t.links.isEmpty ? nil : Format.shortList(t.links.compactMap(\.accountName)),
+                                icon: "arrow.left.arrow.right", action: leaveMore { linking = true }))
+        }
+        if jointCharge && !showsShareBar {
+            out.append(MoreItem(id: "whose", title: "Whose was it?", sub: whoseSub, icon: "person.2",
+                                action: leaveMore { whose = true }))
+        }
+        if canPayFromBank {
+            out.append(MoreItem(id: "piggy", title: "Paid from a piggy bank", icon: "banknote",
+                                action: leaveMore { payingFromBank = true }))
+        }
+        if payRow {
+            let sub = t.regularPay.map { pay in
+                [Format.cadence(pay.cadence ?? ""), pay.next.map { "next on \(Format.weekdayDay($0))" }]
+                    .compactMap { $0 }.joined(separator: " · ")
+            }
+            out.append(MoreItem(id: "pay", title: t.regularPay == nil ? "This is my regular pay" : "Regular pay",
+                                sub: sub, icon: "briefcase", action: leaveMore { asking = Asking(step: .cadence) }))
+        }
+        if unlinkRefundRow {
+            out.append(MoreItem(id: "unlink", title: "Unlink refund", icon: "link",
+                                action: leaveMore { unlinkingRefund = true }))
+        }
+        if let trip = t.trip, !showsCategoryCard {
+            out.append(MoreItem(id: "trip", title: trip.name, sub: Format.span(trip.start, trip.end), icon: "airplane",
+                                action: leaveMore { tripId = trip.id }))
+        }
+        if Features.tags && t.refundOf == nil && !isIncome {
+            out.append(MoreItem(id: "tags", title: t.tags.isEmpty ? "Add tags" : t.tags.map { "#" + $0 }.joined(separator: "  "),
+                                sub: t.tags.isEmpty ? nil : "Tags", icon: "tag", action: leaveMore { editingTags = true }))
+        }
+        return out
+    }
+
+    /// "Every month · around the 2nd" (P9c).
+    private var everyMonthLine: String {
+        billNext.flatMap(Format.localDay).map {
+            "Every month · around the \(ordinal(Calendar.current.component(.day, from: $0)))"
+        } ?? "Every month"
+    }
+
+    @ViewBuilder private var moreRows: some View {
+        let items = moreItems
+        if !items.isEmpty {
+            APCard {
+                ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
+                    if i > 0 { APSeparator(afterFace: false) }
+                    Button(action: item.action) {
+                        row(title: item.title, sub: item.sub, chevron: item.chevron, icon: item.icon)
                     }
                     .buttonStyle(.plain)
-                    .disabled(busy)
+                    .disabled(busy || !item.chevron)
+                    .accessibilityIdentifier(item.title)
                 }
-                if canOneOff {
-                    if canSplit || canFindPayback || couldBePay || unlink || canLink { APSeparator(afterFace: false) }
+            }
+        }
+    }
+
+    /// Card 2: One-off and Do this every time, which act at once.
+    @ViewBuilder private var moreSwitches: some View {
+        let rule = offersNewOnes || wouldOfferRule
+        let income = isIncome ? t.incomeRule?.payer : nil
+        if canOneOffHere || rule || income != nil {
+            APCard {
+                if canOneOffHere {
                     Toggle(isOn: Binding(get: { oneOff ?? t.oneOff },
                                          set: { on in Task { await setOneOff(on) } })) {
-                        // T-42 (G1-TxNote): what leaving it out does, under the title.
-                        HStack(spacing: 12) {
-                            CFIcon(symbol: "1.circle")
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Exclude from usual month").font(Nacre.body).foregroundColor(Pearl.ink)
-                                if let line = t.oneOffLine?.line, oneOff ?? t.oneOff {
-                                    Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
-                        }
+                        switchLabel("One-off", sub: "Leave it out of your usual month", icon: "1.circle")
                     }
                     .tint(Pearl.action)
                     .disabled(busy)
                     .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 64)
-                    .accessibilityHint("Leaves it out of your usual month")
+                    .accessibilityIdentifier("One-off")
                 }
-                if offersNewOnes {
-                    if canSplit || canFindPayback || couldBePay || unlink || canLink || canOneOff { APSeparator(afterFace: false) }
-                    alwaysToggle(sub: nil)
-                }
-                if let payer = incomeAlways {
-                    if canSplit || canFindPayback || couldBePay || unlink || canLink || canOneOff || offersNewOnes { APSeparator(afterFace: false) }
-                    incomeAlwaysToggle(payer)
-                }
-                if canPayFromBank {
-                    APSeparator(afterFace: false)
-                    Toggle(isOn: Binding(get: { billKey != nil },
-                                         set: { on in if on { addingBill = true } else { Task { await removeBill() } } })) {
-                        HStack(spacing: 12) {
-                            CFIcon(symbol: "calendar")
-                            Text("Regular bill").font(Nacre.body).foregroundColor(Pearl.ink)
-                        }
+                if rule {
+                    if canOneOffHere { APSeparator(afterFace: false) }
+                    if offersNewOnes {
+                        alwaysToggle(sub: "For every \(t.merchant) \(t.inflow ? "deposit" : "purchase")")
+                    } else {
+                        // T-03r (G1-NoRule): the switch, off, and why.
+                        switchLabel(CategorySheet.everyTime, sub: Self.noRule, icon: "repeat")
+                            .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 64)
+                            .opacity(0.6)
+                            .accessibilityElement(children: .combine)
                     }
-                    .tint(Pearl.action)
-                    .disabled(busy)
-                    .padding(.horizontal, 16).frame(minHeight: 64)
-                    .accessibilityHint("Adds it to your bills")
+                }
+                if let payer = income {
+                    if canOneOffHere || rule { APSeparator(afterFace: false) }
+                    incomeAlwaysToggle(payer)
                 }
             }
         }
-        if wouldOfferRule, guessName != nil {
-            // T-96 (G1-NoRule): under Options, where a guess's switch is.
-            Text(Self.noRule).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16).padding(.top, 12)
+    }
+
+    private func switchLabel(_ title: String, sub: String?, icon: String) -> some View {
+        HStack(spacing: 12) {
+            CFIcon(symbol: icon)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let sub = sub {
+                    Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    /// Card 3: Add a note, last (product owner, 2026-11-26).
+    private var moreNote: some View {
+        APCard {
+            Button(action: leaveMore { editingNote = true }) {
+                if t.myNote.isEmpty {
+                    row(title: "Add a note", chevron: true, icon: "square.and.pencil")
+                } else {
+                    row(title: t.myNote, sub: "Note", chevron: true, icon: "square.and.pencil")
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("Add a note")
+        }
+    }
+
+    /// P10: a toast with Undo, in the More sheet while it is up, else on the page.
+    private func say(_ text: String, undo: (() -> Void)?) {
+        withAnimation {
+            if showingMore {
+                moreToast = (text, undo)
+            } else {
+                splitToast = nil
+                toast = (text, undo)
+            }
+        }
+    }
+
+    /// The server's Undo, then a plain confirmation with no Undo of its own (P10c).
+    private func undoNow(_ payload: JSONValue, said: String = "Undone.") async {
+        withAnimation { toast = nil; moreToast = nil }
+        busy = true
+        defer { busy = false }
+        do {
+            try await postUndo(payload)
+            await load()
+            app.changed(by: screenKey)
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            say(said, undo: nil)
+        } catch {
+            self.error = app.handle(error)
         }
     }
 
@@ -2734,7 +2944,7 @@ struct TransactionDetailView: View {
                              set: { on in Task { await setIncomeAlways(on) } })) {
             HStack(spacing: 12) {
                 CFIcon(symbol: "repeat")
-                Text("Always for this merchant").font(Nacre.body).foregroundColor(Pearl.ink)
+                Text(CategorySheet.everyTime).font(Nacre.body).foregroundColor(Pearl.ink)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -2801,14 +3011,43 @@ struct TransactionDetailView: View {
         }
     }
 
-    /// Always on a row that's already sorted: new ones go where this one is.
+    /// Do this every time on a row that's already sorted: new ones go where
+    /// this one is. P10: its toast has the server's Undo.
     private func setAlways(_ on: Bool) async {
         let category = t.label
         let merchant = t.merchant
-        await run {
-            let _: OK = try await app.api.put("api/transactions/\(t.id)/always", ["on": on])
-            return on ? "Always \(category) for \(merchant)." : "No rule for \(merchant) now."
+        struct Reply: Decodable { let undo: JSONValue? }
+        busy = true
+        defer { busy = false }
+        do {
+            let reply: Reply = try await app.api.put("api/transactions/\(t.id)/always", ["on": on])
+            await load()
+            app.changed(by: screenKey)
+            say(on ? "\(merchant) is \(category), every time." : "No rule for \(merchant) now.",
+                undo: reply.undo.map { u in { Task { await undoNow(u) } } })
+            error = nil
+        } catch {
+            self.error = app.handle(error)
         }
+    }
+
+    /// P9c: the bill is in; the page's pill says so, and Undo takes it away.
+    private func billAdded(_ key: String?) async {
+        await load()
+        app.changed(by: screenKey)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        say("\(t.merchant) is one of your bills now.", undo: key.map { k in { Task {
+            withAnimation { toast = nil }
+            struct Removed: Decodable {}
+            do {
+                let _: Removed = try await app.api.delete("api/income-bills/bills/\(k)")
+                await load()
+                app.changed(by: screenKey)
+                say("Undone.", undo: nil)
+            } catch {
+                self.error = app.handle(error)
+            }
+        } } })
     }
 
     /// Off: it leaves her bills.
@@ -3260,7 +3499,8 @@ struct TransactionDetailView: View {
     }
     private struct Bill: Decodable {
         let billKey: String?
-        enum CodingKeys: String, CodingKey { case billKey = "bill_key" }
+        let next: String?
+        enum CodingKeys: String, CodingKey { case next; case billKey = "bill_key" }
     }
 
     /// Everything the page needs, asked for together and shown at once
@@ -3272,7 +3512,7 @@ struct TransactionDetailView: View {
         async let fullReply: Transaction? = try? api.get("api/transactions/\(id)")
         async let casesReply: Cases? = guessing == nil ? (try? api.get("api/transactions/\(id)/cases")) : nil
         async let owedReply: OwedOverview? = recent.isEmpty && !transaction.inflow ? (try? api.get("api/owed")) : nil
-        async let billReply: Bill? = canPayFromBank ? (try? api.get("api/transactions/\(id)/bill")) : nil
+        async let billReply: Bill? = canBill ? (try? api.get("api/transactions/\(id)/bill")) : nil
         let (full, cases, owed, bill) = await (fullReply, casesReply, owedReply, billReply)
         if let full = full {
             detail = full
@@ -3282,7 +3522,10 @@ struct TransactionDetailView: View {
             // S-04ue: the split card says it couldn't load, with Try again.
             loadFailed = true
         }
-        if canPayFromBank { billKey = bill?.billKey }
+        if canBill {
+            billKey = bill?.billKey
+            billNext = bill?.billKey == nil ? nil : bill?.next
+        }
         await loadPaybackQuestion()
         if guessing == nil {
             self.cases = cases ?? Cases(learnable: false, mixed: false, hasRule: false)
@@ -3448,8 +3691,9 @@ struct TransactionDetailView: View {
 
     /// A new category: this row, and the rule when Always is on. Other rows
     /// from the merchant stay as they are.
-    private func change(to name: String, remember: Bool) async {
+    private func change(to name: String, remember: Bool, said: String? = nil) async {
         let merchant = t.merchant
+        let was = t.label
         // Shown at once (perf rehaul): the page as it reads once sorted;
         // the server's row settles it, a refusal puts it back.
         let before = detail
@@ -3461,8 +3705,14 @@ struct TransactionDetailView: View {
                 "PUT", "api/quick-sort/\(t.id)",
                 ["action": "category", "category": name, "every": false, "rows": [String](), "new_ones": remember],
                 rollback: { detail = before })
-            let said = remember ? "Always \(name) for \(merchant)." : "Moved to \(name)."
-            withAnimation { splitToast = nil; toast = (said, nil) }
+            // P10a: "Starbucks is Dining now." with Undo; after it, "Undone.
+            // Starbucks is Coffee again." (P10c), with none.
+            let text = said ?? (remember ? "\(merchant) is \(name), every time." : "\(merchant) is \(name) now.")
+            let back = was == "Other" ? "Undone." : "Undone. \(merchant) is \(was) again."
+            withAnimation {
+                splitToast = nil
+                toast = (text, sent?.body.undo.map { u in { Task { await undoNow(u, said: back) } } })
+            }
             error = nil
             if let sent = sent {
                 take(sent.changed)
@@ -3513,11 +3763,27 @@ struct TransactionDetailView: View {
         incomeAlwaysOn = nil
     }
 
-    private func setOneOff(_ on: Bool) async {
-        oneOff = on
-        await run {
-            let reply: OneOffReply = try await app.api.put("api/transactions/\(t.id)/one-off", ["on": on])
-            return [reply.title, reply.detail].compactMap { $0 }.joined(separator: " ")
+    /// P14 (TP-P14-OneOff): "One-off. Your usual month stays the same." with
+    /// Undo; after Undo a plain "Undone." with none.
+    private func setOneOff(_ on: Bool, undoing: Bool = false) async {
+        withAnimation { oneOff = on }
+        busy = true
+        defer { busy = false }
+        do {
+            let _: OneOffReply = try await app.api.put("api/transactions/\(t.id)/one-off", ["on": on])
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            if undoing {
+                say("Undone.", undo: nil)
+            } else {
+                say(on ? "One-off. Your usual month stays the same." : "Back in your usual month.",
+                    undo: { Task { await setOneOff(!on, undoing: true) } })
+            }
+            error = nil
+            await load()
+            app.changed(by: screenKey)
+        } catch {
+            withAnimation { oneOff = nil }
+            self.error = app.handle(error)
         }
     }
 

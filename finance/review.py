@@ -302,7 +302,7 @@ def build(transactions: list[Transaction], today: str | None = None,
         money_in.append({"key": key, "txn": _brief(t, people),
                          "guess": {"action": "refund" if bought else "unknown"}, "candidates": [],
                          "reason": ("Money back from a store you bought from." if bought
-                                    else "Pearl had this as a refund, with nothing to refund.")})
+                                    else "Pearl couldn’t find what this refunds.")})
 
     # 3b. Money into a joint account from outside: whose was it?
     joint_in = []

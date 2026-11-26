@@ -54,7 +54,11 @@ struct CategorySheet: View {
     /// under "Something else…". What was this? only; nil guess leads with the four.
     var leadsWithLikely = false
     var guess: String? = nil
-    @State private var everything = false
+    /// P3 / P15: What was this? › Something else opens the picker in place.
+    @State private var pickerOpen = false
+    /// P15c: All categories, one level down.
+    @State private var allOpen = false
+    @State private var query = ""
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var app: AppModel
@@ -110,46 +114,56 @@ struct CategorySheet: View {
 
     private static let spendingGroups = ["essentials", "lifestyle"]
     private static let otherGroups = ["income", "savings", "transfer"]
-    private static let groupNames = ["essentials": "Essentials", "lifestyle": "Lifestyle", "income": "Income",
+    // TP-Words (P15): plain group names.
+    private static let groupNames = ["essentials": "Everyday", "lifestyle": "Fun and treats", "income": "Income",
                                      "savings": "Savings", "transfer": "Moving money"]
     /// A state Pearl puts a row in, not one she picks.
     private static let notPickable: Set<String> = ["Unsorted transfers"]
 
-    /// Every answer on one scroll: the Always switch, the categories, then Not spending.
+    /// P15 (TP-P15-Category, fewer taps): the one picker, for Change on a
+    /// page and Something else on What was this?: the who, a search field
+    /// that looks typeable, her 8 most used (the current one ringed) and All
+    /// categories one level down. A tap picks and closes.
     private var onePage: some View {
         VStack(spacing: 0) {
-            CFSheetTitle(title: title) { dismiss() }.sheetPart()
+            pickerTitle.sheetPart()
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    header
-                    if let merchant = merchant, showsAlways {
-                        // G1-WhatWasThis: Always on its own card, no second line.
-                        APCard { CFToggleRow(symbol: "repeat", title: "Always for this merchant", isOn: $newOnes) }
+                    if allOpen {
+                        allCategories
+                    } else {
+                        header
+                        PearlField(placeholder: "Search categories", text: $query, kind: .search,
+                                   identifier: "Search categories")
                             .padding(.top, 14)
-                    }
-                    if available.isEmpty {
-                        LoadState(error: app.categoriesError) { Task { await app.loadCategories() } }
-                    }
-                    ForEach(Self.spendingGroups + ["lifestyleEnd"], id: \.self) { group in
-                        if group == "lifestyleEnd" {
-                            if let cases = notSpending {
-                                groupLabel("Not spending")
-                                CaseGrid(cases: cases, chosen: Binding(get: { nil }, set: { key in
-                                    if let key = key { onCase?(key, newOnes && caseRule?(key) != nil && key != "not_mine") }
-                                }))
-                            }
+                        if available.isEmpty {
+                            LoadState(error: app.categoriesError) { Task { await app.loadCategories() } }
+                        } else if searching {
+                            searchResults
                         } else {
-                            let items = tiles(in: group)
-                            if !items.isEmpty {
-                                groupLabel(Self.groupNames[group] ?? group)
-                                CFTileGrid { ForEach(items) { c in tile(c) } }
+                            groupLabel("Most used")
+                            CFTileGrid { ForEach(mostUsed) { c in pickTile(c) } }
+                            APCard {
+                                Button { withAnimation(.easeOut(duration: 0.2)) { allOpen = true } } label: {
+                                    CFRowLabel(symbol: "ellipsis", title: "All categories", trailing: .chevron)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("All categories")
                             }
+                            .padding(.top, 12)
+                        }
+                        if !searching {
+                            if let merchant = merchant, showsAlways {
+                                APCard { CFToggleRow(symbol: "repeat", title: Self.everyTime,
+                                                     sub: "For every \(merchant) purchase", isOn: $newOnes) }
+                                    .padding(.top, 12)
+                            }
+                            if onRegularBill != nil {
+                                APCard { CFToggleRow(symbol: "calendar", title: "Regular bill", isOn: $bill) }.padding(.top, 12)
+                            }
+                            if let extras = extras { extras.padding(.top, 16) }
                         }
                     }
-                    if onRegularBill != nil {
-                        APCard { CFToggleRow(symbol: "calendar", title: "Regular bill", isOn: $bill) }.padding(.top, 16)
-                    }
-                    if let extras = extras { extras.padding(.top, 16) }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 16)
                 .sheetPart()
@@ -162,8 +176,119 @@ struct CategorySheet: View {
         .task { if available.isEmpty { await app.loadCategories() } }
     }
 
+    /// P15c: "All categories" with Back; the picker itself, with Back to
+    /// What was this? when Something else opened it; or the plain title.
+    @ViewBuilder private var pickerTitle: some View {
+        if allOpen {
+            BackSheetTitle(title: "All categories", back: { withAnimation(.easeOut(duration: 0.2)) { allOpen = false } }) { dismiss() }
+        } else if pickerOpen {
+            BackSheetTitle(title: "Category", back: { withAnimation(.easeOut(duration: 0.2)) { pickerOpen = false; query = "" } }) { dismiss() }
+        } else {
+            CFSheetTitle(title: title) { dismiss() }
+        }
+    }
+
+    /// The words on the switch everywhere (TP-Words: was "Always for this merchant").
+    static let everyTime = "Do this every time"
+
+    private var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    /// Her 8 most used spending categories (GET /api/categories `uses`), the
+    /// current one first and ringed. Hers, never a fixed list.
+    private var mostUsed: [CategoryList.Category] {
+        let pool = Self.spendingGroups.flatMap { tiles(in: $0) }
+        var out = pool.enumerated().sorted { a, b in
+            let ua = a.element.uses ?? 0, ub = b.element.uses ?? 0
+            return ua != ub ? ua > ub : a.offset < b.offset
+        }.map(\.element)
+        if let now = out.firstIndex(where: { $0.name == current }) { out.insert(out.remove(at: now), at: 0) }
+        return Array(out.prefix(8))
+    }
+
+    /// A tile on the picker: the current one has the 2 pt rose line; a tap picks.
+    private func pickTile(_ c: CategoryList.Category) -> some View {
+        CFTile(symbol: Self.symbol(for: c.name), title: c.name, mark: c.name == current ? .current : .rest) {
+            pick(c.name)
+        }
+        .accessibilityLabel(c.name)
+    }
+
+    private func pick(_ name: String) {
+        onRegularBill?(bill)
+        onSave(name, merchant != nil && newOnes)
+    }
+
+    private func pickCase(_ key: String) {
+        onCase?(key, newOnes && caseRule?(key) != nil && key != "not_mine")
+    }
+
+    /// P15b: results as rows, the group as a plain line under each.
+    @ViewBuilder private var searchResults: some View {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        let cats = Self.spendingGroups.flatMap { g in tiles(in: g).map { (g, $0) } }
+            .filter { $0.1.name.lowercased().contains(q) }
+        let cases = (notSpending ?? []).filter { $0.label.lowercased().contains(q) }
+        if cats.isEmpty && cases.isEmpty {
+            Text("Nothing called “\(query)”").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                .padding(.horizontal, 4).padding(.top, 14)
+        } else {
+            APCard {
+                ForEach(Array(cats.enumerated()), id: \.element.1.id) { i, pair in
+                    if i > 0 { APSeparator(afterFace: false) }
+                    pickRow(symbol: Self.symbol(for: pair.1.name), title: pair.1.name,
+                            sub: Self.groupNames[pair.0]) { pick(pair.1.name) }
+                }
+                ForEach(Array(cases.enumerated()), id: \.element.id) { i, c in
+                    if i > 0 || !cats.isEmpty { APSeparator(afterFace: false) }
+                    pickRow(symbol: c.symbol, title: c.label, sub: Self.notReally) { pickCase(c.key) }
+                }
+            }
+            .padding(.top, 14)
+        }
+    }
+
+    /// P15c: Everyday, Fun and treats, Not really spending, as rows.
+    @ViewBuilder private var allCategories: some View {
+        ForEach(Self.spendingGroups, id: \.self) { group in
+            let items = tiles(in: group)
+            if !items.isEmpty {
+                groupLabel(Self.groupNames[group] ?? group)
+                APCard {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { i, c in
+                        if i > 0 { APSeparator(afterFace: false) }
+                        pickRow(symbol: Self.symbol(for: c.name), title: c.name, sub: nil,
+                                on: c.name == current) { pick(c.name) }
+                    }
+                }
+            }
+        }
+        if let cases = notSpending {
+            groupLabel(Self.notReally)
+            APCard {
+                ForEach(Array(cases.enumerated()), id: \.element.id) { i, c in
+                    if i > 0 { APSeparator(afterFace: false) }
+                    pickRow(symbol: c.symbol, title: c.label, sub: c.key == "work" ? "Someone pays you back for it" : nil) {
+                        pickCase(c.key)
+                    }
+                }
+            }
+        }
+    }
+
+    static let notReally = "Not really spending"
+
+    private func pickRow(symbol: String, title: String, sub: String?, on: Bool = false,
+                         action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            CFRowLabel(symbol: symbol, title: title, sub: sub, bold: on, trailing: .none)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
     var body: some View {
-        if answersAtOnce && leadsWithLikely { likelyPage } else if answersAtOnce { onePage } else { steps }
+        if answersAtOnce && leadsWithLikely && !pickerOpen { likelyPage } else if answersAtOnce { onePage } else { steps }
     }
 
     // MARK: G1-WhatWasThis-r (T-04n)
@@ -178,30 +303,30 @@ struct CategorySheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     header
-                    if let guess = guess, available.contains(where: { $0.name == guess }) {
+                    if let guess = realGuess, available.contains(where: { $0.name == guess }) {
                         guessCard(guess).padding(.top, 14)
                     }
                     if available.isEmpty {
                         LoadState(error: app.categoriesError) { Task { await app.loadCategories() } }
                     } else {
-                        groupLabel("Or")
+                        // P3a (TP-P3-NoGuess): with no real guess, no "Other?":
+                        // the four likeliest, straight under the who.
+                        if realGuess != nil { groupLabel("Or") } else { Color.clear.frame(height: 18) }
                         CFTileGrid { ForEach(likely) { c in tile(c) } }
                     }
-                    if everything {
-                        everyAnswer
-                    } else {
-                        APCard {
-                            Button { withAnimation(.easeOut(duration: 0.2)) { everything = true } } label: {
-                                CFRowLabel(symbol: "ellipsis", title: "Something else…",
-                                           sub: "Every other answer, on this page", trailing: .chevron)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityHint("Shows every other answer here")
+                    APCard {
+                        // P3 / P15: Something else opens the one picker, in place.
+                        Button { withAnimation(.easeOut(duration: 0.2)) { pickerOpen = true } } label: {
+                            CFRowLabel(symbol: "ellipsis", title: "Something else", trailing: .chevron)
                         }
-                        .padding(.top, 12)
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("Something else")
+                        .accessibilityHint("Search, or every category")
                     }
+                    .padding(.top, 12)
                     if let merchant = merchant, showsAlways {
-                        APCard { CFToggleRow(symbol: "repeat", title: "Always for this merchant", isOn: $newOnes) }
+                        APCard { CFToggleRow(symbol: "repeat", title: Self.everyTime,
+                                             sub: "For every \(merchant) purchase", isOn: $newOnes) }
                             .padding(.top, 12)
                     }
                 }
@@ -214,6 +339,9 @@ struct CategorySheet: View {
         .presentationDragIndicator(.visible)
         .task { if available.isEmpty { await app.loadCategories() } }
     }
+
+    /// P3: Pearl's guess only when it is one; "Other" is no guess.
+    private var realGuess: String? { guess.flatMap { $0 == "Other" ? nil : $0 } }
 
     /// PEARL'S GUESS (12, `action`, 1.2 tracked), "Dining out?" and the one
     /// Primary, on a plain card (kit `.card`, 16 padding, 12 apart).
@@ -240,33 +368,24 @@ struct CategorySheet: View {
     /// she has used most (GET /api/categories `uses`), in the list's order
     /// between equals. Hers, never a fixed list.
     private var likely: [CategoryList.Category] {
-        let pool = Self.spendingGroups.flatMap { tiles(in: $0) }.filter { $0.name != guess }
+        Self.likeliest(Self.spendingGroups.flatMap { tiles(in: $0) }.filter { $0.name != realGuess })
+    }
+
+    /// Her `count` most used of `pool` (GET /api/categories `uses`), in the
+    /// list's order between equals. P3d's page tiles are the same four.
+    static func likeliest(_ pool: [CategoryList.Category], count: Int = 4) -> [CategoryList.Category] {
         let ranked = pool.enumerated().sorted { a, b in
             let ua = a.element.uses ?? 0, ub = b.element.uses ?? 0
             return ua != ub ? ua > ub : a.offset < b.offset
         }
-        return ranked.prefix(4).map(\.element)
+        return ranked.prefix(count).map(\.element)
     }
 
-    /// Something else…: every answer, in place, as the one page had them.
-    @ViewBuilder private var everyAnswer: some View {
-        ForEach(Self.spendingGroups, id: \.self) { group in
-            let items = tiles(in: group).filter { c in !likely.contains(c) && c.name != guess }
-            if !items.isEmpty {
-                groupLabel(Self.groupNames[group] ?? group)
-                CFTileGrid { ForEach(items) { c in tile(c) } }
-            }
+    /// The spending categories she can pick, in the list's order.
+    static func spending(_ cats: [CategoryList.Category]) -> [CategoryList.Category] {
+        spendingGroups.flatMap { g in
+            cats.filter { ($0.group ?? "lifestyle") == g && !notPickable.contains($0.name) && $0.hidden != true }
         }
-        if let cases = notSpending {
-            groupLabel("Not spending")
-            CaseGrid(cases: cases, chosen: Binding(get: { nil }, set: { key in
-                if let key = key { onCase?(key, newOnes && caseRule?(key) != nil && key != "not_mine") }
-            }))
-        }
-        if onRegularBill != nil {
-            APCard { CFToggleRow(symbol: "calendar", title: "Regular bill", isOn: $bill) }.padding(.top, 16)
-        }
-        if let extras = extras { extras.padding(.top, 16) }
     }
 
     private var steps: some View {
@@ -416,6 +535,28 @@ struct CategorySheet: View {
     }
 }
 
+/// P15c: a sheet title with Back on the left and ✕ on the right.
+struct BackSheetTitle: View {
+    let title: String
+    let back: () -> Void
+    let close: () -> Void
+
+    var body: some View {
+        ZStack {
+            Text(title).font(Nacre.headline).foregroundColor(Pearl.ink)
+                .lineLimit(1).padding(.horizontal, 56)
+                .accessibilityAddTraits(.isHeader)
+            HStack {
+                CFBackButton(action: back)
+                Spacer()
+                CFCloseButton(action: close)
+            }
+        }
+        .frame(minHeight: 44)
+        .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 10)
+    }
+}
+
 // MARK: - Answers as tiles (T-06, T-08, T-12, T-78)
 
 /// One answer on a What was this? grid.
@@ -425,15 +566,16 @@ struct CaseTile: Identifiable, Hashable {
     let symbol: String
     var id: String { key }
 
-    /// T-06: money out that isn't spending.
+    /// T-06: money out that isn't spending. P15 (TP-Words): plain names,
+    /// in the board's order.
     static let notSpending: [CaseTile] = [
+        CaseTile(key: "own", label: "Moved between my accounts", symbol: "arrow.left.arrow.right"),
         CaseTile(key: "saved", label: "Saved", symbol: "lifepreserver"),
-        CaseTile(key: "own", label: "My own account", symbol: "arrow.left.arrow.right"),
-        CaseTile(key: "card", label: "Card payment", symbol: "creditcard"),
-        CaseTile(key: "lent", label: "Lending to someone", symbol: "arrow.up.forward"),
-        CaseTile(key: "paying_back", label: "Paying back a loan", symbol: "arrow.uturn.left"),
+        CaseTile(key: "card", label: "Paid off my card", symbol: "creditcard"),
+        CaseTile(key: "lent", label: "I lent it to someone", symbol: "arrow.up.forward"),
+        CaseTile(key: "paying_back", label: "Paying off a loan", symbol: "arrow.uturn.left"),
         CaseTile(key: "work", label: "Work expense", symbol: "briefcase"),
-        CaseTile(key: "not_mine", label: "Not mine", symbol: "person.crop.circle.badge.xmark"),
+        CaseTile(key: "not_mine", label: "Someone else’s purchase", symbol: "person.crop.circle.badge.xmark"),
     ]
 
     /// TR-07: Leave out, under Mark as… when Confirm takes its place on Select's bar.

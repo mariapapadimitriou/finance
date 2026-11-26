@@ -634,7 +634,7 @@ struct WhoseTilesSheet: View {
                 Text("of \(Format.amount(full)) was yours").font(Nacre.footnote).foregroundColor(Pearl.muted)
                     .frame(maxWidth: .infinity)
             } else {
-                APCard { APToggleRow(title: "Always for this merchant", isOn: $always) }.disabled(busy)
+                APCard { APToggleRow(title: CategorySheet.everyTime, isOn: $always) }.disabled(busy)
             }
             if let error = error { APErrorLine(text: error) }
         } footer: {

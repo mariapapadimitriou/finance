@@ -1423,7 +1423,8 @@ struct SplitPeople: View {
             // S-04r v2: "Split 5 ways" with Edit split beside it; S-04j
             // "Your part, split 3 ways"; S-04u "Split with 2 · Not sure yet".
             APSectionLabel(text: heading(open: open, unsure: unsure),
-                           action: split.closedAt == nil ? "Edit split" : nil, act: onEdit)
+                           // P2c: "Split 3 ways · Edit".
+                           action: split.closedAt == nil ? "Edit" : nil, act: onEdit)
                 .padding(.top, 16).padding(.bottom, 8)
             APCard {
                 if let line = unsureLine {
@@ -1831,7 +1832,8 @@ struct SplitPeople: View {
                 : "Let go · \(Format.short(gone.day))"
         }
         if p.owes >= 0.005 {
-            return p.paid >= 0.005 ? "Paid \(Format.amount(p.paid)) of \(Format.amount(p.amount))" : "Owes you"
+            // P5b (fewer taps): what's still owed is said, never forgiven silently.
+            return p.paid >= 0.005 ? "Paid \(Format.amount(p.paid)) · still owes \(Format.amount(p.owes))" : "Owes you"
         }
         if let n = p.links?.count, n > 1 { return "Paid back · \(n) payments" }
         let how = (p.cash ?? 0) >= p.paid - 0.005 && (p.cash ?? 0) > 0 ? "Cash" : "Paid back"

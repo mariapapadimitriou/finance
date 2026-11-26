@@ -458,23 +458,32 @@ def transaction_bill_add(txn_id: str):
     if category not in CATEGORIES:
         return _error("Choose a category.")
     amount = round(t.amount * share / 100, 2)
+    # P9 (the tap audit, 2026-11-26): More › I pay this every month sends
+    # the fields she could change: a name, the amount, and whether it varies.
+    name = ib.clean_name(body.get("name")) or t.merchant
+    if body.get("amount") not in (None, ""):
+        typed = ib.clean_amount(body.get("amount"))
+        if typed is None:
+            return _error("Enter the amount, like 45.")
+        amount = typed
+    varies = bool(body.get("varies"))
     today = date.fromisoformat(_today_iso())
     state = ib.load(st)
     found = _found_bill(ib.bills(st.all_transactions(), today, state), t.merchant)
     if found:
         key = found["key"]
-        state["bills"][key] = {"state": "yes", "name": t.merchant, "amount": amount,
-                               "cadence": cadence, "next": nxt}
+        state["bills"][key] = {"state": "yes", "name": name, "amount": amount,
+                               "cadence": cadence, "next": nxt, "varies": varies}
     else:
-        bill = {"id": ib.next_id(state, "b"), "name": t.merchant, "amount": amount,
-                "cadence": cadence, "next": nxt, "varies": False, "merchant": t.merchant,
+        bill = {"id": ib.next_id(state, "b"), "name": name, "amount": amount,
+                "cadence": cadence, "next": nxt, "varies": varies, "merchant": t.merchant,
                 "category": category}
         state["added"].append(bill)
         key = f"added:{bill['id']}"
     state["bills_on"] = state["bills_on"] or today.isoformat()
     ib.save(st, state)
     return jsonify({"ok": True, "key": key,
-                    "title": f"{t.merchant} is in your bills: ${amount:,.2f} {_EVERY[cadence]}."})
+                    "title": f"{name} is in your bills: ${amount:,.2f} {_EVERY[cadence]}."})
 
 
 # ── O-10g: someone's regular e-Transfers ─────────────────────────────────

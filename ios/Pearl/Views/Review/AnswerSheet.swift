@@ -156,13 +156,18 @@ struct AnswerSheet: View {
         case guess, out, into, accounts, charges, kinds, otherKinds, cadence, joint, sender, recurring, payback, category
     }
 
+    /// P3d (fewer taps): Something else on a page opens the P15 picker,
+    /// not What was this? again.
+    var opensPicker = false
+
     /// `start` opens on one step, for the transaction page (THL-198):
     /// the kind of income, how often it pays, or What was this?.
     init(ask: Ask, categories: [CategoryList.Category], accounts: [AccountsOverview.Account], names: [String],
          api: APIClient, start: Step? = nil, pageAlways: Bool? = nil, pageAmount: String? = nil, pageCategory: String? = nil, current: String? = nil, onCategory: ((String, Bool) -> Void)? = nil,
          confirmsGuess: Bool = true, fromPage: Bool = false, holds: Bool = false,
-         onHeldSplit: ((CardSplit, String) -> Void)? = nil,
+         onHeldSplit: ((CardSplit, String) -> Void)? = nil, opensPicker: Bool = false,
          onAnswer: @escaping (ReviewAnswer) -> Void) {
+        self.opensPicker = opensPicker
         self.fromPage = fromPage
         self.holds = holds
         self.onHeldSplit = onHeldSplit
@@ -226,7 +231,7 @@ struct AnswerSheet: View {
                               current: pageCategory ?? t.category ?? ask.item.guess?.text ?? "Other",
                               merchant: learnable == true ? who : nil,
                               onRegularBill: fromPage ? nil : { regularBill = $0 },
-                              title: fromPage && ask.kind == .category && !otherGuess ? "Category" : "What was this?",
+                              title: opensPicker || (fromPage && ask.kind == .category && !otherGuess) ? "Category" : "What was this?",
                               preview: learnable == true ? CategorySheet.preview(api: api, id: t.id, merchant: who) : nil,
                               notSpending: CaseTile.notSpending, startNotSpending: ask.kind != .category,
                               onCase: { outCase($0, remember: $1) },
@@ -236,13 +241,15 @@ struct AnswerSheet: View {
                               answersAtOnce: true,
                               // Off where other rows are open or it varies: her answer here is for this row.
                               // And off for a bank transfer out (2026-11-25): OT-01 asks instead.
-                              newOnesOn: pageAlways ?? (!fromPage && ask.kind != .transfer && learnable == true
+                              // P3a: with no real guess the switch starts off (her tile is for this one).
+                              newOnesOn: pageAlways ?? (!otherGuess && !fromPage && ask.kind != .transfer && learnable == true
                                                         && t.mixed != true && ask.item.siblings.isEmpty),
                               showsAlways: pageAlways == nil && !fromPage,
                               // G1-WhatWasThis-r (T-04n): Pearl's guess leads, then her
                               // four likeliest; every other answer under Something else….
                               // TEST-46: an "Other?" guess opens What was this? from the page too.
-                              leadsWithLikely: !(fromPage && ask.kind == .category) || otherGuess,
+                              // P3d: the page's own tiles are there; Something else is the picker.
+                              leadsWithLikely: !opensPicker && (!(fromPage && ask.kind == .category) || otherGuess),
                               // TEST-46: the page's own ask carries no guess, so an
                               // "Other?" guess is said here, with its Yes on top.
                               guess: ask.kind == .category && pageCategory == nil
@@ -415,7 +422,9 @@ struct AnswerSheet: View {
                 if name == (t.category ?? ask.item.guess?.text) && !remember {
                     onAnswer(.confirm(t.id))
                 } else {
-                    onAnswer(.category(t.id, name: name, remember: remember))
+                    // P3c: "Corner Store is Groceries." for this one.
+                    onAnswer(remember ? .category(t.id, name: name, remember: true)
+                             : .tile(t.id, merchant: who, name: name))
                 }
             } else {
                 onAnswer(.mark(t.id, ["case": "spending", "category": name, "remember": remember]))
@@ -485,7 +494,7 @@ struct AnswerSheet: View {
                         Toggle(isOn: Binding(get: { oneOff ?? f.oneOff }, set: { on in Task { await setOneOff(on) } })) {
                             HStack(spacing: 12) {
                                 CFIcon(symbol: "1.circle")
-                                Text("Exclude from usual month").font(Nacre.body).foregroundColor(Pearl.ink)
+                                Text("One-off").font(Nacre.body).foregroundColor(Pearl.ink)
                             }
                         }
                         .tint(Pearl.action)

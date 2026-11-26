@@ -49,7 +49,7 @@ struct QuickSortStep: Decodable {
 
     /// T-91: "Always Dining out".
     static func always(_ label: String, sorted: Int) -> String {
-        sorted > 1 ? "Sorted \(sorted) · Always \(label)" : "Always \(label)"
+        sorted > 1 ? "Sorted \(sorted) · \(label), every time" : "\(label), every time"
     }
 }
 
@@ -155,6 +155,8 @@ struct QuickSortView: View {
     @State private var drafts: [String: CardDraft] = [:]
     /// What counts as hers now, after a split or a piggy bank on the page.
     @State private var amounts: [String: Double] = [:]
+    /// P4b: the tile just tapped, filled while the card leaves.
+    @State private var pressed: String?
 
     /// How far a card has to travel to count as a swipe.
     private let threshold: CGFloat = 110
@@ -185,7 +187,6 @@ struct QuickSortView: View {
                 // centred between the progress and the circles. It never grows.
                 GeometryReader { g in
                     stack.padding(.horizontal, 16)
-                        .overlay(alignment: .topTrailing) { undoButton.padding(.top, 10).padding(.trailing, 26) }
                         .environment(\.quickSortCardHeight, Self.cardHeight(room: g.size.height))
                         .frame(width: g.size.width, height: g.size.height)
                 }
@@ -193,6 +194,9 @@ struct QuickSortView: View {
                     Text(error).font(Nacre.footnote).foregroundColor(Pearl.danger).padding(.bottom, 8)
                 }
                 buttons.padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 26)
+                    // P4c (fewer taps, product owner 2026-11-26): Undo is a toast
+                    // just above Skip, as everywhere (P10), not a corner link.
+                    .overlay(alignment: .top) { OwnBody { undoToast }.padding(.horizontal, 16).offset(y: -62) }
             }
         }
         .nacreScreen()
@@ -468,7 +472,8 @@ struct QuickSortView: View {
                     .offset(x: offsetX, y: drag.height * 0.2)
                     .rotationEffect(.degrees(Double(offsetX / 18)))
                     .gesture(swipe)
-                    .accessibilityElement(children: .combine)
+                    // P4a: the tiles stay buttons of their own for VoiceOver.
+                    .accessibilityElement(children: tilesOnCard(ask) ? .contain : .combine)
                     .accessibilityAction(named: hasYes(ask) ? "Yes" : "Answer") { right() }
                     .accessibilityAction(named: "Skip") { left() }
                     .accessibilityAction(named: "Other answers") { asking = ask }
@@ -505,7 +510,7 @@ struct QuickSortView: View {
         // A+ kit `.qcard`: the overline, the 56 pt ring, the name, the
         // amount in Fraunces 40, its day and card, and the question.
         return VStack(spacing: 0) {
-            Text(drafts[ask.id]?.label != nil ? "YOUR CHOICE" : isGuess(ask) ? "PEARL’S GUESS" : "NEEDS A LOOK")
+            Text(drafts[ask.id]?.label != nil ? "YOUR CHOICE" : isGuess(ask) && !tilesOnCard(ask) ? "PEARL’S GUESS" : "NEEDS A LOOK")
                 .font(.custom("Figtree-SemiBold", size: 12, relativeTo: .caption)).tracking(1.2)
                 .foregroundColor(Pearl.action)
             CFRing(name: t.name, size: 56).padding(.top, 14)
@@ -521,7 +526,7 @@ struct QuickSortView: View {
             Text([Format.relativeDay(t.date), t.accountName].compactMap { $0 }.filter { !$0.isEmpty }
                     .joined(separator: " · "))
                 .font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(1)
-            Text(drafts[ask.id]?.label.map { "\($0)?" }
+            Text(tilesOnCard(ask) ? "What was this?" : drafts[ask.id]?.label.map { "\($0)?" }
                  ?? (isGuess(ask) ? (ask.item.pair?.question ?? "\(guess(ask))?") : ask.chip))
                 .font(Self.question).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center).lineLimit(2)
@@ -536,7 +541,11 @@ struct QuickSortView: View {
                 Text(evidence).font(Nacre.footnote).foregroundColor(Pearl.ink)
                     .multilineTextAlignment(.center).lineLimit(2)
             }
-            if let line = cardHint(ask) {
+            if tilesOnCard(ask) {
+                // P4a (TP-P4-QuickSort): no real guess, so the four likeliest,
+                // on the card; a tile answers at once.
+                OwnBody { cardTiles(ask) }.padding(.top, 14)
+            } else if let line = cardHint(ask) {
                 // G1-QuickMore (T-93o, T-97, T-98, T-98s, AI-07): one muted line in the card.
                 Text(line).font(Nacre.footnote).foregroundColor(Pearl.muted)
                     .multilineTextAlignment(.center).lineLimit(2)
@@ -546,6 +555,37 @@ struct QuickSortView: View {
         }
         .modifier(CardFace(dashed: drafts[ask.id] == nil && ask.item.unsure != nil))
         .overlay(alignment: .topLeading) { stamp(guessing: hasYes(ask)) }
+    }
+
+    /// P4a: Pearl's best is Other and she hasn't changed anything on its page.
+    private func tilesOnCard(_ ask: Ask) -> Bool { ask.guessesOther && drafts[ask.id] == nil }
+
+    /// Her four likeliest spending categories (P3's), as slim tiles.
+    private func cardTiles(_ ask: Ask) -> some View {
+        let cats = CategorySheet.likeliest(CategorySheet.spending(categories.isEmpty ? app.categories : categories))
+        return CFTileGrid {
+            ForEach(cats) { c in
+                CFTile(symbol: CategorySheet.symbol(for: c.name), title: c.name, mark: pressed == c.name ? .current : .rest) {
+                    tile(ask, c.name)
+                }
+                .accessibilityLabel(c.name)
+            }
+        }
+        .disabled(leaving != nil || busy)
+    }
+
+    /// P4b: the tile fills, the card springs away, the next comes up; the
+    /// toast says what it did (P4c).
+    private func tile(_ ask: Ask, _ name: String) {
+        guard leaving == nil, !busy else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        pressed = name
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) { leaving = true }
+        Task {
+            await step(ask, ["action": "category", "category": name, "every": false, "rows": [String](),
+                             "new_ones": false], said: "\(ask.t.name) is \(name).")
+            pressed = nil
+        }
     }
 
     /// G1-QuickMore: what the card's Yes or Skip does, in one line.
@@ -681,11 +721,14 @@ struct QuickSortView: View {
             if let ask = current, ask.kind == .check {
                 roundButton(symbol: "xmark", label: "No", filled: false) { no(ask) }
             }
+            // P4a: a card with tiles has no Yes: her tap on a tile is the answer.
+            if current.map(tilesOnCard) != true {
             roundButton(symbol: guessing ? "checkmark" : "text.bubble",
                         label: guessing ? "Yes" : "Answer", filled: true) { right() }
                 // T-98s (REFRESH-03): "Saves the split and Groceries, for this one."
                 .accessibilityHint(current.flatMap { ask in drafts[ask.id].flatMap { d in
                     d.split != nil ? "Saves the split and \(splitCategory(ask, d)), for this one." : nil } } ?? "")
+            }
         }
         .frame(maxWidth: .infinity)
         .disabled((current == nil && pattern == nil && trip == nil) || leaving != nil)
@@ -726,25 +769,26 @@ struct QuickSortView: View {
     /// QS-SAME: the circles' size.
     static let circle: CGFloat = 56
 
-    /// Undo at the card's top right (2026-11-20): "↶ Undo" in `link`, there
-    /// after an answer and until the next one, still while a card is moving.
-    @ViewBuilder private var undoButton: some View {
-        if lastAnswer != nil, done == nil, leaving == nil, drag == .zero {
-            Button { Task { await undoLast() } } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "arrow.uturn.backward").font(.system(size: 12, weight: .semibold))
-                    Text(olderUndo.map { "Undo \($0)" } ?? "Undo")
-                        .font(.custom("Figtree-Medium", size: 14, relativeTo: .subheadline))
-                }
-                .foregroundColor(Pearl.link)
-                .padding(.horizontal, 8).frame(minHeight: 44)
-                .contentShape(Rectangle())
+    /// P4c: the last answer's toast, "Corner Store is Groceries." with Undo,
+    /// there until the next answer; Undo brings the card back.
+    @ViewBuilder private var undoToast: some View {
+        if let last = lastAnswer, done == nil, leaving == nil, drag == .zero, let text = toastText(last) {
+            UndoToast(text: text, undo: busy ? nil : { Task { await undoLast() } }, stays: true) {
+                withAnimation { lastAnswer = nil }
             }
-            .buttonStyle(.plain)
-            .disabled(busy)
-            .accessibilityLabel(olderUndo.map { "Undo the \($0)" } ?? "Undo the last answer")
             .accessibilityIdentifier("quick-sort-undo")
-            .transition(.opacity)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    /// What the toast says for each kind of answer; a Skip says nothing.
+    private func toastText(_ last: LastAnswer) -> String? {
+        switch last {
+        case .sorted(let s): return s.text.isEmpty ? "Sorted." : s.text
+        case .skipped: return nil
+        case .trip(let made): return "\(made.name) is a trip."
+        case .pattern(let p): return "\(p.name): \(p.label), from now on."
+        case .older(_, let count, _): return "\(count) more moved."
         }
     }
 
@@ -836,7 +880,10 @@ struct QuickSortView: View {
             return
         }
         guard let ask = current, leaving == nil else { return }
-        if hasYes(ask) {
+        if tilesOnCard(ask) {
+            // P4a: no Yes to give; a tile is the answer.
+            withAnimation(.spring()) { drag = .zero }
+        } else if hasYes(ask) {
             yes(ask)
         } else {
             withAnimation(.spring()) { drag = .zero }
@@ -881,7 +928,7 @@ struct QuickSortView: View {
         let same = name == (ask.t.category ?? ask.item.guess?.text)
         await step(ask, ["action": same ? "right" : "category", "category": name, "every": false,
                          "rows": [String](), "new_ones": newOnes],
-                   said: "\(ask.t.name) · \(name)")
+                   said: "\(ask.t.name) is \(name).")
     }
 
     /// No to a plan question: answered, and off the deck.

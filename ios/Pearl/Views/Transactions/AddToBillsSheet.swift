@@ -171,3 +171,121 @@ struct AddToBillsSheet: View {
         }
     }
 }
+
+/// P9 (TP-P9-Monthly): More › I pay this every month. Name, amount and the
+/// day come from the purchase, in fields she can change; When opens the
+/// Pearl date sheet (DP-01); one button, Add to my bills. `onAdded` gets
+/// the bill's key, for the toast's Undo.
+@MainActor
+struct MonthlyBillSheet: View {
+    let t: Transaction
+    let api: APIClient
+    let onAdded: (String?) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var amount = ""
+    @State private var next = Date()
+    @State private var varies = false
+    @State private var share = 100
+    @State private var category = ""
+    @State private var pickingDay = false
+    @State private var loaded = false
+    @State private var busy = false
+    @State private var error: String?
+
+    private struct Suggestion: Decodable {
+        let name: String?
+        let amount: Double?
+        let next: String
+        let share: Int
+        let category: String
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            CFSheetTitle(title: "I pay this every month") { dismiss() }.sheetPart()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    CFWho(name: t.merchant, line: "From this purchase")
+                    PearlField(label: "Name", placeholder: "Name", text: $name).padding(.top, 4)
+                    PearlField(label: "Amount", placeholder: "0.00", text: $amount, kind: .amount)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("When").font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 4)
+                        Button { pickingDay = true } label: {
+                            HStack {
+                                Text(whenLine).font(Nacre.body).foregroundColor(Pearl.ink)
+                                Spacer()
+                                CFChevron()
+                            }
+                            .padding(.horizontal, 14).frame(minHeight: 44)
+                            .wellStyle(focused: false)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("When, \(whenLine)")
+                    }
+                    APCard {
+                        Toggle(isOn: $varies) {
+                            Text("The amount changes").font(Nacre.body).foregroundColor(Pearl.ink)
+                        }
+                        .tint(Pearl.action)
+                        .padding(.horizontal, 16).frame(minHeight: 56)
+                    }
+                    if let error = error { APErrorLine(text: error) }
+                    Button("Add to my bills") { Task { await add() } }
+                        .buttonStyle(APPrimaryButtonStyle(busy: busy))
+                        .disabled(!loaded || busy || name.trimmingCharacters(in: .whitespaces).isEmpty
+                                  || Double(amount.replacingOccurrences(of: ",", with: "")) == nil)
+                        .padding(.top, 4)
+                }
+                .padding(.horizontal, 16).padding(.bottom, 12)
+                .sheetPart()
+            }
+        }
+        .cfSheet()
+        .fitsContent()
+        .presentationDragIndicator(.visible)
+        .task { await load() }
+        .pearlDateSheet(isPresented: $pickingDay, title: "When is it due next?", selection: $next,
+                        range: .todayOnward)
+    }
+
+    /// "Around the 2nd".
+    private var whenLine: String {
+        "Around the \(ordinal(Calendar.current.component(.day, from: next)))"
+    }
+
+    private func load() async {
+        do {
+            let s: Suggestion = try await api.get("api/transactions/\(t.id)/bill")
+            name = s.name ?? t.merchant
+            let whole = (s.amount ?? abs(t.fullAmount ?? t.amount)) * Double(s.share) / 100
+            amount = String(format: "%.2f", (whole * 100).rounded() / 100)
+            share = s.share
+            category = s.category
+            next = Format.localDay(s.next) ?? Date()
+            loaded = true
+            error = nil
+        } catch is CancellationError {
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func add() async {
+        busy = true
+        defer { busy = false }
+        struct Reply: Decodable { let key: String? }
+        do {
+            let reply: Reply = try await api.post("api/transactions/\(t.id)/bill", [
+                "cadence": "monthly", "next": Format.isoDay(next), "share": share, "category": category,
+                "name": name.trimmingCharacters(in: .whitespaces),
+                "amount": Double(amount.replacingOccurrences(of: ",", with: "")) ?? 0, "varies": varies,
+            ])
+            onAdded(reply.key)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}

@@ -126,6 +126,8 @@ extension ReviewAnswer {
             return body["case"] as? String == "spending" && body["remember"] as? Bool != true
         case .category(_, _, let remember):
             return !remember
+        case .tile:
+            return true
         default:
             return false
         }

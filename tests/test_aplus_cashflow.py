@@ -61,7 +61,8 @@ class TestTransactionPage(unittest.TestCase):
 
     def test_no_line_repeating_always(self):
         self.assertNotIn("purchases go to", self.tdv)
-        self.assertIn("alwaysToggle(sub: nil)", self.tdv)
+        # P2 (fewer taps): the switch is under More, its line the merchant's.
+        self.assertIn('alwaysToggle(sub: "For every \\(t.merchant)', self.tdv)
 
     def test_guess_is_a_dashed_rose_card(self):
         self.assertIn("GuessCardSurface(dashed: still)", self.tdv)
@@ -98,7 +99,7 @@ class TestSheetsAndSorting(unittest.TestCase):
         qs = code(read("Views", "Review", "QuickSortView.swift"))
         self.assertIn("SortStreak(sorted: sortedSoFar, toSort: remaining)", qs)
         self.assertNotIn("OwnBody { cardLines }", qs)
-        self.assertIn('sorted > 1 ? "Sorted \\(sorted) · Always \\(label)" : "Always \\(label)"', qs)
+        self.assertIn('sorted > 1 ? "Sorted \\(sorted) · \\(label), every time" : "\\(label), every time"', qs)
 
     def test_pearl_sorted_opens_needs_a_look_on_pearl_sorted(self):
         ps = code(read("Views", "Review", "PearlSortsViews.swift"))

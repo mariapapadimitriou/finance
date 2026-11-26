@@ -100,7 +100,7 @@ struct ReviewView: View {
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
         }
-        .fullScreenCover(item: Binding(get: { asking.flatMap { $0.opensPage(accounts) ? $0 : nil } },
+        .fullScreenCover(item: Binding(get: { asking.flatMap { $0.opensPage(accounts) && !$0.guessesOther ? $0 : nil } },
                                        set: { asking = $0 })) { ask in
             GuessPage(actions: GuessActions(
                 ask: ask, label: ask.guessLabel(accounts), accounts: accounts, names: recentNames,
@@ -112,7 +112,8 @@ struct ReviewView: View {
                 onAnswer: { answer in asking = nil; Task { await send(answer) } }),
                       categories: categories)
         }
-        .sheet(item: Binding(get: { asking.flatMap { $0.opensPage(accounts) ? nil : $0 } },
+        .sheet(item: Binding(get: { // P3a (fewer taps): no real guess opens What was this? as a sheet, four tiles.
+                             asking.flatMap { $0.opensPage(accounts) && !$0.guessesOther ? nil : $0 } },
                              set: { asking = $0 })) { ask in
             if ask.item.rest != nil {
                 // "$172 left to sort" (S-28): sorting the rest of a deposit.
@@ -361,7 +362,10 @@ struct ReviewView: View {
                     .font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     .lineLimit(ask.item.extra != nil || ask.item.credit != nil ? 2 : 1)
                     .fixedSize(horizontal: false, vertical: true)
-                GuessChip(label: Self.rowChip(ask), question: false).padding(.top, 4)
+                // P3a (TP-P3-NoGuess): no "Other?" chip; with no real guess the row just opens the tiles.
+                if !ask.guessesOther {
+                    GuessChip(label: Self.rowChip(ask), question: false).padding(.top, 4)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             // A+ amount colours: money in green, spending plum.
@@ -646,6 +650,9 @@ enum ReviewAnswer {
     case varies(String, name: String)
     /// A different category, and maybe every one like it.
     case category(String, name: String, remember: Bool)
+    /// P3 / P4 (fewer taps): a tile with no guess to say Yes to: this row
+    /// only, at once; the toast says "Corner Store is Groceries."
+    case tile(String, merchant: String, name: String)
     /// "What was this?" answered: `case` and its details (finance/marks.py).
     case mark(String, [String: Any])
     /// The kind of income, for money already counted as income.
@@ -695,12 +702,12 @@ enum ReviewAnswer {
             switch body["case"] as? String {
             case "spending": return body["category"] as? String
             case "saved": return "Saved"
-            case "moved": return "My own account"
+            case "moved": return "Moved between my accounts"
             case "own": return "My own money"
-            case "lent": return "Lending to someone"
-            case "paying_back": return "Paying back a loan"
+            case "lent": return "I lent it to someone"
+            case "paying_back": return "Paying off a loan"
             case "work": return "Work expense"
-            case "not_mine": return "Not mine"
+            case "not_mine": return "Someone else’s purchase"
             // PB-10 (Paid back, 2026-11-15): the one tile these three came from.
             case "refund", "payback", "reimbursement": return "Paid back"
             case "borrowed": return "Lent me this"
@@ -710,6 +717,7 @@ enum ReviewAnswer {
             default: return "This answer"
             }
         case .category(_, let name, _): return name
+        case .tile(_, _, let name): return name
         case .incomeType(_, let kind): return TransactionDetailView.kindName(kind)
         case .regularPay: return "My pay"
         case .joint(_, let who, let person, _, let kind):
@@ -768,11 +776,15 @@ enum ReviewAnswer {
             return try await api.post("api/review/pair/\(id)")
         case .check(let key, let yes):
             return try await api.post("api/review/check/\(key)", ["yes": yes])
+        case .tile(let id, let merchant, let name):
+            let reply: QuickSortStep = try await api.put("api/quick-sort/\(id)",
+                ["action": "category", "category": name, "every": false, "rows": [String](), "new_ones": false])
+            return MarkReply(title: "\(merchant) is \(name).", detail: nil, undo: reply.undo, changed: reply.changed)
         case .category(let id, let name, let remember):
             // Only this row moves; the rule is for new ones. Rows she can't see stay put.
             let reply: QuickSortStep = try await api.put("api/quick-sort/\(id)",
                 ["action": "category", "category": name, "every": false, "rows": [String](), "new_ones": remember])
-            return MarkReply(title: remember ? "Always \(name)." : "Moved to \(name).",
+            return MarkReply(title: remember ? "\(name), every time." : "Moved to \(name).",
                              detail: nil, undo: reply.undo)
         case .mark(let id, let body):
             return try await api.post("api/transactions/\(id)/mark", body)
