@@ -84,7 +84,6 @@ struct AnswerSheet: View {
     @State private var incomeSide = true
     @State private var intoChoice: String?
     /// G1-WhatWasThis-r (T-08): Something else… opened in place.
-    @State private var intoEverything = false
     /// The transaction in full, for the options.
     @State private var full: Transaction?
     /// Whether a rule for this name could match the right rows (not "Interac e-Transfer").
@@ -636,37 +635,17 @@ struct AnswerSheet: View {
                             .font(Nacre.body).foregroundColor(Pearl.ink)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    // G1-WhatWasThis-r (T-08, approved): OR and four likely
-                    // answers; every other one opens in place under Something
-                    // else…; Always for the payer last. A transfer (TP-02)
-                    // opens with them all, its My own money ringed.
-                    if intoEverything || ask.kind == .transfer {
-                        Text("INCOME").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
-                            .padding(.horizontal, 16).accessibilityAddTraits(.isHeader)
-                        CaseGrid(cases: CaseTile.income, chosen: answer(income: true))
-                        Text("NOT INCOME").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
-                            .padding(.horizontal, 16).padding(.top, 4).accessibilityAddTraits(.isHeader)
-                        // TP-02: on a transfer, My own money is today's answer, ringed.
-                        CaseGrid(cases: CaseTile.notIncome, chosen: answer(income: false, current: ask.kind == .transfer ? "own" : nil))
-                    } else {
-                        APSectionLabel(text: "Or")
-                        CFTileGrid {
-                            ForEach(CaseTile.likelyIn, id: \.tile.key) { item in
-                                CFTile(symbol: item.tile.symbol, title: item.tile.label, mark: .rest) {
-                                    answer(income: item.income).wrappedValue = item.tile.key
-                                }
-                                .accessibilityLabel(item.tile.label)
-                            }
-                        }
-                        APCard {
-                            Button { withAnimation(.easeOut(duration: 0.2)) { intoEverything = true } } label: {
-                                CFRowLabel(symbol: "ellipsis", title: "Something else…",
-                                           sub: "Every other answer, on this page", trailing: .chevron)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityHint("Shows every other answer here")
-                        }
-                    }
+                    // Every answer at once (product owner, 2026-11-26: "almost
+                    // every time I've had to click Something else"; was
+                    // G1-WhatWasThis-r's four likely tiles, then Something
+                    // else…). A transfer (TP-02) has My own money ringed.
+                    Text("INCOME").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+                        .padding(.horizontal, 16).accessibilityAddTraits(.isHeader)
+                    CaseGrid(cases: CaseTile.income, chosen: answer(income: true))
+                    Text("NOT INCOME").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+                        .padding(.horizontal, 16).padding(.top, 4).accessibilityAddTraits(.isHeader)
+                    // TP-02: on a transfer, My own money is today's answer, ringed.
+                    CaseGrid(cases: CaseTile.notIncome, chosen: answer(income: false, current: ask.kind == .transfer ? "own" : nil))
                     if learnable == true && pageAlways == nil && !fromPage {
                         APCard { CFToggleRow(symbol: "repeat", title: "Always for \(who)", isOn: $rememberInto) }
                     }

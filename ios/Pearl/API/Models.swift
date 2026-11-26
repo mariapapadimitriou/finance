@@ -1276,10 +1276,12 @@ struct Transaction: Decodable, Identifiable, Hashable {
 
     /// TC-A (THL-122, THL-123, Figma 1368:8300): money moved between her own
     /// accounts, into or out of savings included. It didn't leave her, so it
-    /// reads "⇄ $500.00" in grey with no sign. A card payment, a row left
-    /// out and joint money that isn't hers don't count either: grey, no ⇄.
+    /// reads "⇄ $500.00" in grey with no sign. A card payment is money moved
+    /// between her accounts too, and its page says so, so it has ⇄ as well
+    /// (product owner, 2026-11-26; was a plain amount). A row left out and
+    /// joint money that isn't hers don't count either: grey, no ⇄.
     var movedBetweenAccounts: Bool {
-        excluded.isEmpty && counts == "none" && !cardPayment
+        excluded.isEmpty && counts == "none"
             && ["Transfer", "Saved"].contains(chip?.label ?? "")
     }
 
