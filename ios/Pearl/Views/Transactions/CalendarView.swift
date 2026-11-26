@@ -268,10 +268,13 @@ struct CalendarCard: View {
             if let error = error {
                 Text(error).font(Nacre.footnote).foregroundColor(Pearl.danger)
             }
+            // T-49: the day tapped, right under the grid (2026-11-26: under
+            // Trips and Coming up it was off screen, so a tap looked like
+            // nothing).
+            shownDayList
             // G7-TripCal (chat and trips engBOT): the A+ Trips card.
             if let card = data?.tripCard { TripsCard(trips: card.trips) }
             comingUp
-            shownDayList
             sortedTogether
         }
         .task(id: month) { await load() }
@@ -402,6 +405,8 @@ struct CalendarCard: View {
             Color.clear.frame(maxWidth: .infinity).frame(height: 44)
         } else {
             let ends = cell.date == first || cell.date == last
+            // The day whose purchases show under the grid, ringed like today.
+            let shown = !selecting && shownDay == cell.date
             let between = inSelection(cell.date)
             let band = data?.bands.first { $0.contains(cell.date) }
             Button { tap(cell, band: band) } label: {
@@ -417,8 +422,10 @@ struct CalendarCard: View {
                 .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(fill(cell, between: between)))
                 .overlay {
                     let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    if ends || cell.state == "today" {
+                    if ends || shown {
                         shape.strokeBorder(Pearl.action, lineWidth: 1.5)
+                    } else if cell.state == "today" {
+                        shape.strokeBorder(Pearl.action.opacity(shownDay == nil ? 1 : 0.35), lineWidth: 1.5)
                     } else if band != nil {
                         shape.strokeBorder(Pearl.action.opacity(0.8), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
                     }
@@ -427,7 +434,7 @@ struct CalendarCard: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(label(cell, band: band))
-            .accessibilityAddTraits(ends ? .isSelected : [])
+            .accessibilityAddTraits(ends || shown ? .isSelected : [])
         }
     }
 

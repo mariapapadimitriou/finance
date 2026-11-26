@@ -452,12 +452,6 @@ struct CaseTile: Identifiable, Hashable {
         CaseTile(key: "not_mine", label: "Not mine", symbol: "person.crop.circle.badge.xmark"),
     ]
 
-    /// G1-WhatWasThis-r (T-08): the four likely answers for money in, first:
-    /// My pay, A gift, Paid back and Other income; the rest under Something else….
-    static let likelyIn: [(tile: CaseTile, income: Bool)] = [
-        (income[0], true), (income[2], true), (notIncome[0], false), (income[3], true),
-    ]
-
     /// T-78 for deposits: the answers that need nothing per row.
     static let notIncomeTogether: [CaseTile] = notIncome.filter {
         ["own", "loan", "out_of_savings", "lent_back", "not_mine"].contains($0.key)
