@@ -457,4 +457,86 @@ final class OverUnderUITests: XCTestCase {
         step("saved")
         gone("Split my part")
     }
+
+    // MARK: 2026-11-26 fixes
+
+    /// A card payment has its ⇄; a tapped calendar day is ringed and its
+    /// purchases sit right under the grid; money in's What was this? shows
+    /// every answer, with no Something else… step.
+    func testCalendarDayCardPaymentAndMoneyIn() {
+        launch()
+        clearInterruptions()
+        app.tabBars.buttons["Cash flow"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        sleep(2)
+        clearInterruptions()
+
+        // The calendar: tap the 15th. The list can open part way down; the
+        // status bar takes it to the top, where the switch is.
+        let calendarTab = app.buttons.matching(NSPredicate(format: "label == 'Calendar'")).firstMatch
+        for _ in 0..<4 where !(calendarTab.exists && calendarTab.frame.minY > 100) {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.01)).tap()
+            sleep(1)
+        }
+        step("top of cash flow")
+        // XCUI calls the switch's buttons not hittable; a finger's tap works.
+        calendarTab.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        sleep(3)
+        step("calendar")
+        let f = DateFormatter()
+        f.dateFormat = "MMMM d"
+        var c = Calendar.current.dateComponents([.year, .month], from: Date())
+        c.day = 15
+        let fifteenth = Calendar.current.date(from: c)!
+        let cell = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", ", " + f.string(from: fifteenth))).firstMatch
+        XCTAssertTrue(cell.waitForExistence(timeout: 10), "No 15th in the grid")
+        // A finger on the day: if anything covered the grid, this wouldn't reach it.
+        cell.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        sleep(3)
+        step("day tapped")
+        XCTAssertTrue(cell.isSelected, "The tapped day isn't marked")
+        let f2 = DateFormatter()
+        f2.dateFormat = "EEE, MMM d"
+        let header = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH[c] %@",
+                                                          f2.string(from: fifteenth).uppercased())).firstMatch
+        XCTAssertTrue(header.waitForExistence(timeout: 8), "No list for the 15th")
+        XCTAssertLessThan(header.frame.maxY, app.frame.maxY - 90, "The day's list is off screen")
+        XCTAssertLessThan(header.frame.minY, cell.frame.maxY + 300, "The day's list is far from the grid")
+
+        // ⇄ on a card payment: VoiceOver reads a move between accounts as "Moved …".
+        let listTab = app.buttons.matching(NSPredicate(format: "label == 'Transactions'")).firstMatch
+        for _ in 0..<4 where !(listTab.exists && listTab.frame.minY > 100) {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.01)).tap()
+            sleep(1)
+        }
+        listTab.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        sleep(2)
+        let payment = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Online Payment'")).firstMatch
+        for _ in 0..<10 where !payment.waitForExistence(timeout: 2) { app.swipeUp(velocity: .slow) }
+        XCTAssertTrue(payment.exists, "No card payment in the list")
+        bring(payment)
+        step("card payment row")
+        XCTAssertTrue(payment.label.localizedCaseInsensitiveContains("moved"), "No ⇄ on the card payment: \(payment.label)")
+
+        // Money in's What was this?: every answer, no Something else….
+        launch()
+        clearInterruptions()
+        app.tabBars.buttons["Cash flow"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        sleep(2)
+        let name = app.staticTexts["Northwind Ltd Expenses"].firstMatch
+        for _ in 0..<8 where !name.waitForExistence(timeout: 2) { app.swipeUp(velocity: .slow) }
+        bring(name)
+        name.tap()
+        sleep(2)
+        step("deposit page")
+        // Its "What was this?" (the category card, or the chip when it's asked).
+        let ask = app.staticTexts["Other?"].firstMatch
+        XCTAssertTrue(ask.waitForExistence(timeout: 6), "No guess card")
+        ask.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        sleep(2)
+        step("what was this")
+        see("INCOME")
+        see("NOT INCOME")
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Something else'")).firstMatch.exists,
+                       "Something else… is still a step")
+    }
 }
