@@ -176,11 +176,15 @@ def build(t: Transaction, transactions: list[Transaction], splits: dict | None =
             elif is_small(rest, r["share"]) and not _hers(splits, r):
                 compare = f"{_money(got)} of {_money(r['owes'])} · {_money(rest)} let go"
                 toast = f"{name} paid back {_money(got)} · {_money(rest)} let go"
-            elif rest >= 0.005:
-                compare += f" · {_money(rest)} still to come"
+            after = None
+            if not r.get("let_go") and rest >= 0.005 and not (is_small(rest, r["share"]) and not _hers(splits, r)):
+                # TP-Words (fewer taps, P5): "Priya still owes $2.50", never
+                # "$2.50 still to come"; the card says it with "after this".
+                compare += f" · {name} still owes {_money(rest)}"
+                after = f"{name} still owes {_money(rest)} after this"
             tiles.append(_tile(c, cards, kind="split", person=name, owes=r["owes"],
                                title=f"{_shown(c)} · {_whose(name)} share",
-                               compare=compare, toast=toast))
+                               compare=compare, toast=toast, **({"after": after} if after else {})))
 
     # 2. The purchase the sender's message names.
     said = memo_match(t, transactions)

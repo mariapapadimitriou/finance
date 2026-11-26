@@ -92,7 +92,7 @@ private struct PaybackHeader: View {
 
     @ViewBuilder private var nameThem: some View {
         if let onName = onName {
-            Button("Name them", action: onName)
+            Button("Who sent this?", action: onName)
                 .font(Nacre.subheadline).foregroundColor(Pearl.link)
                 .buttonStyle(.plain)
                 .accessibilityHint("Opens Who sent this?")
@@ -152,13 +152,13 @@ struct PaybackQuestionCard: View {
     }
 }
 
-/// PQ-03p (G2-APQ): "Name them" in `link` on its own line under the hero's
+/// PQ-03p (G2-APQ): "Who sent this?" (TP-Words; was "Name them") in `link` on its own line under the hero's
 /// date, while the bank's name is all Pearl has. No pill in the corner.
 struct NameThemLink: View {
     let action: () -> Void
 
     var body: some View {
-        Button("Name them", action: action)
+        Button("Who sent this?", action: action)
             .font(Nacre.subheadline).foregroundColor(Pearl.link)
             .buttonStyle(.plain)
             .frame(minHeight: 44).padding(.vertical, -12)

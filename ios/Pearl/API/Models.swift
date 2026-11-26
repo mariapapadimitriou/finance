@@ -1299,6 +1299,17 @@ struct Transaction: Decodable, Identifiable, Hashable {
     /// between her accounts too, and its page says so, so it has ⇄ as well
     /// (product owner, 2026-11-26; was a plain amount). A row left out and
     /// joint money that isn't hers don't count either: grey, no ⇄.
+    /// P8a (TP-P8-CardPay, fewer taps): a card payment is named for what it
+    /// did, "Paid off your card", not the bank's "ONLINE PAYMENT - THANK YOU".
+    var shownName: String { cardPayment ? "Paid off your card" : merchant }
+
+    /// P8a / P8b: the card it paid off ("Amex ••1004").
+    var paidCard: String? {
+        guard cardPayment else { return nil }
+        if let to = transfer?.to, !to.isEmpty { return to }
+        return inflow ? account : nil
+    }
+
     var movedBetweenAccounts: Bool {
         excluded.isEmpty && counts == "none"
             && ["Transfer", "Saved"].contains(chip?.label ?? "")
@@ -2378,7 +2389,7 @@ struct PaybackQuestion: Decodable, Hashable {
         /// "Añejo · $61.57", "Añejo · mPg’s share" (LT-03).
         let title: String
         /// The reason, in the tile (LT-03): "about a third · 2 days before",
-        /// "$20.00 of mPg’s $30.79 · $10.79 still to come", "“tacos”".
+        /// "$20.00 of mPg’s $30.79 · mPg still owes $10.79", "“tacos”".
         let compare: String
         /// PQ-03c: "mPg paid back $20.00 for Añejo".
         let toast: String
@@ -2387,6 +2398,9 @@ struct PaybackQuestion: Decodable, Hashable {
         var person: String? = nil
         /// Pearl's guess: the first tile only, drawn dashed.
         var guess: Bool? = nil
+        /// P5e (fewer taps): "Priya still owes $2.50 after this", on a
+        /// split they'd still owe on.
+        var after: String? = nil
         var id: String { charge }
 
         /// "Oct 31 · about a third · 2 days before" (LT-03); a split's tile

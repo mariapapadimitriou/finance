@@ -146,3 +146,48 @@ def many_purchases(txn_id: str):
         return jsonify({"error": "Only money coming in pays back purchases."}), 400
     q = " ".join(str(request.args.get("q") or "").split())[:80]
     return jsonify(candidates(st, t, kind, q, str(request.args.get("also") or "")))
+
+
+# ── P5 · Which money paid this back? never a dead end (fewer taps) ───────
+# TP-P5-FromPurchase (approved 2026-11-26): "No money in matches" went. The
+# finder's own list (parts_api.paid_back_find: the split's people, then
+# people who sent money, then work and the shop) comes first, then recent
+# money in after the purchase that it didn't think likely, newest first, so
+# she can always pick what paid it back. Listing links nothing.
+
+RECENT_DAYS = 60
+RECENT_LIMIT = 12
+# Money in that is never a payback from a person: her pay and her savings
+# (money onto a card is `never_pay`). e-Transfers stay, whatever they're sorted as.
+_NOT_PAYBACKS = {"Income", "Savings"}
+
+
+@bp.get("/transactions/<txn_id>/paid-back-recent")
+def paid_back_recent(txn_id: str):
+    """GET …/paid-back-find with q empty, then recent money in after the
+    purchase (`RECENT_DAYS`), the same row shape. Read-only."""
+    from datetime import timedelta
+    from . import parts_api as pa
+    from .txlist import never_pay
+    reply = pa.paid_back_find(txn_id)
+    if isinstance(reply, tuple):
+        return reply
+    body = reply.get_json()
+    st = store()
+    f, err = pa._find_or_error(st, txn_id)
+    if err:
+        return err
+    seen = {c["id"] for c in body.get("candidates") or []}
+    hi = (date.fromisoformat(f.after) + timedelta(days=RECENT_DAYS)).isoformat()
+    more = []
+    for x in f.txns:
+        if x.amount >= 0 or not (f.after <= x.date[:10] <= hi) or x.fingerprint in seen:
+            continue
+        if (x.category or "") in _NOT_PAYBACKS or never_pay(x):
+            continue
+        r = f.row(x)
+        if r is not None:
+            more.append(r)
+    more.sort(key=lambda r: (r["date"], r["id"]), reverse=True)
+    body["candidates"] = list(body.get("candidates") or []) + more[:RECENT_LIMIT]
+    return jsonify(body)

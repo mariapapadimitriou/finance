@@ -1656,9 +1656,14 @@ struct TransactionRow: View {
             if let picked = picked {
                 SelectTick(on: picked).padding(.top, t.suggested ? 9 : 0)
             }
-            Initials(name: t.merchant)
+            if t.cardPayment {
+                // P8a: a card payment's face is ⇄, as any move between her accounts.
+                APFace(name: t.merchant, transfer: true)
+            } else {
+                Initials(name: t.merchant)
+            }
             VStack(alignment: .leading, spacing: 2) {
-                Text(t.merchant).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                Text(t.shownName).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
                 if !meta.isEmpty {
                     metaText.font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(splitNote == nil ? 1 : 2)
                 }
@@ -1712,6 +1717,10 @@ struct TransactionRow: View {
     private var meta: String {
         let when: String? = showsDay ? Format.relativeDay(t.date) : nil
         if let paidBack = paidBack { return "Paid back · \(paidBack)" }
+        // P8a: "Paid off your card" over the card it paid off, "Amex ••1004".
+        if t.cardPayment {
+            return [t.paidCard ?? t.account, when].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+        }
         // A deposit whose parts all paid purchases back (2026-11-23): the
         // server's line, "Paid back · Denise · 6 purchases".
         if t.chip?.label == "Paid back", let note = t.note, !note.isEmpty { return note }

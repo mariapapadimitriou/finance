@@ -185,17 +185,27 @@ final class Round3JourneysUITests: XCTestCase {
         sleep(1)
     }
 
+    /// P11 (fewer taps): one sheet. Add › type › Add "Name" for each, then
+    /// (`next`) Other ways › Amounts, so the method screen (S-03) is up as
+    /// these journeys expect; its values start at the even split.
     private func addPeople(_ names: [String], next: Bool = true) {
-        let field = app.textFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 10), "S-02 has no name field")
+        XCTAssertTrue(app.buttons["Add someone new"].waitForExistence(timeout: 10), "P11 has no Add chip")
         for name in names {
-            field.tap()
+            let chip = app.buttons.matching(NSPredicate(format: "label == %@", name)).firstMatch
+            if chip.exists && chip.isHittable && !chip.isSelected { chip.tap(); continue }
+            app.buttons["Add someone new"].tap()
+            let field = app.textFields["split-add-name"]
+            XCTAssertTrue(field.waitForExistence(timeout: 6), "Add someone new has no field")
+            if (field.value(forKey: "hasKeyboardFocus") as? Bool) != true { field.tap() }
             field.typeText(name)
-            tapIf(app.buttons["Add"], "Add for \(name)", timeout: 3)
+            let add = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Add “\(name)”")).firstMatch
+            if add.waitForExistence(timeout: 3) { add.tap() }
+            sleep(1)
         }
         if next {
-            step("who was it with")
-            tapIf(app.buttons["Next"], "Next on S-02")
+            app.buttons["split-other-ways"].tap()
+            let way = app.buttons["split-way-amount"]
+            if way.waitForExistence(timeout: 4) { way.tap() }
             sleep(1)
         }
     }

@@ -128,6 +128,22 @@ def seed(db_path: str) -> None:
     store.set_setting(quick_sort.SHOWN_KEY, today.isoformat())
 
 
+# Fewer taps (P5, P8, P11): money in with no name on it, for Who sent this?.
+FEWER = "testFewer"
+
+
+def seed_fewer(db_path: str) -> None:
+    from finance.ingest.base import IngestResult
+    from finance.models import Transaction
+    from finance.pipeline import ingest
+    from finance.store import Store
+    store = Store(db_path)
+    when = (date.today() - timedelta(days=1)).isoformat()
+    ingest(store, IngestResult(transactions=[Transaction(
+        date=when, description="INTERAC E-TRANSFER", amount=-60.00, account_id="td_chq_2210",
+        account_name="TD Chequing ••2210", raw={"account_type": "depository"})], account_id="td_chq_2210"))
+
+
 # Journeys about the older ones (REFRESH-17) start from this bill too.
 OLDER = "testOlderOnes"
 
@@ -317,6 +333,8 @@ def main() -> int:
                 seed(db_path)
                 if journey and journey.startswith(OLDER):
                     seed_older(db_path)
+                elif journey and journey.startswith(FEWER):
+                    seed_fewer(db_path)
                 elif journey == CALM:
                     seed_calm(db_path)
                     subprocess.run(["xcrun", "simctl", "uninstall", udid, "com.mariapapadimitriou.pearl"], capture_output=True)

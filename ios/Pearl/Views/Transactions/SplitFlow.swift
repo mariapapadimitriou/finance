@@ -41,6 +41,9 @@ struct SplitSheet: View {
     var onRemoveSplit: (() -> Void)? = nil
     /// S-47f: Options on the lock toast; the page opens that person's S-40u.
     var onPersonOptions: ((String) -> Void)? = nil
+    /// P10b / P11 (fewer taps): a new split's toast, "Split with Priya and
+    /// Sam.", with the server's Undo. Nil says it through `onSaved`.
+    var onNew: ((String, JSONValue?) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -74,6 +77,14 @@ struct SplitSheet: View {
     @FocusState private var focused: String?
     /// G2-WhoWith: the search well's focus outline.
     @FocusState private var searching: Bool
+    /// P11 (TP-P11-Split): a new split is one sheet, "Split $75.48":
+    /// chips, Evenly already done, I'm paying a share, Other ways.
+    @State private var light: Bool
+    /// P11a's chips: who she has split with before (GET /api/people/recent
+    /// when the page didn't bring them).
+    @State private var offered: [String] = []
+    @State private var addingNew = false
+    @State private var otherWays = false
 
     private static let me = "\u{0}me"
     /// The "left · stays yours" line, scrolled to while typing (TEST-16).
@@ -87,7 +98,9 @@ struct SplitSheet: View {
          onRemoved: ((String, JSONValue?) -> Void)? = nil,
          focus: String? = nil, onUpdated: ((String, JSONValue?) -> Void)? = nil,
          settling: Bool = false, onSettled: ((String, JSONValue?) -> Void)? = nil,
-         onRemoveSplit: (() -> Void)? = nil, onPersonOptions: ((String) -> Void)? = nil) {
+         onRemoveSplit: (() -> Void)? = nil, onPersonOptions: ((String) -> Void)? = nil,
+         onNew: ((String, JSONValue?) -> Void)? = nil) {
+        self.onNew = onNew
         self.settling = settling
         self.onPersonOptions = onPersonOptions
         self.onSettled = onSettled
@@ -105,6 +118,9 @@ struct SplitSheet: View {
         let existing = t.splitting?.people.map(\.name) ?? []
         _people = State(initialValue: names ?? existing)
         _step = State(initialValue: (names == nil || startOnWho) && focus == nil ? 0 : 1)
+        // P11: a new split (not an edit, Settle up, a share or a deposit's).
+        _light = State(initialValue: (names == nil || startOnWho) && focus == nil && !settling
+                       && t.splitting == nil && title == nil)
         // Her own share as the split was made: a let go made it bigger since.
         // JOINT-B: of her part of a joint purchase.
         let whole = t.splitBase
@@ -151,6 +167,8 @@ struct SplitSheet: View {
     /// "Split my part" on a joint purchase with a share off (S-03j);
     /// the usual header on "All mine unless I mark it" (S-03j4).
     private var sheetTitle: String {
+        // P11a: "Split $75.48".
+        if light { return "Split \(Format.amount(t.splitBase))" }
         if step == 0 { return "Who was it with?" }
         // G2-BSettle S-45d: "Settle up", the same title as S-45a.
         if settling { return "Settle up" }
@@ -260,6 +278,26 @@ struct SplitSheet: View {
                 if !people.isEmpty { step = 1 }
             }
         }
+        .sheet(isPresented: $addingNew) {
+            // P11d: typing always works; Contacts only through the system picker.
+            AddSomeoneNewSheet(known: offered + recent, already: people,
+                               refuse: { n in holder(n).map { "\(possessive($0)) part is already off." } },
+                               onAdd: { name in
+                                   if !people.contains(name) { people.append(name) }
+                                   if !offered.contains(name) { offered.append(name) }
+                                   addingNew = false
+                               },
+                               onBack: { addingNew = false }, onClose: { addingNew = false; dismiss() })
+        }
+        .sheet(isPresented: $otherWays) {
+            // P11c: each way opens today's screen (S-03) on it.
+            SplitOtherWaysSheet(onPick: { m in
+                otherWays = false
+                light = false
+                step = 1
+                switchMode(to: m)
+            }, onBack: { otherWays = false }, onClose: { otherWays = false; dismiss() })
+        }
         .sheet(isPresented: $choosingMethod) {
             SplitMethodSheet(modes: modes, chosen: mode, onPick: { m in switchMode(to: m); choosingMethod = false },
                              onClose: { choosingMethod = false })
@@ -313,7 +351,7 @@ struct SplitSheet: View {
     /// (check_stack).
     private var column: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if !pinned { head }
+            if !pinned && !light { head }
             stepView
             if let error = error {
                 // G2-BNotSure S-03ue: the error is a red line with ⓘ.
@@ -343,7 +381,74 @@ struct SplitSheet: View {
             : Format.weekdayDay(t.date)
     }
 
-    private var stepView: AnyView { step == 0 ? AnyView(who) : AnyView(how) }
+    private var stepView: AnyView { light ? AnyView(lightView) : step == 0 ? AnyView(who) : AnyView(how) }
+
+    // MARK: P11 one sheet (TP-P11-Split)
+
+    /// P11a's chips: who's in it, then who she has split with before (never
+    /// a joint account's own holders), most recent first.
+    private var chipNames: [String] {
+        var out = people
+        for n in recent + offered where !out.contains(where: { samePerson($0, n) }) && holder(n) == nil {
+            out.append(n)
+        }
+        return out
+    }
+
+    /// P11a / P11b: With (chips and Add), Evenly (live rows), "Adds up to",
+    /// then "I'm paying a share" and Other ways in one card.
+    private var lightView: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            APSheetLabel(text: "With")
+            FlowLayout(spacing: 8) {
+                ForEach(chipNames, id: \.self) { name in
+                    SplitPersonChip(name: name, on: people.contains(name)) {
+                        withAnimation(.easeOut(duration: 0.25)) { toggle(name) }
+                    }
+                }
+                SplitPersonChip(name: "", add: true) { addingNew = true }
+            }
+            if !rows.isEmpty && !people.isEmpty {
+                APSheetLabel(text: "Evenly")
+                APCard {
+                    ForEach(Array(rows.enumerated()), id: \.element) { i, key in
+                        if i > 0 { APSeparator() }
+                        APPersonRow(face: key == Self.me ? "Me" : key, name: label(key)) {
+                            Text(Format.amount(evenAmount(key))).font(Nacre.headline).monospacedDigit()
+                                .foregroundColor(Pearl.ink)
+                                .contentTransition(.numericText())
+                        }
+                        .frame(minHeight: 52)
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark").font(.system(size: 13, weight: .bold)).accessibilityHidden(true)
+                    Text("Adds up to \(Format.amount(Double(totalCents) / 100))")
+                }
+                .font(.custom("Figtree-SemiBold", size: 15, relativeTo: .subheadline))
+                .foregroundColor(Pearl.moneyIn)
+                .frame(maxWidth: .infinity)
+                .accessibilityElement(children: .combine)
+            }
+            APCard {
+                withMeRow()
+                APSeparator(afterFace: false)
+                Button { otherWays = true } label: {
+                    CFRowLabel(symbol: "ellipsis", title: "Other ways", sub: "Amounts, %, shares, or decide later")
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("split-other-ways")
+            }
+        }
+        .task {
+            guard recent.isEmpty, offered.isEmpty else { return }
+            struct Past: Decodable { let name: String }
+            struct Reply: Decodable { let people: [Lenient<Past>] }
+            let r: Reply? = try? await api.get("api/people/recent")
+            offered = (r?.people ?? []).compactMap { $0.value?.name }
+        }
+    }
 
     /// The methods (S-03u): Not sure is the fifth, hidden while settling (S-45c).
     private var modes: [(tag: String, label: String)] {
@@ -408,11 +513,12 @@ struct SplitSheet: View {
         Toggle(isOn: $withMe) {
             HStack(spacing: 12) {
                 APIcon(symbol: "repeat")
-                Text("I had some too").font(Nacre.body).foregroundColor(Pearl.ink)
+                // TP-Words (P11b): was "I had some too".
+                Text("I’m paying a share").font(Nacre.body).foregroundColor(Pearl.ink)
             }
         }
         .tint(Pearl.action)
-        .accessibilityHint("Turn off if it was all for them")
+        .accessibilityHint("Turn off if you paid for them")
         .padding(.horizontal, 16).padding(.vertical, 12)
         .frame(minHeight: 64)
     }
@@ -475,7 +581,9 @@ struct SplitSheet: View {
             }
             if !q.isEmpty && contacts.state == .off { ContactsOffLine() }
         }
-        .task { await contacts.load() }
+        // P11: Contacts are only searched once she has said yes elsewhere;
+        // nothing here asks (Choose from Contacts uses the system picker).
+        .task { await contacts.load(ask: false) }
     }
 
     /// One person to tick: a recent split or a contact.
@@ -540,7 +648,9 @@ struct SplitSheet: View {
         withAnimation {
             people.removeAll { $0 == name }
             values[name] = nil
-            if people.isEmpty { step = 0 }
+            // P11: back to the one sheet, never Who was it with?'s Contacts ask.
+            if people.isEmpty && t.splitting == nil && !settling && focus == nil { light = true; mode = "even" }
+            else if people.isEmpty { step = 0 }
         }
     }
 
@@ -1205,8 +1315,10 @@ struct SplitSheet: View {
 
     /// S-03u "Save split"; S-45e "Next: the extra $10.00".
     private var primaryTitle: String {
-        if step == 0 { return "Next" }
         if busy { return "Saving…" }
+        // P11a: "Split with Priya and Sam".
+        if light { return people.isEmpty ? "Split" : "Split with \(Format.andList(people))" }
+        if step == 0 { return "Next" }
         if error != nil { return "Try again" }
         // S-48c: "Next · check Sam and Priya".
         if settling && !toCheck.isEmpty { return "Next · check \(Format.andList(toCheck))" }
@@ -1223,12 +1335,14 @@ struct SplitSheet: View {
                 status.padding(.horizontal, 16).padding(.top, 8)
             }
             Button(primaryTitle) {
-                if step == 0 { addTyped(); step = 1 }
+                if light { Task { await save() } }
+                else if step == 0 { addTyped(); step = 1 }
                 else if settling, let first = toCheck.first { asking = first }
                 else { Task { await save() } }
             }
             .buttonStyle(APPrimaryButtonStyle(busy: busy))
-            .disabled(step == 0 ? refusal != nil || people.isEmpty && typed.trimmingCharacters(in: .whitespaces).isEmpty
+            .disabled(light ? people.isEmpty || busy
+                      : step == 0 ? refusal != nil || people.isEmpty && typed.trimmingCharacters(in: .whitespaces).isEmpty
                       : mode == "unknown" ? (people.isEmpty || busy)
                       : (gapCents < 0 || blocksShort || busy))
             .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
@@ -1274,7 +1388,6 @@ struct SplitSheet: View {
         do {
             struct Reply: Decodable { let undo: JSONValue?; let toast: String? }
             let reply: Reply = try await api.put("api/transactions/\(t.id)/split", body)
-            let n = people.count + (withMe ? 1 : 0)
             // SPLIT-16: someone who had paid was removed: "Priya removed ·
             // Undo" puts their payback back on this purchase.
             let gone = (t.splitting?.people ?? []).filter { p in p.paid >= 0.005 && !people.contains(p.name) }
@@ -1292,7 +1405,13 @@ struct SplitSheet: View {
                 onSaved(people.count == 1 ? "Split with \(people[0]) · not sure yet." : "Split with \(people.count) · not sure yet.")
                 return
             }
-            onSaved(n == 2 ? "Split with \(people[0])." : "Split \(n) ways.")
+            // P10b (fewer taps): "Split with Priya and Sam.", with Undo.
+            let said = "Split with \(Format.andList(people))."
+            if let onNew = onNew, t.splitting == nil {
+                onNew(said, reply.undo)
+                return
+            }
+            onSaved(said)
         } catch {
             self.error = error.localizedDescription
         }

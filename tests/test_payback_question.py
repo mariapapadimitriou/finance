@@ -137,7 +137,9 @@ class TestOnTheSplit:
         q = question(c)["payback"]
         split, other = q["tiles"]
         assert split["title"] == "Añejo · mPg’s share" and split["guess"] is True
-        assert split["compare"] == "$20.00 of mPg’s $30.79 · $10.79 still to come"
+        assert split["compare"] == "$20.00 of mPg’s $30.79 · mPg still owes $10.79"
+        # P5e (fewer taps): the Quick sort card's line under the question.
+        assert split["after"] == "mPg still owes $10.79 after this"
         assert other["title"] == "Uber Eats · $40.10" and "guess" not in other
         assert other["compare"] == "about half · 3 days before" and other["card"] == "Amex Cobalt"
         assert q["part"] is True
@@ -149,7 +151,7 @@ class TestOnTheSplit:
     def test_the_card_on_the_page_says_the_split_guess(self, c):
         out = c.get(f"/api/transactions/{ids(c)['deposit']}/payback-question").get_json()
         assert out["question"]["card"]["line"] == \
-            "Pearl’s guess · $20.00 of mPg’s $30.79 · $10.79 still to come"
+            "Pearl’s guess · $20.00 of mPg’s $30.79 · mPg still owes $10.79"
 
     def test_yes_on_the_split_credits_mpg(self, c):
         q = question(c)["payback"]

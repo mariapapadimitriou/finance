@@ -150,6 +150,9 @@ struct QuickSortView: View {
     @State private var error: String?
     /// PP-01 for a payback the server couldn't place on the split, and its card.
     @State private var whoPaid: QuickWhoPaid?
+    /// P5g: What did Sam pay back? after Not this on a payback guess.
+    @State private var notThis: QuickNotThis?
+    @State private var notThisThen: Ask?
 
     /// Edits made on a card's page, waiting for Yes on the card.
     @State private var drafts: [String: CardDraft] = [:]
@@ -228,6 +231,21 @@ struct QuickSortView: View {
                 older = nil
                 app.apply(reply.changed, by: nil, bump: false)
             }, onClose: { older = nil })
+        }
+        .sheet(item: $notThis, onDismiss: {
+            // Not a payback: the whole question (What was this?), once this has gone.
+            if let ask = notThisThen { notThisThen = nil; asking = ask }
+        }) { n in
+            PartsSheet(deposit: PartsDeposit(id: n.ask.t.id, name: n.ask.t.name, amount: n.ask.t.amount,
+                                             date: n.ask.t.date), api: app.api,
+                       paidBack: true, payer: n.person, person: n.person,
+                       onNotPayback: {
+                           notThisThen = n.ask
+                           notThis = nil
+                       }) { reply in
+                notThis = nil
+                Task { await answered(n.ask, .done(reply)) }
+            }
         }
         .sheet(item: $whoPaid) { w in
             WhoPaidAskSheet(ask: w.who, api: app.api, onPick: { answer in
@@ -385,7 +403,41 @@ struct QuickSortView: View {
 
     /// Whether the card has something to say Yes to: Pearl's guess, or her edit.
     /// T-93o: every guess has a Yes, Other too ("should always be Skip or Yes").
-    private func hasYes(_ ask: Ask) -> Bool { isGuess(ask) || drafts[ask.id]?.label != nil }
+    private func hasYes(_ ask: Ask) -> Bool { isGuess(ask) || drafts[ask.id]?.label != nil || paybackGuess(ask) != nil }
+
+    // MARK: P5e–g, a payback guess (TP-P5-NeedsALook, fewer taps)
+
+    /// Pearl's payback guess on money in: "Paying you back for Joey King
+    /// St?" with Yes and Not this. Yes saves at once (no second Yes).
+    private func paybackGuess(_ ask: Ask) -> PaybackQuestion? {
+        guard ask.kind == .moneyIn, drafts[ask.id] == nil, ask.item.credit == nil, ask.item.extra == nil,
+              let q = ask.item.payback, !q.tiles.isEmpty,
+              ask.t.learnable != false || ask.item.from != nil else { return nil }
+        return q
+    }
+
+    /// P5e: Yes is Pearl's first tile. Money over that share while they owe
+    /// on other purchases opens the question (PB-30 with this one ticked).
+    private func paybackYes(_ ask: Ask, _ q: PaybackQuestion) {
+        guard let tile = q.tiles.first else { return }
+        withAnimation(.easeIn(duration: 0.25)) { leaving = true }
+        Task {
+            let more = await PaybackQuestion.partsPerson(api: app.api, id: ask.t.id, amount: ask.t.amount, tile: tile)
+            if more != nil {
+                withAnimation(.spring()) { leaving = nil; drag = .zero }
+                asking = ask
+                return
+            }
+            await answered(ask, .payback(ask.t.id, charge: tile.charge, toast: tile.toast, person: tile.person))
+        }
+    }
+
+    /// P5g: Not this. Pearl's guess was wrong, so What did Sam pay back?
+    /// opens with nothing ticked; Not a payback goes on to the question.
+    private func paybackNot(_ ask: Ask, _ q: PaybackQuestion) {
+        withAnimation(.spring()) { drag = .zero }
+        notThis = QuickNotThis(ask: ask, person: q.tiles.first?.person ?? q.who)
+    }
 
     private var hint: String {
         guard let ask = current else { return "" }
@@ -510,7 +562,8 @@ struct QuickSortView: View {
         // A+ kit `.qcard`: the overline, the 56 pt ring, the name, the
         // amount in Fraunces 40, its day and card, and the question.
         return VStack(spacing: 0) {
-            Text(drafts[ask.id]?.label != nil ? "YOUR CHOICE" : isGuess(ask) && !tilesOnCard(ask) ? "PEARL’S GUESS" : "NEEDS A LOOK")
+            Text(drafts[ask.id]?.label != nil ? "YOUR CHOICE"
+                 : (isGuess(ask) && !tilesOnCard(ask)) || paybackGuess(ask) != nil ? "PEARL’S GUESS" : "NEEDS A LOOK")
                 .font(.custom("Figtree-SemiBold", size: 12, relativeTo: .caption)).tracking(1.2)
                 .foregroundColor(Pearl.action)
             CFRing(name: t.name, size: 56).padding(.top, 14)
@@ -527,6 +580,7 @@ struct QuickSortView: View {
                     .joined(separator: " · "))
                 .font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(1)
             Text(tilesOnCard(ask) ? "What was this?" : drafts[ask.id]?.label.map { "\($0)?" }
+                 ?? paybackGuess(ask)?.card.title
                  ?? (isGuess(ask) ? (ask.item.pair?.question ?? "\(guess(ask))?") : ask.chip))
                 .font(Self.question).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center).lineLimit(2)
@@ -540,6 +594,13 @@ struct QuickSortView: View {
             } else if drafts[ask.id]?.label == nil, let evidence = ask.evidence {
                 Text(evidence).font(Nacre.footnote).foregroundColor(Pearl.ink)
                     .multilineTextAlignment(.center).lineLimit(2)
+            }
+            if let q = paybackGuess(ask), let tile = q.tiles.first {
+                // P5e: "Priya still owes $2.50 after this" (was "$2.50 still to come").
+                Text(tile.after ?? tile.line).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    .multilineTextAlignment(.center).lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 6)
             }
             if tilesOnCard(ask) {
                 // P4a (TP-P4-QuickSort): no real guess, so the four likeliest,
@@ -716,7 +777,12 @@ struct QuickSortView: View {
     @ViewBuilder private var buttons: some View {
         let guessing = current.map(hasYes) ?? true
         HStack(spacing: current?.kind == .check ? 32 : 56) {
-            roundButton(symbol: "forward", label: "Skip", filled: false) { left() }
+            if let ask = current, let q = paybackGuess(ask) {
+                // P5e: Not this, not Skip: Pearl's guess was wrong.
+                roundButton(symbol: "xmark", label: "Not this", filled: false) { paybackNot(ask, q) }
+            } else {
+                roundButton(symbol: "forward", label: "Skip", filled: false) { left() }
+            }
             // Plan questions ("Is TD Savings where you save?") take a No on the card.
             if let ask = current, ask.kind == .check {
                 roundButton(symbol: "xmark", label: "No", filled: false) { no(ask) }
@@ -880,7 +946,9 @@ struct QuickSortView: View {
             return
         }
         guard let ask = current, leaving == nil else { return }
-        if tilesOnCard(ask) {
+        if let q = paybackGuess(ask) {
+            paybackYes(ask, q)
+        } else if tilesOnCard(ask) {
             // P4a: no Yes to give; a tile is the answer.
             withAnimation(.spring()) { drag = .zero }
         } else if hasYes(ask) {
@@ -1349,6 +1417,13 @@ extension EnvironmentValues {
         get { self[QuickSortCardHeight.self] }
         set { self[QuickSortCardHeight.self] = newValue }
     }
+}
+
+/// P5g: the payback card Not this was said to, and whose shares to show.
+struct QuickNotThis: Identifiable {
+    let ask: Ask
+    let person: String
+    var id: String { ask.id }
 }
 
 /// A Quick sort card's payback waiting on PP-01's answer (2026-11-16).

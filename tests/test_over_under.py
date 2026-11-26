@@ -834,7 +834,7 @@ def question(c, dep):
     (55.0, 40.0, "$40.00 of $55.00 · $15.00 extra"),             # PQ-03o, bug 7
     (19.0, 20.0, "$19.00 of $20.00 · $1.00 let go"),             # PQ-03s
     (20.0, 19.77, "$19.77 of $20.00 · $0.23 extra"),
-    (25.0, 40.0, f"$25.00 of {KLEV}’s $40.00 · $15.00 still to come")])
+    (25.0, 40.0, f"$25.00 of {KLEV}’s $40.00 · {KLEV} still owes $15.00")])
 def test_the_payback_question_says_it_first(client, pay, share, compare):
     cid, (dep,) = bistro(client, pay, people=((KLEV, share),))
     item, tile = question(client, dep)
@@ -848,7 +848,7 @@ def test_the_payback_question_says_it_first(client, pay, share, compare):
 def test_a_share_she_undid_isnt_promised_a_let_go(client):
     cid, (dep,) = bistro(client, 19.0, people=((KLEV, 20.0),))
     client.st.set_split_extra(cid, KLEV, {"hers": True})
-    assert question(client, dep)[1]["compare"] == f"$19.00 of {KLEV}’s $20.00 · $1.00 still to come"
+    assert question(client, dep)[1]["compare"] == f"$19.00 of {KLEV}’s $20.00 · {KLEV} still owes $1.00"
 
 
 def test_money_after_a_let_go_is_asked_never_done(client):
