@@ -20,9 +20,10 @@ struct SavingShareView: View {
 
     var body: some View {
         // G6-Saving O-10s: part 3, the share big, the chips, what it comes to;
-        // Custom puts her share in a well instead.
+        // Other puts her share in a well instead. P6d (TP-P6-Setup, TP-Words):
+        // "each pay" and "Other" (were "each paycheque" and "Custom").
         OnbScreen(part: 3, partName: "Your money") {
-            OnbTitle(title: "How much do you want to save?", line: "A share of each paycheque. Change it anytime.")
+            OnbTitle(title: "How much do you want to save?", line: "A share of each pay. Change it anytime.")
             if !custom {
                 VStack(spacing: 0) {
                     Text("\(Int(pct))%").font(.custom("Fraunces-SemiBold", size: 56, relativeTo: .largeTitle))
@@ -43,7 +44,7 @@ struct SavingShareView: View {
             } else {
                 APCard {
                     if let pay = pay {
-                        APKeyValueRow(key: "Each paycheque", value: Format.whole(pay.amount * pct / 100))
+                        APKeyValueRow(key: "Each pay", value: Format.whole(pay.amount * pct / 100))
                         APSeparator(afterFace: false)
                     }
                     APKeyValueRow(key: "Each month", value: "\u{2248} " + Format.whole(monthlyIncome * pct / 100))
@@ -62,7 +63,7 @@ struct SavingShareView: View {
             ForEach(Self.shares, id: \.self) { s in
                 chip("\(Int(s))%", on: !custom && pct == s) { custom = false; pct = s }
             }
-            chip("Custom", on: custom) { custom = true; customText = "\(Int(pct))" }
+            chip("Other", on: custom) { custom = true; customText = "\(Int(pct))" }
         }
         .frame(maxWidth: .infinity)
     }
@@ -71,7 +72,7 @@ struct SavingShareView: View {
     private var customNote: String {
         let month = "\u{2248} " + Format.whole(monthlyIncome * pct / 100) + " a month"
         guard let pay = pay else { return month }
-        return Format.whole(pay.amount * pct / 100) + " each paycheque \u{00B7} " + month
+        return Format.whole(pay.amount * pct / 100) + " each pay \u{00B7} " + month
     }
 
     /// `.chip`: 34 high on `chip`; the one picked is `action`.

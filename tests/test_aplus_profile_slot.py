@@ -39,13 +39,14 @@ class TestOneSharedPlacement(unittest.TestCase):
                 if not name.endswith(".swift"):
                     continue
                 with open(os.path.join(folder, name), encoding="utf-8") as f:
-                    if "ProfileCircle()" in code(f.read()):
+                    if "ProfileCircle(" in code(f.read()).replace("struct ProfileCircle", ""):
                         drawn.append(name)
         self.assertEqual(drawn, ["ProfileCircle.swift"])
         circle = code(read("Views", "Components", "ProfileCircle.swift"))
-        self.assertEqual(circle.count("ProfileCircle()"), 1)
+        # P12a: the slot places it, labelled on Home.
+        self.assertEqual(circle.count("ProfileCircle(labelled: labelled)"), 1)
         slot = circle[circle.index("func profileCircleSlot"):circle.index("enum ProfileName")]
-        self.assertIn("ProfileCircle()", slot)
+        self.assertIn("ProfileCircle(labelled: labelled)", slot)
         self.assertIn("overlay(alignment: .topTrailing)", slot)
         self.assertIn("top: CGFloat = ProfileSlot.top", slot)
         self.assertIn(".padding(.top, top)", slot)
@@ -97,7 +98,8 @@ class TestHeadersLevelWithIt(unittest.TestCase):
         self.assertIn(".padding(.top, ProfileSlot.top)", bar)
         # H-00r v2: the greeting under the date may wrap the row past 44.
         self.assertIn(".frame(minHeight: ProfileSlot.size)", bar)
-        self.assertIn("Color.clear.frame(width: ProfileSlot.size, height: ProfileSlot.size)", bar)
+        # P12a (TP-P12-Home): room for the labelled Profile button.
+        self.assertIn("Color.clear.frame(width: ProfileSlot.labelledWidth, height: ProfileSlot.size)", bar)
         # The offline banner sits under the date, clear of the circle.
         feed = home[home.index("private struct HomeFeed"):home.index("struct HomeTopBar")]
         self.assertLess(feed.index("HomeTopBar(today: home.today)"), feed.index("OfflineBanner(since:"))

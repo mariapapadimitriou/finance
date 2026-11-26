@@ -36,6 +36,7 @@
 		83F7E0678334F0E527E1D836 /* ScrollEdgeFade.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BBF304DAA75230F843ED06A /* ScrollEdgeFade.swift */; };
 		3FB4DF87982AB308280C099D /* AddsUpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A90B246C0DA1E53D45B692 /* AddsUpView.swift */; };
 		2F4C0C7609E5463A942F8A95 /* CantReachPearl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A63598F9E77CC8D06E677A1 /* CantReachPearl.swift */; };
+		9775975AEB591808355F434E /* HomeAsks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B5E17D0B5B7351F4B1EF609 /* HomeAsks.swift */; };
 		F2D60DB16AD29DE5F442BC38 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F7C177E913CEBE0B53FA5 /* HomeView.swift */; };
 		11991F064129B8D80C6CB502 /* OwedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C93CED67E803BE21967A343B /* OwedViews.swift */; };
 		C0804EE731DDD00093F0F997 /* WorthALook.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0DE1D8FD3A21813AB7549C1 /* WorthALook.swift */; };
@@ -50,6 +51,7 @@
 		8B70E2BC087883619C71FE27 /* SavingShareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E21457AD97EA4FA1E18A4A44 /* SavingShareView.swift */; };
 		619EE1ED914A1D98CEE524E5 /* SetupFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D43D3DEF06E783C5559E8A54 /* SetupFlow.swift */; };
 		3093DB11F717FC06657082A6 /* SetupPayQuestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44C291D8EDEBE19AA09259E6 /* SetupPayQuestions.swift */; };
+		E6BB7F8652FAF3A4953BA2C9 /* SetupPayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93D1FE9389CD33DD8D5E5D46 /* SetupPayView.swift */; };
 		0E20B3BEDE9BE9508D94E4E3 /* AccountsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A9B1537B9126F6D2FD7C996 /* AccountsViews.swift */; };
 		50683C7CA113D2D071892AF2 /* CategoriesRulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BEADC70C1E3D94BE931A082 /* CategoriesRulesView.swift */; };
 		BBCC842E851D26BEAEC2BE80 /* ChangeEmailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB4B09F8E2A41BCAB614B60 /* ChangeEmailView.swift */; };
@@ -113,6 +115,7 @@
 		90C363208D3502F31EE967BE /* Fraunces-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 5123041A452F1AE9E3CD559D /* Fraunces-SemiBold.ttf */; };
 		436E75E984B4850BBF8D916E /* LinkKit in Frameworks */ = {isa = PBXBuildFile; productRef = A8318EFB1C654A8D1F922D04 /* LinkKit */; };
 		FC9DAA094F769A689A86048D /* ConsolidationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B637EA372818923C1246122 /* ConsolidationUITests.swift */; };
+		408B467F717ECB889BDC7C17 /* FewerTapsHomeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A184ADCF6148308522099E40 /* FewerTapsHomeUITests.swift */; };
 		F6559E96041ACD56C22514F9 /* GaugeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5091F4D530CD334A9D573D16 /* GaugeUITests.swift */; };
 		CDB1FB14ECC588122F3CE128 /* OverUnderUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73F2C41C66637E36C1D77050 /* OverUnderUITests.swift */; };
 		C4D449BAF44C6DF24B4410D9 /* PersonJourneysUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33A599E2CA5F3A2F441A0DAE /* PersonJourneysUITests.swift */; };
@@ -137,6 +140,7 @@
 		95D653871703BB6B6441A16C /* Pearl.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pearl.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A887B5D29B4EAB09648BF16 /* PearlUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PearlUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4B637EA372818923C1246122 /* ConsolidationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationUITests.swift; sourceTree = "<group>"; };
+		A184ADCF6148308522099E40 /* FewerTapsHomeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FewerTapsHomeUITests.swift; sourceTree = "<group>"; };
 		5091F4D530CD334A9D573D16 /* GaugeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GaugeUITests.swift; sourceTree = "<group>"; };
 		73F2C41C66637E36C1D77050 /* OverUnderUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverUnderUITests.swift; sourceTree = "<group>"; };
 		33A599E2CA5F3A2F441A0DAE /* PersonJourneysUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonJourneysUITests.swift; sourceTree = "<group>"; };
@@ -174,6 +178,7 @@
 		1BBF304DAA75230F843ED06A /* ScrollEdgeFade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollEdgeFade.swift; sourceTree = "<group>"; };
 		E7A90B246C0DA1E53D45B692 /* AddsUpView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddsUpView.swift; sourceTree = "<group>"; };
 		1A63598F9E77CC8D06E677A1 /* CantReachPearl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CantReachPearl.swift; sourceTree = "<group>"; };
+		6B5E17D0B5B7351F4B1EF609 /* HomeAsks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeAsks.swift; sourceTree = "<group>"; };
 		663F7C177E913CEBE0B53FA5 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		C93CED67E803BE21967A343B /* OwedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwedViews.swift; sourceTree = "<group>"; };
 		F0DE1D8FD3A21813AB7549C1 /* WorthALook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorthALook.swift; sourceTree = "<group>"; };
@@ -188,6 +193,7 @@
 		E21457AD97EA4FA1E18A4A44 /* SavingShareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavingShareView.swift; sourceTree = "<group>"; };
 		D43D3DEF06E783C5559E8A54 /* SetupFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupFlow.swift; sourceTree = "<group>"; };
 		44C291D8EDEBE19AA09259E6 /* SetupPayQuestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupPayQuestions.swift; sourceTree = "<group>"; };
+		93D1FE9389CD33DD8D5E5D46 /* SetupPayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupPayView.swift; sourceTree = "<group>"; };
 		8A9B1537B9126F6D2FD7C996 /* AccountsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountsViews.swift; sourceTree = "<group>"; };
 		9BEADC70C1E3D94BE931A082 /* CategoriesRulesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoriesRulesView.swift; sourceTree = "<group>"; };
 		0AB4B09F8E2A41BCAB614B60 /* ChangeEmailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangeEmailView.swift; sourceTree = "<group>"; };
@@ -293,6 +299,7 @@
 			isa = PBXGroup;
 			children = (
 				4B637EA372818923C1246122 /* ConsolidationUITests.swift */,
+				A184ADCF6148308522099E40 /* FewerTapsHomeUITests.swift */,
 				5091F4D530CD334A9D573D16 /* GaugeUITests.swift */,
 				73F2C41C66637E36C1D77050 /* OverUnderUITests.swift */,
 				33A599E2CA5F3A2F441A0DAE /* PersonJourneysUITests.swift */,
@@ -413,6 +420,7 @@
 			children = (
 				E7A90B246C0DA1E53D45B692 /* AddsUpView.swift */,
 				1A63598F9E77CC8D06E677A1 /* CantReachPearl.swift */,
+				6B5E17D0B5B7351F4B1EF609 /* HomeAsks.swift */,
 				663F7C177E913CEBE0B53FA5 /* HomeView.swift */,
 				C93CED67E803BE21967A343B /* OwedViews.swift */,
 				F0DE1D8FD3A21813AB7549C1 /* WorthALook.swift */,
@@ -434,6 +442,7 @@
 				E21457AD97EA4FA1E18A4A44 /* SavingShareView.swift */,
 				D43D3DEF06E783C5559E8A54 /* SetupFlow.swift */,
 				44C291D8EDEBE19AA09259E6 /* SetupPayQuestions.swift */,
+				93D1FE9389CD33DD8D5E5D46 /* SetupPayView.swift */,
 			);
 			path = Onboarding;
 			sourceTree = "<group>";
@@ -645,6 +654,7 @@
 				83F7E0678334F0E527E1D836 /* ScrollEdgeFade.swift in Sources */,
 				3FB4DF87982AB308280C099D /* AddsUpView.swift in Sources */,
 				2F4C0C7609E5463A942F8A95 /* CantReachPearl.swift in Sources */,
+				9775975AEB591808355F434E /* HomeAsks.swift in Sources */,
 				F2D60DB16AD29DE5F442BC38 /* HomeView.swift in Sources */,
 				11991F064129B8D80C6CB502 /* OwedViews.swift in Sources */,
 				C0804EE731DDD00093F0F997 /* WorthALook.swift in Sources */,
@@ -659,6 +669,7 @@
 				8B70E2BC087883619C71FE27 /* SavingShareView.swift in Sources */,
 				619EE1ED914A1D98CEE524E5 /* SetupFlow.swift in Sources */,
 				3093DB11F717FC06657082A6 /* SetupPayQuestions.swift in Sources */,
+				E6BB7F8652FAF3A4953BA2C9 /* SetupPayView.swift in Sources */,
 				0E20B3BEDE9BE9508D94E4E3 /* AccountsViews.swift in Sources */,
 				50683C7CA113D2D071892AF2 /* CategoriesRulesView.swift in Sources */,
 				BBCC842E851D26BEAEC2BE80 /* ChangeEmailView.swift in Sources */,
@@ -721,6 +732,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				FC9DAA094F769A689A86048D /* ConsolidationUITests.swift in Sources */,
+				408B467F717ECB889BDC7C17 /* FewerTapsHomeUITests.swift in Sources */,
 				F6559E96041ACD56C22514F9 /* GaugeUITests.swift in Sources */,
 				CDB1FB14ECC588122F3CE128 /* OverUnderUITests.swift in Sources */,
 				C4D449BAF44C6DF24B4410D9 /* PersonJourneysUITests.swift in Sources */,

@@ -117,11 +117,14 @@ struct RootView: View {
         }
     }
 
+    /// DEBUG: set when that setup finishes (P7a's Link later), so Home follows.
+    static var debugSetupFinished = false
+
     /// DEBUG: `-pearl-setup <screen>` opens setup even on an account that
     /// finished it (see SetupFlow).
     private static var debugSetup: Bool {
         #if DEBUG
-        return ProcessInfo.processInfo.arguments.contains("-pearl-setup")
+        return ProcessInfo.processInfo.arguments.contains("-pearl-setup") && !debugSetupFinished
         #else
         return false
         #endif

@@ -133,8 +133,8 @@ class TestLightIridescent:
         assert "withAnimation" not in gauge and ".animation(" not in gauge, "no motion yet"
         home = code(src(self.HOME))
         assert "AllowanceGauge(allowance: sts, open: openAddsUp)" in home
-        assert "Allowance.restCaption" in home and "Allowance.restCaption" in gauge, \
-            "the hidden caption stays as the VoiceOver hint"
+        # P1a (TP-P1-Home): the ring says Allowance left and that it opens.
+        assert "Allowance.restCaption" in home and '.accessibilityHint("Opens How it adds up.")' in gauge
         onboarding = code(src("ios/Pearl/Views/Onboarding/AllowanceView.swift"))
         # A+ G6-Allowance (REDESIGN-13): set-up shows the Allowance on its card, not the orb.
         assert "AllowanceCard(month:" in onboarding and "AllowanceOrb(" not in onboarding

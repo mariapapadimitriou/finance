@@ -56,7 +56,10 @@ def test_matches_the_boards_measured():
 
 
 def test_how_it_adds_up_matches_px_addsup():
-    assert '"Left is the same number on Home and in Cash flow."' in ADDS
-    assert "Pearl.action.opacity(0.08)" in ADDS and "cornerRadius: 16" in ADDS
+    # P1b (TP-P1-Home): one name needs no explaining, so the hint card went;
+    # the Allowance less Spent so far is Allowance left.
+    assert "Left is the same number" not in ADDS
+    assert 'line("Allowance", Format.whole(allowance.total ?? 0), first: true)' in ADDS
+    assert 'Text(over ? "Over" : "Allowance left")' in ADDS
     assert "tone: Color = Pearl.muted" in ADDS and "tone: Pearl.moneyIn" in ADDS
     assert 'Rectangle().fill(APlus.separator).frame(height: 0.5)' in ADDS

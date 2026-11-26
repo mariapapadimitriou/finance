@@ -27,7 +27,8 @@ struct SetupFlow: View {
                 case .failed(let bank): LinkProblemView(path: $path, problem: .failed(bank))
                 case .notSupported(let bank): LinkProblemView(path: $path, problem: .notSupported(bank))
                 case .accounts: AccountSetupView(path: $path)
-                case .payBills: PayAndBillsView(path: $path)
+                // P6b: one pay question (O-10 when there's more to ask).
+                case .payBills: SetupPayView(path: $path)
                 case .saving: SavingShareView(path: $path)
                 case .allowance: AllowanceView(path: $path, skipped: false)
                 case .skipped: AllowanceView(path: $path, skipped: true)
@@ -48,6 +49,7 @@ struct SetupFlow: View {
             case "saving": path = [.saving]
             case "allowance": path = [.allowance]
             case "linked": path = [.linked]
+            case "linkBank": path = [.linkBank]
             default: break
             }
         }
@@ -85,6 +87,22 @@ func openPlaid(_ plaid: PlaidLinker, api: APIClient, path: Binding<[SetupRoute]>
         return nil
     } catch {
         return error.localizedDescription
+    }
+}
+
+/// Set-up done (O-11's Go to Home, P7a's Link later): Home is next. The
+/// problem in words when it couldn't be saved.
+@MainActor
+func finishSetup(_ app: AppModel) async -> String? {
+    do {
+        struct Reply: Decodable { let user: PearlUser? }
+        let reply: Reply = try await app.api.post("api/onboarding", ["done": true])
+        app.justCreated = false
+        RootView.debugSetupFinished = true
+        app.signedIn(reply.user)
+        return nil
+    } catch {
+        return app.handle(error)
     }
 }
 
@@ -143,9 +161,18 @@ struct LinkBankView: View {
             OnbPrimary(title: "Continue", busy: busy, busyLabel: "Opening Plaid\u{2026}", enabled: agreed) {
                 Task { await link() }
             }
-            APQuietButton(title: "Link later") { path.append(.skipped) }
+            // P7a (TP-P7-LinkLater, THL-114, THL-119): Link later goes
+            // straight to Home (was "Almost there", which looped back here).
+            APQuietButton(title: "Link later") { Task { await linkLater() } }
         }
         .docSheet($doc)
+    }
+
+    /// P7a: set-up is done; Home shows the one Link your bank card (P7b).
+    private func linkLater() async {
+        busy = true
+        defer { busy = false }
+        error = await finishSetup(app)
     }
 
     /// The tick box and the consent line; its links open the pages, so a tap
@@ -211,28 +238,10 @@ struct ReadingAccountsView: View {
     @State private var spin = false
 
     var body: some View {
-        // G6-Reading O-08: the ring round the mark, then each account's state.
-        // Scrolls: a bank can bring a dozen accounts or more.
-        OnbScreen(back: false) {
-            ReadingRing(spin: spin, longer: longer)
-            APCard {
-                ForEach(Array(link.accounts.enumerated()), id: \.offset) { i, account in
-                    if i > 0 { APSeparator() }
-                    HStack(spacing: 12) {
-                        RowAvatar(name: initials(link.institution))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(account.name).font(Nacre.body).foregroundColor(Pearl.ink)
-                            Text(status(i)).font(Nacre.subheadline)
-                                .foregroundColor(!done && i == 0 ? Pearl.action : Pearl.muted)
-                        }
-                        Spacer(minLength: 8)
-                    }
-                    .padding(.horizontal, 16).padding(.vertical, 12)
-                    .frame(minHeight: 64)
-                    .accessibilityElement(children: .combine)
-                }
-            }
-            .padding(.top, 12)
+        // P6a (TP-P6-Setup): part 2, "Reading your accounts" and "TD · 3
+        // accounts" under the ring; the per-account list went (less text).
+        OnbScreen(back: false, part: 2, partName: "Link your bank") {
+            ReadingRing(spin: spin, longer: longer, line: longer ? nil : accountsLine)
         } actions: {
             if longer && !done {
                 OnbPrimary(title: "Notify me", enabled: !notify) { Task { await askToNotify() } }
@@ -247,9 +256,10 @@ struct ReadingAccountsView: View {
         }
     }
 
-    private func status(_ i: Int) -> String {
-        if done { return "Done" }
-        return i == 0 ? "Reading transactions…" : "Waiting"
+    /// "TD · 3 accounts".
+    private var accountsLine: String {
+        let n = link.accounts.count
+        return "\(link.institution) \u{00B7} \(n) account\(n == 1 ? "" : "s")"
     }
 
     private func exchange() async {
@@ -258,7 +268,15 @@ struct ReadingAccountsView: View {
                                                        ["public_token": link.publicToken, "institution": link.institution])
             done = true
             if notify && scenePhase != .active { postReady() }
-            path.append(.linked)
+            // P6a: straight on to the pay question when nothing needs
+            // checking; Your bank is linked and Your accounts (AS-01 v2) only
+            // when there's something to answer.
+            let overview: AccountsOverview? = try? await app.api.get("api/accounts/overview")
+            if let linked = overview?.linked, !SetupChecks.needsChecking(linked) {
+                path.append(.payBills)
+            } else {
+                path.append(.linked)
+            }
         } catch {
             path.removeLast()
             path.append(.failed(link.institution))
@@ -286,6 +304,8 @@ struct ReadingAccountsView: View {
 struct ReadingRing: View {
     let spin: Bool
     let longer: Bool
+    /// P6a: "TD · 3 accounts" in place of "About a minute."
+    var line: String? = nil
 
     var body: some View {
         VStack(spacing: 6) {
@@ -301,11 +321,11 @@ struct ReadingRing: View {
             .frame(width: 150, height: 150)
             .padding(.bottom, 18)
             .accessibilityHidden(true)
-            Text(longer ? "This is taking a little longer" : "Pearl is reading your accounts")
+            Text(longer ? "This is taking a little longer" : "Reading your accounts")
                 .font(Nacre.largeTitle).foregroundColor(Pearl.ink).multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
-            Text(longer ? "Some banks need a few minutes. We can let you know when it\u{2019}s ready." : "About a minute.")
+            Text(longer ? "Some banks need a few minutes. We can let you know when it\u{2019}s ready." : line ?? "About a minute.")
                 .font(Nacre.body).foregroundColor(Pearl.muted).multilineTextAlignment(.center)
                 .padding(.horizontal, 20)
         }
@@ -461,7 +481,10 @@ struct LinkProblemView: View {
         } actions: {
             OnbPrimary(title: primary) { Task { await again() } }
             if case .notSupported = problem {
-                APQuietButton(title: "Skip for now") { path.append(.skipped) }
+                // P7a: skipping goes straight to Home too.
+                APQuietButton(title: "Skip for now") {
+                    Task { if let words = await finishSetup(app) { error = words } }
+                }
             } else {
                 APQuietButton(title: "Choose another bank") { Task { await again() } }
             }
@@ -510,5 +533,23 @@ struct CloseButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Close")
+    }
+}
+
+/// P6a (TP-P6-Setup, THL-120, THL-300): whether set-up shows Your bank is
+/// linked and Your accounts: a joint account, the same account twice, an
+/// account Pearl can't place, or only cards (Link chequing too).
+enum SetupChecks {
+    static func needsChecking(_ accounts: [AccountsOverview.Account]) -> Bool {
+        guard !accounts.isEmpty else { return true }
+        if accounts.allSatisfy(\.isCard) { return true }
+        if accounts.contains(where: { $0.joint == true || ($0.jointPeople ?? []).isEmpty == false }) { return true }
+        if accounts.contains(where: { ($0.kind ?? "").isEmpty || $0.kind == "other" }) { return true }
+        var seen = Set<String>()
+        for a in accounts {
+            let key = "\(a.institution ?? "")|\(a.name)|\(a.mask ?? "")"
+            if !seen.insert(key).inserted { return true }
+        }
+        return false
     }
 }

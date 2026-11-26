@@ -5,7 +5,8 @@ import SwiftUI
 /// row. The month in Fraunces 34, then the server's own rows: Came in, less
 /// the bills (paid and still to come) and what she moved to savings (and
 /// Your plan, and what came from last month, when there is any) make the
-/// Allowance; less Spent so far, Left. Then the daily amount. THL-125.
+/// Allowance; the Allowance less Spent so far, Allowance left (P1b). Then the
+/// daily amount. THL-125.
 @MainActor
 struct AddsUpView: View {
     @EnvironmentObject private var app: AppModel
@@ -46,6 +47,10 @@ private struct AddsUpCards: View {
             APCard {
                 line("Came in", "+" + Format.whole(row("income") ?? 0), tone: Pearl.moneyIn, first: true)
                 line("Bills", "−" + Format.whole(bills))
+                // Between Bills and the Allowance: the savings share set aside
+                // each pay ("Saving", fix/savings-rate-and-pg, product owner
+                // 2026-11-26). Shown only when the server sends its row.
+                if let saving = row("saving"), saving >= 0.5 { line("Saving", "−" + Format.whole(saving)) }
                 if let saved = row("saved"), saved >= 0.5 { line("Moved to savings", "−" + Format.whole(saved)) }
                 if let plan = row("plan"), plan >= 0.5 { line("Your plan", "−" + Format.whole(plan)) }
                 if let carried = row("from_last_month"), abs(carried) >= 0.5 {
@@ -54,12 +59,15 @@ private struct AddsUpCards: View {
                 line("Allowance", Format.whole(allowance.total ?? 0), bold: true)
             }
             .padding(.top, 16)
+            // P1b (TP-P1-Home): the Allowance, less Spent so far, is
+            // Allowance left, the same words as the ring.
             APCard {
-                line("Spent so far", "−" + Format.whole(allowance.spent ?? 0), first: true)
+                line("Allowance", Format.whole(allowance.total ?? 0), first: true)
+                line("Spent so far", "−" + Format.whole(allowance.spent ?? 0))
                 Rectangle().fill(APlus.separator).frame(height: 0.5).accessibilityHidden(true)
                 // `.kv.big`: 60 high, the label 16/600, the figure Fraunces 28/600.
                 HStack {
-                    Text(over ? "Over" : "Left")
+                    Text(over ? "Over" : "Allowance left")
                         .font(.custom("Figtree-SemiBold", size: 16, relativeTo: .body)).foregroundColor(Pearl.ink)
                     Spacer(minLength: 8)
                     Text(allowance.leftText)
@@ -78,7 +86,6 @@ private struct AddsUpCards: View {
                     .font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     .padding(.horizontal, 4).padding(.top, 10)
             }
-            AddsUpHint().padding(.top, 12)
         }
     }
 
@@ -97,28 +104,6 @@ private struct AddsUpCards: View {
             .padding(.horizontal, 16).frame(minHeight: 48)
             .accessibilityElement(children: .combine)
         }
-    }
-}
-
-/// fu.css `.hint`: the info mark in `action` and one line, 14/19 ink, on
-/// `action` at 8%, 16 round, 12 × 14 in.
-private struct AddsUpHint: View {
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "info.circle").font(.system(size: 16, weight: .regular))
-                .foregroundColor(Pearl.action)
-                .frame(width: 18, height: 18)
-                .padding(.top, 1)
-                .accessibilityHidden(true)
-            Text("Left is the same number on Home and in Cash flow.")
-                .font(.custom("Figtree-Regular", size: 14, relativeTo: .subheadline))
-                .foregroundColor(Pearl.ink)
-                .lineSpacing(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 12)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Pearl.action.opacity(0.08)))
     }
 }
 

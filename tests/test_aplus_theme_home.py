@@ -80,7 +80,7 @@ class TestHome:
         assert "sorted: home.sorted ?? home.pearlSorted ?? 0" in self.home, "REDESIGN-18"
         assert "people owe you" in self.home and "OwedCard(" in self.home
         assert "BankAlertCard(" in self.home, "a bank to reconnect keeps its own card"
-        assert ".profileCircleSlot()" in self.home
+        assert ".profileCircleSlot(labelled: true)" in self.home, "P12a: Home's Profile has its word"
 
     def test_paycheque_is_a_worth_a_look_item(self):
         # T-74 (AP-Paycheque): Got it on the item; no separate card; nothing opens Your plan.
@@ -108,7 +108,8 @@ class TestHome:
         for action in ('"clear"', '"undo_clear"', '"yes"', '"not_now"', '"undo_yes"', '"seen"'):
             assert action in self.home, action
         worth = code(read("Views", "Home", "WorthALook.swift"))
-        assert 'APSectionLabel(text: "Worth a look", action: "Clear"' in worth
+        # P1a (TP-Words): For you · Dismiss.
+        assert 'APSectionLabel(text: "For you", action: "Dismiss"' in worth
         assert "items.prefix(3)" in worth
         assert 'Button("Not now"' in worth
 
