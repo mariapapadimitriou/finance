@@ -436,10 +436,12 @@ struct SplitSheet: View {
                     .submitLabel(.done).onSubmit(addTyped)
                 if !typed.trimmingCharacters(in: .whitespaces).isEmpty {
                     Button("Add", action: addTyped).font(Nacre.textButton).foregroundColor(Pearl.link)
+                        .disabled(refusal != nil).opacity(refusal == nil ? 1 : 0.4)
                 }
             }
             .padding(.horizontal, 14).frame(minHeight: 44)
             .wellStyle(focused: searching)
+            if let refusal = refusal { APErrorLine(text: refusal) }
             let names = choices
             if !names.isEmpty {
                 APSheetLabel(text: "Recent")
@@ -458,7 +460,7 @@ struct SplitSheet: View {
             // The search finds her contacts too (2026-11-22), as Who sent
             // this? does, and a name nobody matches is one row to add.
             let q = typed.trimmingCharacters(in: .whitespaces)
-            let fromContacts = q.isEmpty ? [] : contacts.matches(q, excluding: names + people)
+            let fromContacts = q.isEmpty ? [] : contacts.matches(q, excluding: names + people).filter { holder($0) == nil }
             if !fromContacts.isEmpty {
                 APSheetLabel(text: "Contacts")
                 APCard {
@@ -468,7 +470,7 @@ struct SplitSheet: View {
                     }
                 }
             }
-            if !q.isEmpty, !names.contains(where: { $0.caseInsensitiveCompare(q) == .orderedSame }), !contacts.has(q) {
+            if !q.isEmpty, refusal == nil, !names.contains(where: { $0.caseInsensitiveCompare(q) == .orderedSame }), !contacts.has(q) {
                 APCard { AddTypedNameRow(name: q, picked: false) { addTyped() } }
             }
             if !q.isEmpty && contacts.state == .off { ContactsOffLine() }
@@ -507,14 +509,28 @@ struct SplitSheet: View {
 
     private var choices: [String] {
         var out = people
-        for n in recent where !out.contains(n) { out.append(n) }
+        for n in recent where !out.contains(n) && holder(n) == nil { out.append(n) }
         let q = typed.trimmingCharacters(in: .whitespaces)
         return q.isEmpty ? out : out.filter { $0.localizedCaseInsensitiveContains(q) }
     }
 
+    /// S-17j on Who was it with? too (2026-11-25): whose joint account this
+    /// is, if `name` is one of them. Their part is already off, so they're
+    /// never listed, and refused when typed, as the server does.
+    private func holder(_ name: String) -> String? {
+        t.joint.isEmpty ? nil : t.jointPeople.first { samePerson($0, name) }
+    }
+
+    /// "Sam Lee’s part is already off.", as Add someone says it.
+    private var refusal: String? {
+        let q = typed.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty, let who = holder(q) else { return nil }
+        return "\(possessive(who)) part is already off."
+    }
+
     private func addTyped() {
         let name = typed.trimmingCharacters(in: .whitespaces)
-        guard !name.isEmpty else { return }
+        guard !name.isEmpty, refusal == nil else { return }
         if !people.contains(name) { people.append(name) }
         typed = ""
     }
@@ -1212,7 +1228,7 @@ struct SplitSheet: View {
                 else { Task { await save() } }
             }
             .buttonStyle(APPrimaryButtonStyle(busy: busy))
-            .disabled(step == 0 ? people.isEmpty && typed.trimmingCharacters(in: .whitespaces).isEmpty
+            .disabled(step == 0 ? refusal != nil || people.isEmpty && typed.trimmingCharacters(in: .whitespaces).isEmpty
                       : mode == "unknown" ? (people.isEmpty || busy)
                       : (gapCents < 0 || blocksShort || busy))
             .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)

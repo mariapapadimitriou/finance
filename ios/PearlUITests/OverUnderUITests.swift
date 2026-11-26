@@ -436,6 +436,18 @@ final class OverUnderUITests: XCTestCase {
         sleep(2)
         clearInterruptions()
         step("split my part")
+        // The joint account's other owner is never listed, and refused typed.
+        XCTAssertTrue(app.buttons["Priya"].waitForExistence(timeout: 5), "No Priya")
+        XCTAssertFalse(app.buttons["Sam"].exists, "Sam is on the joint account")
+        let field = app.textFields.firstMatch
+        field.tap()
+        field.typeText("Sam")
+        see("Sam’s part is already off.")
+        XCTAssertFalse(app.buttons["Add"].isEnabled, "Add takes Sam")
+        XCTAssertFalse(app.buttons["Next"].isEnabled, "Next goes on without anyone")
+        step("sam refused")
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 3))
+        gone("Sam’s part is already off.")
         press("Priya")
         press("Next", exact: true)
         step("how to split")
