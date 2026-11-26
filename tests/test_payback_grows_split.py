@@ -136,3 +136,13 @@ def test_nothing_of_hers_left_is_not_offered(client):
                                merchant="Denise Moran"))
     ok(pay(client, i["INTERAC E-TRANSFER FROM DENISE MORAN #2"], uber, "Denise Moran", 120.0))
     assert uber not in {r["id"] for r in owing(client, ana, "Anastasia Papas")["unsplit"]}
+
+
+def test_the_app_caps_it_at_her_share():
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[1] / "ios/Pearl/Views/Transactions/PartsFlow.swift").read_text()
+    row = src[src.index("struct UnsplitRow"):src.index("struct MineRow")]
+    assert "var max: Double? = nil" in row and "var room: Double { Swift.min(max ?? amount, amount) }" in row
+    # Only the "split" line compares with the whole; every cap is her share.
+    assert src.count("cents(u.amount)") == 1 and "let shared = cents(u.room) < cents(u.amount)" in src
+    assert '" · \\(Format.amount(u.amount)) split"' in src
