@@ -19,3 +19,12 @@ def test_every_answer_at_once():
 
 def test_the_four_likely_tiles_are_gone():
     assert "likelyIn" not in (ROOT / "Transactions/CategorySheet.swift").read_text()
+
+
+def test_a_card_payment_has_its_arrows():
+    """Product owner, 2026-11-26: her sister's TD chequing → Aeroplan Visa
+    payment said "Between your accounts" on its page and had no ⇄ in the list."""
+    src = (Path(__file__).resolve().parents[1] / "ios/Pearl/API/Models.swift").read_text()
+    rule = src[src.index("var movedBetweenAccounts: Bool {"):]
+    rule = rule[:rule.index("}") + 1]
+    assert "cardPayment" not in rule and '["Transfer", "Saved"]' in rule
