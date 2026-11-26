@@ -173,18 +173,41 @@ def payer_of(t: Transaction) -> str:
     return (t.merchant or t.description or "").strip()
 
 
-def could_be_pay(t: Transaction) -> bool:
+# Deposits the bank didn't call income that can still be pay (2026-11-25:
+# her sister's pay, from one employer on a schedule, read as a transfer).
+UNLABELLED_PAY = {"Transfers", "Other", "Unsorted transfers"}
+# Money she moved from an account Pearl can't see says so ("TFR-FR
+# TANGERINE"); it isn't pay, whoever's name is on it.
+_MOVED = re.compile(r"\b(tfr|xfer|transfer|trsf|trf|from savings|from sav)\b", re.I)
+
+
+def _words(t: Transaction) -> str:
+    return " ".join(str(x or "") for x in (t.description, t.merchant))
+
+
+def could_be_pay(t: Transaction, own: set[str] | frozenset = frozenset()) -> bool:
     """A deposit that could be pay: income, from an employer or another
     payer. A repayment (THL-124) never is, and neither is an e-Transfer that
-    isn't marked salary — that's a friend paying back, not a paycheque."""
-    if not is_income(t) or t.repays or is_others(t):
+    isn't marked salary — that's a friend paying back, not a paycheque.
+    A deposit the bank called a transfer or nothing can be too, when it
+    names a payer well enough for a pay rule, isn't one end of her own
+    transfer (`own`) and isn't a refund; she's asked, never told."""
+    if t.repays or is_others(t) or t.amount >= 0 or t.excluded:
         return False
+    if not is_income(t):
+        from .pay_rules import key_of
+        return ((t.category or "Other") in UNLABELLED_PAY and t.fingerprint not in own
+                and not t.refund_of and not t.split_mode and not looks_like_etransfer(t)
+                and key_of(t) is not None and not _MOVED.search(_words(t)))
     kind = kind_of(t)
     if kind in ("interest", "tax_refund", "gifts", "bonus"):
         return False
     if looks_like_etransfer(t) and kind != "salary":
         return False
     return True
+
+
+PAY_SPREAD = 0.5
 
 
 def _regular(by_day: dict[str, float]) -> tuple[list[date], str, float] | None:
@@ -198,7 +221,9 @@ def _regular(by_day: dict[str, float]) -> tuple[list[date], str, float] | None:
         return None
     amounts = list(by_day.values())
     usual = statistics.median(amounts)
-    if usual <= 0 or any(abs(a - usual) / usual > 0.2 for a in amounts):
+    # Pay that varies (hours, tips) is still pay (2026-11-25), within half
+    # its usual amount either way; she confirms it.
+    if usual <= 0 or any(abs(a - usual) / usual > PAY_SPREAD for a in amounts):
         return None
     return days, cadence, usual
 
@@ -305,8 +330,14 @@ def pay_candidates(transactions: list[Transaction], today: date,
     since = (today - timedelta(days=PAY_LOOKBACK_DAYS)).isoformat()
     by_payer: dict[str, dict[str, float]] = {}
     salary: dict[str, bool] = {}
+    # Pay the bank didn't call income (`could_be_pay`): its rule, so a Yes
+    # sorts it as income (finance/pay_rules.py).
+    rules: dict[str, tuple[str, str]] = {}
+    from .transfers import transfer_pairs
+    pairs = transfer_pairs(transactions, today=today.isoformat())
+    own = set(pairs) | set(pairs.values())
     for t in transactions:
-        if t.date[:10] < since or t.date[:10] > today.isoformat() or not could_be_pay(t):
+        if t.date[:10] < since or t.date[:10] > today.isoformat() or not could_be_pay(t, own):
             continue
         payer = payer_of(t)
         if not payer or payer in skip:
@@ -314,7 +345,10 @@ def pay_candidates(transactions: list[Transaction], today: date,
         days = by_payer.setdefault(payer, {})
         # Her part: on a joint account, her share of pay that's both of theirs.
         days[t.date[:10]] = days.get(t.date[:10], 0.0) - _mine(t)
-        salary[payer] = salary.get(payer, False) or kind_of(t) == "salary"
+        salary[payer] = salary.get(payer, False) or (is_income(t) and kind_of(t) == "salary")
+        if not is_income(t):
+            from .pay_rules import key_of
+            rules.setdefault(payer, key_of(t))
     out = []
     for payer, by_day in by_payer.items():
         regular = _regular(by_day)
@@ -326,6 +360,7 @@ def pay_candidates(transactions: list[Transaction], today: date,
             "payer": payer, "name": tidy(payer) or payer, "amount": round(usual, 2), "cadence": cadence,
             "last": days[-1].isoformat(), "next": predict_next(days, cadence, today).isoformat(),
             "count": len(days), "salary": salary[payer],
+            **({"rule": list(rules[payer])} if rules.get(payer) else {}),
         })
     out.sort(key=lambda c: (not c["salary"], -c["count"], -c["amount"]))
     return out

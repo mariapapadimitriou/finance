@@ -61,7 +61,8 @@ PAY_TOLERANCE_DAYS = 5
 DEPOSIT_DAYS = 30
 # Pay stops counting as regular once this long has passed with none arriving
 # (two cycles, plus the tolerance): a job that ended is not income to expect.
-STALE_PAY_DAYS = {"biweekly": 28 + PAY_TOLERANCE_DAYS,
+STALE_PAY_DAYS = {"weekly": 14 + PAY_TOLERANCE_DAYS,
+                  "biweekly": 28 + PAY_TOLERANCE_DAYS,
                   "semimonthly": 31 + PAY_TOLERANCE_DAYS,
                   "monthly": 62 + PAY_TOLERANCE_DAYS}
 # An amount this far from the usual one makes a bill an estimate (Hydro, not
@@ -197,12 +198,13 @@ def _paydays_after(pay: dict, after: date, until: date) -> list[date]:
     days = sorted(date.fromisoformat(d) for d in pay["paydays"])
     last = days[-1]
     out: list[date] = []
-    if pay["cadence"] == "biweekly":
-        d = last + timedelta(days=14)
+    if pay["cadence"] in ("weekly", "biweekly"):
+        step = timedelta(days=7 if pay["cadence"] == "weekly" else 14)
+        d = last + step
         while d <= until:
             if d > after:
                 out.append(d)
-            d += timedelta(days=14)
+            d += step
         return out
     pattern = _pay_days_of_month(days)
     if pay["cadence"] == "monthly":

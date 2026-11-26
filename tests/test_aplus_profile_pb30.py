@@ -172,7 +172,8 @@ class TestPB30Change(unittest.TestCase):
     def test_ticking_other_purchases_covers_the_whole_purchase(self):
         toggle = between(self.p, "private func toggleUnsplit", "static func wholeCovered")
         self.assertNotIn("askUnsplit", toggle)
-        self.assertIn("Self.wholeCovered(amount: cents(u.amount)", toggle)
+        # What of it is still hers (2026-11-25): all of it unless a payback split it.
+        self.assertIn("Self.wholeCovered(amount: cents(u.room)", toggle)
         whole = between(self.p, "static func wholeCovered", "private func unsplitRoom")
         self.assertIn("min(amount, room)", whole)
 
