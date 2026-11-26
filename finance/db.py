@@ -349,7 +349,10 @@ def connect(path: str, url: str | None = None, schema: str = "public", *,
     ended by `finish_request()` / `abandon_request()`, so a whole request is
     one transaction; every later `with` on that ledger joins it.
     """
-    url = url or database_url()
+    # None means "whatever is configured"; an empty string is a store opened
+    # on SQLite on purpose (`Store(path, url="")`), which says it isn't
+    # Postgres and must not be handed the configured database anyway.
+    url = database_url() if url is None else url
     st = _state()
     key = _key(path, url, schema)
     open_ = st.open.get(key)

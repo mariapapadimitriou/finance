@@ -328,9 +328,16 @@ class TestExport:
 
 # ── Deleting the account (D-03 to D-05) ──────────────────────────────────
 
-def ledger_file(app, user) -> str:
-    path, _ = users.ledger_location(app.config["STORE"].path, user)
-    return path
+def ledger_exists(app, user) -> bool:
+    """Her ledger is there: its file on SQLite, its schema `u_<id>` on
+    Postgres (SPENDIE_TEST_DATABASE_URL), where no file is ever made."""
+    base = app.config["STORE"]
+    path, schema = users.ledger_location(base.path, user)
+    if not base.is_postgres:
+        return any(os.path.exists(path + s) for s in ("", "-wal", "-shm", "-journal"))
+    with base.conn() as c:
+        return c.execute("SELECT COUNT(*) AS n FROM information_schema.schemata "
+                         "WHERE schema_name = ?", (schema,)).fetchone()["n"] > 0
 
 
 def everything_about(base, user_id, email) -> dict:
@@ -368,7 +375,7 @@ class TestDeletion:
         r = c.post("/api/account/delete", json={"method": "code", "code": "000000"})
         assert r.status_code == 400
         assert users.by_id(app.config["STORE"], alex.id) is not None
-        assert os.path.exists(ledger_file(app, alex)) and plaid.removed == []
+        assert ledger_exists(app, alex) and plaid.removed == []
 
     def test_removes_everything_of_hers_and_nothing_of_anyone_elses(self, app, outbox, plaid):
         base = app.config["STORE"]
@@ -376,8 +383,7 @@ class TestDeletion:
         maria = users.by_username(base, "mariapapas")
         owner_rows = len(base.all_transactions())
         bea_before = app.config["STORE_FOR"](bea).all_transactions()
-        alex_file = ledger_file(app, alex)
-        assert os.path.exists(alex_file)
+        assert ledger_exists(app, alex)
 
         r = self.delete_with_code(c, outbox)
         assert r.status_code == 200
@@ -387,7 +393,7 @@ class TestDeletion:
         # Her bank was revoked at Plaid, and only hers.
         assert plaid.removed == ["access-Alex"]
         # Her ledger is gone, file and all.
-        assert not any(os.path.exists(alex_file + s) for s in ("", "-wal", "-shm", "-journal"))
+        assert not ledger_exists(app, alex)
         assert alex.id not in app.config["STORES"]
         # Her sign-in and everything kept about it.
         assert everything_about(base, alex.id, "alex@example.com") == {
@@ -477,7 +483,7 @@ class TestDeletion:
         r = self.delete_with_code(c, outbox)
         assert r.status_code == 200 and r.get_json()["revoked_at_plaid"] == 0
         assert users.by_id(app.config["STORE"], alex.id) is None
-        assert not os.path.exists(ledger_file(app, alex))
+        assert not ledger_exists(app, alex)
 
     def test_needs_a_sign_in(self, app):
         anon = app.test_client()

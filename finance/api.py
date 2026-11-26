@@ -3428,6 +3428,8 @@ def _compute_home_sts(st, txns, today, debts: dict | None = None) -> dict:
         moved_to_savings=savings.put_away_month(st, txns, today.strftime("%Y-%m")),
         # Your plan, only once she uses it (YP-02): {} until then.
         plan=your_plan.in_use(your_plan.load(st)),
+        # Her savings % from set-up (O-10s) is set aside automatically.
+        saving_rate=st.float_setting("savings_rate", 0.0),
     )
 
 
