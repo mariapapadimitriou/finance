@@ -103,7 +103,8 @@ struct WorthReply: Decodable {
 
 // MARK: - The section
 
-/// WORTH A LOOK with Clear, then one card of up to three rows.
+/// FOR YOU with Dismiss (P1a, TP-Words; was WORTH A LOOK · Clear), then one
+/// card of up to three rows.
 struct WorthALookSection: View {
     let items: [WorthItem]
     let onClear: () -> Void
@@ -115,7 +116,7 @@ struct WorthALookSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            APSectionLabel(text: "Worth a look", action: "Clear", act: onClear)
+            APSectionLabel(text: "For you", action: "Dismiss", act: onClear)
             APCard {
                 ForEach(Array(items.prefix(3).enumerated()), id: \.element.id) { i, item in
                     if i > 0 { APSeparator(afterFace: false) }

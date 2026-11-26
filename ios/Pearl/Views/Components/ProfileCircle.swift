@@ -91,15 +91,36 @@ struct ProfileCircle: View {
     @ObservedObject private var photos = ProfilePhotoStore.shared
     @Environment(\.goHome) private var goHome
     @State private var open = false
+    /// P12a (TP-P12-Home, THL-104): on Home the circle carries its word,
+    /// "Profile" (taps.css `.mecap`): a 44 pt capsule on the card, the 34 pt
+    /// avatar 4 in, then the word in 15/500, 12 from the edge.
+    var labelled = false
 
     var body: some View {
         Button { open = true } label: {
-            ProfileAvatar(initials: ProfileName.initials(app.user), photo: photos.image)
-                .overlay(alignment: .topTrailing) {
-                    if app.profileNeedsYou { NacreDot().offset(x: 1, y: -1) }
+            if labelled {
+                HStack(spacing: 6) {
+                    ProfileAvatar(initials: ProfileName.initials(app.user), photo: photos.image, size: 34,
+                                  font: .custom("Figtree-SemiBold", size: 12, relativeTo: .footnote))
+                        .overlay(alignment: .topTrailing) {
+                            if app.profileNeedsYou { NacreDot().offset(x: 1, y: -1) }
+                        }
+                    Text("Profile").font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
+                        .foregroundColor(Pearl.ink)
                 }
-                .frame(width: 44, height: 44)
-                .contentShape(Circle())
+                .padding(.leading, 4).padding(.trailing, 12)
+                .frame(height: 44)
+                .background(Capsule().fill(APlus.card).shadow(color: Color(hex: 0x2E2547).opacity(0.06), radius: 1, y: 1))
+                .overlay(Capsule().strokeBorder(APlus.cardLine, lineWidth: 1))
+                .contentShape(Capsule())
+            } else {
+                ProfileAvatar(initials: ProfileName.initials(app.user), photo: photos.image)
+                    .overlay(alignment: .topTrailing) {
+                        if app.profileNeedsYou { NacreDot().offset(x: 1, y: -1) }
+                    }
+                    .frame(width: 44, height: 44)
+                    .contentShape(Circle())
+            }
         }
         .buttonStyle(.plain)
         .accessibilityLabel(app.profileNeedsYou ? "Profile, needs you" : "Profile")
@@ -127,6 +148,9 @@ enum ProfileSlot {
     static let cashFlowTop: CGFloat = 16
     static let trailing: CGFloat = Pearl.gutter - 4
     static let size: CGFloat = 44
+    /// P12a: what Home's labelled Profile button takes (4 + 34 + 6 + the
+    /// word + 12), kept free beside the greeting.
+    static let labelledWidth: CGFloat = 110
     /// From the screen's trailing edge to the circle's leading edge: what a
     /// bar drawn under the circle leaves free on its right.
     static let clearance: CGFloat = trailing + size
@@ -138,10 +162,11 @@ extension View {
     /// scroll or fold with the page, and a pushed page or a sheet covers it.
     /// `shown: false` takes it away (Cash flow's Select); `enabled: false`
     /// keeps it but not tappable (a trip's pick).
-    func profileCircleSlot(shown: Bool = true, enabled: Bool = true, top: CGFloat = ProfileSlot.top) -> some View {
+    func profileCircleSlot(shown: Bool = true, enabled: Bool = true, top: CGFloat = ProfileSlot.top,
+                           labelled: Bool = false) -> some View {
         overlay(alignment: .topTrailing) {
             if shown {
-                ProfileCircle()
+                ProfileCircle(labelled: labelled)
                     .disabled(!enabled)
                     .padding(.top, top)
                     .padding(.trailing, ProfileSlot.trailing)

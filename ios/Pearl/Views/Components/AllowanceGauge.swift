@@ -96,6 +96,12 @@ extension Allowance {
         return estimate == true ? "~" + value : value
     }
 
+    /// The amount with no "~": the Estimate chip says so (P12a).
+    var leftPlain: String {
+        if state == "over" { return Format.whole(overBy ?? 0) }
+        return Format.whole(shown ?? amount ?? 0)
+    }
+
     /// "$69 a day".
     var perDayText: String? { perDay.map { "\(Format.whole($0)) a day" } }
 
@@ -108,16 +114,21 @@ extension Allowance {
         guard hasGauge else { return "Allowance. " + Allowance.needsIncomeLine }
         let month = self.month.map { Format.monthName($0) } ?? "this month"
         let zone = AllowanceZone(self)
-        let head = state == "over" ? "\(leftText) over your Allowance in \(month)."
-                                   : "\(leftText) left in \(month)."
-        let of = "\(Format.whole(spent ?? 0)) spent of \(Format.whole(total ?? 0))."
-        return "Allowance: \(head) \(of) \(zone.words)."
+        // P1a: "Allowance left: $829 in November. On track. Opens How it adds up."
+        if state == "over" {
+            return "Over your Allowance: \(leftText) in \(month). \(zone.words)."
+        }
+        let chip = estimate == true ? "Estimate" : zone.words
+        return "Allowance left: \(leftPlain) in \(month). \(chip)."
     }
 }
 
 /// `.ag-chip`: 24 high, 12/600, the tick only when on track.
 struct AllowanceChip: View {
     let zone: AllowanceZone
+    /// P12a (owner point 4): "Estimate" on Home's ring until she confirms
+    /// her pay, in the zone's colours.
+    var words: String? = nil
 
     var body: some View {
         HStack(spacing: 4) {
@@ -128,7 +139,7 @@ struct AllowanceChip: View {
                     .frame(width: 12, height: 12)
                     .accessibilityHidden(true)
             }
-            Text(zone.words).font(.custom("Figtree-SemiBold", size: 12, relativeTo: .caption))
+            Text(words ?? zone.words).font(.custom("Figtree-SemiBold", size: 12, relativeTo: .caption))
         }
         .foregroundColor(zone.chipInk)
         .padding(.horizontal, 9)
@@ -212,8 +223,7 @@ struct AllowanceGauge: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(allowance.gaugeSpoken)
             // The usual line under it, hidden on Home (REFRESH-03), is read here.
-            .accessibilityHint(allowance.ringCaption == Allowance.restCaption
-                               ? "\(Allowance.restCaption) Opens How it adds up." : "Opens How it adds up.")
+            .accessibilityHint("Opens How it adds up.")
             .accessibilityAddTraits([.isButton, .isHeader])
             .accessibilityIdentifier("allowance-gauge")
             if allowance.hasGauge { GaugeStats(allowance: allowance, zone: zone) }
@@ -305,7 +315,10 @@ private struct GaugeArc: Shape {
     }
 }
 
-/// `.ag-c`: LEFT TO SPEND, the amount in Fraunces 48, the chip.
+/// `.ag-c`: ALLOWANCE LEFT ›, the amount in Fraunces 48, the chip.
+/// P1a (TP-P1-Home, THL-125, THL-129): "Allowance left", the word she hears
+/// everywhere (was "Left to spend"), in ink with a chevron so the ring reads
+/// as opening How it adds up (taps.css `.ag-lab.cue`).
 private struct GaugeCentre: View {
     let allowance: Allowance
     let zone: AllowanceZone
@@ -313,16 +326,25 @@ private struct GaugeCentre: View {
     var body: some View {
         let over = allowance.state == "over"
         VStack(spacing: 0) {
-            Text((over ? "Over your Allowance" : "Left to spend").uppercased())
-                .font(.custom("Figtree-Medium", size: 12, relativeTo: .caption)).tracking(1.2)
-                .foregroundColor(Pearl.muted)
-            Text(allowance.hasGauge ? allowance.leftText : "—")
+            HStack(spacing: 5) {
+                Text((over ? "Over your Allowance" : "Allowance left").uppercased())
+                    .font(.custom("Figtree-Medium", size: 12, relativeTo: .caption)).tracking(1.2)
+                    .foregroundColor(over ? Pearl.muted : Pearl.ink)
+                if !over {
+                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
+                        .foregroundColor(Pearl.muted).accessibilityHidden(true)
+                }
+            }
+            // P12a (owner point 4): the Estimate chip says it, so no "~".
+            Text(allowance.hasGauge ? (allowance.estimate == true ? allowance.leftPlain : allowance.leftText) : "—")
                 .font(.custom("Fraunces-SemiBold", size: 48, relativeTo: .largeTitle)).tracking(-0.5)
                 .foregroundColor(over ? AllowanceZone.overInk : Pearl.ink)
                 .lineLimit(1).minimumScaleFactor(0.6)
                 .frame(maxWidth: 190)
                 .padding(.top, 2).padding(.bottom, 8)
-            if allowance.hasGauge { AllowanceChip(zone: zone) }
+            if allowance.hasGauge {
+                AllowanceChip(zone: zone, words: allowance.estimate == true && !over ? "Estimate" : nil)
+            }
         }
     }
 }
@@ -434,7 +456,8 @@ struct AllowanceMonthSummary: View {
                     .font(Nacre.subheadline).foregroundColor(Pearl.muted)
             }
             VStack(alignment: .leading, spacing: 0) {
-                Text(over ? "Over" : "Left").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                // P1c (TP-P1-Home): "Allowance left", the ring's words.
+                Text(over ? "Over" : "Allowance left").font(Nacre.footnote).foregroundColor(Pearl.muted)
                 Text(allowance.leftText)
                     .font(.cfBig).tracking(-0.88)
                     .foregroundColor(over ? AllowanceZone.overInk : Pearl.ink)
