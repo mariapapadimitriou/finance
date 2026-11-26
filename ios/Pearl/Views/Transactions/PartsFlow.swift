@@ -233,6 +233,12 @@ struct PartsSheet: View {
         var query: Bool? = nil
         /// TEST-46: the payback question (PQ-03) offered it, so it's LIKELY.
         var likely: Bool? = nil
+        /// What of it is still hers: less than `amount` on a purchase an
+        /// earlier payback split (2026-11-25, Uber Eats with Denise, then
+        /// Anastasia).
+        var max: Double? = nil
+
+        var room: Double { Swift.min(max ?? amount, amount) }
     }
 
     /// GET …/many-purchases (finance/many_api.py): what's still hers on a
@@ -476,7 +482,7 @@ struct PartsSheet: View {
                         SayingWho(name: deposit.name, line: line)
                     } else if step == .howMuch, let u = unsplitAsk {
                         // PB-30c: "$26.65 · Farm Boy · Nov 3" under who sent it.
-                        APQuestionWho(name: deposit.name, amount: Format.amount(allOfIt ? u.amount : partValue),
+                        APQuestionWho(name: deposit.name, amount: Format.amount(allOfIt ? u.room : partValue),
                                       tone: Pearl.muted, sub: "\(u.merchant) · \(Format.short(u.date))", face: sender)
                     } else if step == .whose {
                         // MP-01 / MP-02: "+$186.40 · Nov 14".
@@ -1033,7 +1039,7 @@ struct PartsSheet: View {
         // OTHER PURCHASES for as much of it as the money covers.
         if must == nil, manyKind == nil, editing.isEmpty, let c = tickCharge, unsplitPaid[c] == nil,
            !parts.contains(where: { $0.charge == c }), let u = unsplit.first(where: { $0.id == c }), leftCents > 0 {
-            unsplitPaid[u.id] = min(cents(u.amount), leftCents)
+            unsplitPaid[u.id] = min(cents(u.room), leftCents)
         }
         ticks = Set(must.map { [$0.id] } ?? [])
     }
@@ -1348,10 +1354,13 @@ struct PartsSheet: View {
     private func unsplitRow(_ u: UnsplitRow) -> some View {
         let paid = unsplitPaid[u.id]
         let on = paid != nil
-        let all = paid == cents(u.amount)
-        let name = "\(u.merchant) · " + (all ? "all of \(Format.amount(u.amount))"
-            : paid.map { "\(Format.amount(Double($0) / 100)) of it" } ?? Format.amount(u.amount))
-        let day = u.pending == true ? "Pending" : Format.short(u.date)
+        let all = paid == cents(u.room)
+        let name = "\(u.merchant) · " + (all ? "all of \(Format.amount(u.room))"
+            : paid.map { "\(Format.amount(Double($0) / 100)) of it" } ?? Format.amount(u.room))
+        // Split already by an earlier payback: what's left is hers, of the whole.
+        let shared = cents(u.room) < cents(u.amount)
+        let day = (u.pending == true ? "Pending" : Format.short(u.date))
+            + (shared ? " · \(Format.amount(u.amount)) split" : "")
         let line = all ? "\(day) · all of it" : paid.map { "\(Format.amount(Double($0) / 100)) of it · \(day)" } ?? day
         return ZStack(alignment: .trailing) {
             Button { toggleUnsplit(u) } label: {
@@ -1362,7 +1371,7 @@ struct PartsSheet: View {
                         Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     }
                     Spacer(minLength: 0)
-                    Text(Format.amount(u.amount)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
+                    Text(Format.amount(u.room)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
                         .accessibilityHidden(true)
                     changeGap
                 }
@@ -1383,7 +1392,7 @@ struct PartsSheet: View {
     /// (PB-30o), and Change asks for less.
     private func toggleUnsplit(_ u: UnsplitRow) {
         if unsplitPaid[u.id] != nil { unsplitPaid[u.id] = nil; return }
-        unsplitPaid[u.id] = Self.wholeCovered(amount: cents(u.amount), money: leftCents,
+        unsplitPaid[u.id] = Self.wholeCovered(amount: cents(u.room), money: leftCents,
                                               otherPurchases: unsplitPaid.values.reduce(0, +))
     }
 
@@ -1400,20 +1409,20 @@ struct PartsSheet: View {
     private func unsplitRoom(_ u: UnsplitRow) -> Double {
         let others = unsplitPaid.filter { $0.key != u.id }.values.reduce(0, +)
         let room = leftCents - min(tickedCents, leftCents) - others
-        return Double(min(room > 0 ? room : cents(u.amount), cents(u.amount))) / 100
+        return Double(min(room > 0 ? room : cents(u.room), cents(u.room))) / 100
     }
 
     /// PB-13 as MP-04 asks it: "How much of the $60.00?", prefilled with
     /// what's left of the money.
     private func askUnsplit(_ u: UnsplitRow) {
         unsplitAsk = u
-        startHowMuch([Owing(charge: u.id, merchant: u.merchant, date: u.date, owes: u.amount, person: nil, theirs: nil,
+        startHowMuch([Owing(charge: u.id, merchant: u.merchant, date: u.date, owes: u.room, person: nil, theirs: nil,
                             pending: u.pending)])
     }
 
     private func takeUnsplit(_ amount: Double) {
         guard let u = unsplitAsk, cents(amount) >= 1 else { return }
-        unsplitPaid[u.id] = min(cents(amount), cents(u.amount))
+        unsplitPaid[u.id] = min(cents(amount), cents(u.room))
         unsplitAsk = nil
         shareQueue = []
         partFocused = false
