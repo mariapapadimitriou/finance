@@ -2,8 +2,9 @@ import SwiftUI
 import UIKit
 import UserNotifications
 
-/// Home, A+ (AP-Home, AP-HomeCalm, AP-PhotoHome; REDESIGN-04 to -06): the
-/// date and the profile circle, the Allowance orb, then only cards with
+/// Home, A+ (AP-Home H-00r v2, AP-HomeCalm, AP-PhotoHome; REDESIGN-04 to
+/// -06): the date, "Good morning, Maya" and the profile circle, the
+/// Allowance gauge (n-home-gauge; it opens How it adds up), then only cards with
 /// something in them: a bank to reconnect (H-01, its own card), Set Pearl up
 /// again, NEEDS A LOOK (8 to sort, the streak, Sort now; See the list on the
 /// label), "2 people owe you" (opens Owed to you) and WORTH A LOOK. Nothing
@@ -91,6 +92,7 @@ struct HomeView: View {
             sortNow: { Task { await sortNow() } },
             seeList: { route = .review },
             seeOwed: { route = .owed },
+            addsUp: { route = .addsUp },
             accounts: { route = .accounts },
             reconnect: { reconnecting = $0 },
             reload: { Task { await load() } },
@@ -255,7 +257,7 @@ struct QuickSortDeck: Identifiable {
 
 /// Where Home goes.
 enum HomeRoute: Hashable {
-    case review, owed, accounts
+    case review, owed, accounts, addsUp
     case owedPerson(String)
     case transaction(String)
     case bills, debts
@@ -283,6 +285,7 @@ private struct HomeDestination: View {
         case .review: ReviewView()
         case .owed: OwedView()
         case .accounts: AccountsView()
+        case .addsUp: AddsUpView()
         case .owedPerson(let name): OwedPersonView(name: name)
         case .transaction(let id): TransactionByID(id: id, categories: app.categories)
         case .bills: IncomeBillsView()
@@ -296,6 +299,8 @@ struct HomeActions {
     let sortNow: () -> Void
     let seeList: () -> Void
     let seeOwed: () -> Void
+    /// The gauge: How it adds up (n-home-gauge).
+    let addsUp: () -> Void
     let accounts: () -> Void
     let reconnect: (Home.Connection) -> Void
     let reload: () -> Void
@@ -337,7 +342,7 @@ private struct HomeFeed: View {
             if let since = offlineSince {
                 OfflineBanner(since: since).padding(.top, 4).padding(.bottom, 8)
             }
-            HomeOrb(home: home, calm: calm)
+            HomeOrb(home: home, openAddsUp: actions.addsUp)
             if calm {
                 CalmState().padding(.top, 12)
             } else {
@@ -355,49 +360,63 @@ private struct HomeFeed: View {
     }
 }
 
-/// The date (12/500, tracked 1.4, `muted`), centred on the profile
-/// circle's line (`ProfileSlot`): the circle itself is pinned over Home by
-/// `profileCircleSlot`, so this row keeps its 44 pt place empty.
+/// H-00r v2 (home.css `.hhead`): the date (12/500, tracked 1.4, `muted`)
+/// over "Good morning, Maya" (Fraunces 28/600), on the left; the profile
+/// circle is pinned over Home by `profileCircleSlot`, so the row keeps its
+/// 44 pt place on the right empty.
 struct HomeTopBar: View {
+    @EnvironmentObject private var app: AppModel
     let today: String?
 
     var body: some View {
-        HStack {
-            Color.clear.frame(width: ProfileSlot.size, height: ProfileSlot.size)
-            Spacer(minLength: 0)
-            Text((today.map { Format.day($0) } ?? "").uppercased())
-                .font(.custom("Figtree-Medium", size: 12, relativeTo: .caption)).tracking(1.4)
-                .foregroundColor(Pearl.muted)
-                .lineLimit(1).minimumScaleFactor(0.8)
-            Spacer(minLength: 0)
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text((today.map { Format.day($0) } ?? "").uppercased())
+                    .font(.custom("Figtree-Medium", size: 12, relativeTo: .caption)).tracking(1.4)
+                    .foregroundColor(Pearl.muted)
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                Text(HomeTopBar.greeting(name: app.user?.firstName))
+                    .font(.custom("Fraunces-SemiBold", size: 28, relativeTo: .title)).tracking(-0.3)
+                    .foregroundColor(Pearl.ink)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             Color.clear.frame(width: ProfileSlot.size, height: ProfileSlot.size)
         }
-        .frame(height: ProfileSlot.size)
+        .frame(minHeight: ProfileSlot.size)
         .padding(.top, ProfileSlot.top)
+    }
+
+    /// home.css: morning before 12, afternoon 12 to 5, evening after 5;
+    /// her first name when Pearl knows it.
+    static func greeting(name: String?, at date: Date = Date()) -> String {
+        let hour = Calendar.current.component(.hour, from: date)
+        let part = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening"
+        let first = name?.split(separator: " ").first.map(String.init) ?? ""
+        return first.isEmpty ? "Good \(part)" : "Good \(part), \(first)"
     }
 }
 
-/// The orb: 188 with cards under it, 232 and 48 lower when calm. The
-/// estimate, over and no-income states keep their line under it.
+/// H-00r v2 (n-home-gauge): the Allowance gauge, the same on a busy Home
+/// and a calm one. Tapping it opens How it adds up. Without income, an
+/// estimate or a month started part-way keep their line under it.
 private struct HomeOrb: View {
     static let anchor = "home-orb"
     @EnvironmentObject private var app: AppModel
     let home: Home
-    let calm: Bool
+    let openAddsUp: () -> Void
 
     /// The app's Allowance (moved by every write's `changed`), else Home's own.
     private var sts: Allowance? { app.allowance ?? home.safeToSpend }
 
     var body: some View {
         VStack(spacing: 10) {
-            AllowanceOrb(progress: sts?.ringProgress ?? 0,
-                         label: "Allowance",
-                         amount: sts?.ringAmount ?? "—",
-                         sub: sts?.orbSub(month: home.month) ?? Allowance.orbSub(forMonth: home.month),
-                         size: calm ? AllowanceOrb.full : AllowanceOrb.small)
-                .accessibilityAddTraits(.isHeader)
-                .accessibilityHint(home.safeToSpend?.ringCaption == Allowance.restCaption ? Allowance.restCaption : "")
-            if let caption = sts?.ringCaption, !caption.isEmpty, caption != Allowance.restCaption {
+            if let sts = sts {
+                AllowanceGauge(allowance: sts, open: openAddsUp)
+            }
+            if let caption = sts?.ringCaption ?? Optional(Allowance.needsIncomeLine),
+               sts?.state != "over", caption != Allowance.restCaption {
                 Text(caption).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -405,8 +424,7 @@ private struct HomeOrb: View {
         }
         .frame(maxWidth: .infinity)
         .id(HomeOrb.anchor)
-        .padding(.top, calm ? 48 : 0)
-        .padding(.bottom, calm ? 24 : 0)
+        .padding(.top, 14)
     }
 }
 
@@ -467,12 +485,11 @@ struct NeedsALookCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
-                Image(systemName: "square.on.square").font(.system(size: 18)).foregroundColor(Pearl.action)
-                    .frame(width: 44, height: 44)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Pearl.bubble))
-                    .accessibilityHidden(true)
+                SortIcon()
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(count) to sort").font(Nacre.headline).foregroundColor(Pearl.ink)
+                    // H-00r v2 (home.css `.sortcard .n`): Fraunces 22/600.
+                    Text("\(count) to sort")
+                        .font(.custom("Fraunces-SemiBold", size: 22, relativeTo: .title2)).foregroundColor(Pearl.ink)
                     Text(howLong + (pearlSorted > 0 ? " \u{00B7} Pearl sorted \(pearlSorted)" : ""))
                         .font(Nacre.subheadline).foregroundColor(Pearl.muted)
                         .fixedSize(horizontal: false, vertical: true)
@@ -485,9 +502,41 @@ struct NeedsALookCard: View {
             Button("Sort now", action: onSort)
                 .buttonStyle(PearlPrimaryButtonStyle(busy: busy, busyLabel: "Opening…"))
                 .disabled(busy)
+                .modifier(SortGlow())
         }
         .padding(18)
         .apCard()
+    }
+}
+
+/// `.sortcard .sorticon`: 46 pt, 14 round, the nacre wash (rose, lilac,
+/// seaglass at 140°) with a white inner line; softer in dark.
+private struct SortIcon: View {
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let dark = scheme == .dark
+        let wash = dark ? [Color(hex: 0xFF8FB1).opacity(0.22), Color(hex: 0xC9A8FF).opacity(0.18), Color(hex: 0x8FE0D4).opacity(0.14)]
+                        : [Color(hex: 0xFFE1EA), Color(hex: 0xF0E6FF), Color(hex: 0xDDF5EF)]
+        return Image(systemName: "square.on.square").font(.system(size: 18)).foregroundColor(Pearl.action)
+            .frame(width: 46, height: 46)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(LinearGradient(stops: [.init(color: wash[0], location: 0), .init(color: wash[1], location: 0.6),
+                                             .init(color: wash[2], location: 1)],
+                                     startPoint: .topLeading, endPoint: .bottomTrailing)))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Color.white.opacity(dark ? 0.10 : 0.8), lineWidth: 1))
+            .accessibilityHidden(true)
+    }
+}
+
+/// `.sortcard .btn`: its rose glow, 0 8 20 (action @22% light, #FF8FB1 @20% dark).
+private struct SortGlow: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        content.shadow(color: scheme == .dark ? Color(hex: 0xFF8FB1).opacity(0.20) : Pearl.action.opacity(0.22),
+                       radius: 10, y: 8)
     }
 }
 
@@ -500,11 +549,17 @@ struct OwedCard: View {
     var body: some View {
         Button(action: open) {
             HStack(spacing: 12) {
-                APIcon(symbol: "person.2")
+                // H-00r v2 (home.css `.faces`): who, as faces, then a chevron.
+                if owed.owesYou.isEmpty {
+                    APIcon(symbol: "person.2")
+                } else {
+                    OwedFaces(names: owed.owesYou.prefix(3).map(\.name))
+                }
                 Text(OwedCard.words(owed)).font(Nacre.body).foregroundColor(Pearl.ink)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(Format.amount(owed.total)).font(Nacre.headline).monospacedDigit()
                     .foregroundColor(Pearl.ink).pearlAmountFit().fixedSize()
+                APChevron()
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
             .frame(minHeight: 64)
@@ -519,6 +574,25 @@ struct OwedCard: View {
     /// "2 people owe you", "1 person owes you".
     static func words(_ owed: OwedOverview) -> String {
         owed.people == 1 ? "1 person owes you" : "\(owed.people) people owe you"
+    }
+}
+
+/// `.faces`: 36 pt initials, 6 over each other, each ringed 2 pt in the
+/// card's colour (white / #1D2558).
+private struct OwedFaces: View {
+    let names: [String]
+
+    var body: some View {
+        // 40 apart with their rings, so −10 overlaps the faces by 6.
+        HStack(spacing: -10) {
+            ForEach(Array(names.enumerated()), id: \.offset) { _, name in
+                Initials(name: name, size: 36)
+                    .overlay(Circle().strokeBorder(Pearl.dynamic(light: 0xFFFFFF, dark: 0x1D2558), lineWidth: 2)
+                        .padding(-2))
+                    .padding(2)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 

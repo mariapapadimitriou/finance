@@ -361,12 +361,32 @@ struct Allowance: Decodable {
     /// O-11d: history starts this day, partway through the month, so the
     /// Allowance is for the rest of it.
     let from: String?
+    /// H-00r v2 / T-01r (n-home-gauge, n-cf-meter): the month's Allowance
+    /// before spending, what's spent of it (paid bills count as bills), and
+    /// "ok", "close" or "over" (80% and 100% of it). Left is `shown`.
+    var total: Double? = nil
+    var spent: Double? = nil
+    var zone: String? = nil
+    /// "$69 a day" for `daysLeft`; nil when over.
+    var perDay: Double? = nil
+    /// How it adds up: the server's rows (income, bills, spent, saved,
+    /// plan, from_last_month) and the part of spent that paid bills.
+    var rows: [Row] = []
+    var billsPaid: Double? = nil
+
+    struct Row: Decodable {
+        let key: String
+        let amount: Double
+    }
 
     enum CodingKeys: String, CodingKey {
-        case state, amount, shown, month, estimate, from
+        case state, amount, shown, month, estimate, from, spent, zone, rows
         case daysLeft = "days_left"
         case nextPay = "next_pay"
         case overBy = "over_by"
+        case total = "allowance"
+        case perDay = "per_day"
+        case billsPaid = "bills_paid"
     }
 
     init(from decoder: Decoder) throws {
@@ -383,6 +403,12 @@ struct Allowance: Decodable {
         // "cautious") or null; any of them is an estimate.
         estimate = opt(Bool.self, .estimate) ?? opt(String.self, .estimate).map { !$0.isEmpty }
         from = opt(String.self, .from)
+        total = opt(Double.self, .total)
+        spent = opt(Double.self, .spent)
+        zone = opt(String.self, .zone)
+        perDay = opt(Double.self, .perDay)
+        rows = (opt([Lenient<Row>].self, .rows) ?? []).compactMap { $0.value }
+        billsPaid = opt(Double.self, .billsPaid)
     }
 }
 

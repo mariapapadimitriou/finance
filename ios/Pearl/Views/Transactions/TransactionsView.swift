@@ -45,6 +45,8 @@ struct TransactionsView: View {
     @State private var lookByMonth: [String: Int] = [:]
     /// The card's "need a look" row opens the Needs a look page.
     @State private var showingLook = false
+    /// T-01r: the card's "How it adds up".
+    @State private var showingAddsUp = false
     @State private var loadedOnce = false
     @State private var error: String?
 
@@ -260,6 +262,7 @@ struct TransactionsView: View {
         }
         // G1-NeedsALook: the card's "need a look" row; its Quick sort card sorts them.
         .navigationDestination(isPresented: $showingLook) { ReviewView() }
+        .navigationDestination(isPresented: $showingAddsUp) { AddsUpView() }
         .navigationDestination(for: Transaction.self) { t in
             TransactionDetailView(transaction: t, categories: categories, siblings: rows)
         }
@@ -599,17 +602,38 @@ struct TransactionsView: View {
         // not a red Over measured against money that hasn't come yet.
         let pay = monthTotals?.pay
         return APCard {
-            OwnBody {
-                MonthSummary(month: month.map { Format.monthName($0) } ?? "This month",
-                             monthSpoken: month.map { Format.month($0) } ?? "",
-                             canPick: !months.isEmpty,
-                             spent: spent, income: income, saved: saved, pay: pay,
-                             picked: cardFilter.flatMap { $0.month == month ? $0.kind : nil },
-                             pick: { pickOnCard($0) },
-                             pickMonth: { showMonths = true })
+            if let allowance = monthAllowance {
+                // T-01r, refined 2026-11-22 (n-cf-meter): this month is Home's
+                // Allowance, Left and the meter; How it adds up on the card.
+                OwnBody {
+                    AllowanceMonthSummary(month: month.map { Format.monthName($0) } ?? "This month",
+                                          monthSpoken: month.map { Format.month($0) } ?? "",
+                                          canPick: !months.isEmpty, allowance: allowance,
+                                          pickMonth: { showMonths = true })
+                }
+                Rectangle().fill(APlus.separator).frame(height: 0.5).accessibilityHidden(true)
+                AddsUpRow { showingAddsUp = true }
+            } else {
+                OwnBody {
+                    MonthSummary(month: month.map { Format.monthName($0) } ?? "This month",
+                                 monthSpoken: month.map { Format.month($0) } ?? "",
+                                 canPick: !months.isEmpty,
+                                 spent: spent, income: income, saved: saved, pay: pay,
+                                 picked: cardFilter.flatMap { $0.month == month ? $0.kind : nil },
+                                 pick: { pickOnCard($0) },
+                                 pickMonth: { showMonths = true })
+                }
             }
             OwnBody { needsALookRow }
         }
+    }
+
+    /// The Allowance, when the card is on its month (the app's, moved by
+    /// every write). A month that's over has none, so it keeps Came in and
+    /// Leftover (G1-Months), as does a month without income.
+    private var monthAllowance: Allowance? {
+        guard let a = app.allowance, a.hasGauge, let m = month, a.month == m else { return nil }
+        return a
     }
 
     /// T-67 (CF-SCROLL): a figure on the card narrows the list to its month
@@ -1337,6 +1361,11 @@ struct TransactionsView: View {
         }
         loadGen += 1
         let gen = loadGen
+        // T-01r: the card's Allowance is Home's; opened before Home has
+        // loaded, Home's answer seeds it (kept or fresh).
+        if app.allowance == nil {
+            Task { [app] in _ = try? await app.screens.load("api/home", as: Home.self) { app.seed($0) } }
+        }
         let want = max(Self.page, rows.count)
         var got: [Transaction] = []
         var arrivals: [Transaction] = []

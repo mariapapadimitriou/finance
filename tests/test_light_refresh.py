@@ -32,6 +32,7 @@ class TestLightIridescent:
     DUST = "ios/Pearl/Theme/PearlDust.swift"
     ORB = "ios/Pearl/Views/Components/AllowanceOrb.swift"
     HOME = "ios/Pearl/Views/Home/HomeView.swift"
+    GAUGE = "ios/Pearl/Views/Components/AllowanceGauge.swift"
 
     def test_muted_light_is_the_darker_grey_and_dark_is_unchanged(self):
         theme = src(self.THEME)
@@ -112,25 +113,22 @@ class TestLightIridescent:
         assert "0x12163F" in ground and "0x172566" in ground and "0x1D4A7D" in ground
         assert ".accessibilityHidden(true)" in ground
 
-    def test_allowance_orb_is_shared_and_home_uses_it(self):
-        orb = src(self.ORB)
-        assert "struct AllowanceOrb: View" in orb
-        for layer in ("static let full: CGFloat = 232", "static let small: CGFloat = 188",
-                      ".blur(radius: 46)", "scheme == .dark ? 0.22 : 0.30",                       # halo
-                      "Color.white.opacity(scheme == .dark ? 0.12 : 0.55)",                         # track
-                      "small ? 9 : 11",                                                            # ring
-                      "Color.white.opacity(0.78)",                                                 # disc
-                      "Color(hex: 0xFFD9F2).opacity(0.95)",                                        # thumb
-                      '.custom("Fraunces-SemiBold", size: small ? 38 : 44, relativeTo: .largeTitle)'):
-            assert layer in orb, layer
-        assert "0xFF8FB1" in orb and "0xC9A8FF" in orb and "0x8FE0D4" in orb
-        assert ".accessibilityElement(children: .ignore)" in orb
-        assert "withAnimation" not in orb and ".animation(" not in orb, "no motion yet"
+    def test_allowance_gauge_replaces_the_orb_and_home_uses_it(self):
+        # H-00r v2 (n-home-gauge, 2026-11-21): the gauge replaces the orb.
+        assert not (ROOT / self.ORB).exists()
+        gauge = src(self.GAUGE)
+        assert "struct AllowanceGauge: View" in gauge
+        for layer in ("0xCDEFEA", "0xEBDDFB", "0xFAD3DF", "0x1D4A57", "0x3A3375", "0x552A5C",   # zones
+                      "0x8FE0D4", "0xC9A8FF", "0xFF8FB1", "0xE0457B",                           # fills
+                      "lineWidth: 14", "radius: CGFloat = 132", "235 + 250 * share",            # the arc
+                      '.custom("Fraunces-SemiBold", size: 48, relativeTo: .largeTitle)'):
+            assert layer in gauge, layer
+        assert ".accessibilityElement(children: .ignore)" in gauge
+        assert "withAnimation" not in gauge and ".animation(" not in gauge, "no motion yet"
         home = code(src(self.HOME))
-        assert "AllowanceOrb(progress:" in home
-        assert 'label: "Allowance"' in home
-        assert "size: calm ? AllowanceOrb.full : AllowanceOrb.small" in home, "188 with cards, 232 calm"
-        assert "Allowance.restCaption" in home, "the hidden caption stays as the VoiceOver hint"
+        assert "AllowanceGauge(allowance: sts, open: openAddsUp)" in home
+        assert "Allowance.restCaption" in home and "Allowance.restCaption" in gauge, \
+            "the hidden caption stays as the VoiceOver hint"
         onboarding = code(src("ios/Pearl/Views/Onboarding/AllowanceView.swift"))
         # A+ G6-Allowance (REDESIGN-13): set-up shows the Allowance on its card, not the orb.
         assert "AllowanceCard(month:" in onboarding and "AllowanceOrb(" not in onboarding
@@ -143,4 +141,4 @@ class TestLightIridescent:
             text = path.read_text(encoding="utf-8")
             assert "safe to spend" not in text.lower(), f"{path.relative_to(ROOT)} says safe to spend"
         assert "REFRESH-05" in src(self.DUST)
-        assert "A+" in src(self.ORB)
+        assert "H-00r v2" in src(self.GAUGE)

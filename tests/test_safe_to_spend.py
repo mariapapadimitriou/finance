@@ -233,6 +233,49 @@ class TestPastThePlan:
         assert r["next_pay"] == "2026-10-16"
 
 
+class TestTheGauge:
+    """H-00r v2 and T-01r: Left $829 of an Allowance of $2,113, $1,284 spent.
+    Paid bills count with the bills, so the Allowance holds still as rent
+    goes out, and Left is always the Allowance less what's spent."""
+
+    def test_paid_rent_is_a_bill_not_spending(self):
+        r = alex()
+        assert r["bills_paid"] == 2000.00
+        assert r["spent"] == 1144.34                       # 3,144.34 less the rent
+        assert r["allowance"] == 1786.52                   # 4,300 − 2,363.48 bills − 150 saved
+        assert round(r["allowance"] - r["spent"], 2) == r["amount"] == 642.18
+        assert r["zone"] == "ok"                          # 64% of it spent
+
+    def test_the_allowance_holds_still_when_rent_goes_out(self):
+        before = [t for t in october() if t.merchant != "Parkside Properties"]
+        unpaid = sts.compute(history() + before, TODAY)
+        paid = alex()
+        assert unpaid["allowance"] == paid["allowance"]
+        assert unpaid["spent"] == paid["spent"]
+
+    @pytest.mark.parametrize("extra, zone", [(0, "ok"), (300, "close"), (726.18, "over")])
+    def test_zones_at_80_and_100_percent(self, extra, zone):
+        rows = history() + october()
+        if extra:
+            rows.append(tx("2026-10-08", "Air Canada", extra, "Travel", account="visa"))
+        r = sts.compute(rows, TODAY)
+        assert r["zone"] == zone
+        assert round(r["allowance"] - r["spent"], 2) == r["amount"]
+
+    def test_left_of_nothing_is_over(self):
+        assert sts.gauge(0, 0)["zone"] == "over"
+        assert sts.gauge(-500, 1000) == {"allowance": 5.0, "spent": 10.0, "zone": "over"}
+
+    def test_an_estimate_reads_as_one_sum(self):
+        # Left shown rounded down to $10: the Allowance is that plus spent.
+        g = sts.gauge(82000, 128400)
+        assert g == {"allowance": 2104.0, "spent": 1284.0, "zone": "ok"}
+
+    def test_no_income_has_no_gauge(self):
+        r = sts.compute([tx("2026-10-02", "Loblaws", 50.00, "Groceries")], TODAY)
+        assert r["state"] == "needs_income" and "allowance" not in r
+
+
 class TestTheEndpoint:
     def test_home_returns_the_number(self, tmp_path, monkeypatch):
         from app import create_app

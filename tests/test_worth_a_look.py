@@ -132,7 +132,7 @@ class TestSubscription:
         crave(client)
         [it] = items(client)
         assert it == {"id": "subscription:Crave", "kind": "subscription", "tier": "yes",
-                      "title": "New subscription: Crave", "amount": "$19.99/mo",
+                      "title": "Crave subscription", "amount": "$19.99/mo",
                       "icon": "subscription", "tone": "rose", "yes": "Yes", "ack": None, "target": None,
                       "since": TODAY.isoformat()}
 
@@ -422,7 +422,7 @@ class TestGoodNews:
     def test_less_on_takeout(self, client):
         takeout(client)
         [it] = items(client)
-        assert it["title"] == "$120 less on takeout than October"
+        assert it["title"] == "$120 less on takeout"
         assert it["target"] == {"screen": "category", "id": None, "name": "Food Delivery", "month": "2026-11"}
         assert (it["icon"], it["tone"]) == ("trend_down", "good")
 

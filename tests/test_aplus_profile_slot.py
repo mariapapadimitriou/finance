@@ -85,7 +85,9 @@ class TestHeadersLevelWithIt(unittest.TestCase):
         home = code(read("Views", "Home", "HomeView.swift"))
         bar = home[home.index("struct HomeTopBar"):home.index("private struct HomeOrb")]
         self.assertIn(".padding(.top, ProfileSlot.top)", bar)
-        self.assertIn(".frame(height: ProfileSlot.size)", bar)
+        # H-00r v2: the greeting under the date may wrap the row past 44.
+        self.assertIn(".frame(minHeight: ProfileSlot.size)", bar)
+        self.assertIn("Color.clear.frame(width: ProfileSlot.size, height: ProfileSlot.size)", bar)
         # The offline banner sits under the date, clear of the circle.
         feed = home[home.index("private struct HomeFeed"):home.index("struct HomeTopBar")]
         self.assertLess(feed.index("HomeTopBar(today: home.today)"), feed.index("OfflineBanner(since:"))
