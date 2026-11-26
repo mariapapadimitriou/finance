@@ -1792,12 +1792,24 @@ struct TransactionDetailView: View {
         paybackChecked = true
     }
 
-    /// "Not sorted yet · Paid back or income? Tell us": the question Needs a
-    /// look is asking, answered here.
+    /// The question Needs a look is asking, answered here. "Not sorted yet"
+    /// leads with a dashed ❓, like a guess, and says nothing more (the
+    /// product owner, 2026-11-26: no "Saved or spent? Tell us").
     private var askingCard: some View {
         Button { Task { await openQuestion() } } label: {
             APCard {
-                row(title: t.label, sub: t.note.flatMap { $0.isEmpty ? nil : $0 } ?? "Needs a look", chevron: true)
+                if t.label == "Not sorted yet" {
+                    HStack(spacing: 12) {
+                        UnsortedMark()
+                        Text(t.label).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(2)
+                        Spacer(minLength: 8)
+                        CFChevron()
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 64)
+                    .contentShape(Rectangle())
+                } else {
+                    row(title: t.label, sub: t.note.flatMap { $0.isEmpty ? nil : $0 } ?? "Needs a look", chevron: true)
+                }
             }
         }
         .buttonStyle(.plain)
@@ -4045,6 +4057,21 @@ struct TransactionDetailView: View {
             let _: OK = try await app.api.put("api/transactions/\(t.id)/tags", ["tags": tags])
             return nil
         }
+    }
+}
+
+/// "Not sorted yet": a ❓ in a 36 pt disc with the guess's 1.5 pt dashed
+/// `action` edge, the same size as the page's other row icons.
+struct UnsortedMark: View {
+    var size: CGFloat = 36
+
+    var body: some View {
+        Text("❓")
+            .font(.system(size: size * 0.44))
+            .frame(width: size, height: size)
+            .background(Circle().fill(Pearl.action.opacity(0.1)))
+            .overlay(Circle().strokeBorder(Pearl.action, style: StrokeStyle(lineWidth: 1.5, dash: [5, 3])))
+            .accessibilityHidden(true)
     }
 }
 
