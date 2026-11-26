@@ -481,48 +481,67 @@ struct PaidBackFromPurchase: ViewModifier {
         }
     }
 
-    @ViewBuilder private func sheet(_ s: PaidBackStep) -> some View {
+    /// Each step in its own frame (check_stack, 2026-11-26: one switch of
+    /// every sheet was 48 KB in the Debug device build).
+    private func sheet(_ s: PaidBackStep) -> AnyView {
         switch s {
-        case .find:
-            PaidBackFindSheet(purchase: purchase, api: api, onPick: { c, f in
-                listed = f
-                return await next(c)
-            }, onClose: { go(nil) })
-        case .sender(let c):
-            PaybackSenderSheet(money: c, purchase: purchase, api: api,
-                               onPick: { name in await save(c, person: name) },
-                               onBack: { go(.find) }, onClose: { go(nil) })
-        case .who(let c):
-            // PB-11 (1351:9324): the face and the money, the kind picked.
-            PaidBackWhoSheet(face: c.payer,
-                             sub: "+\(Format.amount(c.amount)) · \(c.payer) · \(Format.short(c.date))",
-                             picked: c.who, pickedPerson: c.person,
-                             onPick: { who in pickWho(c, who) },
-                             onClose: { go(nil) })
-        case .take(let c):
-            PaidBackTakeSheet(c: c, busy: busy, error: error,
-                              onTake: { Task { await take(c, more: true) } },
-                              onFreeOnly: {
-                                  if (c.taken?.free ?? 0) < 0.005 { go(nil) } else { Task { await take(c, more: false) } }
-                              },
-                              onClose: { go(nil) })
-        case .person(let c):
-            // PB-13 / PB-13b, saved as the deposit side saves them (PB-14's toast and Undo).
-            PartsSheet(deposit: PartsDeposit(id: c.id, name: c.payer, amount: c.amount, date: c.date), api: api,
-                       paidBack: true, payer: c.kind == "person" ? c.person : nil, forCharge: purchase.id,
-                       person: c.kind == "person" ? c.person : nil) { reply in
-                go(nil)
-                done(reply.title ?? "Sorted.", reply.undo)
-            }
-        case .many(let c, let who):
-            // MP-01 / MP-02, then S-11w / S-11m for what's left: one save,
-            // one Undo (MP-05).
-            PartsSheet(deposit: PartsDeposit(id: c.id, name: c.payer, amount: c.amount, date: c.date), api: api,
-                       forCharge: purchase.id, many: who) { reply in
-                go(nil)
-                done(reply.title ?? "Sorted.", reply.undo)
-            }
+        case .find: return findSheet()
+        case .sender(let c): return senderSheet(c)
+        case .who(let c): return whoSheet(c)
+        case .take(let c): return takeSheet(c)
+        case .person(let c): return personSheet(c)
+        case .many(let c, let who): return manySheet(c, who)
         }
+    }
+
+    @inline(never) private func findSheet() -> AnyView {
+        AnyView(PaidBackFindSheet(purchase: purchase, api: api, onPick: { c, f in
+            listed = f
+            return await next(c)
+        }, onClose: { go(nil) }))
+    }
+
+    @inline(never) private func senderSheet(_ c: PaidBackFind.Candidate) -> AnyView {
+        AnyView(PaybackSenderSheet(money: c, purchase: purchase, api: api,
+                                   onPick: { name in await save(c, person: name) },
+                                   onBack: { go(.find) }, onClose: { go(nil) }))
+    }
+
+    /// PB-11 (1351:9324): the face and the money, the kind picked.
+    @inline(never) private func whoSheet(_ c: PaidBackFind.Candidate) -> AnyView {
+        AnyView(PaidBackWhoSheet(face: c.payer,
+                                 sub: "+\(Format.amount(c.amount)) · \(c.payer) · \(Format.short(c.date))",
+                                 picked: c.who, pickedPerson: c.person,
+                                 onPick: { who in pickWho(c, who) },
+                                 onClose: { go(nil) }))
+    }
+
+    @inline(never) private func takeSheet(_ c: PaidBackFind.Candidate) -> AnyView {
+        AnyView(PaidBackTakeSheet(c: c, busy: busy, error: error,
+                                  onTake: { Task { await take(c, more: true) } },
+                                  onFreeOnly: {
+                                      if (c.taken?.free ?? 0) < 0.005 { go(nil) } else { Task { await take(c, more: false) } }
+                                  },
+                                  onClose: { go(nil) }))
+    }
+
+    /// PB-13 / PB-13b, saved as the deposit side saves them (PB-14's toast and Undo).
+    @inline(never) private func personSheet(_ c: PaidBackFind.Candidate) -> AnyView {
+        AnyView(PartsSheet(deposit: PartsDeposit(id: c.id, name: c.payer, amount: c.amount, date: c.date), api: api,
+                           paidBack: true, payer: c.kind == "person" ? c.person : nil, forCharge: purchase.id,
+                           person: c.kind == "person" ? c.person : nil) { reply in
+            go(nil)
+            done(reply.title ?? "Sorted.", reply.undo)
+        })
+    }
+
+    /// MP-01 / MP-02, then S-11w / S-11m for what's left: one save, one Undo (MP-05).
+    @inline(never) private func manySheet(_ c: PaidBackFind.Candidate, _ who: PaidBackWho) -> AnyView {
+        AnyView(PartsSheet(deposit: PartsDeposit(id: c.id, name: c.payer, amount: c.amount, date: c.date), api: api,
+                           forCharge: purchase.id, many: who) { reply in
+            go(nil)
+            done(reply.title ?? "Sorted.", reply.undo)
+        })
     }
 
     /// Close this sheet, then open `next` (nil: none).

@@ -235,18 +235,7 @@ struct QuickSortView: View {
         .sheet(item: $notThis, onDismiss: {
             // Not a payback: the whole question (What was this?), once this has gone.
             if let ask = notThisThen { notThisThen = nil; asking = ask }
-        }) { n in
-            PartsSheet(deposit: PartsDeposit(id: n.ask.t.id, name: n.ask.t.name, amount: n.ask.t.amount,
-                                             date: n.ask.t.date), api: app.api,
-                       paidBack: true, payer: n.person, person: n.person,
-                       onNotPayback: {
-                           notThisThen = n.ask
-                           notThis = nil
-                       }) { reply in
-                notThis = nil
-                Task { await answered(n.ask, .done(reply)) }
-            }
-        }
+        }) { n in notThisSheet(n) }
         .sheet(item: $whoPaid) { w in
             WhoPaidAskSheet(ask: w.who, api: app.api, onPick: { answer in
                 whoPaid = nil
@@ -430,6 +419,20 @@ struct QuickSortView: View {
             }
             await answered(ask, .payback(ask.t.id, charge: tile.charge, toast: tile.toast, person: tile.person))
         }
+    }
+
+    /// P5g's sheet, in its own frame (check_stack).
+    @inline(never) private func notThisSheet(_ n: QuickNotThis) -> AnyView {
+        AnyView(PartsSheet(deposit: PartsDeposit(id: n.ask.t.id, name: n.ask.t.name, amount: n.ask.t.amount,
+                                                 date: n.ask.t.date), api: app.api,
+                           paidBack: true, payer: n.person, person: n.person,
+                           onNotPayback: {
+                               notThisThen = n.ask
+                               notThis = nil
+                           }) { reply in
+            notThis = nil
+            Task { await answered(n.ask, .done(reply)) }
+        })
     }
 
     /// P5g: Not this. Pearl's guess was wrong, so What did Sam pay back?
