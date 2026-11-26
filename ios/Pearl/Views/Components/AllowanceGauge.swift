@@ -122,7 +122,11 @@ struct AllowanceChip: View {
     var body: some View {
         HStack(spacing: 4) {
             if zone == .ok {
-                Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+                // home.css: the board's 12 × 12 tick, stroke 2.2 on a 24 grid.
+                ChipTick()
+                    .stroke(zone.chipInk, style: StrokeStyle(lineWidth: 2.2 / 2, lineCap: .round, lineJoin: .round))
+                    .frame(width: 12, height: 12)
+                    .accessibilityHidden(true)
             }
             Text(zone.words).font(.custom("Figtree-SemiBold", size: 12, relativeTo: .caption))
         }
@@ -134,10 +138,15 @@ struct AllowanceChip: View {
 }
 
 /// The pearl bead (`#agbx1`): white to lilac to mist, a white edge, a glow.
+/// On the gauge it is r 13 with a 2 pt white stroke on its edge, 28 across,
+/// under `drop-shadow(0 0 7px)` in the zone's colour. On the meter
+/// (`.cfm-fill .bead`) it is 18 across with a 1.5 pt inner white line, a
+/// lilac glow (0 0 8, #C9A8FF @90%) and a small drop (0 1 3, #1F1B2E @20%).
 struct AllowanceBead: View {
     let size: CGFloat
     let glow: Color
     var edge: CGFloat = 2
+    var meter = false
 
     var body: some View {
         Circle()
@@ -146,9 +155,35 @@ struct AllowanceBead: View {
                                          .init(color: Color(hex: 0xC9DCF5), location: 1)],
                                  center: UnitPoint(x: 0.35, y: 0.30), startRadius: 0, endRadius: size * 0.75))
             .overlay(Circle().strokeBorder(Color.white, lineWidth: edge))
-            .shadow(color: glow, radius: 4)
+            // CSS blur is about twice SwiftUI's radius.
+            .shadow(color: meter ? Color(hex: 0xC9A8FF).opacity(0.9) : glow, radius: meter ? 4 : 3.5)
+            .shadow(color: meter ? Color(hex: 0x1F1B2E).opacity(0.2) : .clear, radius: 1.5, y: 1)
             .frame(width: size, height: size)
             .accessibilityHidden(true)
+    }
+}
+
+/// The chip's tick: M5 12.5 l4.5 4.5 L19 7.5 on a 24 grid.
+struct ChipTick: Shape {
+    func path(in rect: CGRect) -> Path {
+        let k = min(rect.width, rect.height) / 24
+        var p = Path()
+        p.move(to: CGPoint(x: 5 * k, y: 12.5 * k))
+        p.addLine(to: CGPoint(x: 9.5 * k, y: 17 * k))
+        p.addLine(to: CGPoint(x: 19 * k, y: 7.5 * k))
+        return p.offsetBy(dx: rect.minX, dy: rect.minY)
+    }
+}
+
+/// The month's chevron (AP-CashFlow): M1 1.5 l5 5 5-5 on a 12 × 8 grid, 11 × 8.
+struct MonthChevron: Shape {
+    func path(in rect: CGRect) -> Path {
+        let x = rect.width / 12, y = rect.height / 8
+        var p = Path()
+        p.move(to: CGPoint(x: 1 * x, y: 1.5 * y))
+        p.addLine(to: CGPoint(x: 6 * x, y: 6.5 * y))
+        p.addLine(to: CGPoint(x: 11 * x, y: 1.5 * y))
+        return p.offsetBy(dx: rect.minX, dy: rect.minY)
     }
 }
 
@@ -198,10 +233,12 @@ private struct GaugeDial: View {
 
     static let centre = CGPoint(x: 160, y: 160)
     static let radius: CGFloat = 132
-    /// Of the gauge: 80% and 100% of 115, with a 3° gap either side.
-    static let bounds: [(Double, Double)] = [(0, 0.8 / 1.15 - 0.012),
-                                             (0.8 / 1.15 + 0.012, 1 / 1.15 - 0.012),
-                                             (1 / 1.15 + 0.012, 1)]
+    /// Of the gauge: 80% and 100% of 115, about 3° apart as AP-Home's
+    /// paths are (1.6° of the 250° sweep either side).
+    static let gap = 1.6 / 250
+    static let bounds: [(Double, Double)] = [(0, 0.8 / 1.15 - gap),
+                                             (0.8 / 1.15 + gap, 1 / 1.15 - gap),
+                                             (1 / 1.15 + gap, 1)]
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -224,7 +261,7 @@ private struct GaugeDial: View {
                 }
                 .stroke(Pearl.ink.opacity(0.5), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
             }
-            AllowanceBead(size: 26, glow: zone.glow)
+            AllowanceBead(size: 28, glow: zone.glow)
                 .position(Self.point(spent, Self.radius))
         }
         .frame(width: 320, height: 300)
@@ -332,27 +369,31 @@ struct AllowanceMeter: View {
         let zone = AllowanceZone(allowance)
         GeometryReader { g in
             let w = g.size.width
+            let fill = w * allowance.spentShare
+            // Everything is 10 high and centred on the bar; the tick (20)
+            // overhangs 5 above and below, under the fill, and the bead (18)
+            // 4 either side.
             ZStack(alignment: .leading) {
                 HStack(spacing: 3) {
                     ForEach(0..<3, id: \.self) { i in
                         RoundedRectangle(cornerRadius: 5, style: .continuous).fill(AllowanceZone.zones[i])
-                            .frame(width: max((w - 6) * [80, 20, 15][i] / 115, 0))
+                            .frame(width: max((w - 6) * [80, 20, 15][i] / 115, 0), height: 10)
                     }
-                }
-                let fill = w * allowance.spentShare
-                if fill > 0.5 {
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(LinearGradient(colors: zone.fill, startPoint: .leading, endPoint: .trailing))
-                        .frame(width: fill)
                 }
                 if let today = allowance.todayShare {
                     RoundedRectangle(cornerRadius: 1).fill(Pearl.ink.opacity(0.45))
                         .frame(width: 2, height: 20)
                         .offset(x: w * today - 1)
                 }
-                AllowanceBead(size: 18, glow: zone.glow, edge: 1.5)
+                if fill > 0.5 {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(LinearGradient(colors: zone.fill, startPoint: .leading, endPoint: .trailing))
+                        .frame(width: fill, height: 10)
+                }
+                AllowanceBead(size: 18, glow: zone.glow, edge: 1.5, meter: true)
                     .offset(x: min(max(fill - 9, -4), w - 14))
             }
+            .frame(width: w, height: 10)
         }
         .frame(height: 10)
         .accessibilityHidden(true)
@@ -377,7 +418,10 @@ struct AllowanceMonthSummary: View {
                 Button(action: pickMonth) {
                     HStack(spacing: 6) {
                         Text(month).font(Nacre.headline)
-                        Image(systemName: "chevron.down").font(.system(size: 12, weight: .bold))
+                        MonthChevron()
+                            .stroke(Pearl.ink, style: StrokeStyle(lineWidth: 2 * 11 / 12, lineCap: .round, lineJoin: .round))
+                            .frame(width: 11, height: 8)
+                            .accessibilityHidden(true)
                     }
                     .foregroundColor(Pearl.ink)
                     .frame(minHeight: 44).contentShape(Rectangle())

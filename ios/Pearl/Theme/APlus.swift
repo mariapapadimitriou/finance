@@ -83,19 +83,32 @@ struct APCardShadow: ViewModifier {
 
 // MARK: - Ground
 
-/// A+ `--ground` (dirA.css): the page. Light: the nacre (rose, lilac,
-/// seaglass at 114.76°) softened by a white veil (50% → 22% at 45% → 34%).
-/// Dark: the night (#12163F → #172566 at 55% → #1D4A7D) with a lilac glow
-/// at the top right. No dust and no bubbles in A+.
+/// Which ground a screen stands on (dirA.css "Ground refresh"): working
+/// screens and pushed pages are flat `--ground` (#F6F2F6); a tab root (it
+/// has the profile circle) gets `--ground-wash`; a moment (sign-in and
+/// set-up, the Pearl chat, the calm Home) keeps the softened nacre.
+enum APGroundKind {
+    case flat, wash, nacre
+}
+
+/// A+ `--ground` (dirA.css): the page, by `kind`. Light: flat #F6F2F6; the
+/// wash (the nacre at 105° over the top 320, under a white veil, fading to
+/// #F6F2F6 by 300); or the nacre (rose, lilac, seaglass at 114.76°) under a
+/// white veil (50% → 22% at 45% → 34%). Dark is the same for all three: the
+/// night (#12163F → #172566 at 55% → #1A3F6E) with a lilac glow at the top
+/// right. No dust and no bubbles in A+.
 struct APGround: View {
+    var kind: APGroundKind = .flat
     @Environment(\.colorScheme) private var scheme
 
+    static let pearl = Color(hex: 0xF6F2F6)
+
     var body: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             if scheme == .dark {
                 LinearGradient(stops: [.init(color: Color(hex: 0x12163F), location: 0),
                                        .init(color: Color(hex: 0x172566), location: 0.55),
-                                       .init(color: Color(hex: 0x1D4A7D), location: 1)],
+                                       .init(color: Color(hex: 0x1A3F6E), location: 1)],
                                startPoint: .top, endPoint: .bottom)
                 GeometryReader { g in
                     RadialGradient(colors: [Color(hex: 0xD9C6FF).opacity(0.16), .clear],
@@ -103,11 +116,19 @@ struct APGround: View {
                                    endRadius: max(g.size.width * 0.72, g.size.height * 0.36))
                 }
             } else {
-                APGround.nacre
-                LinearGradient(stops: [.init(color: .white.opacity(0.50), location: 0),
-                                       .init(color: .white.opacity(0.22), location: 0.45),
-                                       .init(color: .white.opacity(0.34), location: 1)],
-                               startPoint: .top, endPoint: .bottom)
+                switch kind {
+                case .flat:
+                    APGround.pearl
+                case .wash:
+                    APGround.pearl
+                    APGroundWash()
+                case .nacre:
+                    APGround.nacre
+                    LinearGradient(stops: [.init(color: .white.opacity(0.50), location: 0),
+                                           .init(color: .white.opacity(0.22), location: 0.45),
+                                           .init(color: .white.opacity(0.34), location: 1)],
+                                   startPoint: .top, endPoint: .bottom)
+                }
             }
         }
         .ignoresSafeArea()
@@ -118,6 +139,31 @@ struct APGround: View {
     static let nacre = LinearGradient(colors: [Color(hex: 0xFFB6CC), Color(hex: 0xCDB9FF), Color(hex: 0xA8E9DF)],
                                       startPoint: UnitPoint(x: -0.325, y: 0.324),
                                       endPoint: UnitPoint(x: 1.325, y: 0.676))
+}
+
+/// dirA.css `--ground-wash`'s top 320: the nacre at 105° (rose 0, lilac
+/// 44%, seaglass 88%), a white veil (26% → 10%), then #F6F2F6 coming in
+/// (0 → 30% at 130 → all of it at 300). Under it the ground is flat.
+struct APGroundWash: View {
+    static let height: CGFloat = 320
+
+    var body: some View {
+        ZStack {
+            // 105° across a 390 × 320 box: from (−0.069, 0.314) to (1.069, 0.686).
+            LinearGradient(stops: [.init(color: Color(hex: 0xFFB6CC), location: 0),
+                                   .init(color: Color(hex: 0xCDB9FF), location: 0.44),
+                                   .init(color: Color(hex: 0xA8E9DF), location: 0.88)],
+                           startPoint: UnitPoint(x: -0.069, y: 0.314), endPoint: UnitPoint(x: 1.069, y: 0.686))
+            LinearGradient(colors: [.white.opacity(0.26), .white.opacity(0.10)], startPoint: .top, endPoint: .bottom)
+            LinearGradient(stops: [.init(color: APGround.pearl.opacity(0), location: 0),
+                                   .init(color: APGround.pearl.opacity(0.30), location: 130 / Self.height),
+                                   .init(color: APGround.pearl, location: 300 / Self.height),
+                                   .init(color: APGround.pearl, location: 1)],
+                           startPoint: .top, endPoint: .bottom)
+        }
+        .frame(height: Self.height)
+        .frame(maxWidth: .infinity)
+    }
 }
 
 /// A+ `.sheet` (kit.css): a Pearl sheet's surface. Light: the nacre under a
@@ -206,7 +252,16 @@ struct APIcon: View {
 struct APPrimaryLook: ViewModifier {
     var enabled = true
     var pressed = false
+    /// H-00r v2 (home.css `.sortcard .btn`): 48 high, one 0 8 20 glow
+    /// (action @22% light, #FF8FB1 @20% dark).
+    var sortCard = false
     @Environment(\.colorScheme) private var scheme
+
+    private var glow: Color {
+        guard enabled else { return .clear }
+        if sortCard { return scheme == .dark ? Color(hex: 0xFF8FB1).opacity(0.20) : Pearl.action.opacity(0.22) }
+        return scheme == .dark ? .clear : Pearl.action.opacity(0.22)
+    }
 
     func body(content: Content) -> some View {
         content
@@ -214,9 +269,10 @@ struct APPrimaryLook: ViewModifier {
             .foregroundColor(Pearl.onAction)
             .multilineTextAlignment(.center)
             .padding(.horizontal, 24)
-            .frame(maxWidth: .infinity, minHeight: 50)
+            .frame(maxWidth: .infinity, minHeight: sortCard ? 48 : 50)
             .background(Capsule().fill(Pearl.action))
-            .shadow(color: scheme == .dark || !enabled ? .clear : Pearl.action.opacity(0.22), radius: 7, y: 6)
+            // CSS blur 20 is a radius of about 10 here.
+            .shadow(color: glow, radius: sortCard ? 10 : 7, y: sortCard ? 8 : 6)
             .opacity(enabled ? (pressed ? 0.85 : 1) : 0.4)
             .contentShape(Capsule())
     }
@@ -451,8 +507,20 @@ struct SortStreak: View {
     let sorted: Int
     let toSort: Int
     var mini = false
+    /// H-00r v2 (home.css `.sortcard .streak`): Home's sort card, 6 high,
+    /// rose to lilac (60%) to seaglass.
+    var sortCard = false
 
     static let dashes = 12
+
+    private var lit: LinearGradient {
+        sortCard
+            ? LinearGradient(stops: [.init(color: APlus.streakFrom, location: 0),
+                                     .init(color: APlus.streakTo, location: 0.6),
+                                     .init(color: Color(hex: 0x8FE0D4), location: 1)],
+                             startPoint: .leading, endPoint: .trailing)
+            : LinearGradient(colors: [APlus.streakFrom, APlus.streakTo], startPoint: .leading, endPoint: .trailing)
+    }
 
     /// How many of the 12 dashes are lit.
     static func lit(sorted: Int, toSort: Int) -> Int {
@@ -464,14 +532,11 @@ struct SortStreak: View {
 
     var body: some View {
         let on = SortStreak.lit(sorted: sorted, toSort: toSort)
-        let height: CGFloat = mini ? 5 : 8
+        let height: CGFloat = mini ? 5 : sortCard ? 6 : 8
         HStack(spacing: mini ? 2 : 4) {
             ForEach(0..<SortStreak.dashes, id: \.self) { i in
                 Capsule()
-                    .fill(i < on
-                          ? AnyShapeStyle(LinearGradient(colors: [APlus.streakFrom, APlus.streakTo],
-                                                         startPoint: .leading, endPoint: .trailing))
-                          : AnyShapeStyle(APlus.trackSoft))
+                    .fill(i < on ? AnyShapeStyle(lit) : AnyShapeStyle(APlus.trackSoft))
                     .frame(height: height)
             }
         }

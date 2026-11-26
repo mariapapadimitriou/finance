@@ -70,7 +70,14 @@ extension View {
     func apPushedPage(back: @escaping () -> Void) -> some View {
         navigationBarBackButtonHidden(true)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) { APBackButton(action: back) }
+                // PX-AddsUp (2026-11-26 audit): the board's own 44 pt white
+                // circle, without iOS 26's glass capsule around it.
+                if #available(iOS 26, *) {
+                    ToolbarItem(placement: .navigationBarLeading) { APBackButton(action: back) }
+                        .sharedBackgroundVisibility(.hidden)
+                } else {
+                    ToolbarItem(placement: .navigationBarLeading) { APBackButton(action: back) }
+                }
             }
             .toolbarBackground(.hidden, for: .navigationBar)
             .navigationBarTitleDisplayMode(.inline)

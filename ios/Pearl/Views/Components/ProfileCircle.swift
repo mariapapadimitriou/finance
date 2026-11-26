@@ -122,6 +122,9 @@ struct ProfileCircle: View {
 /// that line, and the large-title rows sit level with it.
 enum ProfileSlot {
     static let top: CGFloat = 6
+    /// AP-CashFlow: Cash flow's title row sits 16 down (Home's 6), and the
+    /// circle with it until the title folds into the bar.
+    static let cashFlowTop: CGFloat = 16
     static let trailing: CGFloat = Pearl.gutter - 4
     static let size: CGFloat = 44
     /// From the screen's trailing edge to the circle's leading edge: what a
@@ -135,12 +138,12 @@ extension View {
     /// scroll or fold with the page, and a pushed page or a sheet covers it.
     /// `shown: false` takes it away (Cash flow's Select); `enabled: false`
     /// keeps it but not tappable (a trip's pick).
-    func profileCircleSlot(shown: Bool = true, enabled: Bool = true) -> some View {
+    func profileCircleSlot(shown: Bool = true, enabled: Bool = true, top: CGFloat = ProfileSlot.top) -> some View {
         overlay(alignment: .topTrailing) {
             if shown {
                 ProfileCircle()
                     .disabled(!enabled)
-                    .padding(.top, ProfileSlot.top)
+                    .padding(.top, top)
                     .padding(.trailing, ProfileSlot.trailing)
             }
         }

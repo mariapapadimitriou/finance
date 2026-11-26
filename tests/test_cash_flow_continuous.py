@@ -190,8 +190,9 @@ def test_no_single_month_wording():
     assert "this month" not in no_match
 
 
-def test_home_needs_a_look_has_no_streak():
-    assert "SortStreak(" not in HOME
+def test_home_needs_a_look_has_the_streak():
+    # H-00r v2 (home.css `.sortcard .streak`) supersedes r7's "no streak".
+    assert "SortStreak(sorted: sorted, toSort: count, sortCard: true)" in HOME
 
 
 # Quick sort (QS-SAME).

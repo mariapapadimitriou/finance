@@ -18,12 +18,14 @@ import SwiftUI
 extension View {
     /// The top scroll edge: the A+ ground fading out under the status bar.
     /// `nacreScreen()` adds it, so every screen on the A+ ground has it.
-    func scrollEdgeFade() -> some View {
-        modifier(ScrollEdgeFade())
+    func scrollEdgeFade(_ kind: APGroundKind = .flat) -> some View {
+        modifier(ScrollEdgeFade(kind: kind))
     }
 }
 
 struct ScrollEdgeFade: ViewModifier {
+    /// The page's ground, so the band matches it.
+    var kind: APGroundKind = .flat
     /// The top safe-area inset (status bar, and a pushed page's bar).
     @State private var top: CGFloat = 0
     /// The whole screen the page's ground fills, so the band's ground lines
@@ -41,7 +43,7 @@ struct ScrollEdgeFade: ViewModifier {
             })
             // On top: only the band, `top` tall, at the very top of the screen.
             .overlay(alignment: .top) {
-                ScrollEdgeFadeBand(top: top, ground: ground)
+                ScrollEdgeFadeBand(top: top, ground: ground, kind: kind)
                     .ignoresSafeArea(.container, edges: .top)
             }
     }
@@ -61,10 +63,11 @@ struct ScrollEdgeFade: ViewModifier {
 struct ScrollEdgeFadeBand: View {
     let top: CGFloat
     let ground: CGSize
+    var kind: APGroundKind = .flat
 
     var body: some View {
         if top > 0 && ground.height > 0 {
-            APGround()
+            APGround(kind: kind)
                 .frame(width: ground.width, height: ground.height)
                 .frame(height: top, alignment: .top)
                 .clipped()

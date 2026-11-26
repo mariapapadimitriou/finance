@@ -39,6 +39,13 @@ struct HomeView: View {
     /// The new-month item scrolls Home back to its Allowance.
     @State private var toOrb = 0
 
+    /// AP-HomeCalm is a moment (`.moment`): the full nacre; a busy Home is
+    /// a tab root (dirA.css `--ground-wash`).
+    private var calm: Bool {
+        guard let home = home else { return false }
+        return HomeFeed.calm(home: home, setup: setup, owed: owed, worth: worth)
+    }
+
     var body: some View {
         ScrollViewReader { proxy in
         ScrollView {
@@ -56,7 +63,7 @@ struct HomeView: View {
         }
         .onChange(of: toOrb) { _ in withAnimation { proxy.scrollTo(HomeOrb.anchor, anchor: .top) } }
         }
-        .nacreScreen()
+        .nacreScreen(calm ? .nacre : .wash)
         // Pinned, not in the feed: it stays put as Home scrolls.
         .profileCircleSlot()
         .navigationBarHidden(true)
@@ -323,15 +330,21 @@ private struct HomeFeed: View {
     let sorting: Bool
     let actions: HomeActions
 
-    private var troubled: [Home.Connection] {
+    private var troubled: [Home.Connection] { Self.troubled(home) }
+
+    private var owes: Bool { Self.owes(owed) }
+
+    /// AP-HomeCalm: nothing needs her.
+    private var calm: Bool { Self.calm(home: home, setup: setup, owed: owed, worth: worth) }
+
+    static func troubled(_ home: Home) -> [Home.Connection] {
         (home.connections ?? []).filter { ["needs_sign_in", "disconnected"].contains($0.state ?? "") }
     }
 
-    private var owes: Bool { (owed?.people ?? 0) > 0 && (owed?.total ?? 0) >= 0.005 }
+    static func owes(_ owed: OwedOverview?) -> Bool { (owed?.people ?? 0) > 0 && (owed?.total ?? 0) >= 0.005 }
 
-    /// AP-HomeCalm: nothing needs her.
-    private var calm: Bool {
-        troubled.isEmpty && !(setup?.active ?? false) && home.reviewCount == 0 && !owes
+    static func calm(home: Home, setup: SetupAgain?, owed: OwedOverview?, worth: [WorthItem]) -> Bool {
+        troubled(home).isEmpty && !(setup?.active ?? false) && home.reviewCount == 0 && !owes(owed)
             && worth.isEmpty
     }
 
@@ -497,12 +510,14 @@ struct NeedsALookCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .accessibilityElement(children: .combine)
-            // AP-Home (approved r7): no streak dashes on this card; the
-            // words still say Pearl sorted N.
+            // H-00r v2 (home.css `.sortcard .streak`; supersedes r7's "no
+            // streak dashes"): the 12 dashes, 6 high, between the words and
+            // Sort now.
+            SortStreak(sorted: sorted, toSort: count, sortCard: true)
+                .padding(.top, -2)
             Button("Sort now", action: onSort)
-                .buttonStyle(PearlPrimaryButtonStyle(busy: busy, busyLabel: "Opening…"))
+                .buttonStyle(PearlPrimaryButtonStyle(busy: busy, busyLabel: "Opening…", sortCard: true))
                 .disabled(busy)
-                .modifier(SortGlow())
         }
         .padding(18)
         .apCard()
@@ -510,7 +525,8 @@ struct NeedsALookCard: View {
 }
 
 /// `.sortcard .sorticon`: 46 pt, 14 round, the nacre wash (rose, lilac,
-/// seaglass at 140°) with a white inner line; softer in dark.
+/// seaglass at 140°) with a white inner line, softer in dark; the board's
+/// own 20 pt mark in `action` (SortMark).
 private struct SortIcon: View {
     @Environment(\.colorScheme) private var scheme
 
@@ -518,7 +534,9 @@ private struct SortIcon: View {
         let dark = scheme == .dark
         let wash = dark ? [Color(hex: 0xFF8FB1).opacity(0.22), Color(hex: 0xC9A8FF).opacity(0.18), Color(hex: 0x8FE0D4).opacity(0.14)]
                         : [Color(hex: 0xFFE1EA), Color(hex: 0xF0E6FF), Color(hex: 0xDDF5EF)]
-        return Image(systemName: "square.on.square").font(.system(size: 18)).foregroundColor(Pearl.action)
+        return SortMark()
+            .stroke(Pearl.action, style: StrokeStyle(lineWidth: 1.8 * 20 / 24, lineCap: .round, lineJoin: .round))
+            .frame(width: 20, height: 20)
             .frame(width: 46, height: 46)
             .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(LinearGradient(stops: [.init(color: wash[0], location: 0), .init(color: wash[1], location: 0.6),
@@ -530,13 +548,20 @@ private struct SortIcon: View {
     }
 }
 
-/// `.sortcard .btn`: its rose glow, 0 8 20 (action @22% light, #FF8FB1 @20% dark).
-private struct SortGlow: ViewModifier {
-    @Environment(\.colorScheme) private var scheme
-
-    func body(content: Content) -> some View {
-        content.shadow(color: scheme == .dark ? Color(hex: 0xFF8FB1).opacity(0.20) : Pearl.action.opacity(0.22),
-                       radius: 10, y: 8)
+/// AP-Home's sort mark on a 24 grid: a card (6, 3.5, 12 × 15, r 2.5) and
+/// the L-shaped edge of the one behind it (M4 7.5 v11 a2.5 2.5 0 0 0 2.5 2.5 H16).
+struct SortMark: Shape {
+    func path(in rect: CGRect) -> Path {
+        let k = min(rect.width, rect.height) / 24
+        var p = Path()
+        p.addRoundedRect(in: CGRect(x: 6 * k, y: 3.5 * k, width: 12 * k, height: 15 * k),
+                         cornerSize: CGSize(width: 2.5 * k, height: 2.5 * k))
+        p.move(to: CGPoint(x: 4 * k, y: 7.5 * k))
+        p.addLine(to: CGPoint(x: 4 * k, y: 18.5 * k))
+        p.addArc(center: CGPoint(x: 6.5 * k, y: 18.5 * k), radius: 2.5 * k,
+                 startAngle: .degrees(180), endAngle: .degrees(90), clockwise: true)
+        p.addLine(to: CGPoint(x: 16 * k, y: 21 * k))
+        return p.offsetBy(dx: rect.minX, dy: rect.minY)
     }
 }
 

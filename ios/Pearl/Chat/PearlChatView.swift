@@ -65,7 +65,7 @@ struct PearlChatView: View {
                     ChatComposer(text: $text, composing: $composing, onDevice: isStart, off: isThinking, send: send)
                 }
             }
-            .nacreScreen()
+            .nacreScreen(.nacre)
             // The profile circle, as on every main tab (in this stack, so
             // Profile pushes here and a chat page covers it).
             .profileCircleSlot()
