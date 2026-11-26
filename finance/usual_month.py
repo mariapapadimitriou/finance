@@ -29,7 +29,7 @@ import calendar
 from collections import defaultdict
 from datetime import date, timedelta
 
-from .analytics import counts_as_spending, invested_in, spend_amount
+from .analytics import counts_as_spending, in_history, invested_in, spend_amount
 from .categorize import group_of
 from .models import Transaction
 
@@ -131,7 +131,7 @@ def in_usual(t: Transaction) -> bool:
     """Whether a row may shape an average: spending that isn't a one-off.
     Projections, budgets, Insights and the trend card ask this of the months
     they average over (THL-71)."""
-    return counts_as_spending(t) and not t.one_off
+    return in_history(t)
 
 
 def one_off_effect(transactions: list[Transaction], txn: Transaction, today: date,

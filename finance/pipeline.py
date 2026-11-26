@@ -30,7 +30,10 @@ def ingest(store: Store, result: IngestResult, filename: str = "",
         existing = store.all_transactions()
     new, dupes = split_new(batch, existing)
 
-    apply_categories(new, store.overrides())
+    # The shops already in the ledger, so a refund from one reads as a
+    # refund, not a card payment (the tap audit, P8).
+    from .categorize import bought_from
+    apply_categories(new, store.overrides(), shops=bought_from(existing))
 
     # A row typed in by hand was a placeholder for a charge that hadn't posted.
     # Now it has, so the statement's version replaces it — carrying across the

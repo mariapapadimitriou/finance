@@ -78,6 +78,25 @@ def _is_card_payment(t: Transaction) -> bool:
     return bill_category(t.merchant or "", t.description or "") == "Transfers"
 
 
+def never_pay(t: Transaction) -> bool:
+    """Money in that can never be pay or income (the tap audit, P6/P8,
+    2026-11-26): anything on a credit card (a card payment, a refund, a
+    credit), or a card payment by its name ("ONLINE PAYMENT - THANK YOU")
+    wherever it landed. A deposit the bank itself calls income is left to
+    the bank, so a payroll that happens to mention a card network still is."""
+    if t.amount >= 0:
+        return False
+    raw = t.raw or {}
+    if str(raw.get("account_type", "")).lower() == "credit":
+        return True
+    issuer = str(raw.get("issuer_category", "")).lower()
+    if issuer.startswith("loan_payments_credit_card"):
+        return True
+    if issuer.startswith("income"):
+        return False
+    return _is_card_payment(t)
+
+
 def _who(t: Transaction) -> str:
     return str((t.raw or {}).get("counterparty") or t.merchant or "").strip()
 
@@ -484,6 +503,9 @@ def describe(t: Transaction, ctx: Context) -> dict:
         # phone shows a move between her accounts as "⇄ $500.00", and this
         # as a plain amount.
         "card_payment": chip == "Transfer" and _is_card_payment(t),
+        # The tap audit (P8): money in that can never be pay, so the page
+        # offers no "This is my regular pay" (marks refuses it too).
+        "never_pay": never_pay(t),
         "suggested": suggested,
         "amount": round(amount, 2),
         "full_amount": round(abs(t.amount), 2),

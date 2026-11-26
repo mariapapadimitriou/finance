@@ -72,7 +72,8 @@ def _months_by_line(transactions, months_back: int = 12,
 
     per: dict[str, dict[str, float]] = {}
     for t in transactions:
-        if t.month not in inside or t.amount <= 0 or not counts_as_spending(t):
+        # What she usually spends: one-offs left out (P14).
+        if t.month not in inside or t.amount <= 0 or not counts_as_spending(t) or t.one_off:
             continue
         category = t.category or "Other"
         if category in bank_funded:

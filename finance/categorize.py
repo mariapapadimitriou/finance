@@ -655,8 +655,31 @@ def is_guess(t) -> bool:
     return is_unsure(t) or (t.category or "Other") == "Other"
 
 
-def apply_categories(transactions, overrides: dict[str, str] | None = None) -> None:
-    """Categorize in place, leaving explicit user choices untouched."""
+# Words a shop puts on money it gives back (not merchant names): a credit on a
+# card that says so is a refund, not a payment (the tap audit, P8).
+_REFUND_WORDS = re.compile(r"\b(refund|refunded|return|returned|reversal|reversed)\b", re.I)
+
+
+def bought_from(transactions) -> dict[str, str]:
+    """{merchant key: the category of the latest purchase there}: the shops
+    she has bought from, so money back from one of them reads as a refund."""
+    out: dict[str, tuple[str, str]] = {}
+    for t in transactions:
+        if t.amount <= 0 or not t.merchant or is_generic_transfer_name(t.merchant):
+            continue
+        k = merchant_key(t.merchant)
+        if k not in out or t.date >= out[k][0]:
+            out[k] = (t.date, t.category or "Other")
+    return {k: cat for k, (_, cat) in out.items()}
+
+
+def apply_categories(transactions, overrides: dict[str, str] | None = None,
+                     shops: dict[str, str] | None = None) -> None:
+    """Categorize in place, leaving explicit user choices untouched.
+
+    `shops` is `bought_from` for the rest of the ledger, when only new rows
+    are passed: a refund can arrive in a later sync than its purchase."""
+    known = {**(shops or {}), **bought_from(transactions)}
     for t in transactions:
         # Hers: set by hand, or by a date range she sorted (finance/ranges.py);
         # or Pearl's by a pattern of hers (finance/pattern_sort.py), until she undoes it.
@@ -679,7 +702,15 @@ def apply_categories(transactions, overrides: dict[str, str] | None = None) -> N
             confidence=str((t.raw or {}).get("category_confidence", "") or ""),
         )
         if _is_unrecognized_card_inflow(t):
-            t.category, t.category_source = "Transfers", "card_inflow"
+            shop = known.get(merchant_key(t.merchant or ""))
+            if shop is not None or _REFUND_WORDS.search(f"{t.merchant} {t.description}"):
+                # Money back from a shop she bought from (Joey King St's $45
+                # back on her Amex read "Moved $45.00 to American Express"):
+                # a refund, in the purchase's category, netting against it.
+                if shop and shop not in NON_SPEND and shop != "Other":
+                    t.category, t.category_source = shop, "rule"
+            else:
+                t.category, t.category_source = "Transfers", "card_inflow"
         # A rule is for its merchant's name only (2026-10-24): "Lyft" no
         # longer sorts "Lyft Ride Tue 6PM", which stays Pearl's own guess.
 
