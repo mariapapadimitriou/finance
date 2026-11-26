@@ -162,7 +162,7 @@ def kind_of(t: Transaction) -> str:
 def cadence(transactions: list[Transaction], today: str | None = None) -> dict | None:
     """How often pay arrives, from the last six months of salary.
 
-    {"cadence": "biweekly" | "semimonthly" | "monthly" | "irregular",
+    {"cadence": "weekly" | "biweekly" | "semimonthly" | "monthly" | "irregular",
      "paycheque": median deposit, "monthly": a typical month,
      "three_pay_months": months that held a third paycheque}
     or None with fewer than three paycheques to go on.
@@ -196,7 +196,11 @@ def cadence(transactions: list[Transaction], today: str | None = None) -> dict |
     # Every 14 days exactly is biweekly; twice a month on set dates gives gaps
     # that wander between 13 and 17 instead.
     fortnights = sum(1 for g in gaps if g == 14) / len(gaps)
-    if fortnights >= 0.6:
+    weeks = sum(1 for g in gaps if g == 7) / len(gaps)
+    if weeks >= 0.6 or 6 <= gap <= 8:
+        # Weekly pay (2026-11-25): setup found it, and the Allowance didn't.
+        kind, per_month = "weekly", paycheque * 52 / 12
+    elif fortnights >= 0.6:
         kind, per_month = "biweekly", paycheque * 26 / 12
     elif 25 <= gap <= 35:
         kind, per_month = "monthly", paycheque

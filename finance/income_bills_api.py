@@ -118,6 +118,13 @@ def income_bills_pay_answer():
                               "name": found["name"], "amount": found["amount"],
                               "cadence": found["cadence"], "next": found["next"]})
         state["income_on"] = state["income_on"] or today.isoformat()
+        if found.get("rule"):
+            # Pay the bank called a transfer (2026-11-25): from now on every
+            # deposit from them is income, as "This is my regular pay" does.
+            key, name = found["rule"]
+            st.set_pay_rule(key, name)
+            from .pipeline import classify_ledger
+            classify_ledger(st)
     else:
         state["pay_no"] = sorted(set(state["pay_no"]) | {payer})
     ib.save(st, state)
