@@ -22,7 +22,7 @@ PARTS = "Views/Transactions/PartsFlow.swift"
 
 def test_the_card_says_paid_left_let_go_and_extra():
     s = src(FLOW)
-    for words in ('"Paid \\(Format.amount(p.paid)) of \\(Format.amount(p.amount))"', '"Paid back · \\(n) payments"',
+    for words in ('"Paid \\(Format.amount(p.paid)) · still owes \\(Format.amount(p.owes))"', '"Paid back · \\(n) payments"',
                   '"left"', '"let go"', 'let go")', 'extra" : nil', "ExtraChip(amount: chip) { onChoose(p, .sayExtra) }"):
         assert words in s, words
     assert "· owes \\(Format.amount(p.owes))" not in s, "what's left is on the right (S-04l)"

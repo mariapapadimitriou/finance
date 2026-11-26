@@ -17,10 +17,11 @@ def test_not_the_pages_button():
 
 
 def test_in_split_with_others_place():
-    options = between("@ViewBuilder private var options: some View", 'title: "Mark as paid back"')
-    assert "let splitsJoint = showsShareBar && canSplitJoint" in options
-    assert "let canSplit = self.canSplit || splitsJoint" in options
-    assert "if splitsJoint {\n                    jointSplitRow\n                } else if canSplit {" in options
+    # P2 (fewer taps): Split with others has its own card; on a joint
+    # purchase Split my part takes its place.
+    row = between("@ViewBuilder private var splitRow: some View", "/// P2a: one More row")
+    assert "if canSplitJoint && (showsShareBar || jointCharge) {\n            APCard { jointSplitRow }" in row
+    assert "} else if canSplit {" in row
 
 
 def test_the_row_says_why_when_none_of_it_is_hers():

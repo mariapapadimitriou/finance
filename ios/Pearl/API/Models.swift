@@ -596,6 +596,9 @@ struct Transaction: Decodable, Identifiable, Hashable {
     /// amount; a move between her own accounts reads "⇄ $500.00"
     /// (`movedBetweenAccounts`).
     var cardPayment = false
+    /// The tap audit (P8): money in that can never be pay (a card payment,
+    /// anything onto a card), so More offers no "This is my regular pay".
+    var neverPay = false
     /// What the Always switch needs, from the list (2026-11-08), so the page
     /// shows it as it opens.
     var rule: RuleFacts? = nil
@@ -1131,6 +1134,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         case incomeRule = "income_rule"
         case recurringRule = "recurring_rule"
         case cardPayment = "card_payment"
+        case neverPay = "never_pay"
         case merchantName = "merchant"
         case accountId = "account_id"
         case countsToward = "counts_toward"
@@ -1188,6 +1192,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         counts = opt(String.self, .counts) ?? "spending"
         chip = opt(Chip.self, .chip)
         cardPayment = opt(Bool.self, .cardPayment) ?? false
+        neverPay = opt(Bool.self, .neverPay) ?? false
         rule = opt(RuleFacts.self, .rule)
         incomeRule = opt(IncomeRule.self, .incomeRule)
         suggested = opt(Bool.self, .suggested) ?? (chip?.suggested ?? false)

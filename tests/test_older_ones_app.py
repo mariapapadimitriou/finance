@@ -53,7 +53,8 @@ def test_not_after_always_or_the_recurring_card():
 
 def test_quick_sort_undoes_those_first_then_her_answer():
     quick = read("Views", "Review", "QuickSortView.swift")
-    assert '"Undo \\($0)"' in quick and '"Undo the \\($0)"' in quick
+    # P4c (fewer taps): the toast says how many; its Undo takes those back.
+    assert 'case .older(_, let count, _): return "\\(count) more moved."' in quick
     body = quick.split("private func undoOlder(")[1].split("\n    }\n")[0]
     assert "lastAnswer = .sorted(answer)" in body
 
@@ -68,7 +69,8 @@ def test_always_starts_off_for_a_bank_transfer_out():
 def test_the_common_name_line_is_on_the_page_only():
     line = "This name is too common for a rule"
     page = read("Views", "Transactions", "TransactionDetailView.swift")
-    assert page.count(line) == 1 and page.count("Text(Self.noRule)") == 2
+    # P2 (fewer taps): under More, the switch off with this line under it.
+    assert page.count(line) == 1 and "sub: Self.noRule" in page
     others = [p for p in (ROOT / "ios" / "Pearl").rglob("*.swift") if line in p.read_text()]
     assert [p.name for p in others] == ["TransactionDetailView.swift"]
 
