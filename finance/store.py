@@ -2155,12 +2155,14 @@ class Store:
                       category: str | None = None, merchant: str | None = None,
                       baseline: float | None = None) -> int:
         with self.conn() as c:
-            cur = c.execute(
-                "INSERT INTO challenges (kind, title, category, merchant, target, baseline, starts_on, ends_on)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (kind, title, category, merchant, round(float(target), 2),
-                 round(float(baseline), 2) if baseline is not None else None, start, end))
-            return int(cur.lastrowid)
+            sql = ("INSERT INTO challenges (kind, title, category, merchant, target, baseline, starts_on, ends_on)"
+                   " VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+            args = (kind, title, category, merchant, round(float(target), 2),
+                    round(float(baseline), 2) if baseline is not None else None, start, end)
+            # Postgres has no lastrowid (see add_fixed_cost).
+            if self.is_postgres:
+                return int(c.execute(sql + " RETURNING id", args).fetchone()["id"])
+            return int(c.execute(sql, args).lastrowid)
 
     def end_challenge(self, cid: int, status: str, ended_on: str, result: dict | None = None) -> bool:
         import json as _json
@@ -3453,10 +3455,12 @@ class Store:
         that month's budget gives up.
         """
         with self.conn() as c:
-            cur = c.execute(
-                "INSERT INTO piggy_draws (bank_id, month, amount, note) VALUES (?, ?, ?, ?)",
-                (bank_id, month, round(float(amount), 2), note))
-            return int(cur.lastrowid)
+            sql = "INSERT INTO piggy_draws (bank_id, month, amount, note) VALUES (?, ?, ?, ?)"
+            args = (bank_id, month, round(float(amount), 2), note)
+            # Postgres has no lastrowid (see add_fixed_cost).
+            if self.is_postgres:
+                return int(c.execute(sql + " RETURNING id", args).fetchone()["id"])
+            return int(c.execute(sql, args).lastrowid)
 
     def draws(self, month: str | None = None) -> list[dict]:
         sql = ("SELECT d.id, d.bank_id, d.month, d.amount, d.note, d.created_at, b.name "

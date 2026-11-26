@@ -876,7 +876,7 @@ def save_parts(st, t, body: dict, skip=()):
         return jsonify({"error": problem}), 400
     # 2026-11-18: an unsplit purchase she ticks for this person is split
     # with them in this same save (`new_split`).
-    making, problem = _new_split_asks(st, body)
+    making, problem = _new_split_asks(st, body, t)
     if problem:
         return jsonify({"error": problem}), 400
     was = None
@@ -1016,17 +1016,41 @@ UNSPLIT_SEARCH_DAYS = 365
 UNSPLIT_LIMIT = 20
 
 
-def _splittable(st, c, splits) -> bool:
+def _splittable(st, c, splits, deposit=None) -> bool:
     """Her own spending, not split and with nothing paid back or refunded
-    on it yet, so a split with one person can say all of it."""
+    on it yet, so a split with one person can say all of it; or one only
+    paybacks split (`_grows`)."""
     from .categorize import NON_SPEND
-    if c.amount <= 0 or (c.raw or {}).get("part_of") or c.excluded or c.joint or c.share_set:
-        return False
     if (c.category or "Other") in NON_SPEND or c.category == "Unsorted transfers":
+        return False
+    if c.fingerprint in splits:
+        return _grows(st, c, splits[c.fingerprint], deposit)
+    if c.amount <= 0 or (c.raw or {}).get("part_of") or c.excluded or c.joint or c.share_set:
         return False
     if c.fingerprint in splits or c.repays or (c.paid_back or 0.0) >= 0.005 or (c.refunded or 0.0) >= 0.005:
         return False
     return True
+
+
+def _grows(st, c, split: dict, deposit=None) -> bool:
+    """A purchase only paybacks split (THL-260), each person's place made by
+    their own payback, with some of her share left: the next payback adds
+    its person, as `sp.add_payer` does (product owner, 2026-11-25: Denise's
+    e-Transfer split Uber Eats, and Anastasia's couldn't find it). A split
+    she set up herself never gains someone from a payback."""
+    if (c.amount <= 0 or (c.raw or {}).get("part_of") or c.excluded or c.joint or c.repays
+            or (c.refunded or 0.0) >= 0.005 or split.get("closed_at") or split.get("mode") == sp.UNSURE):
+        return False
+    people = split.get("people") or []
+    if not people or _share_left(c) < 0.005:
+        return False
+    other = deposit or Transaction(date=c.date, description="", amount=-0.01)
+    return all(sp._made_by_paybacks(st, c, p["name"], other) for p in people)
+
+
+def _share_left(c) -> float:
+    """What of the purchase is still hers to split."""
+    return round(c.my_share if c.my_share is not None else c.amount, 2)
 
 
 def unsplit_candidates(st, deposit, target: float, q: str = "", also: str = "",
@@ -1051,7 +1075,7 @@ def unsplit_candidates(st, deposit, target: float, q: str = "", also: str = "",
         wanted = None
     rows = []
     for c in st.all_transactions():
-        if c.fingerprint == deposit.fingerprint or not _splittable(st, c, splits):
+        if c.fingerprint == deposit.fingerprint or not _splittable(st, c, splits, deposit):
             continue
         gap = (when - date.fromisoformat(c.date[:10])).days
         shown = names.get(merchant_key(c.merchant)) or tidy_of(c) or c.merchant
@@ -1067,11 +1091,13 @@ def unsplit_candidates(st, deposit, target: float, q: str = "", also: str = "",
         if needle and not found and not came:
             continue
         amount = round(c.amount, 2)
+        # A split paybacks made: as far as her share goes.
+        most = _share_left(c) if c.fingerprint in splits else amount
         # Close in amount, then recent: a $31 dinner for $30 back first.
-        near = abs(amount - target) / max(target, 1.0)
+        near = abs(most - target) / max(target, 1.0)
         row = {"id": c.fingerprint, "merchant": shown, "date": c.date[:10], "amount": amount,
                "category": c.category or "Other", "pending": bool((c.raw or {}).get("pending")),
-               "max": amount, "query": found}
+               "max": most, "query": found}
         if offered:
             row["likely"] = True
         rows.append(((-1 if came else 0 if found else 1, round(near + max(gap, 0) / 30.0, 4),
@@ -1082,7 +1108,7 @@ def unsplit_candidates(st, deposit, target: float, q: str = "", also: str = "",
     return out + [r for _, r in rows[UNSPLIT_LIMIT:] if r.get("likely")]
 
 
-def _new_split_asks(st, body: dict) -> tuple[list[tuple[str, str, float]], str | None]:
+def _new_split_asks(st, body: dict, deposit=None) -> tuple[list[tuple[str, str, float]], str | None]:
     """The payback parts with `new_split`, as (purchase, person, amount),
     checked before anything is saved: a purchase of hers that isn't split,
     the person named (never guessed from the sender), and no more than the
@@ -1104,9 +1130,9 @@ def _new_split_asks(st, body: dict) -> tuple[list[tuple[str, str, float]], str |
         if charge is None or charge.amount <= 0:
             return [], "Pick the purchase it pays back."
         name = charge.merchant or charge.description
-        if charge.fingerprint in splits:
+        if charge.fingerprint in splits and not _grows(st, charge, splits[charge.fingerprint], deposit):
             return [], f"{name} is already split. Pick a share on it instead."
-        if not _splittable(st, charge, splits):
+        if not _splittable(st, charge, splits, deposit):
             return [], f"{name} can’t be split with them here."
         person = " ".join(str(p.get("person") or "").split())[:sp.MAX_NAME]
         if not person or person.lower() in sp.SELF:
@@ -1117,6 +1143,10 @@ def _new_split_asks(st, body: dict) -> tuple[list[tuple[str, str, float]], str |
             return [], "Give each part an amount."
         if amount < 0.01:
             continue    # dp._clean says so, in its words
+        if charge.fingerprint in splits:
+            mine = _share_left(charge)
+            if _cents(amount) > _cents(mine):
+                return [], f"Your share of {name} is ${mine:,.2f}. Make it ${mine:,.2f} or less."
         whole = round(charge.amount, 2)
         if _cents(amount) > _cents(whole):
             return [], f"{name} was ${whole:,.2f}. Make it ${whole:,.2f} or less."

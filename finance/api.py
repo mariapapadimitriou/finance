@@ -8,6 +8,7 @@ optional Claude call on the Savings tab and a Plaid sync you configure.
 from __future__ import annotations
 
 from datetime import timedelta
+from collections.abc import Mapping
 
 import json
 
@@ -300,17 +301,31 @@ def _no_rule_why(t) -> str | None:
     return "common"
 
 
-class _Lazy:
-    """A row described only if something reads it."""
+class _Lazy(Mapping):
+    """A row described only if something reads it. A whole mapping, so
+    `{**row}` works too (2026-11-25: `own_arrival` copied the other end of
+    a transfer into a joint account, and the page wouldn't open)."""
 
     def __init__(self, t, ctx):
         self._t, self._ctx, self._r = t, ctx, None
 
-    def get(self, *a):
+    def _row(self) -> dict:
         if self._r is None:
             from . import txlist
             self._r = txlist.describe(self._t, self._ctx)
-        return self._r.get(*a)
+        return self._r
+
+    def get(self, *a):
+        return self._row().get(*a)
+
+    def __getitem__(self, key):
+        return self._row()[key]
+
+    def __iter__(self):
+        return iter(self._row())
+
+    def __len__(self):
+        return len(self._row())
 
 
 def _needs_a_look(st):
