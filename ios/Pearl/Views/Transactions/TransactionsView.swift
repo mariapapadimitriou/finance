@@ -1201,30 +1201,35 @@ struct TransactionsView: View {
         .padding(.vertical, 40)
     }
 
-    /// T-35: no bank yet, so nothing to show.
+    /// T-35: no bank yet, so nothing to show. P7c (TP-P7-LinkLater, THL-122,
+    /// THL-120): the pearl, "Nothing here yet", why, and the one action every
+    /// tab offers, Link your bank.
     private var emptyLedger: some View {
-        // G1-Empty: the title in Fraunces 22 and its line, the rose Link your
-        // bank, and Add one by hand as a quiet link. No icon, no card.
         VStack(spacing: 6) {
-            Text("No transactions yet").font(Nacre.title2).foregroundColor(Pearl.ink)
-            Text("Link a bank to see them.").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+            PearlOrb(size: 56).padding(.bottom, 10)
+            Text("Nothing here yet").font(Nacre.title2).foregroundColor(Pearl.ink)
+                .accessibilityAddTraits(.isHeader)
+            Text("Your spending shows here once your bank is linked.").font(Nacre.subheadline)
+                .foregroundColor(Pearl.muted).multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
             Button("Link your bank") { Task { await link() } }
                 .buttonStyle(APPrimaryButtonStyle(busy: reconnecting == "new"))
                 .disabled(reconnecting != nil)
-                .padding(.top, 28)
-            // T-35.
+                .frame(width: 220)
+                .padding(.top, 16)
+            // T-35: kept, quiet; with no bank the bar's + isn't shown.
             Button("Add one by hand") { adding = true }
                 .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
                 .foregroundColor(Pearl.link)
                 .frame(minHeight: 44)
-                .padding(.top, 8)
+                .padding(.top, 4)
             if let error = error {
                 Text(error).font(Nacre.footnote).foregroundColor(Pearl.danger).multilineTextAlignment(.center)
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 4)
-        .padding(.top, 150)
+        .padding(.top, 140)
     }
 
     // MARK: What's shown
@@ -2397,11 +2402,14 @@ struct MonthSheet: View {
         return out
     }
 
-    /// "Leftover $866 so far", "Over $140".
+    /// P1d (TP-P1-Home, THL-122, THL-231, THL-255): this month "Allowance
+    /// left $829 so far", Home's Left (the server's `allowance: true`); a
+    /// finished month "Left $312"; "Over $140". "Leftover" went.
     private func line(_ m: String) -> String? {
         guard let value = left[m] else { return nil }
         let running = m == months.last && m == Format.thisMonth()
-        let words = value < -0.5 ? "Over \(Format.whole(value))" : "Leftover \(Format.whole(value))"
+        let lead = Self.allowanceMonths.contains(m) ? "Allowance left" : "Left"
+        let words = value < -0.5 ? "Over \(Format.whole(value))" : "\(lead) \(Format.whole(value))"
         return running ? words + " so far" : words
     }
 
@@ -2416,6 +2424,8 @@ struct MonthSheet: View {
     }
 
     private static var remembered: [String: Double] = [:]
+    /// The months whose `left` is the Allowance's (this month, P1d).
+    private static var allowanceMonths: Set<String> = []
 
     /// Every month's Leftover (negative: Over), kept for the next open.
     @MainActor static func prefetch(_ api: APIClient) async {
@@ -2423,6 +2433,7 @@ struct MonthSheet: View {
         var out: [String: Double] = [:]
         for m in reply.months { out[m.month] = m.left }
         remembered = out
+        allowanceMonths = Set(reply.months.filter { $0.allowance == true }.map(\.month))
     }
 
     init(months: [String], current: String?, onDone: @escaping (String?) -> Void) {
@@ -2433,7 +2444,7 @@ struct MonthSheet: View {
     }
 
     private struct MonthResults: Decodable {
-        struct Month: Decodable { let month: String; let left: Double }
+        struct Month: Decodable { let month: String; let left: Double; var allowance: Bool? = nil }
         let months: [Month]
     }
 }
@@ -2629,7 +2640,8 @@ struct MonthSummary: View {
                 }
             }
             VStack(alignment: .leading, spacing: 0) {
-                Text(pay != nil ? "Spent so far" : over ? "Over" : "Leftover")
+                // P1d / TP-Words: a finished month's "Left" (was "Leftover").
+                Text(pay != nil ? "Spent so far" : over ? "Over" : "Left")
                     .font(Nacre.footnote).foregroundColor(Pearl.muted)
                 Text(Format.whole(pay != nil ? spent : abs(left)))
                     .font(.cfBig).tracking(-0.88)
@@ -2657,7 +2669,7 @@ struct MonthSummary: View {
             } else if over {
                 dot("Over \(Format.whole(-left))", Pearl.danger, Pearl.danger)
             } else {
-                dot("Leftover \(Format.whole(max(left, 0)))", APlus.trackSoft, Pearl.muted)
+                dot("Left \(Format.whole(max(left, 0)))", APlus.trackSoft, Pearl.muted)
             }
             Spacer(minLength: 0)
         }

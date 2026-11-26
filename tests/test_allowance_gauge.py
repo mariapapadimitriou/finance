@@ -38,7 +38,7 @@ def test_cash_flow_card_is_this_months_allowance_only():
 
 
 def test_how_it_adds_up_uses_the_rows():
-    for words in ('"Came in"', '"Bills"', '"Moved to savings"', '"Allowance"', '"Spent so far"'):
+    for words in ('"Came in"', '"Bills"', '"Saving"', '"Allowance"', '"Spent so far"'):
         assert words in ADDS, words
     assert '(row("bills") ?? 0) + (allowance.billsPaid ?? 0)' in ADDS
 
@@ -56,7 +56,10 @@ def test_matches_the_boards_measured():
 
 
 def test_how_it_adds_up_matches_px_addsup():
-    assert '"Left is the same number on Home and in Cash flow."' in ADDS
-    assert "Pearl.action.opacity(0.08)" in ADDS and "cornerRadius: 16" in ADDS
+    # P1b (TP-P1-Home): one name needs no explaining, so the hint card went;
+    # the Allowance less Spent so far is Allowance left.
+    assert "Left is the same number" not in ADDS
+    assert 'line("Allowance", Format.whole(allowance.total ?? 0), first: true)' in ADDS
+    assert 'Text(over ? "Over" : "Allowance left")' in ADDS
     assert "tone: Color = Pearl.muted" in ADDS and "tone: Pearl.moneyIn" in ADDS
     assert 'Rectangle().fill(APlus.separator).frame(height: 0.5)' in ADDS

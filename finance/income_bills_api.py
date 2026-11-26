@@ -48,7 +48,7 @@ def _payload(st) -> dict:
         "today": today.isoformat(),
         "checked": {"income": state["income_on"], "bills": state["bills_on"]},
         "pays": state["pays"],
-        "candidates": ib.pay_candidates(txns, today, state),
+        "candidates": _seen(ib.pay_candidates(txns, today, state), txns),
         "asks": ib.pay_asks(txns, today, state),
         # Her own amount (it overrides the rest), and Pearl's estimate from
         # her last three months (2026-10-13, THL-45).
@@ -63,6 +63,19 @@ def _payload(st) -> dict:
         "your_plan": {"rows": len(plan["rows"]), "in_use": plan["in_use"],
                       "total": sum(r["amount"] for r in plan["rows"])},
     }
+
+
+def _seen(candidates: list[dict], txns) -> list[dict]:
+    """P12a / P6b (the tap audit, 2026-11-26): "It came in Nov 14 and Oct
+    31." and "TD Chequing": each found pay's last two deposits, newest
+    first, and the account they landed in."""
+    for c in candidates:
+        rows = sorted((t for t in txns if t.amount < 0 and ib.payer_of(t) == c["payer"]
+                       and t.date[:10] <= c.get("last", "9999")),
+                      key=lambda t: t.date, reverse=True)
+        c["seen"] = sorted({t.date[:10] for t in rows}, reverse=True)[:2]
+        c["account"] = rows[0].account_label if rows else None
+    return candidates
 
 
 def _sync_plan_income(st, state: dict) -> None:
@@ -113,6 +126,14 @@ def income_bills_pay_answer():
         found = {"payer": payer}
     if found is None:
         return _error("We couldn’t find that deposit any more.", 404)
+    # P12b / P12c (the tap audit): Home's Yes and No each have Undo, which
+    # POST /api/transactions/undo takes: her pay as it was, any rule the Yes
+    # wrote, and the rows that rule sorted.
+    from .impact import snapshot, undo_payload
+    before = snapshot(st, txns)
+    was = {"pays": [dict(p) for p in state["pays"]], "pay_no": list(state["pay_no"]),
+           "income_on": state["income_on"]}
+    rule_was = None
     if answer == "yes":
         state["pays"].append({"id": ib.next_id(state, "p"), "payer": payer,
                               "name": found["name"], "amount": found["amount"],
@@ -122,6 +143,7 @@ def income_bills_pay_answer():
             # Pay the bank called a transfer (2026-11-25): from now on every
             # deposit from them is income, as "This is my regular pay" does.
             key, name = found["rule"]
+            rule_was = {key: st.pay_rules().get(key)}
             st.set_pay_rule(key, name)
             from .pipeline import classify_ledger
             classify_ledger(st)
@@ -129,7 +151,9 @@ def income_bills_pay_answer():
         state["pay_no"] = sorted(set(state["pay_no"]) | {payer})
     ib.save(st, state)
     _sync_plan_income(st, state)
-    return jsonify(_payload(st))
+    undo = undo_payload(before, snapshot(st))
+    undo["marks"] = {"income_pays": was, **({"pay_rules": rule_was} if rule_was else {})}
+    return jsonify({**_payload(st), "undo": undo})
 
 
 @bp.post("/income-bills/pay")

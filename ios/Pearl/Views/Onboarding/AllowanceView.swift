@@ -22,25 +22,16 @@ struct AllowanceView: View {
                 .font(Nacre.label).tracking(0.78).foregroundColor(Pearl.muted)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 10)
-            AllowanceCard(month: cardMonth, amount: ringAmount, line: caption,
+            // P6e (TP-P6-Setup): "Allowance left · November", no line under
+            // it, and one next step. Notifications are asked on Home (P6f).
+            AllowanceCard(month: cardMonth, amount: ringAmount, line: skipped ? caption : "",
                           over: !skipped && allowance?.state == "over" && (allowance?.overBy ?? 0) >= 0.5)
-            ProfileSection("Your first steps")
+            ProfileSection("Next")
             APCard {
-                Button { if skipped { linkBank() } } label: {
-                    ProfileRow(symbol: "building.columns", title: "Link your bank accounts", chevron: skipped) {
-                        if !skipped {
-                            Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold))
-                                .foregroundColor(Pearl.moneyIn)
-                                .accessibilityLabel("Done")
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-                .disabled(!skipped)
-                APSeparator()
-                // The first sort: Home offers Quick sort as soon as she's there.
                 Button { if skipped { linkBank() } else { Task { await finish() } } } label: {
-                    ProfileRow(symbol: "cart", title: "Sort this month\u{2019}s spending", sub: "Opens Quick sort")
+                    ProfileRow(symbol: skipped ? "building.columns" : "rectangle.on.rectangle",
+                               title: skipped ? "Link your bank" : "Sort this month\u{2019}s spending",
+                               sub: skipped ? nil : sortLine)
                 }
                 .buttonStyle(.plain)
                 .disabled(busy)
@@ -78,6 +69,13 @@ struct AllowanceView: View {
     }
 
     private var allowance: Allowance? { home?.safeToSpend }
+
+    /// "8 to sort · about a minute".
+    private var sortLine: String? {
+        guard let n = home?.reviewCount, n > 0 else { return nil }
+        let minutes = Int((Double(n) * 10 / 60).rounded())
+        return "\(n) to sort \u{00B7} " + (minutes <= 1 ? "about a minute" : "about \(minutes) minutes")
+    }
     private var month: String { home?.month ?? Allowance.thisMonth }
 
     private var ringOverline: String { allowance?.ringOverline(month: month) ?? Format.monthName(month).uppercased() }
@@ -93,14 +91,7 @@ struct AllowanceView: View {
     private func finish() async {
         busy = true
         defer { busy = false }
-        do {
-            struct Reply: Decodable { let user: PearlUser? }
-            let reply: Reply = try await app.api.post("api/onboarding", ["done": true])
-            app.justCreated = false
-            app.signedIn(reply.user)
-        } catch {
-            self.error = app.handle(error)
-        }
+        error = await finishSetup(app)
     }
 }
 
@@ -166,7 +157,9 @@ extension Allowance {
 
     /// The usual line under the ring. Home hides it (REFRESH-03, H-00n: the
     /// ring already says Allowance) and reads it as the ring's VoiceOver hint.
-    static let restCaption = "Left to spend or save on non-essentials."
+    /// P6e (TP-P6-Setup, TP-Words): none; "Left to spend or save on
+    /// non-essentials" went, the ring and the card already say Allowance left.
+    static let restCaption = ""
 
     /// The line under the amount inside Home's orb (REFRESH-05, H-00r):
     /// "left in November"; the overline's words when the month is over or
@@ -209,7 +202,8 @@ struct AllowanceCard: View {
 
     var body: some View {
         VStack(spacing: 4) {
-            Text("Your Allowance \u{00B7} \(month)").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+            // P6e / TP-Words: the ring's words.
+            Text("Allowance left \u{00B7} \(month)").font(Nacre.subheadline).foregroundColor(Pearl.muted)
             Text(amount).font(.custom("Fraunces-SemiBold", size: 56, relativeTo: .largeTitle))
                 .tracking(-1).monospacedDigit().foregroundColor(over ? Pearl.danger : Pearl.ink)
                 .pearlAmountFit()

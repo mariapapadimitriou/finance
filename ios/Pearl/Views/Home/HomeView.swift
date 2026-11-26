@@ -25,9 +25,13 @@ struct HomeView: View {
     /// G6-Offline: when Home last came back, and whether the last try failed.
     @State private var loadedAt: Date?
     @State private var offline = false
-    /// N-01's quiet hours, while it's showing.
+    /// P6f: the notifications ask's quiet hours, while it can show.
     @State private var askingToNotify: NotificationSettings.Quiet?
     @State private var checkedNotify = false
+    @State private var notifyBusy = false
+    /// P12a: the pay Pearl found, asked on Home until she answers.
+    @State private var payAsk: IncomeBills.Candidate?
+    @State private var payBusy = false
     /// H-01's Reconnect.
     @State private var reconnecting: Home.Connection?
     /// Where a tap goes: Accounts, the list, Owed to you, a Worth a look item.
@@ -36,6 +40,9 @@ struct HomeView: View {
     /// item opens just its trip question.
     @State private var quickSort: QuickSortDeck?
     @State private var opening = false
+    /// P7b: Home before a bank's Link your bank, straight to Plaid.
+    @StateObject private var plaid = PlaidLinker()
+    @State private var linkingBank = false
     /// The new-month item scrolls Home back to its Allowance.
     @State private var toOrb = 0
 
@@ -43,7 +50,7 @@ struct HomeView: View {
     /// a tab root (dirA.css `--ground-wash`).
     private var calm: Bool {
         guard let home = home else { return false }
-        return HomeFeed.calm(home: home, setup: setup, owed: owed, worth: worth)
+        return HomeFeed.calm(home: home, setup: setup, owed: owed, worth: worth) && payAsk == nil && !home.noBank
     }
 
     var body: some View {
@@ -52,6 +59,8 @@ struct HomeView: View {
             if let home = home {
                 HomeFeed(home: home, setup: setup, owed: owed, worth: worth,
                          offlineSince: offline ? loadedAt : nil, sorting: opening,
+                         payAsk: payAsk, payBusy: payBusy, linking: linkingBank,
+                         notify: worth.isEmpty ? nil : askingToNotify, notifyBusy: notifyBusy,
                          actions: actions)
             } else {
                 VStack(spacing: 0) {
@@ -64,8 +73,9 @@ struct HomeView: View {
         .onChange(of: toOrb) { _ in withAnimation { proxy.scrollTo(HomeOrb.anchor, anchor: .top) } }
         }
         .nacreScreen(calm ? .nacre : .wash)
-        // Pinned, not in the feed: it stays put as Home scrolls.
-        .profileCircleSlot()
+        // Pinned, not in the feed: it stays put as Home scrolls. P12a: on
+        // Home it carries its word, "Profile".
+        .profileCircleSlot(labelled: true)
         .navigationBarHidden(true)
         .refreshable { await load() }
         .reloads { await load() }
@@ -82,9 +92,7 @@ struct HomeView: View {
             .presentationDetents([.medium])
             .presentationDragIndicator(.visible)
         }
-        .fullScreenCover(item: $askingToNotify) { quiet in
-            TurnOnNotificationsView(quiet: quiet)
-        }
+        .onChange(of: linkingBank) { on in if on { Task { await linkBank() } } }
         .fullScreenCover(item: $quickSort) { deck in
             QuickSortView(asks: deck.asks, categories: app.categories, names: deck.names,
                           patterns: deck.patterns, trips: deck.trips) {
@@ -107,7 +115,15 @@ struct HomeView: View {
             open: { item in Task { await open(item) } },
             yes: { item in Task { await answer(item, yes: true) } },
             notNow: { item in Task { await answer(item, yes: false) } },
-            gotIt: { item in Task { await gotIt(item) } })
+            gotIt: { item in Task { await gotIt(item) } },
+            payYes: { Task { await answerPay(yes: true) } },
+            payNo: { Task { await answerPay(yes: false) } },
+            notifyOn: { Task { await turnOnNotifications() } },
+            notifyNotNow: {
+                NotifyAskCard.hideForAMonth()
+                withAnimation(.easeInOut(duration: 0.25)) { askingToNotify = nil }
+            },
+            linkBank: { linkingBank = true })
     }
 
     // MARK: Loading
@@ -126,6 +142,7 @@ struct HomeView: View {
             async let setupLoad: Bool? = try? screens.load("api/setup-again", as: SetupAgain.self) { setup = $0 }
             async let owedLoad: Bool? = try? screens.load("api/owed", as: OwedOverview.self) { owed = $0 }
             async let worthLoad: Bool? = try? screens.load("api/worth-a-look", as: WorthReply.self) { worth = $0.items }
+            async let payLoad: IncomeBills? = try? app.api.get("api/income-bills")
             try await screens.load("api/home", as: Home.self, apply: { loaded in
                 home = loaded
                 // The Allowance Home shows is the app's: a kept answer seeds
@@ -134,6 +151,9 @@ struct HomeView: View {
                 if app.allowance == nil { app.seed(loaded) }
             }, fresh: { app.seed($0) })
             _ = await (setupLoad, owedLoad, worthLoad)
+            // P12a: the strongest pay Pearl found and she hasn't answered.
+            let found = await payLoad
+            withAnimation(.easeInOut(duration: 0.25)) { payAsk = found?.candidates.first }
             error = nil
             offline = false
             loadedAt = Date()
@@ -148,16 +168,73 @@ struct HomeView: View {
         }
     }
 
-    /// N-01 (THL-139): once the Allowance has a number, if iOS hasn't asked
-    /// yet (setup's O-08b may have) and N-01 hasn't been answered on any device.
+    /// P6f (TP-P6-News, THL-139; replaces N-01's full screen): once the
+    /// Allowance has a number, if iOS hasn't asked yet (setup's O-08b may
+    /// have), N-01 hasn't been answered on any device and she didn't say
+    /// Not now in the last 30 days. The card shows under her first news.
     private func offerNotifications() async {
-        guard !checkedNotify, home?.safeToSpend?.state == "ok" else { return }
+        guard !checkedNotify, home?.safeToSpend?.state == "ok", !NotifyAskCard.hidden else { return }
         checkedNotify = true
         let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
         guard status == .notDetermined,
               let settings: NotificationSettings = try? await app.api.get("api/notifications"),
               settings.prefs.prompt?.answer == nil else { return }
         askingToNotify = settings.prefs.quiet
+    }
+
+    /// P7b: Plaid from Home, as Accounts links one; then Home fills in.
+    private func linkBank() async {
+        defer { linkingBank = false }
+        do {
+            if case .linked(let l) = try await plaid.open(api: app.api) {
+                let _: LinkedItem = try await app.api.post("api/plaid/exchange",
+                                                           ["public_token": l.publicToken, "institution": l.institution])
+                app.say("\(l.institution) is linked.")
+                app.changed()
+                await load()
+            }
+        } catch {
+            if let words = app.handle(error) { app.say(words) }
+        }
+    }
+
+    /// P6g: Turn on is the system's prompt; a plain toast, no Undo (Profile ›
+    /// Notifications turns it off).
+    private func turnOnNotifications() async {
+        notifyBusy = true
+        defer { notifyBusy = false }
+        let granted = (try? await UNUserNotificationCenter.current()
+            .requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+        let _: NotificationSettings? = try? await app.api.post("api/notifications/prompt",
+                                                              ["answer": granted ? "on" : "not_now"])
+        withAnimation(.easeInOut(duration: 0.25)) { askingToNotify = nil }
+        if granted {
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            app.say("Notifications are on.")
+        }
+    }
+
+    /// P12b / P12c: Yes or No on Home's pay question, then the toast with
+    /// Undo (P10), which puts the question back as it was.
+    private func answerPay(yes: Bool) async {
+        guard let pay = payAsk, !payBusy else { return }
+        payBusy = true
+        defer { payBusy = false }
+        do {
+            let reply: PayAnswered = try await app.api.post("api/income-bills/pay/answer",
+                                                           ["payer": pay.payer, "answer": yes ? "yes" : "no"])
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            withAnimation(.easeInOut(duration: 0.25)) { payAsk = reply.candidates.first }
+            app.changed()
+            let undo = reply.undo?.any as? [String: Any]
+            app.say(yes ? "\(pay.name) is your pay." : "Got it. \(pay.name) isn’t your pay.",
+                    undo: undo.map { body in { [api = app.api, weak app] in
+                        let _: OK = try await api.post("api/transactions/undo", body)
+                        await MainActor.run { app?.changed() }
+                    } })
+        } catch {
+            if let words = app.handle(error) { app.say(words) }
+        }
     }
 
     /// H-00r (REFRESH-00 decision 2): Sort now opens Quick sort with every
@@ -186,7 +263,7 @@ struct HomeView: View {
             withAnimation { worth = reply.items }
             // TEST-40: the server clears all that qualifies today; Undo brings all of it back.
             let cleared = reply.cleared ?? ids
-            app.say("Cleared", undo: { [api = app.api] in
+            app.say("Dismissed", undo: { [api = app.api] in
                 let _: WorthReply = try await api.post("api/worth-a-look", ["action": "undo_clear", "ids": cleared])
             })
         } catch {
@@ -316,6 +393,14 @@ struct HomeActions {
     let yes: (WorthItem) -> Void
     let notNow: (WorthItem) -> Void
     let gotIt: (WorthItem) -> Void
+    /// P12a's Yes / No.
+    let payYes: () -> Void
+    let payNo: () -> Void
+    /// P6f's Turn on / Not now.
+    let notifyOn: () -> Void
+    let notifyNotNow: () -> Void
+    /// P7b: Home before a bank's one action.
+    let linkBank: () -> Void
 }
 
 // MARK: - The feed
@@ -328,6 +413,11 @@ private struct HomeFeed: View {
     let worth: [WorthItem]
     let offlineSince: Date?
     let sorting: Bool
+    let payAsk: IncomeBills.Candidate?
+    let payBusy: Bool
+    let linking: Bool
+    let notify: NotificationSettings.Quiet?
+    let notifyBusy: Bool
     let actions: HomeActions
 
     private var troubled: [Home.Connection] { Self.troubled(home) }
@@ -355,8 +445,29 @@ private struct HomeFeed: View {
             if let since = offlineSince {
                 OfflineBanner(since: since).padding(.top, 4).padding(.bottom, 8)
             }
+            if home.noBank {
+                // P7b: one card, one action; no ring, no Needs a look.
+                LinkBankCard(busy: linking, link: actions.linkBank).padding(.top, 40)
+            } else {
+                OwnBody { feed }
+            }
+        }
+        .padding(.horizontal, Pearl.gutter)
+        .padding(.bottom, 32)
+    }
+
+    /// The ring and what's under it, in its own body (stack check: the
+    /// feed's closure was 42 KB with P12a and P6f in it).
+    @ViewBuilder private var feed: some View {
+        VStack(alignment: .leading, spacing: 0) {
             HomeOrb(home: home, openAddsUp: actions.addsUp)
-            if calm {
+            if let pay = payAsk {
+                // P12a: under the ring, one question.
+                PayAskCard(pay: pay, busy: payBusy, onYes: actions.payYes, onNo: actions.payNo)
+                    .padding(.top, 18)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+            if calm && payAsk == nil {
                 CalmState().padding(.top, 12)
             } else {
                 HomeCards(home: home, setup: setup, owed: owes ? owed : nil, troubled: troubled,
@@ -365,11 +476,16 @@ private struct HomeFeed: View {
                     WorthALookSection(items: worth, onClear: actions.clear, onOpen: actions.open,
                                       onYes: actions.yes, onNotNow: actions.notNow, onGotIt: actions.gotIt)
                         .padding(.top, 20)
+                    if let quiet = notify {
+                        // P6f: the ask under the news it would have sent.
+                        NotifyAskCard(quiet: quiet, busy: notifyBusy, onTurnOn: actions.notifyOn,
+                                      onNotNow: actions.notifyNotNow)
+                            .padding(.top, 12)
+                            .transition(.opacity)
+                    }
                 }
             }
         }
-        .padding(.horizontal, Pearl.gutter)
-        .padding(.bottom, 32)
     }
 }
 
@@ -395,7 +511,8 @@ struct HomeTopBar: View {
                     .accessibilityAddTraits(.isHeader)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Color.clear.frame(width: ProfileSlot.size, height: ProfileSlot.size)
+            // P12a: room for the labelled Profile button.
+            Color.clear.frame(width: ProfileSlot.labelledWidth, height: ProfileSlot.size)
         }
         .frame(minHeight: ProfileSlot.size)
         .padding(.top, ProfileSlot.top)
@@ -429,7 +546,9 @@ private struct HomeOrb: View {
                 AllowanceGauge(allowance: sts, open: openAddsUp)
             }
             if let caption = sts?.ringCaption ?? Optional(Allowance.needsIncomeLine),
-               sts?.state != "over", caption != Allowance.restCaption {
+               sts?.state != "over", caption != Allowance.restCaption,
+               // P12a: the Estimate chip says it; no line under the ring.
+               sts?.estimate != true {
                 Text(caption).font(Nacre.subheadline).foregroundColor(Pearl.muted)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)

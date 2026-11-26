@@ -453,7 +453,7 @@ class TestLessWords:
         "ios/Pearl/Views/Review/QuickSortView.swift": ['"Opens the page to change it."',
                                                      'Saves the split and \\(splitCategory(ask, d)), for this one.'],
         # H-00r v2: the gauge reads the hidden line, then where it goes.
-        "ios/Pearl/Views/Components/AllowanceGauge.swift": ['.accessibilityHint(allowance.ringCaption == Allowance.restCaption'],
+        "ios/Pearl/Views/Components/AllowanceGauge.swift": ['.accessibilityHint("Opens How it adds up.")'],
     }
 
     def src(self, path):

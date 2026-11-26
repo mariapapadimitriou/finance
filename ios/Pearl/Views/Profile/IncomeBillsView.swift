@@ -162,17 +162,23 @@ struct IncomeBillsView: View {
             .padding(.top, 8)
         }
 
-        ProfileSection("Income", action: "Add") { sheet = .addPay }
+        // P12d (TP-P12-Amount, THL-127, THL-45, THL-198): her pay first,
+        // with the figure Pearl uses a month in plain words; Set my own
+        // amount right under it. P12f: her own amount, then the way back to
+        // Pearl's figure.
+        ProfileSection("Your pay", action: "Add") { sheet = .addPay }
         APCard {
             if let own = data.expected?.amount, own > 0 {
                 IncomeLine(name: "Your own amount",
-                           sub: data.expected?.varies == true ? "A month after tax · it changes" : "A month after tax",
+                           sub: data.pays.first.map { "Pearl uses this instead of \($0.name)" }
+                               ?? (data.expected?.varies == true ? "It changes month to month" : "Pearl uses this"),
                            amount: own) { sheet = .expected }
                 APSeparator()
-            }
-            ForEach(data.pays) { p in
-                IncomeLine(name: p.name, sub: cadence(p.cadence), amount: p.amount) { sheet = .pay(p) }
-                APSeparator()
+            } else {
+                ForEach(data.pays) { p in
+                    IncomeLine(name: p.name, sub: paySub(p, data), amount: p.amount) { sheet = .pay(p) }
+                    APSeparator()
+                }
             }
             ForEach(data.candidates) { c in
                 FoundLine(name: c.name, question: "Your pay?", open: { sheet = .candidate(c) },
@@ -193,10 +199,18 @@ struct IncomeBillsView: View {
                 }
             } else if !((data.expected?.amount ?? 0) > 0) {
                 Button { sheet = .expected } label: {
-                    ProfileRow(symbol: "square.and.pencil", title: "Set my own amount")
+                    ProfileRow(symbol: "dollarsign.square", title: "Set my own amount")
                 }
                 .buttonStyle(.plain)
-                .accessibilityHint("Use what you expect each month instead of what Pearl works out")
+                .accessibilityHint("Use what lands in your bank each month instead of what Pearl works out")
+            } else {
+                // P12f: one row back to Pearl's figure.
+                Button { Task { await usePearlsFigure() } } label: {
+                    ProfileRow(symbol: "arrow.triangle.2.circlepath", title: "Use Pearl\u{2019}s figure",
+                               sub: pearlsFigure(data))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("income-use-pearls-figure")
             }
         }
 
@@ -272,8 +286,16 @@ struct IncomeBillsView: View {
         case .ask(let a):
             WhatIsItSheet(ask: a, bills: data?.bills ?? []) { reply in saved(reply) }
         case .expected:
-            ExpectedIncomeSheet(expected: data?.expected, hasPay: !(data?.pays.isEmpty ?? true)) { reply in
+            ExpectedIncomeSheet(expected: data?.expected, hasPay: !(data?.pays.isEmpty ?? true),
+                                payMonthly: data.flatMap(payMonthly)) { reply in
+                let was = data?.expected
                 saved(reply)
+                // P12f: "Pearl will use $5,600 a month." with Undo (P10).
+                if let own = reply.expected?.amount, own > 0 {
+                    withAnimation {
+                        toast = ("Pearl will use \(Format.whole(own)) a month.", { Task { await restore(was) } })
+                    }
+                }
             }
         }
     }
@@ -337,6 +359,56 @@ struct IncomeBillsView: View {
         do {
             try await app.screens.load("api/income-bills", as: IncomeBills.self) { data = $0 }
             error = nil
+        } catch {
+            self.error = app.handle(error)
+        }
+    }
+
+    /// P12d: "Every 2 weeks · Pearl uses $5,850 a month".
+    private func paySub(_ p: IncomeBills.Pay, _ data: IncomeBills) -> String {
+        "\(cadence(p.cadence)) \u{00B7} Pearl uses \(Format.whole(PayBillsWords.monthly(p.amount, cadence: p.cadence))) a month"
+    }
+
+    /// What her pay comes to a month, as Pearl counts it.
+    private func payMonthly(_ data: IncomeBills) -> Double? {
+        let total = data.pays.reduce(0) { $0 + PayBillsWords.monthly($1.amount, cadence: $1.cadence) }
+        return total > 0 ? total : data.expected?.estimate
+    }
+
+    /// P12f: "$5,850 from Acme".
+    private func pearlsFigure(_ data: IncomeBills) -> String? {
+        guard let figure = payMonthly(data) else { return nil }
+        return data.pays.first.map { "\(Format.whole(figure)) from \($0.name)" } ?? Format.whole(figure)
+    }
+
+    /// P12f: her own amount goes; Pearl's figure is used again.
+    private func usePearlsFigure() async {
+        let was = data?.expected
+        do {
+            let reply: IncomeBills = try await app.api.delete("api/income-bills/expected")
+            saved(reply)
+            withAnimation {
+                toast = ("Pearl will use its own figure.", { Task { await restore(was) } })
+            }
+        } catch {
+            self.error = app.handle(error)
+        }
+    }
+
+    /// Undo for her own amount: back as it was.
+    private func restore(_ was: IncomeBills.Expected?) async {
+        withAnimation { toast = nil }
+        do {
+            let reply: IncomeBills
+            if let own = was?.amount, own > 0 {
+                reply = try await app.api.put("api/income-bills/expected", ["amount": String(format: "%.2f", own),
+                                                                             "varies": was?.varies ?? false])
+            } else if was?.varies == true {
+                reply = try await app.api.put("api/income-bills/expected", ["varies": true])
+            } else {
+                reply = try await app.api.delete("api/income-bills/expected")
+            }
+            saved(reply)
         } catch {
             self.error = app.handle(error)
         }
@@ -450,6 +522,8 @@ struct ExpectedIncomeSheet: View {
     let expected: IncomeBills.Expected?
     /// With pay confirmed, clearing her amount goes back to the pay.
     let hasPay: Bool
+    /// P12e: Pearl's figure, already in the field: if it's right she taps Save.
+    var payMonthly: Double? = nil
     let saved: (IncomeBills) -> Void
 
     @State private var amount = ""
@@ -458,6 +532,8 @@ struct ExpectedIncomeSheet: View {
     @State private var error: String?
 
     private var own: Double? { expected?.amount.flatMap { $0 > 0 ? $0 : nil } }
+    private var figure: Double? { (payMonthly ?? expected?.estimate).flatMap { $0 > 0 ? $0 : nil } }
+    static let question = "How much lands in your bank each month?"
 
     /// G5-IncomeEdit "Your own amount": the big amount well, Pearl's
     /// estimate under it, the switch, and Save riding above the keypad.
@@ -471,13 +547,18 @@ struct ExpectedIncomeSheet: View {
                     variesSwitch
                     PearlFigure(estimate: expected?.estimate).padding(.top, 14)
                 } else {
-                    Text("Each month, after tax").font(Nacre.footnote).foregroundColor(Pearl.muted)
-                        .frame(maxWidth: .infinity).padding(.top, 2)
-                    BigAmountWell(text: $amount, placeholder: "0")
+                    // P12e (TP-P12-Amount, TP-Words): what arrives, not "after
+                    // tax"; she needn't know what take-home means.
+                    Text(Self.question)
+                        .font(.custom("Fraunces-SemiBold", size: 22, relativeTo: .title2))
+                        .foregroundColor(Pearl.ink).multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity).padding(.top, 8)
+                    BigAmountWell(text: $amount, placeholder: "0", label: Self.question)
                         // The latest answer wins (decision 7): typing an amount means it doesn't change.
                         .onChange(of: amount) { typed in if !typed.isEmpty { varies = false } }
-                    if let estimate = expected?.estimate, estimate > 0 {
-                        ProfileNote("Pearl\u{2019}s estimate is \(Format.whole(estimate))", centred: true)
+                    if own == nil, figure != nil {
+                        ProfileNote("Pearl\u{2019}s figure from your last 3 pays", centred: true)
                     }
                     variesSwitch
                 }
@@ -504,6 +585,7 @@ struct ExpectedIncomeSheet: View {
         .onAppear {
             varies = expected?.varies ?? false
             if let own = own, !varies { amount = String(format: "%.0f", own) }
+            else if !varies, let figure = figure { amount = String(format: "%.0f", figure) }
         }
         .background(SheetBackground())
         .presentationDetents([.large])
@@ -633,7 +715,7 @@ struct PearlFigure: View {
 struct BigAmountWell: View {
     @Binding var text: String
     var placeholder = "0"
-    var label = "Each month, after tax"
+    var label = "How much lands in your bank each month?"
     var identifier = "own-amount"
     /// Off where the sheet opens to read first (O-10a, O-10b).
     var autofocus = true

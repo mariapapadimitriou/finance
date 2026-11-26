@@ -306,6 +306,10 @@ struct IncomeBills: Decodable {
         let amount: Double
         let cadence: String
         let next: String?
+        /// P12a / P6b: its last two deposits, newest first, and the
+        /// account they landed in ("TD Chequing").
+        var seen: [String]? = nil
+        var account: String? = nil
         var id: String { payer }
     }
 
@@ -430,9 +434,19 @@ struct Home: Decodable {
     let snapshot: Snapshot?
     let safeToSpend: Allowance?
     let connections: [Connection]?
+    /// P7b: "no_data" before any bank (Link later), "card_only", "learning"…
+    var dataState: DataState? = nil
+
+    struct DataState: Decodable {
+        let kind: String?
+    }
+
+    /// P7b (TP-P7-LinkLater): nothing linked or added yet.
+    var noBank: Bool { dataState?.kind == "no_data" && (connections ?? []).isEmpty }
 
     enum CodingKeys: String, CodingKey {
         case today, month, snapshot, connections, sorted
+        case dataState = "data_state"
         case reviewCount = "review_count"
         case pearlSorted = "pearl_sorted"
         case patternWeek = "pattern_week"
