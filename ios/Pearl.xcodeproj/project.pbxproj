@@ -26,7 +26,7 @@
 		197D74CCEC857E06FD81CB2C /* Nacre.swift in Sources */ = {isa = PBXBuildFile; fileRef = A959B442690D5F84B1A63FFA /* Nacre.swift */; };
 		A77E60CDC6CED192D7867D14 /* PearlDust.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5463585836AEA99D74494F0C /* PearlDust.swift */; };
 		B4F50BD8435DEB237F51EFD7 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97809C6135186A3BD204F423 /* Theme.swift */; };
-		5C5C23B160087A9704B706BB /* AllowanceOrb.swift in Sources */ = {isa = PBXBuildFile; fileRef = E21AE2F637B8AF4630212950 /* AllowanceOrb.swift */; };
+		794DA7C4C827E4BD89B2F511 /* AllowanceGauge.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B2CC68562CE536991AD400 /* AllowanceGauge.swift */; };
 		D02B27EB92A7DFD6D51C0DA8 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = C497270FF4823ED50730E0BC /* Components.swift */; };
 		218DC566CDDFE90CA8E446C2 /* ContactNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B0EAF5567285C8779914090 /* ContactNames.swift */; };
 		145A5EED9E6F3AFA2DB624F1 /* KeyboardDone.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46975E38D86085BDDA245313 /* KeyboardDone.swift */; };
@@ -34,6 +34,7 @@
 		707FBD763449C287EBDFB546 /* PearlDateSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDFD30C3406BA7F7401B8A63 /* PearlDateSheet.swift */; };
 		250306FBB27C72F914D01FC6 /* ProfileCircle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90DA648E32FCE29C0E1C4DA2 /* ProfileCircle.swift */; };
 		83F7E0678334F0E527E1D836 /* ScrollEdgeFade.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BBF304DAA75230F843ED06A /* ScrollEdgeFade.swift */; };
+		3FB4DF87982AB308280C099D /* AddsUpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A90B246C0DA1E53D45B692 /* AddsUpView.swift */; };
 		2F4C0C7609E5463A942F8A95 /* CantReachPearl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A63598F9E77CC8D06E677A1 /* CantReachPearl.swift */; };
 		F2D60DB16AD29DE5F442BC38 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F7C177E913CEBE0B53FA5 /* HomeView.swift */; };
 		11991F064129B8D80C6CB502 /* OwedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C93CED67E803BE21967A343B /* OwedViews.swift */; };
@@ -112,6 +113,7 @@
 		90C363208D3502F31EE967BE /* Fraunces-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 5123041A452F1AE9E3CD559D /* Fraunces-SemiBold.ttf */; };
 		436E75E984B4850BBF8D916E /* LinkKit in Frameworks */ = {isa = PBXBuildFile; productRef = A8318EFB1C654A8D1F922D04 /* LinkKit */; };
 		FC9DAA094F769A689A86048D /* ConsolidationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B637EA372818923C1246122 /* ConsolidationUITests.swift */; };
+		F6559E96041ACD56C22514F9 /* GaugeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5091F4D530CD334A9D573D16 /* GaugeUITests.swift */; };
 		CDB1FB14ECC588122F3CE128 /* OverUnderUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73F2C41C66637E36C1D77050 /* OverUnderUITests.swift */; };
 		C4D449BAF44C6DF24B4410D9 /* PersonJourneysUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33A599E2CA5F3A2F441A0DAE /* PersonJourneysUITests.swift */; };
 		B8087047BA447D15D66176FC /* QuickSortCategoryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAE25B547263E40ECA3F49B2 /* QuickSortCategoryUITests.swift */; };
@@ -135,6 +137,7 @@
 		95D653871703BB6B6441A16C /* Pearl.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pearl.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A887B5D29B4EAB09648BF16 /* PearlUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PearlUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4B637EA372818923C1246122 /* ConsolidationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationUITests.swift; sourceTree = "<group>"; };
+		5091F4D530CD334A9D573D16 /* GaugeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GaugeUITests.swift; sourceTree = "<group>"; };
 		73F2C41C66637E36C1D77050 /* OverUnderUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverUnderUITests.swift; sourceTree = "<group>"; };
 		33A599E2CA5F3A2F441A0DAE /* PersonJourneysUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonJourneysUITests.swift; sourceTree = "<group>"; };
 		AAE25B547263E40ECA3F49B2 /* QuickSortCategoryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickSortCategoryUITests.swift; sourceTree = "<group>"; };
@@ -161,7 +164,7 @@
 		A959B442690D5F84B1A63FFA /* Nacre.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nacre.swift; sourceTree = "<group>"; };
 		5463585836AEA99D74494F0C /* PearlDust.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlDust.swift; sourceTree = "<group>"; };
 		97809C6135186A3BD204F423 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
-		E21AE2F637B8AF4630212950 /* AllowanceOrb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllowanceOrb.swift; sourceTree = "<group>"; };
+		D0B2CC68562CE536991AD400 /* AllowanceGauge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllowanceGauge.swift; sourceTree = "<group>"; };
 		C497270FF4823ED50730E0BC /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		3B0EAF5567285C8779914090 /* ContactNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactNames.swift; sourceTree = "<group>"; };
 		46975E38D86085BDDA245313 /* KeyboardDone.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardDone.swift; sourceTree = "<group>"; };
@@ -169,6 +172,7 @@
 		DDFD30C3406BA7F7401B8A63 /* PearlDateSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlDateSheet.swift; sourceTree = "<group>"; };
 		90DA648E32FCE29C0E1C4DA2 /* ProfileCircle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileCircle.swift; sourceTree = "<group>"; };
 		1BBF304DAA75230F843ED06A /* ScrollEdgeFade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollEdgeFade.swift; sourceTree = "<group>"; };
+		E7A90B246C0DA1E53D45B692 /* AddsUpView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddsUpView.swift; sourceTree = "<group>"; };
 		1A63598F9E77CC8D06E677A1 /* CantReachPearl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CantReachPearl.swift; sourceTree = "<group>"; };
 		663F7C177E913CEBE0B53FA5 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		C93CED67E803BE21967A343B /* OwedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwedViews.swift; sourceTree = "<group>"; };
@@ -289,6 +293,7 @@
 			isa = PBXGroup;
 			children = (
 				4B637EA372818923C1246122 /* ConsolidationUITests.swift */,
+				5091F4D530CD334A9D573D16 /* GaugeUITests.swift */,
 				73F2C41C66637E36C1D77050 /* OverUnderUITests.swift */,
 				33A599E2CA5F3A2F441A0DAE /* PersonJourneysUITests.swift */,
 				AAE25B547263E40ECA3F49B2 /* QuickSortCategoryUITests.swift */,
@@ -391,7 +396,7 @@
 		CD85065437072E6040614BC4 /* Components */ = {
 			isa = PBXGroup;
 			children = (
-				E21AE2F637B8AF4630212950 /* AllowanceOrb.swift */,
+				D0B2CC68562CE536991AD400 /* AllowanceGauge.swift */,
 				C497270FF4823ED50730E0BC /* Components.swift */,
 				3B0EAF5567285C8779914090 /* ContactNames.swift */,
 				46975E38D86085BDDA245313 /* KeyboardDone.swift */,
@@ -406,6 +411,7 @@
 		91800D9EF29E7A94176F29D6 /* Home */ = {
 			isa = PBXGroup;
 			children = (
+				E7A90B246C0DA1E53D45B692 /* AddsUpView.swift */,
 				1A63598F9E77CC8D06E677A1 /* CantReachPearl.swift */,
 				663F7C177E913CEBE0B53FA5 /* HomeView.swift */,
 				C93CED67E803BE21967A343B /* OwedViews.swift */,
@@ -629,7 +635,7 @@
 				197D74CCEC857E06FD81CB2C /* Nacre.swift in Sources */,
 				A77E60CDC6CED192D7867D14 /* PearlDust.swift in Sources */,
 				B4F50BD8435DEB237F51EFD7 /* Theme.swift in Sources */,
-				5C5C23B160087A9704B706BB /* AllowanceOrb.swift in Sources */,
+				794DA7C4C827E4BD89B2F511 /* AllowanceGauge.swift in Sources */,
 				D02B27EB92A7DFD6D51C0DA8 /* Components.swift in Sources */,
 				218DC566CDDFE90CA8E446C2 /* ContactNames.swift in Sources */,
 				145A5EED9E6F3AFA2DB624F1 /* KeyboardDone.swift in Sources */,
@@ -637,6 +643,7 @@
 				707FBD763449C287EBDFB546 /* PearlDateSheet.swift in Sources */,
 				250306FBB27C72F914D01FC6 /* ProfileCircle.swift in Sources */,
 				83F7E0678334F0E527E1D836 /* ScrollEdgeFade.swift in Sources */,
+				3FB4DF87982AB308280C099D /* AddsUpView.swift in Sources */,
 				2F4C0C7609E5463A942F8A95 /* CantReachPearl.swift in Sources */,
 				F2D60DB16AD29DE5F442BC38 /* HomeView.swift in Sources */,
 				11991F064129B8D80C6CB502 /* OwedViews.swift in Sources */,
@@ -714,6 +721,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				FC9DAA094F769A689A86048D /* ConsolidationUITests.swift in Sources */,
+				F6559E96041ACD56C22514F9 /* GaugeUITests.swift in Sources */,
 				CDB1FB14ECC588122F3CE128 /* OverUnderUITests.swift in Sources */,
 				C4D449BAF44C6DF24B4410D9 /* PersonJourneysUITests.swift in Sources */,
 				B8087047BA447D15D66176FC /* QuickSortCategoryUITests.swift in Sources */,

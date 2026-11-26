@@ -88,7 +88,16 @@ class TestHome:
 
     def test_calm_state(self):
         assert "CalmState()" in self.home
-        assert "size: calm ? AllowanceOrb.full : AllowanceOrb.small" in self.home
+        # AP-HomeCalm (H-00r v2): the same gauge as a busy Home, then the line.
+        assert "HomeOrb(home: home, openAddsUp: actions.addsUp)" in self.home
+
+    def test_greeting_and_faces(self):
+        # H-00r v2 (home.css): the greeting by time of day, her first name;
+        # "2 people owe you" shows who, and a chevron.
+        assert "HomeTopBar.greeting(name: app.user?.firstName)" in self.home
+        assert 'hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening"' in self.home
+        assert "OwedFaces(names: owed.owesYou.prefix(3).map(\\.name))" in self.home
+        assert "case .addsUp: AddsUpView()" in self.home
 
     def test_worth_a_look_is_wired(self):
         assert '"api/worth-a-look"' in self.home

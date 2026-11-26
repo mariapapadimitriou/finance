@@ -171,7 +171,7 @@ def _subscriptions(ctx: _Ctx) -> list[dict]:
             continue
         name = ctx.name(r["name"])
         out.append(_item(f"subscription:{r['key']}", "subscription", "yes",
-                         f"New subscription: {name}", "subscription", "rose",
+                         f"{name} subscription", "subscription", "rose",
                          amount=f"{_money(rec['amount'])}{_PER.get(rec['cadence'], '')}",
                          yes="Yes", rank=-len(rec["dates"]),
                          data={"key": r["key"], "name": name}))
@@ -429,7 +429,7 @@ def _month_compare(ctx: _Ctx) -> list[dict]:
         if less < LESS_BY:
             continue
         out.append(_item(f"month_compare:{cat}:{month}", "month_compare", "good",
-                         f"{_dollars(round(less))} less on {words} than {last_start.strftime('%B')}",
+                         f"{_dollars(round(less))} less on {words}",
                          "trend_down", "good", target={"screen": "category", "name": cat, "month": month},
                          rank=-less + 1_000_000))       # after any piggy bank
     return out

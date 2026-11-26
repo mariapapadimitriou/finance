@@ -668,16 +668,19 @@ GROUP_LABELS = {"essentials": "Essentials", "lifestyle": "Lifestyle",
 
 
 def already_spent(transactions: list[Transaction], today: date,
-                  parts: dict[str, float] | None = None) -> dict:
+                  parts: dict[str, float] | None = None,
+                  bills: set[tuple[str, str]] | None = None) -> dict:
     """Everything spent this month so far, pending included (S8).
 
     `parts` is her part of a bill by merchant (a share she gave, less what a
     roommate covers): the charge that pays the bill counts at that part, as
-    the bill was held back at it (decision 5, gap 10)."""
+    the bill was held back at it (decision 5, gap 10). `bills` is
+    `bill_charges`: the part of the total that paid a bill comes back as
+    `bills_c` (the Allowance gauge counts it with the bills, not as spending)."""
     from .categorize import merchant_key
     month = today.strftime("%Y-%m")
     by_group: dict[str, int] = {}
-    pending_c = 0
+    pending_c = bills_c = 0
     for t in transactions:
         if t.month != month or t.date > today.isoformat() or not counts_as_spending(t):
             continue
@@ -690,10 +693,35 @@ def already_spent(transactions: list[Transaction], today: date,
         by_group[g] = by_group.get(g, 0) + c
         if (t.raw or {}).get("pending"):
             pending_c += c
+        if bills and (t.merchant, t.date) in bills:
+            bills_c += c
     total_c = sum(by_group.values())
     lines = [{"label": GROUP_LABELS.get(g, g.title()), "amount": _dollars(c)}
              for g, c in sorted(by_group.items(), key=lambda kv: -kv[1]) if c]
-    return {"amount_c": total_c, "pending": _dollars(pending_c), "lines": lines}
+    return {"amount_c": total_c, "pending": _dollars(pending_c), "lines": lines,
+            "bills_c": bills_c}
+
+
+# The gauge's zones (n-home-gauge, 2026-11-21): on track up to 80% of the
+# Allowance spent, getting close up to 100%, over past it.
+CLOSE_AT = 0.8
+
+
+def gauge(shown_c: int, spent_c: int) -> dict:
+    """Home's gauge and Cash flow's meter (H-00r v2, T-01r): the month's
+    Allowance as she starts it (bills, savings and the plan already out),
+    what she has spent of it, and the zone that puts her in.
+
+    `shown_c` is Left as shown; the Allowance is Left plus spent, so the
+    three always read as one sum, a rounded estimate's included."""
+    allowance_c = shown_c + spent_c
+    if shown_c < 0 or allowance_c <= 0:
+        zone = "over"
+    elif spent_c > allowance_c * CLOSE_AT:
+        zone = "close"
+    else:
+        zone = "ok"
+    return {"allowance": _dollars(allowance_c), "spent": _dollars(spent_c), "zone": zone}
 
 
 # ── The number ───────────────────────────────────────────────────────────
@@ -813,7 +841,8 @@ def compute(transactions: list[Transaction], today: date, *,
                 "per_day": None, "over_by": None, "rows": []}
 
     bills = bills_to_come(transactions, today, told_rent, confirm)
-    spent = already_spent(transactions, today, _bill_parts(transactions, today, confirm))
+    spent = already_spent(transactions, today, _bill_parts(transactions, today, confirm),
+                          bills=bill_charges(transactions, today))
     debt_paid_c = 0
     if debt_bills:
         bills = sorted(bills + debt_bills["lines"], key=lambda b: (b["date"] or "9999", b["label"]))
@@ -873,6 +902,11 @@ def compute(transactions: list[Transaction], today: date, *,
         "per_day": None if over else _dollars(_cents(shown) // left),
         "over_by": _dollars(-total_c) if over else None,
         "rows": rows,
+        # The gauge (H-00r v2, T-01r): bills paid so far, debt payments
+        # among them, count with the bills, so spent is everything else.
+        # `bills_paid` is that part of the spent row, for How it adds up.
+        "bills_paid": _dollars(spent["bills_c"] + debt_paid_c),
+        **gauge(_cents(shown), spent["amount_c"] - spent["bills_c"] - debt_paid_c),
     }
 
 

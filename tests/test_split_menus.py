@@ -452,7 +452,8 @@ class TestLessWords:
         "ios/Pearl/Views/Transactions/PaybackOptions.swift": ['"To unlink the whole \\(Format.amount(whole)), open the \\(link.noun)."'],
         "ios/Pearl/Views/Review/QuickSortView.swift": ['"Opens the page to change it."',
                                                      'Saves the split and \\(splitCategory(ask, d)), for this one.'],
-        "ios/Pearl/Views/Home/HomeView.swift": ['.accessibilityHint(home.safeToSpend?.ringCaption == Allowance.restCaption'],
+        # H-00r v2: the gauge reads the hidden line, then where it goes.
+        "ios/Pearl/Views/Components/AllowanceGauge.swift": ['.accessibilityHint(allowance.ringCaption == Allowance.restCaption'],
     }
 
     def src(self, path):

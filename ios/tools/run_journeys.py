@@ -224,6 +224,44 @@ def seed_joint(db_path: str) -> None:
             store.set_transaction_category(t.fingerprint, "Dining")
 
 
+# AP-HomeCalm (engBOT's GaugeUITests): a ledger with nothing to do, in place
+# of the demo: three months of pay, rent and groceries, every row sorted.
+CALM = "testGaugeCalm"
+
+
+def seed_calm(db_path: str) -> None:
+    from finance.ingest.base import IngestResult
+    from finance.models import Transaction
+    from finance.pipeline import ingest
+    from finance.store import Store
+    for suffix in ("", "-wal", "-shm"):
+        if os.path.exists(db_path + suffix):
+            os.remove(db_path + suffix)
+    store = Store(db_path)
+    today = date.today()
+    first = today.replace(day=1)
+    rows = []
+    for back in range(3, -1, -1):
+        y, m = first.year, first.month - back
+        while m < 1:
+            y, m = y - 1, m + 12
+        for d, desc, amt, cat in ((1, "NORTHWIND LTD PAYROLL", -2400.0, "Income"),
+                                  (15, "NORTHWIND LTD PAYROLL", -2400.0, "Income"),
+                                  (1, "PARKSIDE PROPERTIES", 1800.0, "Rent & Housing"),
+                                  (3, "LOBLAWS", 120.0, "Groceries"), (9, "LOBLAWS", 135.0, "Groceries"),
+                                  (12, "PAI NORTHERN THAI", 64.0, "Dining")):
+            when = date(y, m, d)
+            if when <= today:
+                rows.append(Transaction(date=when.isoformat(), description=desc, amount=amt, account_id="td_chq_2210",
+                                        account_name="TD Chequing ••2210", category=cat,
+                                        raw={"account_type": "depository"}))
+    ingest(store, IngestResult(transactions=rows, account_id="td_chq_2210"))
+    by_desc = {r.description: r.category for r in rows}
+    for t in store.all_transactions():
+        store.set_transaction_category(t.fingerprint, by_desc.get(t.description, t.category or "Other"))
+    store.set_setting("monthly_income", 4800.0)
+
+
 def simulator(runtime: str, text: str) -> str:
     # One simulator at a time (product owner): PEARL_SIM_UDID reuses one
     # that is already booted instead of booting "Pearl journeys" as well.
@@ -279,6 +317,9 @@ def main() -> int:
                 seed(db_path)
                 if journey and journey.startswith(OLDER):
                     seed_older(db_path)
+                elif journey == CALM:
+                    seed_calm(db_path)
+                    subprocess.run(["xcrun", "simctl", "uninstall", udid, "com.mariapapadimitriou.pearl"], capture_output=True)
                 elif journey == JOINT:
                     seed_joint(db_path)
                     subprocess.run(["xcrun", "simctl", "uninstall", udid, "com.mariapapadimitriou.pearl"], capture_output=True)
