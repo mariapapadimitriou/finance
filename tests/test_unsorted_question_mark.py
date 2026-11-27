@@ -25,3 +25,10 @@ def test_not_sorted_yet_has_no_tell_us_line():
     card = _asking_card()
     branch = card[card.index('if t.label == "Not sorted yet"'):card.index("} else {")]
     assert "t.note" not in branch and "sub:" not in branch
+
+
+def test_whose_has_no_tell_us_line():
+    card = _asking_card()
+    branch = card[card.index('} else if t.label == "Whose?"'):]
+    branch = branch[:branch.index("} else {")]
+    assert "row(title: t.label, chevron: true)" in branch

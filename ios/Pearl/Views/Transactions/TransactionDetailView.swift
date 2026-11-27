@@ -1807,6 +1807,9 @@ struct TransactionDetailView: View {
                     }
                     .padding(.horizontal, 16).padding(.vertical, 12).frame(minHeight: 64)
                     .contentShape(Rectangle())
+                } else if t.label == "Whose?" {
+                    // No "Yours or …'s? Tell us" either (2026-11-26).
+                    row(title: t.label, chevron: true)
                 } else {
                     row(title: t.label, sub: t.note.flatMap { $0.isEmpty ? nil : $0 } ?? "Needs a look", chevron: true)
                 }
