@@ -17,5 +17,10 @@ cryptography>=42.0.0
 # with Face ID, Touch ID, Windows Hello or a PIN. Only public keys are kept.
 webauthn>=2.0,<4
 
+# Pearl's AI gateway (finance/ai/, AI plan v2): the official Anthropic SDK.
+# Only used when ANTHROPIC_API_KEY is set on the server; without it AI is off
+# and Pearl answers with Python. Only finance/ai/ imports it.
+anthropic>=2.14,<3
+
 # Tests
 pytest>=8.0.0
