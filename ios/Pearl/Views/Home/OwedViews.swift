@@ -2,11 +2,11 @@ import SwiftUI
 
 // A+ Owed to you (AP-Owed) and its person page (AP-OwedPerson), REDESIGN-04
 // (THL-291, THL-289, THL-181). Reached from Home's "2 people owe you" and
-// from a split purchase's "See who else owes you". Same sections as S-14
-// (Owes you, Not settled with its line, You owe, Paid back this month); the
-// total sits in the header. A person row opens the person page (new); a
-// purchase there opens that person's options sheet (S-40) with "Open
-// Loblaws" under it.
+// from a split purchase's "Everyone who owes you" (P16). P17 (TP-P17-Owed,
+// TP-P17-OwedMore): one list of who owes her, then You owe, Not settled and
+// Paid back this month under Also, each on its own page. A person row opens
+// the person page; a purchase there opens that person's options sheet
+// (S-40) with "Open Loblaws" under it.
 
 /// A person's option picked away from the purchase (Owed to you), run by
 /// the purchase's page once it has loaded.
@@ -15,25 +15,38 @@ struct StartChoice {
     let choice: PersonChoice
 }
 
-// MARK: - S-14 Owed to you
+// MARK: - S-14 Owed to you (P17, TP-P17-Owed)
 
+/// P17a–d: one list of everyone who owes her, each with their total,
+/// biggest first (ties A–Z). You owe, Not settled and Paid back this month
+/// are one row each under Also (P17b), each opening its own page (P17f–h);
+/// a row shows only when it has something in it.
 @MainActor
 struct OwedView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var owed: OwedOverview?
     @State private var error: String?
     @State private var person: String?
-    /// S-14o2 (REFRESH-18): the You owe row that was tapped.
-    @State private var oweBack: OwedOverview.Row?
+    /// P17b: the Also row that was tapped.
+    @State private var also: OwedAlso?
+    /// P17d motion: the last person just paid, so the pearl arrives.
+    @State private var allPaid = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 OwedTitle(title: "Owed to you")
                 if let owed = owed {
-                    OwedHeader(owed: owed)
-                    OwedSections(owed: owed, openPerson: { person = $0 }, openOwed: { oweBack = $0 })
+                    let people = OwedView.sorted(owed.owesYou)
+                    if people.isEmpty {
+                        OwedNobody(arrived: allPaid)
+                    } else {
+                        OwedHeader(total: owed.total, line: OwedView.headline(people))
+                        OwedList(people: people, openPerson: { person = $0 })
+                    }
+                    OwedAlsoRows(owed: owed, open: { also = $0 })
                 } else if error != nil {
                     // G2-BOwed S-14ux: Couldn't load who owes you, with Try again.
                     OwedLoadFailed { Task { await load() } }.padding(.top, 60)
@@ -49,17 +62,54 @@ struct OwedView: View {
         .navigationDestination(isPresented: Binding(get: { person != nil }, set: { if !$0 { person = nil } })) {
             if let name = person { OwedPersonView(name: name) }
         }
-        .modifier(OweBackOptions(row: $oweBack))
+        .navigationDestination(isPresented: Binding(get: { also != nil }, set: { if !$0 { also = nil } })) {
+            if let also = also { OwedAlsoPage(kind: also) }
+        }
         .task { await load() }
         .reloads { await load() }
     }
 
+    /// P17a: biggest amount first, ties A–Z.
+    static func sorted(_ rows: [OwedOverview.Row]) -> [OwedOverview.Row] {
+        rows.sorted { a, b in
+            if abs(a.total - b.total) >= 0.005 { return a.total > b.total }
+            return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+        }
+    }
+
+    /// P17a "9 people owe you"; P17c "Sam owes you".
+    static func headline(_ people: [OwedOverview.Row]) -> String {
+        if people.count == 1, let one = people.first { return "\(one.name) owes you" }
+        return "\(people.count) people owe you"
+    }
+
     private func load() async {
         do {
-            try await app.screens.load("api/owed", as: OwedOverview.self) { owed = $0 }
+            try await app.screens.load("api/owed", as: OwedOverview.self) { new in
+                apply(new)
+            }
             error = nil
         } catch {
             self.error = app.handle(error)
+        }
+    }
+
+    /// P17c motion: someone paid in full, so their row springs out and the
+    /// total ticks down (light haptic); P17d: the last one brings the pearl.
+    private func apply(_ new: OwedOverview) {
+        guard let old = owed else { owed = new; return }
+        let before = Set(old.owesYou.map(\.name)), after = Set(new.owesYou.map(\.name))
+        let gone = !before.subtracting(after).isEmpty
+        if gone {
+            allPaid = after.isEmpty
+            if allPaid {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            } else {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            }
+        }
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(response: 0.3, dampingFraction: 0.85)) {
+            owed = new
         }
     }
 }
@@ -137,54 +187,318 @@ private struct OwedLoadFailed: View {
     }
 }
 
-/// "$70.10" in Fraunces 44/600 over "from 2 people".
+/// `.owhero`: "$362.02" in Fraunces 44/600 over "9 people owe you" (P17a),
+/// or any page's figure and line (P17g "to 1 person", P17h "this month").
 private struct OwedHeader: View {
-    let owed: OwedOverview
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(Format.amount(owed.total))
-                .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle)).tracking(-0.88)
-                .foregroundColor(Pearl.ink).pearlAmountFit()
-            Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted)
-        }
-        .padding(.leading, 4).padding(.top, 10)
-        .accessibilityElement(children: .combine)
-    }
-
-    /// "from 2 people"; S-14u0 "1 split not settled"; or nobody.
-    private var line: String {
-        let n = owed.notSettled?.count ?? 0
-        if owed.people == 0 {
-            return n == 0 ? "Nobody owes you anything" : "\(n) split\(n == 1 ? "" : "s") not settled"
-        }
-        return "from \(owed.people) \(owed.people == 1 ? "person" : "people")"
-    }
-}
-
-private struct OwedSections: View {
-    @EnvironmentObject private var app: AppModel
-    let owed: OwedOverview
-    let openPerson: (String) -> Void
-    let openOwed: (OwedOverview.Row) -> Void
+    let total: Double
+    let line: String
+    var sign = ""
+    var tone: Color = Pearl.ink
+    /// P17a motion: the total counts up from $0 on open.
+    var countUp = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown: Double?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if !owed.owesYou.isEmpty {
-                label("Owes you")
-                APCard {
-                    ForEach(Array(owed.owesYou.enumerated()), id: \.element.id) { i, r in
+            Text("")
+                .modifier(OwedCount(value: shown ?? total, sign: sign))
+                .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle)).tracking(-0.88)
+                .foregroundColor(tone).pearlAmountFit()
+            Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+        }
+        .padding(.leading, 4).padding(.top, 14)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(sign)\(Format.amount(total)), \(line)")
+        .onAppear {
+            // Reduce Motion: no count.
+            guard shown == nil else { return }
+            guard countUp, !reduceMotion else { shown = total; return }
+            shown = 0
+            withAnimation(.easeOut(duration: 0.35)) { shown = total }
+        }
+        .onChange(of: total) { t in
+            // P17c: the total ticks down when someone pays.
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { shown = t }
+        }
+    }
+}
+
+/// The hero's figure as it animates: "$0.00" → "$362.02".
+private struct OwedCount: AnimatableModifier {
+    var value: Double
+    let sign: String
+
+    var animatableData: Double {
+        get { value }
+        set { value = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        Text(sign + Format.amount((value * 100).rounded() / 100)).monospacedDigit()
+    }
+}
+
+/// P17a: OWES YOU, then one card with a row per person. The rows settle in
+/// on open, 30 ms apart; one springs out when they pay in full.
+private struct OwedList: View {
+    let people: [OwedOverview.Row]
+    let openPerson: (String) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            APSectionLabel(text: "Owes you").padding(.top, 24).padding(.bottom, 8)
+            APCard {
+                ForEach(Array(people.enumerated()), id: \.element.id) { i, r in
+                    VStack(spacing: 0) {
                         if i > 0 { APSeparator() }
                         Button { openPerson(r.name) } label: {
-                            OwedRow(name: r.name, line: OwedSections.line(r), amount: Format.amount(r.total))
+                            OwedRow(name: r.name, line: OwedList.line(r), amount: Format.amount(r.total))
                         }
                         .buttonStyle(.plain)
                         .accessibilityHint("Opens what \(r.name) owes you for")
                     }
+                    .modifier(OwedSettleIn(index: i))
+                    .transition(reduceMotion ? .opacity
+                                : .asymmetric(insertion: .opacity, removal: .scale(scale: 0.9).combined(with: .opacity)))
                 }
             }
+        }
+    }
+
+    /// "Corner Bistro · Nov 8", or "3 purchases".
+    static func line(_ r: OwedOverview.Row) -> String {
+        if r.items.count == 1, let i = r.items.first {
+            return [i.merchant, Format.short(i.date)].compactMap { $0 }.joined(separator: " · ")
+        }
+        return "\(r.items.count) purchases"
+    }
+}
+
+/// P17a motion: a row rises 8 pt and fades in (200 ms), 30 ms after the one
+/// above it. Reduce Motion: a 150 ms fade.
+private struct OwedSettleIn: ViewModifier {
+    let index: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown || reduceMotion ? 0 : 8)
+            .onAppear {
+                guard !shown else { return }
+                if reduceMotion {
+                    withAnimation(.easeInOut(duration: 0.15)) { shown = true }
+                } else {
+                    withAnimation(.easeOut(duration: 0.2).delay(Double(min(index, 12)) * 0.03)) { shown = true }
+                }
+            }
+    }
+}
+
+/// P17d: nobody owes her: the pearl and one calm line. When the last person
+/// has just paid, the pearl fades in with a soft shimmer (400 ms); Reduce
+/// Motion: a fade only.
+private struct OwedNobody: View {
+    let arrived: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = false
+    @State private var sweep = false
+
+    var body: some View {
+        VStack(spacing: 18) {
+            PearlOrb(size: 96)
+                .overlay(
+                    LinearGradient(colors: [.clear, .white.opacity(0.55), .clear],
+                                   startPoint: .leading, endPoint: .trailing)
+                        .frame(width: 40)
+                        .offset(x: sweep ? 70 : -70)
+                        .opacity(arrived && !reduceMotion ? 0.9 : 0)
+                        .mask(Circle())
+                        .allowsHitTesting(false))
+                .scaleEffect(shown || reduceMotion || !arrived ? 1 : 0.92)
+            Text("Nobody owes you anything.")
+                .font(Nacre.body).foregroundColor(Pearl.muted)
+                .multilineTextAlignment(.center)
+        }
+        .opacity(shown || !arrived ? 1 : 0)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 20).padding(.top, 96)
+        .onAppear {
+            guard arrived, !shown else { shown = true; return }
+            withAnimation(.easeOut(duration: reduceMotion ? 0.15 : 0.4)) { shown = true }
+            if !reduceMotion {
+                withAnimation(.easeInOut(duration: 0.4)) { sweep = true }
+            }
+        }
+    }
+}
+
+// MARK: - Also (P17b) and its pages (P17f–h)
+
+/// P17b: the three Also rows, and the page each opens.
+enum OwedAlso: Hashable {
+    case youOwe, notSettled, paidBack
+}
+
+/// P17b: ALSO, one row each for You owe (its amount), Not settled ("1
+/// split") and Paid back this month (+$70.00 in green). A row shows only
+/// when it has something; with none, Also goes.
+private struct OwedAlsoRows: View {
+    let owed: OwedOverview
+    let open: (OwedAlso) -> Void
+
+    var body: some View {
+        let rows = OwedAlsoRows.rows(owed)
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                APSectionLabel(text: "Also").padding(.top, 24).padding(.bottom, 8)
+                APCard {
+                    ForEach(Array(rows.enumerated()), id: \.element.kind) { i, r in
+                        if i > 0 { APSeparator(afterFace: false) }
+                        Button { open(r.kind) } label: { OwedAlsoRow(row: r) }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("owed-also-\(r.kind)")
+                    }
+                }
+            }
+        }
+    }
+
+    struct Row {
+        let kind: OwedAlso
+        let title: String
+        let value: String
+    }
+
+    /// Only the rows with something in them, in the board's order.
+    static func rows(_ owed: OwedOverview) -> [Row] {
+        var out: [Row] = []
+        let owe = owed.youOwe.reduce(0) { $0 + $1.total }
+        if !owed.youOwe.isEmpty {
+            out.append(Row(kind: .youOwe, title: "You owe", value: Format.amount(owe)))
+        }
+        let n = owed.notSettled?.count ?? 0
+        if n > 0 {
+            out.append(Row(kind: .notSettled, title: "Not settled", value: n == 1 ? "1 split" : "\(n) splits"))
+        }
+        if !owed.paidBack.isEmpty {
+            let back = owed.paidBack.reduce(0) { $0 + $1.amount }
+            out.append(Row(kind: .paidBack, title: "Paid back this month", value: "+" + Format.amount(back)))
+        }
+        return out
+    }
+}
+
+/// `.also .row`: the icon, the words, the figure, the chevron (56 high).
+private struct OwedAlsoRow: View {
+    let row: OwedAlsoRows.Row
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        HStack(spacing: 12) {
+            icon
+            Text(row.title).font(Nacre.body).foregroundColor(Pearl.ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(row.value)
+                .font(row.kind == .notSettled ? Nacre.body : Nacre.headline).monospacedDigit()
+                .foregroundColor(row.kind == .notSettled ? Pearl.muted : row.kind == .paidBack ? Pearl.moneyIn : Pearl.ink)
+                .lineLimit(1).fixedSize()
+            CFChevron()
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .frame(minHeight: 56)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(row.title), \(row.value)")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    @ViewBuilder private var icon: some View {
+        switch row.kind {
+        case .youOwe: APIcon(symbol: "arrow.up")
+        case .notSettled: APIcon(symbol: "clock")
+        case .paidBack: APIcon.good("checkmark")
+        }
+    }
+}
+
+/// P17f–h: each Also row's own page. It loads Owed to you itself, so it
+/// stays right after a change made from it.
+@MainActor
+private struct OwedAlsoPage: View {
+    @EnvironmentObject private var app: AppModel
+    @Environment(\.dismiss) private var dismiss
+    let kind: OwedAlso
+    @State private var owed: OwedOverview?
+    @State private var failed = false
+    /// S-14o2 (REFRESH-18): the You owe row that was tapped.
+    @State private var oweBack: OwedOverview.Row?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                OwedTitle(title: title)
+                if let owed = owed {
+                    content(owed)
+                } else if failed {
+                    OwedLoadFailed { Task { await load() } }.padding(.top, 60)
+                } else {
+                    OwedSkeleton().padding(.top, 24)
+                }
+            }
+            .padding(.horizontal, Pearl.gutter).padding(.bottom, 32)
+        }
+        .nacreScreen()
+        .apPushedPage { dismiss() }
+        .modifier(OweBackOptions(row: $oweBack))
+        .task { await load() }
+        .reloads { await load() }
+    }
+
+    private var title: String {
+        switch kind {
+        case .youOwe: return "You owe"
+        case .notSettled: return "Not settled"
+        case .paidBack: return "Paid back"
+        }
+    }
+
+    @ViewBuilder private func content(_ owed: OwedOverview) -> some View {
+        switch kind {
+        case .youOwe:
+            // P17g: what she got back over a share; a row opens that
+            // person's options on the purchase (S-14o).
+            if owed.youOwe.isEmpty {
+                CalmState()
+            } else {
+                let n = owed.youOwe.count
+                OwedHeader(total: owed.youOwe.reduce(0) { $0 + $1.total },
+                           line: n == 1 ? "to 1 person" : "to \(n) people", countUp: false)
+                APCard {
+                    ForEach(Array(owed.youOwe.enumerated()), id: \.element.id) { i, r in
+                        if i > 0 { APSeparator() }
+                        Button { oweBack = r } label: {
+                            OwedRow(name: r.name, line: "Overpaid for " + (r.items.first?.merchant ?? "a purchase"),
+                                    amount: Format.amount(r.total))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(r.items.first?.chargeId == nil)
+                    }
+                }
+                .padding(.top, 24)
+            }
+        case .notSettled:
+            // P17f: its one explaining line, then the splits; a row opens
+            // the purchase, where Settle up lives.
+            Text("Not in the total until settled.")
+                .font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                .padding(.horizontal, 4).padding(.top, 10)
+                .fixedSize(horizontal: false, vertical: true)
             if let unsettled = owed.notSettled, !unsettled.isEmpty {
-                label("Not settled")
                 APCard {
                     ForEach(Array(unsettled.enumerated()), id: \.element.id) { i, n in
                         if i > 0 { APSeparator() }
@@ -194,78 +508,77 @@ private struct OwedSections: View {
                         .buttonStyle(.plain)
                     }
                 }
-                Text("Not in the total until settled.")
-                    .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                    .padding(.horizontal, 4).padding(.top, 8)
-                    .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 16)
+            } else {
+                CalmState()
             }
-            if !owed.youOwe.isEmpty {
-                label("You owe")
-                APCard {
-                    ForEach(Array(owed.youOwe.enumerated()), id: \.element.id) { i, r in
-                        if i > 0 { APSeparator() }
-                        // S-14o (REFRESH-18): opens their options on that purchase.
-                        Button { openOwed(r) } label: {
-                            OwedRow(name: r.name, line: "Overpaid for " + (r.items.first?.merchant ?? "a purchase"),
-                                    amount: Format.amount(r.total))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(r.items.first?.chargeId == nil)
-                    }
-                }
-            }
-            if !owed.paidBack.isEmpty {
-                label("Paid back this month")
+        case .paidBack:
+            // P17h: the record, in green; rows are not buttons.
+            if owed.paidBack.isEmpty {
+                CalmState()
+            } else {
+                OwedHeader(total: owed.paidBack.reduce(0) { $0 + $1.amount }, line: "this month",
+                           sign: "+", tone: Pearl.moneyIn, countUp: false)
                 APCard {
                     ForEach(Array(owed.paidBack.enumerated()), id: \.offset) { i, b in
                         if i > 0 { APSeparator() }
                         PaidBackRow(b: b)
                     }
                 }
+                .padding(.top, 24)
             }
         }
     }
 
-    private func label(_ text: String) -> some View {
-        APSectionLabel(text: text).padding(.top, 24).padding(.bottom, 8)
-    }
-
-    /// "Loblaws · Nov 11", or "2 purchases".
-    static func line(_ r: OwedOverview.Row) -> String {
-        if r.items.count == 1, let i = r.items.first {
-            return [i.merchant, Format.short(i.date)].compactMap { $0 }.joined(separator: " · ")
+    private func load() async {
+        do {
+            try await app.screens.load("api/owed", as: OwedOverview.self) { owed = $0 }
+            failed = false
+        } catch {
+            _ = app.handle(error)
+            failed = owed == nil
         }
-        return "\(r.items.count) purchases"
     }
 }
 
-/// A+ `.row`: face 40, name over line, the amount on the right edge.
+/// A+ `.row`: face 40, name over line, the amount on the right edge. P17e:
+/// a long name takes one line and ends in "…"; the amount never shrinks or
+/// wraps, and at the larger text sizes it moves under the name.
 struct OwedRow: View {
     let name: String
     let line: String
     let amount: String
     var tone: Color = Pearl.ink
     var note: String? = nil
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         HStack(spacing: 12) {
             APFace(name: name)
             VStack(alignment: .leading, spacing: 2) {
-                Text(name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                Text(name).font(Nacre.body).foregroundColor(Pearl.ink)
+                    .lineLimit(1).truncationMode(.tail)
                 Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                 if let note = note {
                     Text(note).font(Nacre.footnote).foregroundColor(Pearl.muted)
                 }
+                if typeSize.isAccessibilitySize { figure.padding(.top, 2) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Text(amount).font(Nacre.headline).monospacedDigit().foregroundColor(tone)
-                .pearlAmountFit().fixedSize()
+            if !typeSize.isAccessibilitySize { figure }
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
         .frame(minHeight: 64)
         .contentShape(Rectangle())
+        // VoiceOver reads the whole name, however it's cut.
         .accessibilityElement(children: .combine)
+    }
+
+    private var figure: some View {
+        Text(amount).font(Nacre.headline).monospacedDigit().foregroundColor(tone)
+            .lineLimit(1).fixedSize()
+            .layoutPriority(1)
     }
 }
 
@@ -297,7 +610,7 @@ private struct UnsettledRow: View {
     }
 }
 
-/// "Jo" over "e-Transfer · Nov 16 · Loblaws", +$30.00 in green.
+/// P17h: "Jo" over "Corner Bistro · Nov 12", +$22.66 in green.
 private struct PaidBackRow: View {
     let b: OwedOverview.Back
 
@@ -305,8 +618,9 @@ private struct PaidBackRow: View {
         // SPLIT-14: "PayPal" or "Another app"; SPLIT-15: one cash payment,
         // with what a deposit holds; SPLIT-19 (S-11c): several purchases.
         let how = b.cash == true ? "Cash" : b.app == true ? (b.appName ?? "Another app") : nil
+        // P17h: "Flight to Athens · Nov 9", or "Cash · Nov 13".
         let line = (b.paidBack.map { [how, Format.short(b.date), "paid back \(Format.andList($0))"] }
-                    ?? [how, Format.short(b.date), b.merchant])
+                    ?? [how ?? b.merchant, Format.short(b.date)])
             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
         return OwedRow(name: b.name ?? "Someone", line: line, amount: "+" + Format.amount(b.amount),
                        tone: Pearl.moneyIn,

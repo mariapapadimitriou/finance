@@ -235,7 +235,9 @@ final class OverUnderUITests: XCTestCase {
         see("$15.00 from Georgia Klev is a gift")
         sleep(1)
         undoToast()
-        press("See who else owes you")
+        press("Everyone who owes you")
+        // P17b: You owe is one row under Also; its page lists who (P17g).
+        press("You owe")
         see("Overpaid for Corner Bistro")
         step("owed to you")
         press("Georgia Klev")
@@ -403,6 +405,51 @@ final class OverUnderUITests: XCTestCase {
     /// Split my part is a row in Options, as Split with others is (product
     /// owner, 2026-11-25): on "All mine", with none of it hers, and at 50/50,
     /// where it opens the split.
+    /// P16a: "Everyone who owes you" under the split card opens Owed to you
+    /// (P17a: one list, biggest first; P17b: Also); Paid back this month opens
+    /// its own page (P17h). Then the same page from Home's card.
+    func testOverOwedOrganized() {
+        launch()
+        openBistro()
+        see("Everyone who owes you")
+        let button = app.buttons["Everyone who owes you"].firstMatch
+        bring(button)
+        step("split purchase")
+        button.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        sleep(2)
+        see("Owed to you")
+        see("people owe you")
+        see("Georgia Klev")
+        step("owed to you")
+        app.swipeUp(velocity: .slow)
+        sleep(1)
+        see("Also")
+        step("also")
+        let paid = app.buttons["owed-also-paidBack"].firstMatch
+        XCTAssertTrue(paid.waitForExistence(timeout: 6), "No Paid back this month row")
+        bring(paid)
+        paid.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        sleep(2)
+        see("this month")
+        see("Priya")
+        step("paid back")
+        // From Home.
+        app.tabBars.buttons["Home"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        sleep(2)
+        app.tabBars.buttons["Home"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        sleep(2)
+        let card = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "owe you")).firstMatch
+        for _ in 0..<6 where !(card.exists && card.frame.midY < 660) { app.swipeUp(velocity: .slow); sleep(1) }
+        XCTAssertTrue(card.waitForExistence(timeout: 6), "No Owed card on Home")
+        bring(card)
+        step("home card")
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        sleep(2)
+        see("Owed to you")
+        see("Georgia Klev")
+        step("owed from home")
+    }
+
     func testJointSplitInOptions() {
         launch()
         for (merchant, label) in [("Lantern Books", "Split with others"), ("Harbour Furniture", "Split my part"),

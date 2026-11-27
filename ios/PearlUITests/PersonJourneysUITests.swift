@@ -574,7 +574,7 @@ final class PersonJourneysUITests: XCTestCase {
         note("server split: \(s ?? [:])")
         app.swipeUp()
         step("split card")
-        tapIf(app.buttons["See everyone who owes you"], "See everyone who owes you", timeout: 4)
+        tapIf(app.buttons["Everyone who owes you"], "Everyone who owes you", timeout: 4)
         step("owed to you")
         note("owed: \(server("owed") ?? "nil")")
         launch("dark")
@@ -761,7 +761,7 @@ final class PersonJourneysUITests: XCTestCase {
         app.swipeDown(velocity: .fast)
         // Owed to you.
         app.swipeUp()
-        tapIf(app.buttons["See everyone who owes you"], "See everyone who owes you", timeout: 4)
+        tapIf(app.buttons["Everyone who owes you"], "Everyone who owes you", timeout: 4)
         step("owed to you")
         app.swipeUp()
         step("owed to you scrolled")

@@ -291,7 +291,7 @@ class TestSwiftWiring:
         # One paid-back bar per card, no per-row bars; the renamed link.
         card = split[split.index("struct SplitPeople"):split.index("// MARK: - Mark paid back")]
         assert "PaidBackBar(segments: barSegments" in card and "PaidBar(" not in card
-        assert "See who else owes you" in card
+        assert 'Button("Everyone who owes you", action: onOwed)' in card
         for words in ("Mark paid back", "Add another payment", "Let the \\(Format.amount(p.owes)) go", "Undo let it go",
                       "Change the split", "Paid so far", "Paid with"):
             assert words in menus, words
