@@ -61,6 +61,9 @@ struct AnswerSheet: View {
         var mustTick: String? = nil
     }
     @State private var parting: Parting?
+    /// P5h: a payback tile on money with no clear name, waiting on Who sent this?.
+    @State private var whoSentTile: PaybackQuestion.Tile?
+    @State private var whoSentOther: String?
     /// RQ-01b "From now on?" (G1-RecurringFrom, 2026-11-24): the tile's
     /// answer, held until she says whether the ones to come are sorted the
     /// same way. Shown in this sheet in the tiles' place; ✕ goes back.
@@ -253,7 +256,8 @@ struct AnswerSheet: View {
                               // TEST-46: the page's own ask carries no guess, so an
                               // "Other?" guess is said here, with its Yes on top.
                               guess: ask.kind == .category && pageCategory == nil
-                                  ? (ask.item.guess?.text ?? (otherGuess ? "Other" : nil)) : nil) { name, remember in
+                                  ? (ask.item.guess?.text ?? (otherGuess ? "Other" : nil)) : nil,
+                              likelyFirst: ask.item.likely) { name, remember in
                     saveSpending(name, remember)
                 }
             } else if step == .into {
@@ -319,6 +323,10 @@ struct AnswerSheet: View {
                 billing = nil
             }
         }
+        .sheet(item: $whoSentTile, onDismiss: {
+            // P5h: someone not on the split: What did they pay back?, nothing ticked.
+            if let name = whoSentOther { whoSentOther = nil; parting = Parting(person: name) }
+        }) { tile in whoSentSheet(tile) }
         .sheet(item: $parting) { p in
             // PB-11 › A person: their shares, none ticked for her (PB-30),
             // or S-35's ticks, then part or all of each share (PB-13).
@@ -1065,6 +1073,11 @@ struct AnswerSheet: View {
     /// then PB-30 with this one ticked and the others as they add up. Offline,
     /// the single tap.
     private func tapTile(_ tile: PaybackQuestion.Tile) async {
+        if ask.item.payback?.unknown == true, tile.person == nil {
+            // P5h: Pearl never guesses who sent it: ask first.
+            whoSentTile = tile
+            return
+        }
         if let from = await PaybackQuestion.partsPerson(api: api, id: t.id, amount: t.amount, tile: tile) {
             partPerson = from
             mustTick = tile.charge
@@ -1072,6 +1085,29 @@ struct AnswerSheet: View {
             return
         }
         onAnswer(.payback(t.id, charge: tile.charge, toast: tile.toast, person: tile.person))
+    }
+
+    /// P5h (TP-P5-NeedsALook): Who sent this?, everyone on the split first.
+    /// Someone on it: their payback. Anyone else is never added to the
+    /// split; What did they pay back? opens with nothing ticked.
+    @inline(never) private func whoSentSheet(_ tile: PaybackQuestion.Tile) -> AnyView {
+        AnyView(PaybackSenderSheet(
+            payer: who, line: "\(amountText) · \(Format.short(t.date))", merchant: tile.merchant,
+            onSplit: (tile.people ?? []).map { PaybackSenderSheet.OnSplit(name: $0.name, owes: $0.owes) },
+            api: api,
+            onPick: { name in
+                if let on = (tile.people ?? []).first(where: { samePerson($0.name, name) }) {
+                    whoSentTile = nil
+                    onAnswer(.payback(t.id, charge: tile.charge,
+                                      toast: "\(on.name) paid back \(Format.amount(abs(t.amount))) for \(tile.merchant)",
+                                      person: on.name))
+                } else {
+                    whoSentOther = name
+                    whoSentTile = nil
+                }
+                return nil
+            },
+            onClose: { whoSentTile = nil }))
     }
 
     // MARK: A list of answers

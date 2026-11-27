@@ -688,6 +688,13 @@ def transaction_detail(txn_id: str):
             options, by_name = sp.for_inflow(t, txns, splits, payer)
             r["repayment"] = {"suggestion": sp.suggest(t, txns, splits, payer),
                               "splits": options, "from_sender": by_name}
+        if t.amount > 0 and (t.category or "Other") == "Other":
+            # P3d (TP-P3-NoGuess): the page's four tiles, likeliest for this
+            # purchase from her own ledger (finance/likely.py). Tiles she
+            # taps; nothing is sorted by them.
+            from . import likely
+            from .marks import hidden_categories
+            r["likely"] = likely.likeliest(t, txns, hidden_categories(st))
         return jsonify(r)
     return jsonify({"error": "No such transaction."}), 404
 

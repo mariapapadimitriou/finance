@@ -152,7 +152,9 @@ struct QuickSortView: View {
     /// PP-01 for a payback the server couldn't place on the split, and its card.
     @State private var whoPaid: QuickWhoPaid?
     /// P5g: What did Sam pay back? after Not this on a payback guess.
-    @State private var notThis: QuickNotThis?
+    /// P5h then P5g, in one sheet: Who sent this? (money with no clear
+    /// name), or What did Sam pay back? after Not this.
+    @State private var notThis: QuickPaybackStep?
     @State private var notThisThen: Ask?
 
     /// Edits made on a card's page, waiting for Yes on the card.
@@ -236,7 +238,7 @@ struct QuickSortView: View {
         .sheet(item: $notThis, onDismiss: {
             // Not a payback: the whole question (What was this?), once this has gone.
             if let ask = notThisThen { notThisThen = nil; asking = ask }
-        }) { n in notThisSheet(n) }
+        }) { step in paybackStepSheet(step) }
         .sheet(item: $whoPaid) { w in
             WhoPaidAskSheet(ask: w.who, api: app.api, onPick: { answer in
                 whoPaid = nil
@@ -402,7 +404,8 @@ struct QuickSortView: View {
     private func paybackGuess(_ ask: Ask) -> PaybackQuestion? {
         guard ask.kind == .moneyIn, drafts[ask.id] == nil, ask.item.credit == nil, ask.item.extra == nil,
               let q = ask.item.payback, !q.tiles.isEmpty,
-              ask.t.learnable != false || ask.item.from != nil else { return nil }
+              // P5h: no clear name, so the guess is the purchase and Yes asks who.
+              ask.t.learnable != false || ask.item.from != nil || q.unknown == true else { return nil }
         return q
     }
 
@@ -410,6 +413,13 @@ struct QuickSortView: View {
     /// on other purchases opens the question (PB-30 with this one ticked).
     private func paybackYes(_ ask: Ask, _ q: PaybackQuestion) {
         guard let tile = q.tiles.first else { return }
+        if q.unknown == true, tile.person == nil {
+            // P5h: Pearl never guesses who. Who sent this? first; the card
+            // stays until she picks.
+            withAnimation(.spring()) { drag = .zero }
+            notThis = .who(QuickWhoSent(ask: ask, question: q, tile: tile))
+            return
+        }
         // P5f: success haptic, and the card leaves as P4b's does.
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         fly(true)
@@ -421,6 +431,42 @@ struct QuickSortView: View {
                 return
             }
             await answered(ask, .payback(ask.t.id, charge: tile.charge, toast: tile.toast, person: tile.person))
+        }
+    }
+
+    /// P5h (TP-P5-NeedsALook): Who sent this?, everyone on the split first.
+    /// Someone on it: their payback, with the toast and Undo. Anyone else
+    /// (another person, a contact, a typed name) is never added to the
+    /// split: What did they pay back? opens with nothing ticked (P5g).
+    @inline(never) private func whoSentSheet(_ w: QuickWhoSent) -> AnyView {
+        let t = w.ask.t
+        return AnyView(PaybackSenderSheet(
+            payer: w.question.who,
+            line: "+\(Format.amount(abs(t.amount))) · \(Format.short(t.date))",
+            merchant: w.tile.merchant,
+            onSplit: (w.tile.people ?? []).map { PaybackSenderSheet.OnSplit(name: $0.name, owes: $0.owes) },
+            api: app.api,
+            onPick: { name in
+                if let on = (w.tile.people ?? []).first(where: { samePerson($0.name, name) }) {
+                    notThis = nil
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    fly(true)
+                    await answered(w.ask, .payback(t.id, charge: w.tile.charge,
+                                                   toast: "\(on.name) paid back \(Format.amount(abs(t.amount))) for \(w.tile.merchant)",
+                                                   person: on.name))
+                } else {
+                    // The sheet turns into What did … pay back?.
+                    notThis = .not(QuickNotThis(ask: w.ask, person: name))
+                }
+                return nil
+            },
+            onClose: { notThis = nil }))
+    }
+
+    @inline(never) private func paybackStepSheet(_ step: QuickPaybackStep) -> AnyView {
+        switch step {
+        case .who(let w): return whoSentSheet(w)
+        case .not(let n): return notThisSheet(n)
         }
     }
 
@@ -442,7 +488,9 @@ struct QuickSortView: View {
     /// opens with nothing ticked; Not a payback goes on to the question.
     private func paybackNot(_ ask: Ask, _ q: PaybackQuestion) {
         withAnimation(.spring()) { drag = .zero }
-        notThis = QuickNotThis(ask: ask, person: q.tiles.first?.person ?? q.who)
+        // P5h: nobody is named, so the whole question (Something else, Who sent this?…).
+        if q.unknown == true { asking = ask; return }
+        notThis = .not(QuickNotThis(ask: ask, person: q.tiles.first?.person ?? q.who))
     }
 
     private var hint: String {
@@ -650,9 +698,10 @@ struct QuickSortView: View {
     /// P4a: Pearl's best is Other and she hasn't changed anything on its page.
     private func tilesOnCard(_ ask: Ask) -> Bool { ask.guessesOther && drafts[ask.id] == nil }
 
-    /// Her four likeliest spending categories (P3's), as slim tiles.
+    /// Her four likeliest for this purchase (P3's, finance/likely.py), as slim tiles.
     private func cardTiles(_ ask: Ask) -> some View {
-        let cats = CategorySheet.likeliest(CategorySheet.spending(categories.isEmpty ? app.categories : categories))
+        let cats = CategorySheet.likeliest(CategorySheet.spending(categories.isEmpty ? app.categories : categories),
+                                           prefer: ask.item.likely)
         return CFTileGrid {
             ForEach(cats) { c in
                 CFTile(symbol: CategorySheet.symbol(for: c.name), title: c.name, mark: pressed == c.name ? .pressed : .rest) {
@@ -1456,6 +1505,26 @@ extension EnvironmentValues {
 }
 
 /// P5g: the payback card Not this was said to, and whose shares to show.
+/// P5h: Yes on a payback guess with no clear name, waiting on Who sent this?.
+struct QuickWhoSent: Identifiable {
+    let ask: Ask
+    let question: PaybackQuestion
+    let tile: PaybackQuestion.Tile
+    var id: String { ask.id }
+}
+
+/// The one payback sheet's step: P5h's Who sent this?, or P5g.
+enum QuickPaybackStep: Identifiable {
+    case who(QuickWhoSent)
+    case not(QuickNotThis)
+    var id: String {
+        switch self {
+        case .who(let w): return "who" + w.id
+        case .not(let n): return "not" + n.id + n.person
+        }
+    }
+}
+
 struct QuickNotThis: Identifiable {
     let ask: Ask
     let person: String

@@ -1,3 +1,4 @@
+import Contacts
 import SwiftUI
 
 // Paid back from the purchase (Figma Proposals › "Paid back" 1351:8769,
@@ -289,13 +290,23 @@ struct PaidBackFindSheet: View {
 /// P5d / P5h (TP-P5-FromPurchase, TP-P5-NeedsALook): the money has no
 /// clear name, so Pearl asks once. Everyone on the split first ("On Pai
 /// Northern Thai", with what they owe), then the people she has split with,
-/// and a field to type any name. A pick saves; nothing is remembered.
+/// her iPhone contacts as she types (ContactNames), and a field to type any
+/// name. A pick saves; nothing is remembered, and nobody is added to a split.
 struct PaybackSenderSheet: View {
-    let money: PaidBackFind.Candidate
-    let purchase: Transaction
+    struct OnSplit: Hashable {
+        let name: String
+        let owes: Double
+    }
+
+    /// The money's name as the bank wrote it ("Interac e-Transfer").
+    let payer: String
+    /// "+$40.00 · Nov 25 · for Pai Northern Thai".
+    let line: String
+    let merchant: String
+    let onSplit: [OnSplit]
     let api: APIClient
     let onPick: (String) async -> String?
-    let onBack: () -> Void
+    var onBack: (() -> Void)? = nil
     let onClose: () -> Void
 
     @State private var typed = ""
@@ -303,21 +314,51 @@ struct PaybackSenderSheet: View {
     @State private var busy: String?
     @State private var error: String?
     @FocusState private var focused: Bool
+    /// Her contacts, searched as she types (product owner, 2026-11-20).
+    @StateObject private var contacts = ContactNames()
 
-    private var onSplit: [Transaction.Splitting.Person] { purchase.splitting?.people ?? [] }
-    private var others: [String] {
-        recent.filter { n in !onSplit.contains { samePerson($0.name, n) } }
+    /// P5d: from the purchase's page, with Back to Find what paid it back.
+    init(money: PaidBackFind.Candidate, purchase: Transaction, api: APIClient,
+         onPick: @escaping (String) async -> String?, onBack: @escaping () -> Void, onClose: @escaping () -> Void) {
+        self.init(payer: money.payer,
+                  line: "+\(Format.amount(money.amount)) · \(Format.short(money.date)) · for \(purchase.merchant)",
+                  merchant: purchase.merchant,
+                  onSplit: (purchase.splitting?.people ?? []).map { OnSplit(name: $0.name, owes: $0.owes) },
+                  api: api, onPick: onPick, onBack: onBack, onClose: onClose)
     }
+
+    /// P5h: from a Quick sort card or Needs a look, the split's people from
+    /// the server's payback question.
+    init(payer: String, line: String, merchant: String, onSplit: [OnSplit], api: APIClient,
+         onPick: @escaping (String) async -> String?, onBack: (() -> Void)? = nil, onClose: @escaping () -> Void) {
+        self.payer = payer
+        self.line = line
+        self.merchant = merchant
+        self.onSplit = onSplit
+        self.api = api
+        self.onPick = onPick
+        self.onBack = onBack
+        self.onClose = onClose
+    }
+
     private var name: String { typed.trimmingCharacters(in: .whitespaces) }
+    private func matches(_ n: String) -> Bool { name.isEmpty || n.localizedCaseInsensitiveContains(name) }
+    private var splitShown: [OnSplit] { onSplit.filter { matches($0.name) } }
+    private var others: [String] {
+        recent.filter { n in matches(n) && !onSplit.contains { samePerson($0.name, n) } }
+    }
+    /// Contacts only once she types, leaving out anyone listed above.
+    private var fromContacts: [String] {
+        guard !name.isEmpty else { return [] }
+        return Array(contacts.matches(name, excluding: onSplit.map(\.name) + recent).prefix(8))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             APSheetTitleBar(title: "Who sent this?", back: onBack, close: onClose)
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
-                    APQuestionWho(name: money.payer,
-                                   amount: "+\(Format.amount(money.amount)) · \(Format.short(money.date)) · for \(purchase.merchant)",
-                                   tone: Pearl.moneyIn, sub: nil)
+                    APQuestionWho(name: payer, amount: line, tone: Pearl.moneyIn, sub: nil)
                     HStack(spacing: 8) {
                         TextField("", text: $typed, prompt: Text("Type a name").foregroundColor(Pearl.muted))
                             .font(Nacre.body).foregroundColor(Pearl.ink).tint(Pearl.action)
@@ -334,10 +375,10 @@ struct PaybackSenderSheet: View {
                     .wellStyle(focused: focused)
                     .padding(.top, 6)
                     if let error = error { APErrorLine(text: error) }
-                    if !onSplit.isEmpty {
-                        APSheetLabel(text: "On \(purchase.merchant)")
+                    if !splitShown.isEmpty {
+                        APSheetLabel(text: "On \(merchant)")
                         APCard {
-                            ForEach(Array(onSplit.enumerated()), id: \.element.name) { i, p in
+                            ForEach(Array(splitShown.enumerated()), id: \.element.name) { i, p in
                                 if i > 0 { APSeparator() }
                                 person(p.name, line: p.owes >= 0.005 ? "Owes \(Format.amount(p.owes))" : nil)
                             }
@@ -352,6 +393,18 @@ struct PaybackSenderSheet: View {
                             }
                         }
                     }
+                    if !fromContacts.isEmpty {
+                        APSheetLabel(text: "From your contacts")
+                        APCard {
+                            ForEach(Array(fromContacts.enumerated()), id: \.element) { i, n in
+                                if i > 0 { APSeparator() }
+                                person(n, line: nil)
+                            }
+                        }
+                    }
+                    if !name.isEmpty && contacts.state == .off {
+                        ContactsOffLine()
+                    }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 16)
             }
@@ -364,6 +417,15 @@ struct PaybackSenderSheet: View {
             struct Reply: Decodable { let people: [Lenient<Past>] }
             let r: Reply? = try? await api.get("api/people/recent")
             recent = (r?.people ?? []).compactMap { $0.value?.name }
+            // Only what she already allowed; the alert waits until she types.
+            await contacts.load(ask: false)
+        }
+        .onChange(of: typed) { now in
+            // The first letter she types is when Pearl asks for her contacts.
+            if !now.isEmpty, contacts.state != .on,
+               CNContactStore.authorizationStatus(for: .contacts) == .notDetermined {
+                Task { await contacts.load() }
+            }
         }
     }
 

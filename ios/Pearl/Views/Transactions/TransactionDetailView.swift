@@ -1539,7 +1539,8 @@ struct TransactionDetailView: View {
 
     /// P3d: "What was this?", her four likeliest as tiles, and Something else.
     private var tilesCard: some View {
-        let cats = CategorySheet.likeliest(CategorySheet.spending(categories.isEmpty ? app.categories : categories))
+        let cats = CategorySheet.likeliest(CategorySheet.spending(categories.isEmpty ? app.categories : categories),
+                                           prefer: t.likely ?? guessing?.ask.item.likely)
         return VStack(alignment: .leading, spacing: 0) {
             APSectionLabel(text: "What was this?").padding(.top, 10).padding(.bottom, 8)
             CFTileGrid {
@@ -1785,6 +1786,11 @@ struct TransactionDetailView: View {
     @inline(never)
     private func answerPaybackGuess(_ q: PaybackQuestion) async {
         guard let tile = q.tiles.first else { return }
+        if q.unknown == true, tile.person == nil {
+            // P5h: no clear name; the question asks who before anything is credited.
+            await openQuestion()
+            return
+        }
         busy = true
         let parts = await PaybackQuestion.partsPerson(api: app.api, id: t.id, amount: t.amount, tile: tile)
         busy = false

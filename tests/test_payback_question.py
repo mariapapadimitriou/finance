@@ -169,8 +169,13 @@ class TestNothingToAsk:
         assert "payback" not in question(client)
 
     def test_a_nameless_etransfer_isnt_interac_paying_her_back(self):
+        # P5h (fewer taps): the purchase is still guessed, never who sent it.
         t = etransfer("", 20.00, 1)
-        assert build(t, [t, buy("Añejo", 61.57, "Dining", 3)]) is None
+        q = build(t, [t, buy("Añejo", 61.57, "Dining", 3)])
+        assert q["unknown"] is True and q["named"] is False
+        assert all(not x.get("person") for x in q["tiles"])
+        assert q["card"]["title"] == "A third of Añejo?"
+        assert q["tiles"][0]["after"] == "About a third of $61.57"
 
     def test_at_most_three_tiles_and_only_the_first_is_dashed(self):
         rows = [buy(f"Bistro {i}", 40.00 + i, "Dining", 2 + i) for i in range(5)]

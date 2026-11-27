@@ -54,6 +54,8 @@ struct CategorySheet: View {
     /// under "Something else…". What was this? only; nil guess leads with the four.
     var leadsWithLikely = false
     var guess: String? = nil
+    /// P3 / P4: the server's likeliest for this purchase (finance/likely.py).
+    var likelyFirst: [String]? = nil
     /// P3 / P15: What was this? › Something else opens the picker in place.
     @State private var pickerOpen = false
     /// P15c: All categories, one level down.
@@ -79,9 +81,10 @@ struct CategorySheet: View {
          notSpending: [CaseTile]? = nil, startNotSpending: Bool = false, onCase: ((String, Bool) -> Void)? = nil,
          confirmsCurrent: Bool = false, caseRule: ((String) -> String?)? = nil, extras: AnyView? = nil,
          answersAtOnce: Bool = false, newOnesOn: Bool = true, showsAlways: Bool = true,
-         leadsWithLikely: Bool = false, guess: String? = nil,
+         leadsWithLikely: Bool = false, guess: String? = nil, likelyFirst: [String]? = nil,
          onSave: @escaping (String, Bool) -> Void) {
         self.leadsWithLikely = leadsWithLikely
+        self.likelyFirst = likelyFirst
         self.guess = guess
         self.answersAtOnce = answersAtOnce
         self.showsAlways = showsAlways
@@ -424,17 +427,28 @@ struct CategorySheet: View {
     /// she has used most (GET /api/categories `uses`), in the list's order
     /// between equals. Hers, never a fixed list.
     private var likely: [CategoryList.Category] {
-        Self.likeliest(Self.spendingGroups.flatMap { tiles(in: $0) }.filter { $0.name != realGuess })
+        Self.likeliest(Self.spendingGroups.flatMap { tiles(in: $0) }.filter { $0.name != realGuess },
+                       prefer: likelyFirst)
     }
 
-    /// Her `count` most used of `pool` (GET /api/categories `uses`), in the
-    /// list's order between equals. P3d's page tiles are the same four.
-    static func likeliest(_ pool: [CategoryList.Category], count: Int = 4) -> [CategoryList.Category] {
+    /// P3 / P4: the likeliest `count` of `pool` for this purchase: the
+    /// server's own order for it first (`prefer`, finance/likely.py: her
+    /// picks for the merchant, similar names, the bank's hint), then her
+    /// most used (GET /api/categories `uses`), the list's order between
+    /// equals. Only ever tiles she taps. P3d's page tiles are the same four.
+    static func likeliest(_ pool: [CategoryList.Category], count: Int = 4,
+                          prefer: [String]? = nil) -> [CategoryList.Category] {
+        let first = (prefer ?? []).compactMap { n in pool.first { $0.name == n } }
+        let rest = byUse(pool).filter { c in !first.contains(c) }
+        return Array((first + rest).prefix(count))
+    }
+
+    private static func byUse(_ pool: [CategoryList.Category]) -> [CategoryList.Category] {
         let ranked = pool.enumerated().sorted { a, b in
             let ua = a.element.uses ?? 0, ub = b.element.uses ?? 0
             return ua != ub ? ua > ub : a.offset < b.offset
         }
-        return ranked.prefix(count).map(\.element)
+        return ranked.map(\.element)
     }
 
     /// The spending categories she can pick, in the list's order.

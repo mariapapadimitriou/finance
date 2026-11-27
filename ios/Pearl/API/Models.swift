@@ -714,6 +714,10 @@ struct Transaction: Decodable, Identifiable, Hashable {
     /// the parts its line names, as the server works them out
     /// (finance/txlist.py `cost_now`); boxed so Transaction stays small.
     @Boxed var cost: Cost?
+    /// P3d (TP-P3-NoGuess): the four likeliest categories for this purchase,
+    /// from her own ledger (finance/likely.py); only on GET
+    /// /api/transactions/<id> for a purchase Pearl has no guess for.
+    @Boxed var likely: [String]?
 
     /// RC-01 / RC-02: `amount` is already the cost now; these are for the
     /// line under it and the RC-03 count-up of what's back.
@@ -1178,7 +1182,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         case repaidBy = "repaid_by"
         case repaysCharge = "repays_charge"
         case mergedInto = "merged_into"
-        case trip, cost
+        case trip, cost, likely
         case jointPayback = "joint_payback"
         case paybackQuestion = "payback_question"
     }
@@ -1251,6 +1255,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         repaysCharge = opt(Brief.self, .repaysCharge)
         mergedInto = opt(String.self, .mergedInto)
         trip = opt(TripRef.self, .trip)
+        likely = opt([String].self, .likely)
         cost = opt(Cost.self, .cost)
         jointPayback = opt(JointPayback.self, .jointPayback)
     }
@@ -1824,6 +1829,9 @@ struct Review: Decodable {
         var extra: Extra? = nil
         /// AI-07: why Pearl won't sort this one by itself.
         var unsure: Unsure? = nil
+        /// P3 / P4 (TP-P3-NoGuess): the four likeliest categories for this
+        /// purchase, from her own ledger (finance/likely.py). Tiles she taps.
+        @Boxed var likely: [String]? = nil
         /// PQ-03 (Payback question, note 1419:89986): "Is mPg paying you
         /// back?" in the server's words, with the likely purchases as tiles.
         /// Boxed so Item stays small (Boxed.swift; stack check).
@@ -2376,6 +2384,9 @@ struct PaybackQuestion: Decodable, Hashable {
     /// PQ-03b: a part payment stays on the split.
     let part: Bool
     let card: Card
+    /// P5h (TP-P5-NeedsALook): no clear name on the money. Pearl guessed
+    /// the purchase, never who: Yes asks Who sent this? first.
+    var unknown: Bool? = nil
 
     struct Tile: Decodable, Hashable, Identifiable {
         let charge: String
@@ -2401,7 +2412,15 @@ struct PaybackQuestion: Decodable, Hashable {
         /// P5e (fewer taps): "Priya still owes $2.50 after this", on a
         /// split they'd still owe on.
         var after: String? = nil
+        /// P5h: everyone on the split who still owes ("Priya · Owes
+        /// $40.00"), for Who sent this?; set only when nobody is named.
+        var people: [OnSplit]? = nil
         var id: String { charge }
+
+        struct OnSplit: Decodable, Hashable {
+            let name: String
+            let owes: Double
+        }
 
         /// "Oct 31 · about a third · 2 days before" (LT-03); a split's tile
         /// says only how it compares (PQ-03b).

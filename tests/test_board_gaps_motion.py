@@ -61,7 +61,8 @@ def test_tile_haptic_is_light_and_payback_yes_is_success():
     tile = s[s.index("private func tile(_ ask: Ask, _ name: String)"):]
     assert "UIImpactFeedbackGenerator(style: .light)" in tile[:400]
     yes = s[s.index("private func paybackYes"):]
-    assert "notificationOccurred(.success)" in yes[:500]
+    # P5h asks Who sent this? first, so the haptic sits after that branch.
+    assert "notificationOccurred(.success)" in yes[:900]
 
 
 def test_what_was_this_tile_fills_before_the_sheet_drops():

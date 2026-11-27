@@ -169,7 +169,20 @@ final class FewerTapsUITests: XCTestCase {
         return (d["transaction"] as? [String: Any]) ?? d
     }
 
-    /// Her four likeliest spending categories, as the app works them out.
+    /// P3 / P4: the four tiles for this purchase, as the server works them
+    /// out (finance/likely.py, Needs a look's `likely`), else her most used.
+    private func likeliest(for merchant: String) -> [String] {
+        if let review = server("review") as? [String: Any],
+           let items = review["unsure_category"] as? [[String: Any]],
+           let item = items.first(where: { (($0["txn"] as? [String: Any])?["merchant"] as? String ?? "")
+               .localizedCaseInsensitiveContains(merchant) }),
+           let four = item["likely"] as? [String], !four.isEmpty {
+            return Array(four.prefix(4))
+        }
+        return likeliest()
+    }
+
+    /// Her four most used spending categories, as the app works them out.
     private func likeliest() -> [String] {
         guard let body = server("categories") as? [String: Any],
               let cats = body["categories"] as? [[String: Any]] else { return [] }
@@ -217,7 +230,7 @@ final class FewerTapsUITests: XCTestCase {
         tap(button("Corner Store"), "Corner Store in Needs a look")
         step("what was this, no guess")
         XCTAssertFalse(element(containing: "Other?").exists, "P3: no “Other?” guess")
-        let four = likeliest()
+        let four = likeliest(for: "Corner Store")
         note("likeliest \(four)")
         guard let first = four.first else { return XCTFail("No categories") }
         tap(app.buttons[first].firstMatch, "the \(first) tile")
@@ -238,7 +251,7 @@ final class FewerTapsUITests: XCTestCase {
         XCTAssertTrue(app.buttons["More"].exists, "P2: More row")
         XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Yes, Other'")).firstMatch.exists,
                        "P3d: no Yes, Other")
-        let four = likeliest()
+        let four = likeliest(for: "Northshop")
         guard let first = four.first else { return XCTFail("No categories") }
         tap(app.buttons[first].firstMatch, "the \(first) tile")
         XCTAssertTrue(toast("Northshop is \(first)."), "P3d toast")
@@ -263,7 +276,7 @@ final class FewerTapsUITests: XCTestCase {
         guard found else { return XCTFail("No card without a guess") }
         XCTAssertFalse(app.buttons["Yes"].exists, "P4a: no Yes on a tiles card")
         let name = ["Corner Store", "Makersmkt", "Northshop"].first { element(containing: $0).exists } ?? "?"
-        let four = likeliest()
+        let four = likeliest(for: name)
         guard let first = four.first else { return XCTFail("No categories") }
         tap(app.buttons[first].firstMatch, "the \(first) tile on the card")
         XCTAssertTrue(toast("\(name) is \(first)."), "P4c toast")
@@ -351,6 +364,41 @@ final class FewerTapsUITests: XCTestCase {
         tap(app.buttons["Pets"], "Pets")
         XCTAssertTrue(toast("Loblaws is Pets now."), "P15b toast")
         step("picked pets")
+        undo()
+    }
+
+    // MARK: P5h · No clear name
+
+    /// P5h: the seeded "INTERAC E-TRANSFER" $60.00 is half of Pai Northern
+    /// Thai, which Sam owes $60.00 on. The card guesses the purchase, never
+    /// who; Yes asks Who sent this? with Sam first, a field to type a name,
+    /// and Sam's pick pays it back.
+    func testFewerTapsP5hNameless() {
+        launch()
+        tap(app.buttons["Sort now"].firstMatch, "Sort now")
+        sleep(3)
+        var found = false
+        for _ in 0..<16 {
+            if element(containing: "of Pai Northern Thai?").exists { found = true; break }
+            // A payback guess has Not this / Yes, no Skip: a swipe left skips it.
+            if app.buttons["Skip"].exists {
+                tap(app.buttons["Skip"].firstMatch, "Skip")
+            } else {
+                app.descendants(matching: .any)["quick-sort-card"].firstMatch.swipeLeft()
+            }
+            sleep(2)
+        }
+        guard found else { step("no p5h card"); return XCTFail("P5h: no card for the nameless e-Transfer") }
+        step("p5h card")
+        XCTAssertTrue(shows("Exactly half of $120.00"), "P5h: the plain consequence")
+        tap(app.buttons["Yes"].firstMatch, "Yes")
+        XCTAssertTrue(shows("Who sent this?", timeout: 8), "P5h: asks who")
+        XCTAssertTrue(shows("On Pai Northern Thai"), "P5h: everyone on the split")
+        XCTAssertTrue(app.textFields["who-sent-name"].exists, "P5h: type a name")
+        step("who sent this")
+        tap(button("Sam"), "Sam")
+        XCTAssertTrue(toast("Sam paid back $60.00"), "P5h: Sam paid back")
+        step("sam paid back, toast")
         undo()
     }
 
