@@ -376,6 +376,15 @@ def test_published_prompts_are_frozen_and_cache_friendly():
         assert "safe to spend" not in text.lower().replace('never say "safe to spend"', "")
 
 
+def test_vercel_ships_the_prompt_files():
+    # The .md prompts aren't Python, so Vercel's bundle leaves them out unless
+    # includeFiles names them; without them the gateway falls back ("no_prompt").
+    import json
+    root = pathlib.Path(__file__).resolve().parents[1]
+    inc = json.loads((root / "vercel.json").read_text())["functions"]["app.py"]["includeFiles"]
+    assert "public/**" in inc and "finance/ai/prompts/**" in inc
+
+
 def test_every_route_names_a_published_prompt():
     for name, cfg in config.ROUTES.items():
         assert cfg["prompt"] in prompts.FROZEN, name
