@@ -1,6 +1,45 @@
-# AI in Pearl, on the device: feasibility and architecture plan
+# AI in Pearl: plan
 
-engBOT, 2026-11-14. This is a plan only; nothing in it is built. The product owner's decisions of 2026-11-14 set the uses, the auto-sort rule, and the decision that all of Pearl's data may go to the on-device model. designBOT is designing the screens in parallel.
+## v2 (2026-11-27): a cheap cloud model, and Python decides
+
+The product owner's decisions of 2026-11-27 replace the on-device plan below wherever they conflict. The full plan is approved and kept in engBOT's plan file; this is the summary.
+
+### Decisions
+- **A cloud model is OK.** Costs must stay low, because Pearl may be sold as a business.
+- **Every iPhone gets the same AI, through the server.** Phones without Apple Intelligence (Anastasia's) included. No phone holds a key.
+- **Python decides:** totals, detections and decisions. The model only:
+  1. understands her words and picks a tool;
+  2. phrases answers and one-line reasons;
+  3. ranks among the options Python allows.
+  A human still confirms every AI detection (the 2026-11-15 rules below still hold: 5/8 earlier answers, 20 a day, new transactions only).
+- **Claude Haiku 5.5 by default** (`claude-haiku-5-5`, $0.10 in / $0.50 out per 1M tokens). It escalates to **Claude Sonnet 5.5** (`claude-sonnet-5-5`, $2 / $10) only when Haiku fails or is unsure. Cache reads are about 0.1x input; Batch is 50% off for overnight work. Expected cost: about $0.02 to $0.04 per active user a month.
+- **Per-user cap: $0.50 a month** (product owner, 2026-11-27). Over it, Pearl answers with Python and templates until the month turns. There is also a daily request cap (60, a guard against loops) and a global kill switch.
+- **Apple's on-device model** stays only as a free offline fallback for basic chat. Open models on the phone are dropped.
+- **Data minimisation:** the model gets her question and what Python already worked out (totals, tidy merchant names, dates, categories). Never account or card numbers, Plaid tokens, or more about other people than the question needs. Ask Anthropic about Zero Data Retention before launch.
+
+### Phases (each needs designBOT boards and the product owner's pick)
+1. **Gateway and cost guardrails** (server only, no UI): `finance/ai/` with the client, the router (Haiku, then Sonnet), frozen versioned prompts, the budget and kill switch, and the `app_ai_usage` table with a cost summary. pytest uses a fake client; no live calls. *Built on `feat/ai-gateway`.*
+2. **Ask Pearl on every phone:** `/api/ask` with a server-side tool loop, the missing tools (month, merchantHistory, search, cards), iOS `CloudBrain` behind `PearlBrain` (cloud first, then on-device offline, then scripted), the privacy line and an on/off switch.
+3. **Signals framework:** one `Detection` record, adapters over today's detectors, a `detections` table and a replay harness.
+4. **Better detection:** income and bills, trips across the whole history, transfer and card-payment pairing, price rises and forgotten subscriptions, and AI reasons written overnight in batches.
+5. **New capabilities:** a monthly review and a proactive "worth a look".
+
+### Needs from the product owner
+- **Before Phase 2:** add `ANTHROPIC_API_KEY` to the Vercel environment herself. Without it AI stays off and Pearl answers as it does today.
+- **Before any live call:** an OK for a one-off smoke call (it costs money) to check that usage rows record cached tokens and $.
+
+### What below is superseded
+- Section 1 (Apple's Foundation Models) and its 4,096-token limits now apply only to the offline fallback.
+- Section 2's diagram (the model on the iPhone) and 2.5 ("only while the app is open") are replaced: the model runs on the server, so overnight batches are possible.
+- Section 2.6 and risk 1 (device eligibility) no longer gate anything: every phone gets the cloud model.
+- Section 3's `/api/ai/*` endpoints are replaced by Phase 2's `/api/ask` and Phase 3's detections.
+- Section 4's phases are replaced by the five above. The 2026-11-15 decisions at the end still stand, except that "data never leaves the iPhone" no longer holds: the privacy line will say Pearl uses Anthropic.
+
+---
+
+# v1 (2026-11-14), superseded where v2 conflicts: AI on the device
+
+*Superseded by v2 above where they conflict.* engBOT, 2026-11-14. This is a plan only; nothing in it is built. The product owner's decisions of 2026-11-14 set the uses, the auto-sort rule, and the decision that all of Pearl's data may go to the on-device model. designBOT is designing the screens in parallel.
 
 A compile-only spike is on `spike/ai-foundation-models` (8844c1e), not for merge. It is described in section 1.6.
 
