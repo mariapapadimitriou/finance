@@ -75,7 +75,9 @@ final class PersonJourneysUITests: XCTestCase {
                      file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
         XCTAssertTrue(e.waitForExistence(timeout: timeout), "Couldn't find \(what)", file: file, line: line)
         if !e.isHittable { scrollTo(e) }
-        e.tap()
+        // Since #466 some rows on screen report not hittable (B's tests tap
+        // by coordinate too), so tap the middle of what was found.
+        if e.isHittable { e.tap() } else { e.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
         return e
     }
 
@@ -147,6 +149,15 @@ final class PersonJourneysUITests: XCTestCase {
             e.tap()
             return true
         }
+        // Since #466 some on-screen buttons report not hittable: tap the
+        // last one on screen by its middle, as FewerTapsUITests does.
+        let screen = app.windows.firstMatch.frame
+        if let e = q.allElementsBoundByIndex.reversed().first(where: {
+            $0.exists && !$0.frame.isEmpty && screen.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY))
+        }) {
+            e.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            return true
+        }
         note("NOT HITTABLE \(label)")
         return false
     }
@@ -167,14 +178,28 @@ final class PersonJourneysUITests: XCTestCase {
         if !row.waitForExistence(timeout: 10) || !row.isHittable {
             let search = app.textFields.matching(NSPredicate(format: "placeholderValue == 'Search'")).firstMatch
             if search.waitForExistence(timeout: 3) {
-                search.tap()
-                search.typeText(merchant)
+                // P15 (#466): the field isn't hittable as an element, so tap its middle.
+                search.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                sleep(1)
+                app.typeText(merchant)
                 sleep(2)
             } else {
                 _ = scrollToFind(row, max: 14)
             }
         }
-        tap(button(merchant), "the \(merchant) row")
+        // The first match can sit under the search bar, so take the first row
+        // below it and tap its middle (since #466 rows report not hittable).
+        let rows = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", merchant))
+        _ = rows.firstMatch.waitForExistence(timeout: 10)
+        let screen = app.windows.firstMatch.frame
+        if let r = rows.allElementsBoundByIndex.first(where: {
+            $0.exists && $0.frame.minY > 140 && $0.frame.maxY < screen.maxY - 100
+        }) {
+            r.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            sleep(1)
+        } else {
+            tap(button(merchant), "the \(merchant) row")
+        }
     }
 
     // MARK: Split helpers
@@ -217,8 +242,9 @@ final class PersonJourneysUITests: XCTestCase {
         if app.buttons["Mark as paid back"].waitForExistence(timeout: 3) {
             tap(app.buttons["Mark as paid back"], "Mark as paid back")
         } else {
-            tap(button("More"), "More")
-            tap(button("Someone paid me back"), "Someone paid me back")
+            // The page's More row by its identifier: a split card's ••• is labelled More too.
+            tap(app.buttons.matching(NSPredicate(format: "identifier == 'More'")).firstMatch, "More")
+            tap(anyButton(containing: "Someone paid me back"), "Someone paid me back")
         }
     }
 
@@ -895,7 +921,7 @@ final class PersonJourneysUITests: XCTestCase {
         XCTAssertTrue(app.buttons["split-contacts"].exists, "P11d: no Choose from Contacts")
         XCTAssertFalse(app.alerts.firstMatch.exists, "P11d: an alert asked for Contacts")
         step("P11d add someone new")
-        tap(button("Add “Jo”"), "Add “Jo”")
+        tap(anyButton(containing: "Add “Jo”"), "Add “Jo”")
         XCTAssertTrue(app.buttons["Jo"].waitForExistence(timeout: 4), "P11d: Jo isn't a chip")
         step("Jo added")
         saveSplit()
@@ -943,7 +969,8 @@ final class PersonJourneysUITests: XCTestCase {
         step("P5c saved")
         sleep(4)
         openPaidBack()
-        let nameless = paidBackRow("Interac")
+        // Pearl tidies the nameless INTERAC E-TRANSFER to "E-transfer".
+        let nameless = paidBackRow("E-transfer")
         XCTAssertTrue(nameless.waitForExistence(timeout: 10), "P5d: the nameless e-Transfer isn't listed")
         nameless.tap()
         XCTAssertTrue(text(containing: "Who sent this?").waitForExistence(timeout: 6), "P5d: no Who sent this?")
@@ -970,11 +997,14 @@ final class PersonJourneysUITests: XCTestCase {
         note("card payment: \(merchant)")
         openCashFlow()
         let search = app.textFields.matching(NSPredicate(format: "placeholderValue == 'Search'")).firstMatch
-        if search.waitForExistence(timeout: 4) { search.tap(); search.typeText(merchant); sleep(2) }
+        if search.waitForExistence(timeout: 4) {
+            search.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            sleep(1); app.typeText(merchant); sleep(2)
+        }
         let row = button("Paid off your card")
         XCTAssertTrue(row.waitForExistence(timeout: 10), "P8a: no Paid off your card row")
         step("P8a row")
-        row.tap()
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(text(containing: "Not spending. The purchases on the card already count.").waitForExistence(timeout: 8),
                       "P8b: no line")
         XCTAssertFalse(button("This is my regular pay").exists, "P8b: offers pay")
