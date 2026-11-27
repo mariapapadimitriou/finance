@@ -450,6 +450,51 @@ final class OverUnderUITests: XCTestCase {
         step("owed from home")
     }
 
+    /// P17a–d on the simulator (board gaps, 2026-11-27): Owed to you from the
+    /// split purchase, in light and dark, with a frame mid count-up. Run at
+    /// `--text accessibility-extra-extra-extra-large` too.
+    private func owedLooks(_ what: String, expect: [String], paidBack: Bool = true) {
+        for look in ["light", "dark"] {
+            launch(look)
+            openBistro()
+            let button = app.buttons["Everyone who owes you"].firstMatch
+            XCTAssertTrue(button.waitForExistence(timeout: 8), "No Everyone who owes you")
+            bring(button)
+            button.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            // P17a motion: the total counting up, the rows settling in.
+            usleep(150_000)
+            n += 1
+            let method = self.name.components(separatedBy: " ").last?.replacingOccurrences(of: "]", with: "") ?? "test"
+            let base = "\(shots)/\(method)-\(String(format: "%02d", n))-\(scheme)-\(what)-opening"
+            FileManager.default.createFile(atPath: base + ".png", contents: XCUIScreen.main.screenshot().pngRepresentation)
+            print("JOURNEY \(base).png")
+            sleep(2)
+            see("Owed to you")
+            for text in expect { see(text) }
+            step(what)
+            app.swipeUp(velocity: .slow)
+            sleep(1)
+            if paidBack {
+                XCTAssertTrue(app.buttons["owed-also-paidBack"].firstMatch.waitForExistence(timeout: 6),
+                              "No Paid back this month")
+            }
+            step(what + "-end")
+        }
+    }
+
+    func testOverOwedLooksMany() {
+        owedLooks("many", expect: ["people owe you", "Georgia Klev", "Sam"])
+    }
+
+    func testOverOwedLooksOne() {
+        owedLooks("one", expect: ["Georgia Klev owes you"])
+        XCTAssertFalse(app.staticTexts["Sam"].exists, "P17c: only Georgia")
+    }
+
+    func testOverOwedLooksNobody() {
+        owedLooks("nobody", expect: ["Nobody owes you anything."])
+    }
+
     func testJointSplitInOptions() {
         launch()
         for (merchant, label) in [("Lantern Books", "Split with others"), ("Harbour Furniture", "Split my part"),

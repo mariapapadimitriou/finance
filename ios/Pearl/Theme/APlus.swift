@@ -473,7 +473,9 @@ struct APFace: View {
 
     var body: some View {
         Text(transfer ? "\u{21C4}" : APFace.initials(name))
-            .font(.custom("Figtree-Medium", size: size * 0.35))
+            // Fixed to the disc (P17, largest text sizes): a scaled size cut
+            // "SA" to "…" inside its 40 pt circle.
+            .font(.custom("Figtree-Medium", fixedSize: size * 0.35))
             .foregroundColor(Pearl.ink)
             .frame(width: size, height: size)
             .background(Circle().fill(APlus.face))
@@ -541,6 +543,8 @@ struct SortStreak: View {
             }
         }
         .frame(width: mini ? 108 : nil)
+        // P4b: a segment fills (200 ms); a fill, never a slide, so Reduce Motion keeps it.
+        .animation(.easeOut(duration: 0.2), value: on)
         .accessibilityElement()
         .accessibilityLabel("\(max(0, sorted)) of \(max(0, sorted) + max(0, toSort)) sorted")
     }

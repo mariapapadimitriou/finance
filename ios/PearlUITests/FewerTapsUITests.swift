@@ -401,4 +401,61 @@ final class FewerTapsUITests: XCTestCase {
         step("sam paid back, toast")
         undo()
     }
+
+    /// P15b's "Also try": where her own purchases that match the search went
+    /// (the seeded PetSmart gifts are Gifts & Charity). A tap picks it.
+    func testFewerTapsP15AlsoTry() {
+        launch()
+        openTransaction("Loblaws")
+        tap(button("Groceries"), "Change")
+        let search = app.textFields["Search categories"]
+        tap(search, "search")
+        sleep(1)
+        app.typeText("pet")
+        sleep(2)
+        step("search pet, also try")
+        XCTAssertTrue(app.buttons["Pets"].exists, "P15b: Pets row")
+        let also = app.buttons["Also try"]
+        XCTAssertTrue(also.waitForExistence(timeout: 6), "P15b: Also try line")
+        note("also try label: \(also.label)")
+        XCTAssertTrue(also.label.contains("Gifts & Charity"), "P15b: from her PetSmart gifts, got \(also.label)")
+        // No category is called "petsm": the line still offers her own.
+        app.typeText("sm")
+        sleep(2)
+        step("search petsm, nothing called, also try")
+        XCTAssertTrue(shows("Nothing called"), "P15b: nothing called")
+        XCTAssertTrue(app.buttons["Also try"].waitForExistence(timeout: 6), "P15b: Also try with no results")
+        tap(app.buttons["Also try"], "Also try")
+        XCTAssertTrue(toast("Loblaws is Gifts & Charity now."), "P15b: Also try picks")
+        step("picked from also try")
+        undo()
+    }
+
+    /// P4b: mid-frame, the tapped tile is filled and the card has tilted
+    /// away; the next card comes up, with the toast (P4c).
+    func testFewerTapsP4Motion() {
+        launch()
+        tap(app.buttons["Sort now"].firstMatch, "Sort now")
+        sleep(3)
+        var found = false
+        for _ in 0..<10 {
+            if element(containing: "What was this?").exists { found = true; break }
+            tap(app.buttons["Skip"].firstMatch, "Skip")
+            sleep(2)
+        }
+        guard found else { return XCTFail("No card without a guess") }
+        step("card with tiles")
+        guard let first = likeliest().first else { return XCTFail("No categories") }
+        app.buttons[first].firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        // Mid-frame, as P4b draws it: no settle before the shot.
+        stepNumber += 1
+        let method = self.name.components(separatedBy: " ").last?.replacingOccurrences(of: "]", with: "") ?? "test"
+        for k in 0..<3 {
+            let base = "\(shots)/\(method)-\(String(format: "%02d", stepNumber))-\(appearance)-mid-\(k)"
+            FileManager.default.createFile(atPath: base + ".png", contents: XCUIScreen.main.screenshot().pngRepresentation)
+            print("JOURNEY \(base).png")
+        }
+        XCTAssertTrue(element(containing: " is \(first).").waitForExistence(timeout: 8), "P4c toast")
+        step("next card, toast")
+    }
 }
