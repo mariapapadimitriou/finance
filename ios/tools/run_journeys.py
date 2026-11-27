@@ -142,6 +142,15 @@ def seed_fewer(db_path: str) -> None:
     ingest(store, IngestResult(transactions=[Transaction(
         date=when, description="INTERAC E-TRANSFER", amount=-60.00, account_id="td_chq_2210",
         account_name="TD Chequing ••2210", raw={"account_type": "depository"})], account_id="td_chq_2210"))
+    # P15b (board gaps): gifts she bought at a pet shop, so searching the
+    # shop's name says "Also try: Gifts & Charity".
+    ingest(store, IngestResult(transactions=[Transaction(
+        date=(date.today() - timedelta(days=d)).isoformat(), description="PETSMART 0412", amount=34.99,
+        account_id="amex_1004", account_name="American Express ••1004", raw={"account_type": "credit"})
+        for d in (9, 23)], account_id="amex_1004"))
+    for t in store.all_transactions():
+        if t.description == "PETSMART 0412":
+            store.set_transaction_category(t.fingerprint, "Gifts & Charity")
 
 
 # Journeys about the older ones (REFRESH-17) start from this bill too.
@@ -187,6 +196,11 @@ OVER = {
     # P16/P17 (TP-P16-OwedButton, TP-P17-Owed): Owed to you from the split
     # purchase and from Home; Priya pays her share, Georgia still owes.
     "testOverOwedOrganized": (90.0, {"Georgia Klev": 30.0, "Priya": 30.0}, []),
+    # P17 on the simulator (board gaps, 2026-11-27): many people (the demo's
+    # splits and this one), one person, and nobody, each with Paid back.
+    "testOverOwedLooksMany": (90.0, {"Georgia Klev": 30.0, "Priya": 30.0}, []),
+    "testOverOwedLooksOne": (90.0, {"Georgia Klev": 30.0, "Priya": 30.0}, []),
+    "testOverOwedLooksNobody": (90.0, {"Georgia Klev": 30.0, "Priya": 30.0}, []),
 }
 
 
@@ -214,9 +228,17 @@ def seed_over(db_path: str, journey: str) -> None:
     store.set_split(cid, "amount", [{"name": n, "amount": a} for n, a in people.items()], True)
     store.set_share(cid, round(whole - sum(people.values()), 2))
     store.set_transaction_category(cid, "Dining")
-    if journey == "testOverOwedOrganized":
+    if journey == "testOverOwedOrganized" or journey.startswith("testOverOwedLooks"):
         # Priya paid her share in cash: Paid back this month, under Also.
         store.add_split_cash(cid, "Priya", 30.0, today.isoformat())
+    if journey in ("testOverOwedLooksOne", "testOverOwedLooksNobody"):
+        # Only Corner Bistro's split is left: Georgia owes (P17c), or has
+        # paid too (P17d).
+        for other in store.splits():
+            if other != cid:
+                store.clear_split(other)
+        if journey == "testOverOwedLooksNobody":
+            store.add_split_cash(cid, "Georgia Klev", 30.0, today.isoformat())
 
 
 # Split my part in Options: Corner Bistro and Harbour Furniture on a joint
@@ -284,7 +306,7 @@ def seed_calm(db_path: str) -> None:
     store.set_setting("monthly_income", 4800.0)
 
 
-def simulator(runtime: str, text: str) -> str:
+def simulator(runtime: str, text: str, appearance: str = "light") -> str:
     # One simulator at a time (product owner): PEARL_SIM_UDID reuses one
     # that is already booted instead of booting "Pearl journeys" as well.
     udid = os.environ.get("PEARL_SIM_UDID") or None
@@ -298,7 +320,7 @@ def simulator(runtime: str, text: str) -> str:
     subprocess.run(["xcrun", "simctl", "boot", udid], capture_output=True)
     subprocess.run(["xcrun", "simctl", "bootstatus", udid, "-b"], capture_output=True)
     subprocess.run(["xcrun", "simctl", "ui", udid, "content_size", text], capture_output=True)
-    subprocess.run(["xcrun", "simctl", "ui", udid, "appearance", "light"], capture_output=True)
+    subprocess.run(["xcrun", "simctl", "ui", udid, "appearance", appearance], capture_output=True)
     return udid
 
 
@@ -309,6 +331,7 @@ def main() -> int:
     p.add_argument("--build", default=None, help="derivedData folder (kept, so later runs skip the build)")
     p.add_argument("--text", default="large", help="Dynamic Type: large (the default), accessibility-extra-large, …")
     p.add_argument("--rebuild", action="store_true")
+    p.add_argument("--appearance", default="light", help="the simulator's light or dark")
     p.add_argument("--delete-simulator", action="store_true")
     p.add_argument("--suite", default=SUITE,
                    help="the test class, e.g. PearlUITests/Round1FixesUITests (engBOT's checks of the fixes)")
@@ -325,7 +348,7 @@ def main() -> int:
             print("\n".join(l for l in r.stdout.splitlines() if "error:" in l) or r.stdout[-3000:])
             return r.returncode
     os.makedirs(args.out, exist_ok=True)
-    udid = simulator(runtime, args.text)
+    udid = simulator(runtime, args.text, args.appearance)
     env_base = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
 
     proxy = ThreadingHTTPServer(("localhost", PORT), SlowProxy)

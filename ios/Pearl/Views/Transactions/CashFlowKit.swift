@@ -439,7 +439,9 @@ struct CFToggleRow: View {
 /// line) or tall (icon over title and line). The current answer has a 2 pt
 /// `action` line; Pearl's guess a 1.5 pt dashed `action` line.
 struct CFTile: View {
-    enum Mark { case rest, current, guess }
+    /// `pressed`: P3b / P4b (taps.css `.tile.press`), the tile just tapped,
+    /// filled in rose at .96 while its answer goes.
+    enum Mark { case rest, current, guess, pressed }
 
     let symbol: String
     let title: String
@@ -447,6 +449,7 @@ struct CFTile: View {
     var mark: Mark = .rest
     var iconTone: Color = Pearl.action
     let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: action) {
@@ -462,9 +465,16 @@ struct CFTile: View {
                     .frame(maxWidth: .infinity, minHeight: 72, alignment: .topLeading)
                 } else {
                     HStack(spacing: 10) {
-                        CFIcon(symbol: symbol, size: 32, tone: iconTone)
+                        if mark == .pressed {
+                            // `.tile.press .icon`: white at 22% under the on-action mark.
+                            Image(systemName: symbol).font(.system(size: 32 * 0.44)).foregroundColor(Pearl.onAction)
+                                .frame(width: 32, height: 32).background(Circle().fill(Color.white.opacity(0.22)))
+                                .accessibilityHidden(true)
+                        } else {
+                            CFIcon(symbol: symbol, size: 32, tone: iconTone)
+                        }
                         Text(title).font(.custom("Figtree-Regular", size: 16, relativeTo: .callout))
-                            .foregroundColor(Pearl.ink).lineLimit(2).minimumScaleFactor(0.85)
+                            .foregroundColor(mark == .pressed ? Pearl.onAction : Pearl.ink).lineLimit(2).minimumScaleFactor(0.85)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)
                     }
@@ -474,6 +484,8 @@ struct CFTile: View {
             .padding(12)
             .background(CFTileSurface(mark: mark))
             .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .scaleEffect(mark == .pressed && !reduceMotion ? 0.96 : 1)
+            .animation(.easeOut(duration: 0.12), value: mark)
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
@@ -491,9 +503,10 @@ struct CFTileSurface: View {
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
-        shape.fill(APlus.card)
+        shape.fill(mark == .pressed ? Pearl.action : APlus.card)
             .overlay {
                 switch mark {
+                case .pressed: EmptyView()
                 case .rest: shape.strokeBorder(APlus.cardLine, lineWidth: 1)
                 case .current: shape.strokeBorder(Pearl.action, lineWidth: 2)
                 case .guess: shape.strokeBorder(Pearl.action, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
