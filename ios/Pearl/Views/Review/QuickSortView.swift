@@ -128,6 +128,7 @@ struct QuickSortView: View {
         let trip: String
         let name: String
     }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var drag: CGSize = .zero
     /// The card flying off, and which way.
     @State private var leaving: Bool?
@@ -409,7 +410,9 @@ struct QuickSortView: View {
     /// on other purchases opens the question (PB-30 with this one ticked).
     private func paybackYes(_ ask: Ask, _ q: PaybackQuestion) {
         guard let tile = q.tiles.first else { return }
-        withAnimation(.easeIn(duration: 0.25)) { leaving = true }
+        // P5f: success haptic, and the card leaves as P4b's does.
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        fly(true)
         Task {
             let more = await PaybackQuestion.partsPerson(api: app.api, id: ask.t.id, amount: ask.t.amount, tile: tile)
             if more != nil {
@@ -492,8 +495,7 @@ struct QuickSortView: View {
         ZStack(alignment: .top) {
             if let pattern = pattern {
                 patternCard(pattern)
-                    .offset(x: offsetX, y: drag.height * 0.2)
-                    .rotationEffect(.degrees(Double(offsetX / 18)))
+                    .modifier(away)
                     .gesture(swipe)
                     .accessibilityElement(children: .combine)
                     .accessibilityAction(named: "Yes") { right() }
@@ -501,6 +503,7 @@ struct QuickSortView: View {
                     .accessibilityHint(pattern.yesSkip)
                     .accessibilityIdentifier("quick-sort-pattern")
                     .id(pattern.id)
+                    .transition(arrival)
             } else if let trip = trip {
                 tripCard(trip)
                     // TR-14 (1347:75265): tapping the card shows its rows.
@@ -508,8 +511,7 @@ struct QuickSortView: View {
                         guard leaving == nil else { return }
                         seeingTrip = trip
                     }
-                    .offset(x: offsetX, y: drag.height * 0.2)
-                    .rotationEffect(.degrees(Double(offsetX / 18)))
+                    .modifier(away)
                     .gesture(swipe)
                     .accessibilityElement(children: .combine)
                     .accessibilityAction(named: "Yes") { right() }
@@ -518,14 +520,14 @@ struct QuickSortView: View {
                     .accessibilityHint("Yes groups them as one trip. They stay in \(trip.months).")
                     .accessibilityIdentifier("quick-sort-trip")
                     .id(trip.key)
+                    .transition(arrival)
             } else if let ask = current {
                 card(ask)
                     .onTapGesture {
                         guard leaving == nil else { return }
                         asking = ask
                     }
-                    .offset(x: offsetX, y: drag.height * 0.2)
-                    .rotationEffect(.degrees(Double(offsetX / 18)))
+                    .modifier(away)
                     .gesture(swipe)
                     // P4a: the tiles stay buttons of their own for VoiceOver.
                     .accessibilityElement(children: tilesOnCard(ask) ? .contain : .combine)
@@ -536,6 +538,7 @@ struct QuickSortView: View {
                     .accessibilityHint(drafts[ask.id]?.split != nil ? "Opens the page to change it." : "")
                     .accessibilityIdentifier("quick-sort-card")
                     .id(ask.id)
+                    .transition(arrival)
             }
         }
     }
@@ -548,6 +551,29 @@ struct QuickSortView: View {
                 Task { await answered(ask, .done(reply)) }
             }
         }
+    }
+
+    /// P4b (TP-P4-QuickSort): the card springs away and tilts 7° (320 ms,
+    /// spring 0.8); P5f: a payback Yes leaves the same way. Reduce Motion:
+    /// the card crossfades, nothing slides or tilts.
+    static let flyAway = Animation.spring(response: 0.32, dampingFraction: 0.8)
+    static let tilt: Double = 7
+
+    private func fly(_ right: Bool) {
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : Self.flyAway) { leaving = right }
+    }
+
+    /// Where the card is: following her finger, or leaving.
+    private var away: CardAway {
+        CardAway(x: reduceMotion && leaving != nil ? 0 : offsetX, y: leaving == nil ? drag.height * 0.2 : 0,
+                 tilt: leaving.map { reduceMotion ? 0 : ($0 ? Self.tilt : -Self.tilt) }
+                    ?? max(-Self.tilt, min(Self.tilt, Double(drag.width / 18))),
+                 fade: reduceMotion && leaving != nil)
+    }
+
+    /// P4b: the next card scales up from .96 (300 ms). Reduce Motion: it fades in.
+    private var arrival: AnyTransition {
+        .asymmetric(insertion: reduceMotion ? .opacity : .scale(scale: 0.96), removal: .opacity)
     }
 
     private var offsetX: CGFloat {
@@ -629,7 +655,7 @@ struct QuickSortView: View {
         let cats = CategorySheet.likeliest(CategorySheet.spending(categories.isEmpty ? app.categories : categories))
         return CFTileGrid {
             ForEach(cats) { c in
-                CFTile(symbol: CategorySheet.symbol(for: c.name), title: c.name, mark: pressed == c.name ? .current : .rest) {
+                CFTile(symbol: CategorySheet.symbol(for: c.name), title: c.name, mark: pressed == c.name ? .pressed : .rest) {
                     tile(ask, c.name)
                 }
                 .accessibilityLabel(c.name)
@@ -644,7 +670,7 @@ struct QuickSortView: View {
         guard leaving == nil, !busy else { return }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         pressed = name
-        withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) { leaving = true }
+        fly(true)
         Task {
             await step(ask, ["action": "category", "category": name, "every": false, "rows": [String](),
                              "new_ones": false], said: "\(ask.t.name) is \(name).")
@@ -968,7 +994,7 @@ struct QuickSortView: View {
         let label = guess(ask)
         let draft = drafts[ask.id]
         let rule = draft?.always ?? ask.savesRule(accounts)
-        withAnimation(.easeIn(duration: 0.25)) { leaving = true }
+        fly(true)
         Task {
             if let draft = draft, let split = draft.split {
                 // T-98s (SPLIT-06): the split and the category in one save, one Undo.
@@ -1013,14 +1039,14 @@ struct QuickSortView: View {
     /// Yes: Pearl sorts new ones like this from now on; nothing waiting is sorted.
     private func patternYes(_ p: PatternAsk) {
         guard leaving == nil, !busy else { return }
-        withAnimation(.easeIn(duration: 0.25)) { leaving = true }
+        fly(true)
         Task { await answerPattern(p, "yes") }
     }
 
     /// Skip: Pearl asks again after `need` more answers; a second Skip, never.
     private func patternSkip(_ p: PatternAsk) {
         guard leaving == nil, !busy else { return }
-        withAnimation(.easeIn(duration: 0.25)) { leaving = false }
+        fly(false)
         Task { await answerPattern(p, "skip") }
     }
 
@@ -1072,14 +1098,14 @@ struct QuickSortView: View {
     /// Yes: the rows become one trip, named for its place. They stay in their months.
     private func tripYes(_ t: TripAsk) {
         guard leaving == nil, !busy else { return }
-        withAnimation(.easeIn(duration: 0.25)) { leaving = true }
+        fly(true)
         Task { await answerTrip(t, "yes") }
     }
 
     /// Skip: Pearl never asks about those dates again.
     private func tripSkip(_ t: TripAsk) {
         guard leaving == nil, !busy else { return }
-        withAnimation(.easeIn(duration: 0.25)) { leaving = false }
+        fly(false)
         Task { await answerTrip(t, "skip") }
     }
 
@@ -1147,7 +1173,7 @@ struct QuickSortView: View {
         if case .credit? = drafts[ask.id]?.answer { drafts[ask.id] = nil }
         // S-21x (SPLIT-23 (1)): and a held S-11x answer.
         if case .extra? = drafts[ask.id]?.answer { drafts[ask.id] = nil }
-        withAnimation(.easeIn(duration: 0.25)) { leaving = false }
+        fly(false)
         Task { await step(ask, ["action": "skip"]) }
     }
 
@@ -1169,7 +1195,7 @@ struct QuickSortView: View {
     private func answered(_ ask: Ask, _ answer: ReviewAnswer, always: String? = nil) async {
         lastAnswer = nil
         busy = true
-        withAnimation(.easeIn(duration: 0.25)) { leaving = true }
+        fly(true)
         do {
             let reply = try await answer.send(app.api)
             // The Allowance and the badge move now (perf rehaul); the deck's
@@ -1238,7 +1264,9 @@ struct QuickSortView: View {
         let path = "api/quick-sort/\(ask.t.id)"
         let put = Task { () throws -> Outbox.Sent<QuickSortStep>? in try await outbox.send("PUT", path, body) }
         if ahead {
-            try? await Task.sleep(nanoseconds: 250_000_000)
+            // P4b: the next card comes up while this one is still springing
+            // away (320 ms), so the deck is never empty between them.
+            try? await Task.sleep(nanoseconds: 160_000_000)
             next()
             busy = false
         }
@@ -1326,9 +1354,14 @@ struct QuickSortView: View {
     }
 
     private func next() {
-        drag = .zero
-        leaving = nil
-        index += 1
+        // The next card's tiles start plain, whatever was just tapped.
+        pressed = nil
+        // P4b: the next card comes up as this one goes (300 ms).
+        withAnimation(.easeOut(duration: reduceMotion ? 0.2 : 0.3)) {
+            drag = .zero
+            leaving = nil
+            index += 1
+        }
         if index >= total { Task { await finish() } }
     }
 
@@ -1504,5 +1537,21 @@ struct TripRowsSheet: View {
             else { failed = true }
         }
         rows = out
+    }
+}
+
+/// P4b: a Quick sort card's place as it follows a finger or leaves: moved,
+/// tilted (never past 7°), or faded out under Reduce Motion.
+struct CardAway: ViewModifier {
+    let x: CGFloat
+    let y: CGFloat
+    let tilt: Double
+    let fade: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .offset(x: x, y: y)
+            .rotationEffect(.degrees(tilt))
+            .opacity(fade ? 0 : 1)
     }
 }

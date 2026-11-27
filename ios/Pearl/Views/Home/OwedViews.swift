@@ -400,13 +400,18 @@ private struct OwedAlsoRow: View {
     var body: some View {
         HStack(spacing: 12) {
             icon
-            Text(row.title).font(Nacre.body).foregroundColor(Pearl.ink)
-                .fixedSize(horizontal: false, vertical: true)
+            if typeSize.isAccessibilitySize {
+                // P17e's Person row rule: at the larger text sizes the figure
+                // moves under the words, so neither breaks mid-word.
+                VStack(alignment: .leading, spacing: 2) {
+                    title
+                    value
+                }
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Text(row.value)
-                .font(row.kind == .notSettled ? Nacre.body : Nacre.headline).monospacedDigit()
-                .foregroundColor(row.kind == .notSettled ? Pearl.muted : row.kind == .paidBack ? Pearl.moneyIn : Pearl.ink)
-                .lineLimit(1).fixedSize()
+            } else {
+                title.frame(maxWidth: .infinity, alignment: .leading)
+                value
+            }
             CFChevron()
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
@@ -415,6 +420,18 @@ private struct OwedAlsoRow: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(row.title), \(row.value)")
         .accessibilityAddTraits(.isButton)
+    }
+
+    private var title: some View {
+        Text(row.title).font(Nacre.body).foregroundColor(Pearl.ink)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var value: some View {
+        Text(row.value)
+            .font(row.kind == .notSettled ? Nacre.body : Nacre.headline).monospacedDigit()
+            .foregroundColor(row.kind == .notSettled ? Pearl.muted : row.kind == .paidBack ? Pearl.moneyIn : Pearl.ink)
+            .lineLimit(1).fixedSize()
     }
 
     @ViewBuilder private var icon: some View {

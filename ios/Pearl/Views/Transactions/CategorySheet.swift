@@ -59,6 +59,10 @@ struct CategorySheet: View {
     /// P15c: All categories, one level down.
     @State private var allOpen = false
     @State private var query = ""
+    /// P15b: the categories of her purchases that match the search.
+    @State private var alsoFrom: [String] = []
+    /// P3b: the tile just tapped, filled while the sheet drops.
+    @State private var tapped: String?
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var app: AppModel
@@ -174,6 +178,7 @@ struct CategorySheet: View {
         .fitsContent()
         .presentationDragIndicator(.visible)
         .task { if available.isEmpty { await app.loadCategories() } }
+        .task(id: query) { await loadAlsoTry() }
     }
 
     /// P15c: "All categories" with Back; the picker itself, with Back to
@@ -228,9 +233,12 @@ struct CategorySheet: View {
         let cats = Self.spendingGroups.flatMap { g in tiles(in: g).map { (g, $0) } }
             .filter { $0.1.name.lowercased().contains(q) }
         let cases = (notSpending ?? []).filter { $0.label.lowercased().contains(q) }
+        let also = Self.alsoTry(alsoFrom, pool: Self.spendingGroups.flatMap { tiles(in: $0) },
+                                showing: Set(cats.map(\.1.name)))
         if cats.isEmpty && cases.isEmpty {
             Text("Nothing called “\(query)”").font(Nacre.subheadline).foregroundColor(Pearl.muted)
                 .padding(.horizontal, 4).padding(.top, 14)
+            alsoTryLine(also)
         } else {
             APCard {
                 ForEach(Array(cats.enumerated()), id: \.element.1.id) { i, pair in
@@ -244,7 +252,55 @@ struct CategorySheet: View {
                 }
             }
             .padding(.top, 14)
+            alsoTryLine(also)
         }
+    }
+
+    /// P15b: "Also try: Gifts & charity", kit `.note` (13 pt, muted, 8 under
+    /// the results). The name is the button: a tap picks it, as a row does.
+    @ViewBuilder private func alsoTryLine(_ name: String?) -> some View {
+        if let name = name {
+            Button { pick(name) } label: {
+                (Text("Also try: ").foregroundColor(Pearl.muted) + Text(name).foregroundColor(Pearl.action))
+                    .font(.custom("Figtree-Regular", size: 13, relativeTo: .footnote))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 4).padding(.top, 8)
+            .accessibilityLabel("Also try \(name)")
+            .accessibilityIdentifier("Also try")
+        }
+    }
+
+    /// P15b: where her own purchases that match the search went, most first
+    /// (GET /api/transactions/list?q=): typing "pet" finds the PetSmart
+    /// gifts she filed under Gifts & Charity. From her ledger, never a fixed
+    /// list; only a category she can pick that the results don't already show.
+    static func alsoTry(_ filed: [String], pool: [CategoryList.Category], showing: Set<String>) -> String? {
+        let pickable = Set(pool.map(\.name))
+        var counts: [String: Int] = [:]
+        var first: [String: Int] = [:]
+        for (i, name) in filed.enumerated() where pickable.contains(name) && !showing.contains(name) && name != "Other" {
+            counts[name, default: 0] += 1
+            if first[name] == nil { first[name] = i }
+        }
+        return counts.keys.sorted { a, b in
+            counts[a]! != counts[b]! ? counts[a]! > counts[b]! : first[a]! < first[b]!
+        }.first
+    }
+
+    /// The categories of her purchases matching the search, after a short pause.
+    private func loadAlsoTry() async {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard q.count >= 2 else { alsoFrom = []; return }
+        try? await Task.sleep(nanoseconds: 250_000_000)
+        guard !Task.isCancelled else { return }
+        guard let list: TransactionList = try? await app.api.get("api/transactions/list",
+                                                                 query: ["q": q, "limit": "200"]),
+              !Task.isCancelled else { return }
+        alsoFrom = list.transactions.filter { !$0.inflow }.compactMap(\.category)
     }
 
     /// P15c: Everyday, Fun and treats, Not really spending, as rows.
@@ -503,11 +559,21 @@ struct CategorySheet: View {
         // A+ (G1-Change, G1-WhatWasThis): a slim tile; the chosen one has the
         // 2 pt rose line; on the answer-at-once page Pearl's guess has the
         // dashed rose line.
-        let mark: CFTile.Mark = answersAtOnce ? (on && !c.name.isEmpty ? .guess : .rest) : (on ? .current : .rest)
+        let mark: CFTile.Mark = tapped == c.name ? .pressed
+            : answersAtOnce ? (on && !c.name.isEmpty ? .guess : .rest) : (on ? .current : .rest)
         return CFTile(symbol: Self.symbol(for: c.name), title: c.name, mark: mark) {
             if answersAtOnce {
-                onRegularBill?(bill)
-                onSave(c.name, merchant != nil && newOnes)
+                // P3b (TP-P3-NoGuess): the tile fills in rose at .96 (120 ms),
+                // a light haptic, then the sheet drops with the answer.
+                guard tapped == nil else { return }
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                tapped = c.name
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                    onRegularBill?(bill)
+                    onSave(c.name, merchant != nil && newOnes)
+                }
+                // Never stuck filled if the sheet stays (an error, a follow-up).
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { tapped = nil }
             } else {
                 chosen = c.name
             }
