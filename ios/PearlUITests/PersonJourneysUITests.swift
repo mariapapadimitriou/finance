@@ -231,10 +231,10 @@ final class PersonJourneysUITests: XCTestCase {
         }
     }
 
-    /// P11a's button, "Split with Priya and Sam", or Save on a method's screen.
+    /// P11a's button, "Split", or Save on a method's screen.
     @discardableResult
     private func saveSplit() -> Bool {
-        press("Split with", prefix: true, timeout: 3) || press("Save", timeout: 3)
+        press("Split", timeout: 3) || press("Save", timeout: 3)
     }
 
     /// Someone paid me back: under More (P2), or Options' row before it.
@@ -894,7 +894,7 @@ final class PersonJourneysUITests: XCTestCase {
         step("P11c other ways")
         tap(app.buttons["Back"].firstMatch, "Back from Other ways")
         sleep(1)
-        XCTAssertTrue(press("Split with Priya and Sam"), "P11a: no Split with Priya and Sam")
+        XCTAssertTrue(press("Split"), "P11a: no Split button")
         XCTAssertTrue(toastSays("Split with Priya and Sam."), "P10b: no split toast")
         step("P10b split toast")
         let s = split(of: "Nopa")

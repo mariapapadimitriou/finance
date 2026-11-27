@@ -1316,8 +1316,9 @@ struct SplitSheet: View {
     /// S-03u "Save split"; S-45e "Next: the extra $10.00".
     private var primaryTitle: String {
         if busy { return "Saving…" }
-        // P11a: "Split with Priya and Sam".
-        if light { return people.isEmpty ? "Split" : "Split with \(Format.andList(people))" }
+        // P11a was "Split with Priya and Sam"; the names already sit above it,
+        // and five of them cluttered the button (product owner, 2026-11-27).
+        if light { return "Split" }
         if step == 0 { return "Next" }
         if error != nil { return "Try again" }
         // S-48c: "Next · check Sam and Priya".
