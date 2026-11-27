@@ -708,14 +708,11 @@ struct SplitCardPending: View {
                     .accessibilityLabel("Loading the split")
                 }
             }
-            Button(action: onOwed) {
-                Text("See who else owes you")
-                    .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline)).foregroundColor(Pearl.link)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 2)
+            // P16a (TP-P16-OwedButton): the Secondary button, 12 under the card.
+            Button("Everyone who owes you", action: onOwed)
+                .buttonStyle(APSecondaryButtonStyle())
+                .padding(.top, 12)
+                .accessibilityHint("Opens Owed to you.")
         }
     }
 

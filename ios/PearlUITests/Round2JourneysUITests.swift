@@ -462,7 +462,7 @@ final class Round2JourneysUITests: XCTestCase {
         a = checkAllowance("Undo let it go", was: a, moves: 0)
         noteSplit("Gusto", "end")
         app.swipeUp()
-        tapIf(app.buttons["See everyone who owes you"], "See everyone who owes you", timeout: 4)
+        tapIf(app.buttons["Everyone who owes you"], "Everyone who owes you", timeout: 4)
         step("owed to you")
         note("owed: \(owed())")
     }
@@ -675,7 +675,7 @@ final class Round2JourneysUITests: XCTestCase {
         app.swipeUp()
         step("card three paid")
         // Owed to you while it's open (S-14u4).
-        tapIf(app.buttons["See everyone who owes you"], "See everyone who owes you", timeout: 4)
+        tapIf(app.buttons["Everyone who owes you"], "Everyone who owes you", timeout: 4)
         step("S-14u4 owed to you not settled")
         _ = shows("your share not set")
         note("owed: \(owed())")
@@ -731,7 +731,7 @@ final class Round2JourneysUITests: XCTestCase {
         app.swipeUp()
         step("S-04u7 scrolled")
         _ = shows("what was left")
-        tapIf(app.buttons["See everyone who owes you"], "See everyone who owes you", timeout: 4)
+        tapIf(app.buttons["Everyone who owes you"], "Everyone who owes you", timeout: 4)
         step("S-14u3 owed to you alex")
         note("owed after: \(owed())")
         tapIf(app.buttons["Back"].firstMatch, "Back", timeout: 3)
@@ -822,7 +822,7 @@ final class Round2JourneysUITests: XCTestCase {
         a = checkAllowance("Alex owes what's left", was: a, moves: 0)
         app.swipeUp()
         step("card alex owes")
-        tapIf(app.buttons["See everyone who owes you"], "See everyone who owes you", timeout: 4)
+        tapIf(app.buttons["Everyone who owes you"], "Everyone who owes you", timeout: 4)
         step("owed to you alex 45")
         note("owed: \(owed())")
     }

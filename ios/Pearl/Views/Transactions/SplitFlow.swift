@@ -1521,7 +1521,7 @@ struct SplitPeople: View {
     /// paid-back bar (one segment per row, in the rows' order; none while
     /// Not sure yet) over A+ payment rows. Each whole row opens what its •••
     /// used to (S-40, S-40w, S-40y); the per-row bars and the ••• are gone,
-    /// each row's line still says it. "See who else owes you" under it.
+    /// each row's line still says it. "Everyone who owes you" under it (P16).
     var body: some View {
         let open = split.people.filter { $0.owes >= 0.005 }
         let unsure = split.uncredited ?? []
@@ -1580,7 +1580,7 @@ struct SplitPeople: View {
         }
     }
 
-    /// Settle up / That's everything (Not sure yet) and See who else owes you.
+    /// Settle up / That's everything (Not sure yet) and Everyone who owes you.
     @ViewBuilder private var footer: some View {
         if split.unsure, split.closedAt != nil {
             // G2-BCard S-46c: a closed split's Reopen split is the secondary capsule.
@@ -1605,16 +1605,12 @@ struct SplitPeople: View {
             }
             .padding(.top, 12)
         }
-        // REDESIGN-04: renamed from "See everyone who owes you".
-        // TEST-14: the whole 44 pt row taps, not only the words.
-        // G2-BCard S-46c: under a closed split too.
-        Button(action: onOwed) {
-            Text("See who else owes you")
-                .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
-        }
-        .font(.custom("Figtree-Medium", size: 15, relativeTo: .subheadline))
-        .foregroundColor(Pearl.link).buttonStyle(.plain)
-        .padding(.top, 4)
+        // P16a (TP-P16-OwedButton): the Secondary button, full width, 12
+        // under the card; P16b: under Reopen split too, 12 apart.
+        Button("Everyone who owes you", action: onOwed)
+            .buttonStyle(PearlSecondaryButtonStyle())
+            .padding(.top, 12)
+            .accessibilityHint("Opens Owed to you.")
 
     }
 

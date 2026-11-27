@@ -108,7 +108,7 @@ def test_the_deposit_and_owed_to_you():
     d = src(DETAIL)
     assert "OverExtraRow(amount: cents, line: nil, ask: nil)" in d, "PB-41s: no chip"
     owed = src("Views/Home/OwedViews.swift")
-    assert "OweBackOptions(row: $oweBack)" in owed and "Button { openOwed(r) }" in owed
+    assert "OweBackOptions(row: $oweBack)" in owed and "Button { oweBack = r }" in owed
 
 
 def test_sheets_take_an_item_and_never_ios_alerts():

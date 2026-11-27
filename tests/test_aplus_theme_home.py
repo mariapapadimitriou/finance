@@ -145,6 +145,73 @@ class TestOwed:
         assert "runStartChoice()" in detail
         assert "struct OwedView" not in read("Views", "Transactions", "PartsFlow.swift")
 
-    def test_see_who_else_owes_you(self):
-        flow = code(read("Views", "Transactions", "SplitFlow.swift"))
-        assert "See who else owes you" in flow and "See everyone who owes you" not in flow
+    def test_everyone_who_owes_you_is_a_secondary_button(self):
+        """P16a/b (TP-P16-OwedButton): the rose link became the Secondary
+        button, 12 under the split card, in both places it's drawn."""
+        for path in (("Views", "Transactions", "SplitFlow.swift"), ("Views", "Transactions", "CashFlowKit.swift")):
+            flow = code(read(*path))
+            assert "who else owes you" not in flow and "See everyone who owes you" not in flow
+            at = flow.index('Button("Everyone who owes you", action: onOwed)')
+            button = flow[at:at + 260]
+            assert "SecondaryButtonStyle()" in button and ".padding(.top, 12)" in button, path
+            assert "Pearl.link" not in button
+
+    def test_one_list_biggest_first_ties_a_to_z(self):
+        """P17a: one list, each person's total, biggest first, ties A–Z."""
+        assert "OwedList(people: people" in self.owed and "OwedView.sorted(owed.owesYou)" in self.owed
+        assert "if abs(a.total - b.total) >= 0.005 { return a.total > b.total }" in self.owed
+        assert "a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending" in self.owed
+        # P17a / P17c: the header line.
+        assert '"\\(one.name) owes you"' in self.owed and '"\\(people.count) people owe you"' in self.owed
+        # The old sections are gone from the main page.
+        assert "struct OwedSections" not in self.owed
+        assert 'APSectionLabel(text: "Owes you")' in self.owed
+
+    def test_also_rows_only_when_they_have_something(self):
+        """P17b: You owe (its amount), Not settled ("1 split"), Paid back
+        this month (+ in green), each opening its own page (P17f–h)."""
+        rows = self.owed[self.owed.index("static func rows(_ owed: OwedOverview)"):]
+        rows = rows[:rows.index("\n    }\n")]
+        assert "if !owed.youOwe.isEmpty" in rows and 'title: "You owe", value: Format.amount(owe)' in rows
+        assert 'n == 1 ? "1 split" : "\\(n) splits"' in rows and "if n > 0" in rows
+        assert "if !owed.paidBack.isEmpty" in rows and '"Paid back this month", value: "+" + Format.amount(back)' in rows
+        assert "if !rows.isEmpty" in self.owed and 'APSectionLabel(text: "Also")' in self.owed
+        for page in ('return "You owe"', 'return "Not settled"', 'return "Paid back"'):
+            assert page in self.owed, page
+        # P17f: the one explaining line moved to Not settled's page.
+        assert self.owed.count('"Not in the total until settled."') == 1
+        assert 'line: n == 1 ? "to 1 person" : "to \\(n) people"' in self.owed
+        assert 'line: "this month",\n                           sign: "+", tone: Pearl.moneyIn' in self.owed
+        # S-14o: You owe's rows still open the person's options there.
+        assert "Button { oweBack = r }" in self.owed and ".modifier(OweBackOptions(row: $oweBack))" in self.owed
+
+    def test_nobody_owes_you(self):
+        """P17d: the pearl and one calm line; Also still shows below."""
+        assert "PearlOrb(size: 96)" in self.owed and '"Nobody owes you anything."' in self.owed
+        body = self.owed[self.owed.index("struct OwedView: View"):self.owed.index("static func sorted")]
+        assert body.index("OwedNobody(arrived: allPaid)") < body.index("OwedAlsoRows(owed: owed")
+
+    def test_long_names_and_amounts(self):
+        """P17e: a long name is one line with "…"; the amount never shrinks
+        and moves under the name at the larger text sizes."""
+        row = self.owed[self.owed.index("struct OwedRow: View"):]
+        assert ".lineLimit(1).truncationMode(.tail)" in row
+        assert "typeSize.isAccessibilitySize" in row
+        figure = row[row.index("private var figure"):]
+        figure = figure[:figure.index("\n    }\n")]
+        assert ".fixedSize()" in figure and "minimumScaleFactor" not in figure and "pearlAmountFit" not in figure
+
+    def test_motion_has_reduce_motion_fallbacks(self):
+        """P17a/c/d motion, each with its Reduce Motion fallback."""
+        for words in ("withAnimation(.easeOut(duration: 0.35)) { shown = total }",
+                      ".delay(Double(min(index, 12)) * 0.03)", "withAnimation(.easeInOut(duration: 0.15)) { shown = true }",
+                      "UIImpactFeedbackGenerator(style: .light).impactOccurred()",
+                      "UINotificationFeedbackGenerator().notificationOccurred(.success)",
+                      "withAnimation(.easeOut(duration: reduceMotion ? 0.15 : 0.4))"):
+            assert words in self.owed, words
+        assert self.owed.count("accessibilityReduceMotion") >= 4
+
+    def test_initials_skip_emoji(self):
+        """P17e: "Mia 💋 Rossi" → MR, "🎉 Party fund" → PF."""
+        kit = code(read("Theme", "APlus.swift"))
+        assert "name.split { !$0.isLetter && !$0.isNumber }.prefix(2)" in kit

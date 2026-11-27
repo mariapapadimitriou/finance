@@ -643,7 +643,7 @@ final class Round3JourneysUITests: XCTestCase {
         note("owed: \(owed())")
         app.swipeUp()
         step("S-48d card")
-        tapIf(app.buttons["See everyone who owes you"], "See everyone who owes you", timeout: 4)
+        tapIf(app.buttons["Everyone who owes you"], "Everyone who owes you", timeout: 4)
         step("S-14u5 owed to you and you owe")
         tapIf(app.buttons["Back"].firstMatch, "Back", timeout: 3)
         // S-48e: change Priya's extra to a gift, then back.

@@ -76,7 +76,7 @@ class TestTransactionPage(unittest.TestCase):
     def test_split_card_has_the_paid_back_bar(self):
         flow = code(read("Views", "Transactions", "SplitFlow.swift"))
         self.assertIn("PaidBackBar(segments: barSegments, spoken: barSpoken)", flow)
-        self.assertIn('"See who else owes you"', flow)
+        self.assertIn('Button("Everyone who owes you", action: onOwed)', flow)
 
 
 class TestSheetsAndSorting(unittest.TestCase):

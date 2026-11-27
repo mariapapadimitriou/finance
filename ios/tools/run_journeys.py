@@ -184,6 +184,9 @@ OVER = {
                             [("Georgia Klev", 55.0), ("Georgia Pappas", 25.0)]),
     "testOverDeposit": (80.0, {"Georgia Klev": 40.0}, [("Georgia Klev", 55.0)]),
     "testOverNeedsALook": (80.0, {"Georgia Klev": 40.0}, [("Georgia Klev", 55.0)]),
+    # P16/P17 (TP-P16-OwedButton, TP-P17-Owed): Owed to you from the split
+    # purchase and from Home; Priya pays her share, Georgia still owes.
+    "testOverOwedOrganized": (90.0, {"Georgia Klev": 30.0, "Priya": 30.0}, []),
 }
 
 
@@ -211,6 +214,9 @@ def seed_over(db_path: str, journey: str) -> None:
     store.set_split(cid, "amount", [{"name": n, "amount": a} for n, a in people.items()], True)
     store.set_share(cid, round(whole - sum(people.values()), 2))
     store.set_transaction_category(cid, "Dining")
+    if journey == "testOverOwedOrganized":
+        # Priya paid her share in cash: Paid back this month, under Also.
+        store.add_split_cash(cid, "Priya", 30.0, today.isoformat())
 
 
 # Split my part in Options: Corner Bistro and Harbour Furniture on a joint
