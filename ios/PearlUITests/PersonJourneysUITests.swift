@@ -75,7 +75,9 @@ final class PersonJourneysUITests: XCTestCase {
                      file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
         XCTAssertTrue(e.waitForExistence(timeout: timeout), "Couldn't find \(what)", file: file, line: line)
         if !e.isHittable { scrollTo(e) }
-        e.tap()
+        // Since #466 some rows on screen report not hittable (B's tests tap
+        // by coordinate too), so tap the middle of what was found.
+        if e.isHittable { e.tap() } else { e.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
         return e
     }
 
@@ -147,6 +149,15 @@ final class PersonJourneysUITests: XCTestCase {
             e.tap()
             return true
         }
+        // Since #466 some on-screen buttons report not hittable: tap the
+        // last one on screen by its middle, as FewerTapsUITests does.
+        let screen = app.windows.firstMatch.frame
+        if let e = q.allElementsBoundByIndex.reversed().first(where: {
+            $0.exists && !$0.frame.isEmpty && screen.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY))
+        }) {
+            e.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            return true
+        }
         note("NOT HITTABLE \(label)")
         return false
     }
@@ -167,30 +178,74 @@ final class PersonJourneysUITests: XCTestCase {
         if !row.waitForExistence(timeout: 10) || !row.isHittable {
             let search = app.textFields.matching(NSPredicate(format: "placeholderValue == 'Search'")).firstMatch
             if search.waitForExistence(timeout: 3) {
-                search.tap()
-                search.typeText(merchant)
+                // P15 (#466): the field isn't hittable as an element, so tap its middle.
+                search.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                sleep(1)
+                app.typeText(merchant)
                 sleep(2)
             } else {
                 _ = scrollToFind(row, max: 14)
             }
         }
-        tap(button(merchant), "the \(merchant) row")
+        // The first match can sit under the search bar, so take the first row
+        // below it and tap its middle (since #466 rows report not hittable).
+        let rows = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", merchant))
+        _ = rows.firstMatch.waitForExistence(timeout: 10)
+        let screen = app.windows.firstMatch.frame
+        if let r = rows.allElementsBoundByIndex.first(where: {
+            $0.exists && $0.frame.minY > 140 && $0.frame.maxY < screen.maxY - 100
+        }) {
+            r.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            sleep(1)
+        } else {
+            tap(button(merchant), "the \(merchant) row")
+        }
     }
 
     // MARK: Split helpers
 
-    /// S-02: type each name and Add, then Next.
-    private func addPeople(_ names: [String]) {
-        let field = app.textFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 10), "S-02 has no name field")
+    /// P11 (fewer taps): one sheet. A chip for someone she has split with,
+    /// else Add › type the name › Add "Name"; then, for an uneven split,
+    /// Other ways › the method (S-03 on it).
+    private func addPeople(_ names: [String], way: String? = nil) {
+        XCTAssertTrue(app.buttons["Add someone new"].waitForExistence(timeout: 10), "P11 has no Add chip")
         for name in names {
-            field.tap()
+            let chip = app.buttons.matching(NSPredicate(format: "label == %@", name)).firstMatch
+            if chip.exists && chip.isHittable && !chip.isSelected {
+                chip.tap()
+                continue
+            }
+            tap(app.buttons["Add someone new"], "Add for \(name)")
+            let field = app.textFields["split-add-name"]
+            XCTAssertTrue(field.waitForExistence(timeout: 6), "Add someone new has no field")
+            if (field.value(forKey: "hasKeyboardFocus") as? Bool) != true { field.tap() }
             field.typeText(name)
-            tapIf(app.buttons["Add"], "Add for \(name)", timeout: 3)
+            tap(button("Add “\(name)”"), "Add “\(name)”")
+            sleep(1)
         }
         step("who was it with")
-        tapIf(app.buttons["Next"], "Next on S-02")
-        sleep(1)
+        if let way = way {
+            tap(app.buttons["split-other-ways"], "Other ways")
+            tap(app.buttons["split-way-\(way)"], "the \(way) way")
+            sleep(1)
+        }
+    }
+
+    /// P11a's button, "Split with Priya and Sam", or Save on a method's screen.
+    @discardableResult
+    private func saveSplit() -> Bool {
+        press("Split with", prefix: true, timeout: 3) || press("Save", timeout: 3)
+    }
+
+    /// Someone paid me back: under More (P2), or Options' row before it.
+    private func openPaidBack() {
+        if app.buttons["Mark as paid back"].waitForExistence(timeout: 3) {
+            tap(app.buttons["Mark as paid back"], "Mark as paid back")
+        } else {
+            // The page's More row by its identifier: a split card's ••• is labelled More too.
+            tap(app.buttons.matching(NSPredicate(format: "identifier == 'More'")).firstMatch, "More")
+            tap(anyButton(containing: "Someone paid me back"), "Someone paid me back")
+        }
     }
 
     private func amountField(_ who: String) -> XCUIElement {
@@ -513,7 +568,7 @@ final class PersonJourneysUITests: XCTestCase {
         step("split sheet opens")
         addPeople(["Priya", "Sam"])
         step("how to split evenly")
-        press("Save")
+        saveSplit()
         step("split saved")
         let s = split(of: "Nopa")
         note("server split: \(s ?? [:])")
@@ -534,8 +589,7 @@ final class PersonJourneysUITests: XCTestCase {
         launch()
         openTransaction("Gusto")
         tap(app.buttons["Split with others"], "Split with others")
-        addPeople(["Priya", "Sam"])
-        tap(app.buttons["Amounts"], "Amounts")
+        addPeople(["Priya", "Sam"], way: "amount")
         step("amounts empty")
         type("100", into: amountField("Priya"), "Priya amount")
         type("50", into: amountField("Sam"), "Sam amount")
@@ -569,16 +623,11 @@ final class PersonJourneysUITests: XCTestCase {
         launch()
         openTransaction("Lucky")
         tap(app.buttons["Split with others"], "Split with others")
-        let field = app.textFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 10))
-        field.tap(); field.typeText("Priya")
-        tapIf(app.buttons["Add"], "Add")
+        addPeople(["Priya"])
         let toggle = app.switches.firstMatch
-        if toggle.waitForExistence(timeout: 3) { toggle.tap() } else { note("MISSING I had some too on S-02") }
+        if toggle.waitForExistence(timeout: 3) { toggle.tap() } else { note("MISSING I’m paying a share") }
         step("all for them")
-        tapIf(app.buttons["Next"], "Next")
-        step("how to split all for them")
-        press("Save")
+        saveSplit()
         step("saved all for them")
         note("server split: \(split(of: "Lucky") ?? [:])")
     }
@@ -589,9 +638,7 @@ final class PersonJourneysUITests: XCTestCase {
         launch()
         openTransaction("Gusto")
         tap(app.buttons["Split with others"], "Split with others")
-        addPeople(["Priya", "Sam"])
-        let unsure = app.buttons["Not sure yet, split method"].exists ? app.buttons["Not sure yet, split method"] : app.buttons["Not sure"]
-        tap(unsure, "Not sure")
+        addPeople(["Priya", "Sam"], way: "unknown")
         step("not sure yet")
         press("Save split")
         step("not sure yet saved")
@@ -643,8 +690,7 @@ final class PersonJourneysUITests: XCTestCase {
     private func splitGustoByAmounts() {
         openTransaction("Gusto")
         tap(app.buttons["Split with others"], "Split with others")
-        addPeople(["Priya", "Sam", "Jo"])
-        tap(app.buttons["Amounts"], "Amounts")
+        addPeople(["Priya", "Sam", "Jo"], way: "amount")
         type("42.50", into: amountField("Priya"), "Priya amount")
         type("30", into: amountField("Sam"), "Sam amount")
         type("15", into: amountField("Jo"), "Jo amount")
@@ -818,6 +864,156 @@ final class PersonJourneysUITests: XCTestCase {
 
     // MARK: Conditions
 
+    // MARK: Fewer taps (P5, P8, P11; TP-P5-FromPurchase, TP-P8-CardPay, TP-P11-Split)
+
+    private func toastSays(_ words: String, timeout: TimeInterval = 8) -> Bool {
+        element(containing: words).waitForExistence(timeout: timeout)
+    }
+
+    private func paidBackRow(_ name: String) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "identifier == 'paid-back-row' AND label BEGINSWITH %@", name)).firstMatch
+    }
+
+    /// P11: one sheet. Add Priya and Sam, Evenly is done, "I’m paying a
+    /// share" off and on, "Split with Priya and Sam", then the toast's Undo.
+    func testFewerSplitInOneSheet() {
+        launch()
+        openTransaction("Nopa")
+        tap(app.buttons["Split with others"], "Split with others")
+        XCTAssertTrue(text(containing: "Split $").waitForExistence(timeout: 8), "P11a: no “Split $…” title")
+        step("P11a one sheet")
+        addPeople(["Priya", "Sam"])
+        XCTAssertTrue(text(containing: "Adds up to").exists, "P11a: no Adds up to line")
+        let share = app.switches.firstMatch
+        XCTAssertTrue(share.waitForExistence(timeout: 4), "P11b: no I’m paying a share")
+        share.tap()
+        step("P11b paying a share off")
+        share.tap()
+        tap(app.buttons["split-other-ways"], "Other ways")
+        XCTAssertTrue(app.buttons["split-way-amount"].waitForExistence(timeout: 4), "P11c: no Amounts")
+        step("P11c other ways")
+        tap(app.buttons["Back"].firstMatch, "Back from Other ways")
+        sleep(1)
+        XCTAssertTrue(press("Split with Priya and Sam"), "P11a: no Split with Priya and Sam")
+        XCTAssertTrue(toastSays("Split with Priya and Sam."), "P10b: no split toast")
+        step("P10b split toast")
+        let s = split(of: "Nopa")
+        note("server split: \(s ?? [:])")
+        XCTAssertEqual((s?["people"] as? [[String: Any]])?.count, 2, "split with two people")
+        tap(app.buttons["Undo"], "Undo on the split toast")
+        sleep(3)
+        let after = transactionJSON(merchant: "Nopa")
+        note("after undo: \(after?["split"] ?? "nil")")
+        XCTAssertNotEqual(after?["split"] as? Bool, true, "Undo kept the split")
+        step("split undone")
+    }
+
+    /// P11d: Add someone new; typing always works and nothing asks for Contacts.
+    func testFewerAddSomeoneNewTyping() {
+        launch()
+        openTransaction("Lucky")
+        tap(app.buttons["Split with others"], "Split with others")
+        tap(app.buttons["Add someone new"], "Add")
+        let field = app.textFields["split-add-name"]
+        XCTAssertTrue(field.waitForExistence(timeout: 6), "P11d: no name field")
+        if (field.value(forKey: "hasKeyboardFocus") as? Bool) != true { field.tap() }
+        field.typeText("Jo")
+        XCTAssertTrue(app.buttons["split-contacts"].exists, "P11d: no Choose from Contacts")
+        XCTAssertFalse(app.alerts.firstMatch.exists, "P11d: an alert asked for Contacts")
+        step("P11d add someone new")
+        tap(anyButton(containing: "Add “Jo”"), "Add “Jo”")
+        XCTAssertTrue(app.buttons["Jo"].waitForExistence(timeout: 4), "P11d: Jo isn't a chip")
+        step("Jo added")
+        saveSplit()
+        XCTAssertTrue(toastSays("Split with Jo."), "no split toast")
+    }
+
+    /// P5a / P5b: a split's person pays part of their share. From the purchase,
+    /// Which money paid this back? lists their money first with how it
+    /// compares; one tap saves; the rest is still owed.
+    func testFewerPaybackFromThePurchase() {
+        launch()
+        openTransaction("Gusto")
+        tap(app.buttons["Split with others"], "Split with others")
+        addPeople(["Priya"])
+        saveSplit()
+        sleep(3)
+        openPaidBack()
+        XCTAssertTrue(text(containing: "Which money paid this back?").waitForExistence(timeout: 8), "P5a: no title")
+        let priya = paidBackRow("Priya")
+        XCTAssertTrue(priya.waitForExistence(timeout: 10), "P5a: no money from Priya")
+        note("Priya's row: \(priya.label)")
+        XCTAssertTrue(priya.label.contains("less than"), "P5a: no compare line")
+        step("P5a which money")
+        priya.tap()
+        XCTAssertTrue(toastSays("Priya paid back $"), "P5b: no toast")
+        step("P5b paid back toast")
+        let s = split(of: "Gusto")
+        note("split after: \(s ?? [:])")
+        let p = (s?["people"] as? [[String: Any]])?.first
+        XCTAssertGreaterThan(p?["owes"] as? Double ?? 0, 0.005, "P5b: the rest was forgiven")
+    }
+
+    /// P5c / P5d: a purchase nobody split. A clear name saves at once; money
+    /// with no name asks Who sent this? once.
+    func testFewerPaybackWithAndWithoutAName() {
+        launch()
+        openTransaction("Gusto")
+        openPaidBack()
+        XCTAssertTrue(text(containing: "Money in since").waitForExistence(timeout: 10), "P5c: no Money in since")
+        step("P5c money in since")
+        let priya = paidBackRow("Priya")
+        XCTAssertTrue(priya.waitForExistence(timeout: 8), "P5c: no Priya Shah")
+        priya.tap()
+        XCTAssertTrue(toastSays("Priya paid back $42.50."), "P5c: no toast")
+        step("P5c saved")
+        sleep(4)
+        openPaidBack()
+        // Pearl tidies the nameless INTERAC E-TRANSFER to "E-transfer".
+        let nameless = paidBackRow("E-transfer")
+        XCTAssertTrue(nameless.waitForExistence(timeout: 10), "P5d: the nameless e-Transfer isn't listed")
+        nameless.tap()
+        XCTAssertTrue(text(containing: "Who sent this?").waitForExistence(timeout: 6), "P5d: no Who sent this?")
+        step("P5d who sent this")
+        let field = app.textFields["who-sent-name"]
+        tap(field, "Type a name")
+        field.typeText("Jo")
+        press("Save")
+        XCTAssertTrue(toastSays("Jo paid back $"), "P5d: no toast")
+        step("P5d saved")
+        note("split after: \(split(of: "Gusto") ?? [:])")
+    }
+
+    /// P8a / P8b: a card payment reads "Paid off your card", grey ⇄, and its
+    /// page offers no pay and one way out.
+    func testFewerCardPayment() {
+        launch()
+        guard let list = server("transactions/list?q=payment") as? [String: Any],
+              let rows = list["transactions"] as? [[String: Any]],
+              let pay = rows.first(where: { ($0["card_payment"] as? Bool) == true }),
+              let merchant = pay["merchant"] as? String else {
+            XCTFail("No card payment in the demo ledger"); return
+        }
+        note("card payment: \(merchant)")
+        openCashFlow()
+        let search = app.textFields.matching(NSPredicate(format: "placeholderValue == 'Search'")).firstMatch
+        if search.waitForExistence(timeout: 4) {
+            search.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            sleep(1); app.typeText(merchant); sleep(2)
+        }
+        let row = button("Paid off your card")
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "P8a: no Paid off your card row")
+        step("P8a row")
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(text(containing: "Not spending. The purchases on the card already count.").waitForExistence(timeout: 8),
+                      "P8b: no line")
+        XCTAssertFalse(button("This is my regular pay").exists, "P8b: offers pay")
+        XCTAssertFalse(button("Link to another transfer").exists, "P8b: offers Link")
+        step("P8b page")
+        tap(app.buttons["not-a-card-payment"], "Not a card payment?")
+        step("P8b what was this")
+    }
+
     /// Even split at the largest accessibility text size.
     func testSplitADinnerAtTheLargestTextSize() {
         launch()
@@ -829,11 +1025,8 @@ final class PersonJourneysUITests: XCTestCase {
         tap(app.buttons["Split with others"], "Split with others")
         step("S-02 large text")
         addPeople(["Priya", "Sam"])
-        step("S-03u large text")
-        tapIf(button("How to split"), "the method row", timeout: 3)
-        step("pick a method large text")
-        app.swipeDown(velocity: .fast)
-        press("Save")
+        step("P11 large text")
+        saveSplit()
         app.swipeUp()
         step("split card large text")
         tapIf(app.buttons["Options for Priya"], "Options for Priya")

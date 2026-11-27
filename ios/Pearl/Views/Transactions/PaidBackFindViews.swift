@@ -4,7 +4,8 @@ import SwiftUI
 // note 1352:10319; approved by the product owner 2026-11-15; THL-289,
 // THL-291, THL-181). Her own row's ••• on a split starts with "Find what
 // paid it back" (PB-20, in SplitMenus.swift), which opens "What paid this
-// back?" (PB-22, as redrawn by LT-01), or "No money in matches" (PB-23). Once
+// back?" (PB-22, as redrawn by LT-01; P5a "Which money paid this back?"
+// since the fewer-taps boards, never a dead end). Once
 // she picks the money, the usual steps run: PB-11 with the kind picked, then
 // Work and The shop as T-09w / T-09rs (extras S-11w / S-11m). Money from
 // someone on the split pays their share, so it goes straight to their Mark
@@ -24,6 +25,8 @@ struct PaidBackFind: Decodable {
     let share: Double
     /// PB-23's "about $60": what she typed, or her share.
     let about: Double
+    /// What of the purchase hasn't been paid back yet.
+    var left: Double? = nil
     let candidates: [Lenient<Candidate>]
 
     struct Candidate: Decodable, Identifiable, Hashable {
@@ -42,6 +45,9 @@ struct PaidBackFind: Decodable {
         let why: String
         /// PB-24: it already pays back another purchase.
         let taken: Taken?
+        /// P5 (fewer taps): the person an e-Transfer names, if any. Only a
+        /// suggestion: it is theirs once she picks it.
+        var sender: String? = nil
 
         struct Taken: Decodable, Hashable {
             let free: Double
@@ -73,54 +79,46 @@ struct PaidBackFind: Decodable {
     }
 }
 
-/// PB-22 as LT-01 redraws it ("Less text", 1425:73658, dark 1425:73900;
-/// TEXT-01; THL-289, THL-291, THL-181): "What paid this back?" and Close,
-/// the purchase ("$120.00 · your share $60.00 · Nov 12"), "Search deposits,
-/// or an amount", then YOUR SHARE (work and refunds) and one {NAME}'S SHARE
-/// group per person on the split, each row a tidy name and "+$60.00" over
-/// the date and one fact ("Nov 14 · work"), one picked (a checkmark), and
-/// Next. No footnote: the next sheet says what's next. The sheet fits its
-/// content. PB-23 (1359:9897, dark 1359:9978) when nothing matches: "No
-/// money in matches" and Clear search.
+/// P5a / P5c (TP-P5-FromPurchase, fewer taps, approved 2026-11-26; was
+/// PB-22 as LT-01 drew it): "Which money paid this back?". The purchase
+/// ("−$90.00 · Nov 23 · split with Priya"), "Search money in", then money
+/// from the people on the split first, each under "From Priya", including
+/// amounts smaller than their share with a plain line ("Nov 25 · $2.50 less
+/// than Priya’s $45.00"); then "Other money in". On a purchase nobody split,
+/// one list, "Money in since Nov 22". Never a dead end: with nothing close it
+/// still lists recent money in (GET …/paid-back-recent, finance/many_api.py).
+/// A tap is the answer: there is no Next.
 struct PaidBackFindSheet: View {
-    let purchaseId: String
+    let purchase: Transaction
     let api: APIClient
-    /// Next on the picked money; the opener runs what comes after.
-    let onNext: (PaidBackFind.Candidate) async -> String?
+    /// The picked money; the opener saves it or asks one more thing.
+    let onPick: (PaidBackFind.Candidate, PaidBackFind) async -> String?
     let onClose: () -> Void
 
     @State private var found: PaidBackFind?
     @State private var query = ""
-    @State private var pick: String?
     @State private var loading = true
-    @State private var busy = false
+    @State private var busy: String?
     @State private var error: String?
     /// The list didn't load, so the error line gets Try again (UI audit).
     @State private var loadFailed = false
+    @FocusState private var searching: Bool
 
     private var rows: [PaidBackFind.Candidate] { found?.candidates.compactMap(\.value) ?? [] }
-    /// The first row shown is picked until she picks another.
-    private var picked: PaidBackFind.Candidate? {
-        rows.first { $0.id == pick } ?? groups.first?.rows.first
-    }
+    private var people: [Transaction.Splitting.Person] { purchase.splitting?.people ?? [] }
 
     var body: some View {
         VStack(spacing: 0) {
-            APSheetTitleBar(title: "What paid this back?", close: onClose).sheetPart()
+            APSheetTitleBar(title: "Which money paid this back?", close: onClose).sheetPart()
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
-                    if let f = found {
-                        APQuestionWho(name: f.merchant,
-                                       amount: "\(Format.amount(f.amount)) · your share \(Format.amount(f.share)) · \(Format.short(f.date))",
-                                       tone: Pearl.muted, sub: nil)
-                            .padding(.bottom, 4)
-                    }
+                    APQuestionWho(name: purchase.merchant, amount: headLine, tone: Pearl.muted, sub: nil)
+                        .padding(.bottom, 4)
                     searchField
                     list
                     if let error = error {
                         Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
                             .padding(.horizontal, 16)
-                        // LT-01 / PB-22, UI audit: the list reloads from here.
                         if loadFailed {
                             Button("Try again") { Task { await load() } }
                                 .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
@@ -128,22 +126,10 @@ struct PaidBackFindSheet: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16).padding(.bottom, 12)
+                .padding(.horizontal, 16).padding(.bottom, 16)
                 .sheetPart()
             }
             .scrollDismissesKeyboard(.interactively)
-            if !rows.isEmpty {
-                PearlSheetButtons(primary: "Next", busy: busy, onPrimary: {
-                    guard let c = picked else { return }
-                    Task {
-                        busy = true
-                        loadFailed = false
-                        error = await onNext(c)
-                        busy = false
-                    }
-                })
-                .sheetPart()
-            }
         }
         .background(APSheetSurface())
         .fitsContent()
@@ -154,93 +140,129 @@ struct PaidBackFindSheet: View {
         }
     }
 
+    /// "−$90.00 · Nov 23 · split with Priya", or "· not split".
+    private var headLine: String {
+        let whole = "\u{2212}" + Format.amount(purchase.fullAmount ?? purchase.amount)
+        let with = people.isEmpty ? "not split" : "split with \(Format.andList(people.map(\.name)))"
+        return [whole, Format.short(purchase.date), with].joined(separator: " · ")
+    }
+
     private var searchField: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundColor(Pearl.muted).accessibilityHidden(true)
-            TextField("", text: $query, prompt: Text("Search deposits, or an amount").foregroundColor(Pearl.muted))
-                .font(Nacre.body).autocorrectionDisabled().textInputAutocapitalization(.never)
-                .accessibilityLabel("Search deposits, or an amount")
+            TextField("", text: $query, prompt: Text("Search money in").foregroundColor(Pearl.muted))
+                .font(Nacre.body).foregroundColor(Pearl.ink).tint(Pearl.action)
+                .autocorrectionDisabled().textInputAutocapitalization(.never)
+                .focused($searching)
+                .accessibilityLabel("Search money in, by name or amount")
         }
-        .padding(.horizontal, 14).frame(height: 44)
-        .background(Capsule().fill(Pearl.ink.opacity(0.08)))
+        .padding(.horizontal, 14).frame(minHeight: 44)
+        .wellStyle(focused: searching)
+        .padding(.top, 10)
     }
 
     @ViewBuilder private var list: some View {
         if loading && found == nil {
             ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
         } else if let f = found, rows.isEmpty {
-            // PB-23: what she looked for, said back; Clear search when she typed.
-            EmptyStateBlock(title: "No money in matches",
-                            line: "Nothing came in for about \(Format.amount(f.about)) after \(Format.short(f.date)). Pearl asks when it does.",
-                            action: query.isEmpty ? nil : "Clear search") { query = "" }
-        } else if found != nil {
-            ForEach(groups, id: \.key) { g in
-                if let header = g.header {
-                    Text(header.uppercased())
-                        .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
-                        .padding(.horizontal, 16).padding(.top, 4)
-                        .accessibilityAddTraits(.isHeader)
-                }
+            // Only when nothing at all came in (or the search found nothing).
+            Text(query.isEmpty ? "No money in since \(Format.short(f.date)) yet." : "Nothing matches “\(query)”.")
+                .font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                .frame(maxWidth: .infinity).padding(.vertical, 24)
+        } else if let f = found {
+            ForEach(groups(f), id: \.key) { g in
+                APSheetLabel(text: g.header)
                 APCard {
                     ForEach(Array(g.rows.enumerated()), id: \.element.id) { i, c in
-                        if i > 0 { APSeparator(afterFace: false) }
-                        row(c, on: picked?.id == c.id)
+                        if i > 0 { APSeparator() }
+                        row(c)
                     }
                 }
             }
         }
     }
 
-    /// LT-01's groups, the reason said once in the header: YOUR SHARE (work
-    /// and refunds), then "SAM'S SHARE" for each person on the split, in the
-    /// order their money came. Money a search found that Pearl can't place
-    /// (not work, a refund or someone on the split) sits last, under OTHER
-    /// MONEY IN (less text 2), rows unchanged; PB-11 asks who it was.
-    private var groups: [(key: String, header: String?, rows: [PaidBackFind.Candidate])] {
-        var out: [(key: String, header: String?, rows: [PaidBackFind.Candidate])] = []
-        let yours = rows.filter { $0.kind == "work" || $0.kind == "shop" }
-        if !yours.isEmpty { out.append(("yours", "Your share", yours)) }
-        var people: [String] = []
+    /// P5a: "From Priya" for each person on the split (in the order their
+    /// money came), work and refunds as "Your share", then "Other money in".
+    /// P5c: a purchase nobody split is one list.
+    private func groups(_ f: PaidBackFind) -> [(key: String, header: String, rows: [PaidBackFind.Candidate])] {
+        if people.isEmpty {
+            return [("all", "Money in since \(Format.short(f.date))", rows)]
+        }
+        var out: [(key: String, header: String, rows: [PaidBackFind.Candidate])] = []
+        var names: [String] = []
         for c in rows where c.kind == "person" {
             let name = c.person ?? c.payer
-            if !people.contains(name) { people.append(name) }
+            if !names.contains(name) { names.append(name) }
         }
-        for name in people {
-            let first = name.split(separator: " ").first.map(String.init) ?? name
-            let whose = first.lowercased().hasSuffix("s") ? "\(first)’" : "\(first)’s"
-            out.append(("p:" + name, "\(whose) share",
+        for name in names {
+            out.append(("p:" + name, "From \(Self.first(name))",
                         rows.filter { $0.kind == "person" && ($0.person ?? $0.payer) == name }))
         }
+        let yours = rows.filter { $0.kind == "work" || $0.kind == "shop" }
+        if !yours.isEmpty { out.append(("yours", "Your share", yours)) }
         let other = rows.filter { $0.who == nil }
         if !other.isEmpty { out.append(("other", "Other money in", other)) }
         return out
     }
 
-    /// "Northwind Ltd · +$60.00" over "Nov 14 · work"; someone on the split
-    /// over the date alone.
-    private func row(_ c: PaidBackFind.Candidate, on: Bool) -> some View {
-        let sub = [Format.short(c.date), c.why.isEmpty ? nil : c.why].compactMap { $0 }.joined(separator: " · ")
-        return Button { pick = c.id } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(c.payer) · +\(Format.amount(c.amount))")
-                        .font(Nacre.body).foregroundColor(Pearl.ink).fixedSize(horizontal: false, vertical: true)
-                    Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 8)
-                if on {
-                    Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold)).foregroundColor(Pearl.action)
-                        .accessibilityHidden(true)
+    static func first(_ name: String) -> String {
+        name.split(separator: " ").first.map(String.init) ?? name
+    }
+
+    /// What they owe on this split, for the compare line.
+    private func owes(_ c: PaidBackFind.Candidate) -> Transaction.Splitting.Person? {
+        guard c.kind == "person", let name = c.person else { return nil }
+        return people.first { samePerson($0.name, name) }
+    }
+
+    /// "Nov 25 · $2.50 less than Priya’s $45.00"; "Nov 24 · no name on it";
+    /// "Nov 14 · work".
+    func line(_ c: PaidBackFind.Candidate) -> String {
+        var bits = [Format.short(c.date)]
+        if let p = owes(c), p.owes >= 0.005 {
+            let diff = c.amount - p.owes
+            let whose = possessive(Self.first(p.name))
+            if diff <= -0.005 {
+                bits.append("\(Format.amount(-diff)) less than \(whose) \(Format.amount(p.owes))")
+            } else if diff >= 0.005 {
+                bits.append("\(Format.amount(diff)) more than \(whose) \(Format.amount(p.owes))")
+            }
+        } else if c.kind == nil && (c.sender ?? "").isEmpty {
+            bits.append("no name on it")
+        } else if !c.why.isEmpty {
+            bits.append(c.why)
+        }
+        return bits.joined(separator: " · ")
+    }
+
+    /// kit `.row`: the face, the tidy name over the line, "+$42.50" in green.
+    private func row(_ c: PaidBackFind.Candidate) -> some View {
+        Button {
+            guard busy == nil, let f = found else { return }
+            Task {
+                busy = c.id
+                loadFailed = false
+                error = await onPick(c, f)
+                busy = nil
+            }
+        } label: {
+            APPersonRow(face: c.payer, name: c.payer, line: line(c)) {
+                if busy == c.id {
+                    ProgressView()
+                } else {
+                    Text("+" + Format.amount(c.amount)).font(Nacre.headline).monospacedDigit()
+                        .foregroundColor(Pearl.moneyIn)
                 }
             }
-            .padding(.horizontal, 16).frame(minHeight: 52).padding(.vertical, 6)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(busy != nil)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(c.payer), \(Format.amount(c.amount)) in, \(Format.monthDay(c.date))\(c.why.isEmpty ? "" : ", " + c.why)")
-        .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
+        .accessibilityLabel("\(c.payer), \(Format.amount(c.amount)) in, \(line(c))")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier("paid-back-row")
     }
 
     private func load() async {
@@ -248,17 +270,120 @@ struct PaidBackFindSheet: View {
         defer { loading = false }
         let q = query.trimmingCharacters(in: .whitespaces)
         do {
-            let f: PaidBackFind = try await api.get("api/transactions/\(purchaseId)/paid-back-find",
-                                                    query: q.isEmpty ? [:] : ["q": q])
+            // Empty: likely first, then recent money in, so it's never empty
+            // while anything came in. A search: the finder's own.
+            let f: PaidBackFind = q.isEmpty
+                ? try await api.get("api/transactions/\(purchase.id)/paid-back-recent")
+                : try await api.get("api/transactions/\(purchase.id)/paid-back-find", query: ["q": q])
             found = f
             error = nil
             loadFailed = false
-            if !rows.contains(where: { $0.id == pick }) { pick = nil }
         } catch {
             if error is CancellationError { return }
-            // UI audit: Try again is the button under, so the line doesn't say it.
             self.error = "Couldn’t load your money in."
             loadFailed = true
+        }
+    }
+}
+
+/// P5d / P5h (TP-P5-FromPurchase, TP-P5-NeedsALook): the money has no
+/// clear name, so Pearl asks once. Everyone on the split first ("On Pai
+/// Northern Thai", with what they owe), then the people she has split with,
+/// and a field to type any name. A pick saves; nothing is remembered.
+struct PaybackSenderSheet: View {
+    let money: PaidBackFind.Candidate
+    let purchase: Transaction
+    let api: APIClient
+    let onPick: (String) async -> String?
+    let onBack: () -> Void
+    let onClose: () -> Void
+
+    @State private var typed = ""
+    @State private var recent: [String] = []
+    @State private var busy: String?
+    @State private var error: String?
+    @FocusState private var focused: Bool
+
+    private var onSplit: [Transaction.Splitting.Person] { purchase.splitting?.people ?? [] }
+    private var others: [String] {
+        recent.filter { n in !onSplit.contains { samePerson($0.name, n) } }
+    }
+    private var name: String { typed.trimmingCharacters(in: .whitespaces) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            APSheetTitleBar(title: "Who sent this?", back: onBack, close: onClose)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    APQuestionWho(name: money.payer,
+                                   amount: "+\(Format.amount(money.amount)) · \(Format.short(money.date)) · for \(purchase.merchant)",
+                                   tone: Pearl.moneyIn, sub: nil)
+                    HStack(spacing: 8) {
+                        TextField("", text: $typed, prompt: Text("Type a name").foregroundColor(Pearl.muted))
+                            .font(Nacre.body).foregroundColor(Pearl.ink).tint(Pearl.action)
+                            .textInputAutocapitalization(.words).autocorrectionDisabled()
+                            .focused($focused)
+                            .submitLabel(.done).onSubmit { pick(name) }
+                            .accessibilityIdentifier("who-sent-name")
+                        if !name.isEmpty {
+                            Button("Save") { pick(name) }.font(Nacre.textButton).foregroundColor(Pearl.link)
+                                .disabled(busy != nil)
+                        }
+                    }
+                    .padding(.horizontal, 14).frame(minHeight: 48)
+                    .wellStyle(focused: focused)
+                    .padding(.top, 6)
+                    if let error = error { APErrorLine(text: error) }
+                    if !onSplit.isEmpty {
+                        APSheetLabel(text: "On \(purchase.merchant)")
+                        APCard {
+                            ForEach(Array(onSplit.enumerated()), id: \.element.name) { i, p in
+                                if i > 0 { APSeparator() }
+                                person(p.name, line: p.owes >= 0.005 ? "Owes \(Format.amount(p.owes))" : nil)
+                            }
+                        }
+                    }
+                    if !others.isEmpty {
+                        APSheetLabel(text: onSplit.isEmpty ? "People you split with" : "Other people")
+                        APCard {
+                            ForEach(Array(others.enumerated()), id: \.element) { i, n in
+                                if i > 0 { APSeparator() }
+                                person(n, line: nil)
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 16).padding(.bottom, 16)
+            }
+        }
+        .background(APSheetSurface())
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+        .task {
+            struct Past: Decodable { let name: String }
+            struct Reply: Decodable { let people: [Lenient<Past>] }
+            let r: Reply? = try? await api.get("api/people/recent")
+            recent = (r?.people ?? []).compactMap { $0.value?.name }
+        }
+    }
+
+    private func person(_ n: String, line: String?) -> some View {
+        Button { pick(n) } label: {
+            APPersonRow(face: n, name: n, line: line) {
+                if busy == n { ProgressView() }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(busy != nil)
+    }
+
+    private func pick(_ n: String) {
+        guard !n.isEmpty, busy == nil else { return }
+        Task {
+            busy = n
+            error = await onPick(n)
+            busy = nil
         }
     }
 }
@@ -312,6 +437,8 @@ enum PaidBackStep: Identifiable {
     case person(PaidBackFind.Candidate)
     /// MP-01 / MP-02: Work or The shop, this purchase ticked.
     case many(PaidBackFind.Candidate, PaidBackWho)
+    /// P5d: no clear name on the money, so Who sent this? once.
+    case sender(PaidBackFind.Candidate)
 
     var id: String {
         switch self {
@@ -320,6 +447,7 @@ enum PaidBackStep: Identifiable {
         case .take(let c): return "take" + c.id
         case .person(let c): return "person" + c.id
         case .many(let c, _): return "many" + c.id
+        case .sender(let c): return "sender" + c.id
         }
     }
 }
@@ -337,6 +465,8 @@ struct PaidBackFromPurchase: ViewModifier {
     @State private var then: PaidBackStep?
     @State private var busy = false
     @State private var error: String?
+    /// The list the money was picked from (what's left of the purchase).
+    @State private var listed: PaidBackFind?
 
     func body(content: Content) -> some View {
         content.sheet(item: $step, onDismiss: {
@@ -351,41 +481,67 @@ struct PaidBackFromPurchase: ViewModifier {
         }
     }
 
-    @ViewBuilder private func sheet(_ s: PaidBackStep) -> some View {
+    /// Each step in its own frame (check_stack, 2026-11-26: one switch of
+    /// every sheet was 48 KB in the Debug device build).
+    private func sheet(_ s: PaidBackStep) -> AnyView {
         switch s {
-        case .find:
-            PaidBackFindSheet(purchaseId: purchase.id, api: api, onNext: next, onClose: { go(nil) })
-        case .who(let c):
-            // PB-11 (1351:9324): the face and the money, the kind picked.
-            PaidBackWhoSheet(face: c.payer,
-                             sub: "+\(Format.amount(c.amount)) · \(c.payer) · \(Format.short(c.date))",
-                             picked: c.who, pickedPerson: c.person,
-                             onPick: { who in pickWho(c, who) },
-                             onClose: { go(nil) })
-        case .take(let c):
-            PaidBackTakeSheet(c: c, busy: busy, error: error,
-                              onTake: { Task { await take(c, more: true) } },
-                              onFreeOnly: {
-                                  if (c.taken?.free ?? 0) < 0.005 { go(nil) } else { Task { await take(c, more: false) } }
-                              },
-                              onClose: { go(nil) })
-        case .person(let c):
-            // PB-13 / PB-13b, saved as the deposit side saves them (PB-14's toast and Undo).
-            PartsSheet(deposit: PartsDeposit(id: c.id, name: c.payer, amount: c.amount, date: c.date), api: api,
-                       paidBack: true, payer: c.kind == "person" ? c.person : nil, forCharge: purchase.id,
-                       person: c.kind == "person" ? c.person : nil) { reply in
-                go(nil)
-                done(reply.title ?? "Sorted.", reply.undo)
-            }
-        case .many(let c, let who):
-            // MP-01 / MP-02, then S-11w / S-11m for what's left: one save,
-            // one Undo (MP-05).
-            PartsSheet(deposit: PartsDeposit(id: c.id, name: c.payer, amount: c.amount, date: c.date), api: api,
-                       forCharge: purchase.id, many: who) { reply in
-                go(nil)
-                done(reply.title ?? "Sorted.", reply.undo)
-            }
+        case .find: return findSheet()
+        case .sender(let c): return senderSheet(c)
+        case .who(let c): return whoSheet(c)
+        case .take(let c): return takeSheet(c)
+        case .person(let c): return personSheet(c)
+        case .many(let c, let who): return manySheet(c, who)
         }
+    }
+
+    @inline(never) private func findSheet() -> AnyView {
+        AnyView(PaidBackFindSheet(purchase: purchase, api: api, onPick: { c, f in
+            listed = f
+            return await next(c)
+        }, onClose: { go(nil) }))
+    }
+
+    @inline(never) private func senderSheet(_ c: PaidBackFind.Candidate) -> AnyView {
+        AnyView(PaybackSenderSheet(money: c, purchase: purchase, api: api,
+                                   onPick: { name in await save(c, person: name) },
+                                   onBack: { go(.find) }, onClose: { go(nil) }))
+    }
+
+    /// PB-11 (1351:9324): the face and the money, the kind picked.
+    @inline(never) private func whoSheet(_ c: PaidBackFind.Candidate) -> AnyView {
+        AnyView(PaidBackWhoSheet(face: c.payer,
+                                 sub: "+\(Format.amount(c.amount)) · \(c.payer) · \(Format.short(c.date))",
+                                 picked: c.who, pickedPerson: c.person,
+                                 onPick: { who in pickWho(c, who) },
+                                 onClose: { go(nil) }))
+    }
+
+    @inline(never) private func takeSheet(_ c: PaidBackFind.Candidate) -> AnyView {
+        AnyView(PaidBackTakeSheet(c: c, busy: busy, error: error,
+                                  onTake: { Task { await take(c, more: true) } },
+                                  onFreeOnly: {
+                                      if (c.taken?.free ?? 0) < 0.005 { go(nil) } else { Task { await take(c, more: false) } }
+                                  },
+                                  onClose: { go(nil) }))
+    }
+
+    /// PB-13 / PB-13b, saved as the deposit side saves them (PB-14's toast and Undo).
+    @inline(never) private func personSheet(_ c: PaidBackFind.Candidate) -> AnyView {
+        AnyView(PartsSheet(deposit: PartsDeposit(id: c.id, name: c.payer, amount: c.amount, date: c.date), api: api,
+                           paidBack: true, payer: c.kind == "person" ? c.person : nil, forCharge: purchase.id,
+                           person: c.kind == "person" ? c.person : nil) { reply in
+            go(nil)
+            done(reply.title ?? "Sorted.", reply.undo)
+        })
+    }
+
+    /// MP-01 / MP-02, then S-11w / S-11m for what's left: one save, one Undo (MP-05).
+    @inline(never) private func manySheet(_ c: PaidBackFind.Candidate, _ who: PaidBackWho) -> AnyView {
+        AnyView(PartsSheet(deposit: PartsDeposit(id: c.id, name: c.payer, amount: c.amount, date: c.date), api: api,
+                           forCharge: purchase.id, many: who) { reply in
+            go(nil)
+            done(reply.title ?? "Sorted.", reply.undo)
+        })
     }
 
     /// Close this sheet, then open `next` (nil: none).
@@ -412,8 +568,68 @@ struct PaidBackFromPurchase: ViewModifier {
             go(.many(c, .work))
             return nil
         }
-        go(.who(c))
+        // P5b (fewer taps): picking the money tells Pearl who and what, so
+        // it saves. Work and the shop are known: their purchases (MP-01/02).
+        if let who = c.who, who != .person {
+            go(.many(c, who))
+            return nil
+        }
+        // Someone on the split: their share; more than it by a dollar or
+        // more still asks what the extra is (PB-13, S-11).
+        if c.kind == "person", let name = c.person {
+            if let p = onSplit(name), c.amount > p.owes + Self.small { go(.person(c)); return nil }
+            return await save(c, person: name)
+        }
+        // A clear name (the e-Transfer's sender): on a purchase nobody split,
+        // or one split only by paybacks, theirs at once (owner point 7);
+        // someone on the split by that name, their share.
+        if let sender = c.sender?.trimmingCharacters(in: .whitespaces), !sender.isEmpty {
+            let people = purchase.splitting?.people ?? []
+            if let p = people.first(where: { samePerson($0.name, sender) }) {
+                if c.amount > p.owes + Self.small { go(.person(c)); return nil }
+                return await save(c, person: p.name)
+            }
+            if people.isEmpty { return await save(c, person: sender) }
+        }
+        // No clear name: ask once (P5d). Never a guess, never the sender added.
+        go(.sender(c))
         return nil
+    }
+
+    /// Under a dollar settles by itself (S-04s, small payback differences).
+    private static let small = 0.995
+
+    private func onSplit(_ name: String) -> Transaction.Splitting.Person? {
+        purchase.splitting?.people.first { samePerson($0.name, name) }
+    }
+
+    /// P5b: POST …/parts for the money, one payback part: their share of a
+    /// split (what they owe, never more), or on a purchase nobody split a
+    /// split made by this payback, their share what they paid (`new_split`,
+    /// finance/parts_api.py `_grows`). The rest is still owed, and shown.
+    /// "Priya paid back $42.50." with Undo.
+    private func save(_ c: PaidBackFind.Candidate, person: String) async -> String? {
+        var amount = c.amount
+        var part: [String: Any] = ["kind": "payback", "charge": purchase.id, "person": person]
+        if let p = onSplit(person) {
+            amount = min(c.amount, p.owes)
+        } else {
+            // Not on the split: it splits the purchase with them, if it can.
+            let left = listed?.left ?? purchase.amount
+            amount = min(c.amount, max(left, 0))
+            part["new_split"] = true
+        }
+        guard amount >= 0.01 else { return "Nothing of \(purchase.merchant) is left to pay back." }
+        part["amount"] = (amount * 100).rounded() / 100
+        do {
+            let reply: MarkReply = try await api.post("api/transactions/\(c.id)/parts", ["parts": [part]])
+            go(nil)
+            let first = PaidBackFindSheet.first(person)
+            done("\(first) paid back \(Format.amount(part["amount"] as? Double ?? amount)).", reply.undo)
+            return nil
+        } catch {
+            return (error as? APIError)?.problem?.error ?? "Couldn’t save that. Try again."
+        }
     }
 
     /// PB-11's answer. Work and The shop: MP-01 / MP-02 with this purchase

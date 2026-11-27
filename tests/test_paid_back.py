@@ -291,10 +291,12 @@ class TestTilesBySource:
                       '"Not paid back yet"'):
             assert words in menus, words
         find = self.src("ios/Pearl/Views/Transactions/PaidBackFindViews.swift")
-        for words in ('"What paid this back?"', '"Search deposits, or an amount"',
-                      '"Your share"', '"\\(whose) share"', '"Next"',
-                      '"No money in matches"', '"Clear search"',
-                      "after \\(Format.short(f.date)). Pearl asks when it does.",
+        # P5a / P5c (fewer taps): "Which money paid this back?", money from
+        # the split's people first, a tap saves (no Next), never a dead end.
+        for words in ('"Which money paid this back?"', '"Search money in"',
+                      '"Your share"', '"From \\(Self.first(name))"', '"Money in since \\(Format.short(f.date))"',
+                      'less than \\(whose) \\(Format.amount(p.owes))', '"no name on it"',
+                      '"Who sent this?"', '"Type a name"', 'paid-back-recent',
                       '"Take \\(more) from \\(other)?"', '"Take \\(more)"',
                       '"Leave it on \\(other)"', '"Use only the \\(Format.amount(free))"',
                       "of this deposit is free, so it pays back your share first.",
@@ -310,6 +312,8 @@ class TestTilesBySource:
         # Pearl can't place sits under OTHER MONEY IN.
         assert "is on this split" not in who
         assert '("other", "Other money in", other)' in find
+        for gone in ('"No money in matches"', 'primary: "Next"'):
+            assert gone not in find, gone
         for code in (find, who):
             for stock in (".confirmationDialog(", ".alert(", ".actionSheet("):
                 assert stock not in code, stock

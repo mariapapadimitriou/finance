@@ -28,4 +28,8 @@ def test_not_from_contacts_and_not_typed():
     assert "if !q.isEmpty, refusal == nil," in who
     assert "part is already off." in between("private var refusal", "private func addTyped")
     assert "refusal == nil else { return }" in between("private func addTyped()", "private func remove")
-    assert ".disabled(step == 0 ? refusal != nil ||" in between("private var footer: some View", "private func save()")
+    assert ": step == 0 ? refusal != nil ||" in between("private var footer: some View", "private func save()")
+    # P11 (fewer taps): Add someone new refuses a joint holder the same way.
+    flow = open("ios/Pearl/Views/Transactions/SplitFlow.swift").read()
+    assert 'refuse: { n in holder(n).map { "\\(possessive($0)) part is already off." } }' in flow
+    assert "&& holder(n) == nil" in flow[flow.index("private var chipNames"):]

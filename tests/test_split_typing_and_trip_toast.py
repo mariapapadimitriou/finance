@@ -22,7 +22,7 @@ def test_header_and_switch_stay_while_typing():
     assert "private var pinned: Bool { step == 1 && focused != nil }" in src
     body = src[src.index("var body: some View {"):src.index("ScrollViewReader { scroller in")]
     assert "if pinned {" in body and "head" in body and "methodControl" in body
-    assert "if !pinned { head }" in src and "if !pinned { methodControl }" in src
+    assert "if !pinned && !light { head }" in src and "if !pinned { methodControl }" in src
     footer = src[src.index("private var footer: some View {"):src.index("private func save() async")]
     assert "if pinned && mode != \"unknown\"" in footer and "status" in footer
     assert "scroller.scrollTo(key, anchor: .center)" in src

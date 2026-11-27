@@ -602,7 +602,11 @@ struct TransactionDetailView: View {
                             .onAppear { heroGone = g.frame(in: .global).maxY < 120 }
                             .onChange(of: g.frame(in: .global).maxY) { heroGone = $0 < 120 }
                     })
-                if let transfer = t.transfer, guessing == nil {
+                if t.cardPayment && guessing == nil {
+                    // P8b (TP-P8-CardPay): From and To, one plain line, one
+                    // way out. No pay option, no Link to another transfer.
+                    OwnBody { cardPaymentBody }
+                } else if let transfer = t.transfer, guessing == nil {
                     // TF-01 (1389:24632 / 1389:24833): How it counts, Moved,
                     // Options, Details.
                     OwnBody { transferLegs(transfer) }
@@ -827,6 +831,13 @@ struct TransactionDetailView: View {
                 // S-41j: from Edit split.
                 splitting = false
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { removingSplit = true }
+            }, onNew: { title, undo in
+                // P10b / P11 (fewer taps): "Split with Priya and Sam." with Undo.
+                splitting = false
+                Task {
+                    await run { nil }
+                    withAnimation { toast = (title, undoing(undo)) }
+                }
             })
         }
         .sheet(isPresented: $settingShare) {
@@ -1115,9 +1126,9 @@ struct TransactionDetailView: View {
     private var header: some View {
         VStack(spacing: 0) {
             // TF-01: ⇄ in the ring for a transfer. TP-04: the payer's initials.
-            CFRing(name: t.jointPayback?.person ?? t.merchant, size: 56, transfer: t.transfer != nil)
+            CFRing(name: t.jointPayback?.person ?? t.merchant, size: 56, transfer: t.transfer != nil || t.cardPayment)
                 .padding(.bottom, 8)
-            if t.transfer == nil {
+            if t.transfer == nil && !t.cardPayment {
                 // T-80: tap the name to rename the merchant.
                 Button { renaming = true } label: {
                     // TP-04 (G2b-JointIn, rethought): "From Mom".
@@ -1132,7 +1143,8 @@ struct TransactionDetailView: View {
                 // TF-01 (POLISH-01): a transfer's name isn't renamed here, but
                 // it's in ink, not dimmed as a disabled button (it was
                 // `.disabled(t.transfer != nil)`), on up to two lines.
-                Text(t.merchant).font(Nacre.title2).foregroundColor(Pearl.ink)
+                // P8b: a card payment is "Paid off your card".
+                Text(t.shownName).font(Nacre.title2).foregroundColor(Pearl.ink)
                     .multilineTextAlignment(.center).lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
@@ -1145,7 +1157,7 @@ struct TransactionDetailView: View {
                 // T-41m: a refund of her share too. TF-01: a transfer in
                 // money-transfer grey, with no sign.
                 .foregroundColor(paidBackAnswer != nil || t.refundOf?.share == true ? Pearl.moneyIn
-                                 : t.transfer != nil ? Pearl.moved : t.tone)
+                                 : t.transfer != nil || t.cardPayment ? Pearl.moved : t.tone)
                 .lineLimit(1).minimumScaleFactor(0.5)
                 .accessibilityLabel(heroSpoken)
             if let line = costLine {
@@ -1221,9 +1233,12 @@ struct TransactionDetailView: View {
     /// bank's name is all it has; "Name them" sits under the date instead
     /// and opens T-14 Who sent this?.
     @ViewBuilder private var countsOrName: some View {
-        if t.transfer != nil {
-            // TF-01's Counts pill (G1-TxMore): "⇄ Doesn’t count".
-            CFPill(text: "Doesn’t count", symbol: "arrow.left.arrow.right", symbolTone: Pearl.muted)
+        if t.cardPayment {
+            // P8b: no pill; the line under the legs says it.
+            EmptyView()
+        } else if t.transfer != nil {
+            // TF-01's Counts pill; TP-Words: "Not spending" (was "Doesn’t count").
+            CFPill(text: "Not spending", symbol: "arrow.left.arrow.right", symbolTone: Pearl.muted)
         } else if namesSender {
             EmptyView()
         } else if !showsCountsPill {
@@ -1268,6 +1283,8 @@ struct TransactionDetailView: View {
     }
 
     private var heroAmount: String {
+        // P8b: "⇄ $1,709.21", grey, no sign: it moved between her accounts.
+        if t.cardPayment { return Format.moved(t.amount) }
         // TF-01: a transfer has no sign; it didn't leave her.
         if t.transfer != nil { return Format.amount(t.amount) }
         return Format.money(t)
@@ -1276,6 +1293,7 @@ struct TransactionDetailView: View {
     /// VoiceOver: "Moved $500.00" (TF-01); RC-02 "Costs you $110.00 now";
     /// otherwise "spent $24.80".
     private var heroSpoken: String {
+        if t.cardPayment { return "Paid off your card, \(Format.amount(t.amount))" }
         if t.transfer != nil { return "Moved \(heroAmount)" }
         if costLine != nil { return "Costs you \(Format.amount(t.amount)) now" }
         return Format.spoken(heroAmount)
@@ -1685,6 +1703,8 @@ struct TransactionDetailView: View {
         // "This is my regular pay" sat under a payback's own Options).
         t.inflow && t.transfer == nil && t.refundOf == nil && t.repays == nil && t.excluded.isEmpty
             && t.jointFrom != "them" && t.parts.isEmpty && t.partOf == nil
+            // P8 (the tap audit): never on a card payment, a refund or a credit on a card.
+            && !t.neverPay && !t.cardPayment
     }
 
     /// The app's income kinds, as Income and bills names them.
@@ -3148,6 +3168,36 @@ struct TransactionDetailView: View {
                     }
                 }
         }
+    }
+
+    // MARK: P8b A card payment (TP-P8-CardPay, fewer taps)
+
+    /// "From TD Chequing ••2210" and "To Amex ••1004"; "Not spending. The
+    /// purchases on the card already count."; and "Not a card payment?",
+    /// which opens What was this?. Nothing offers pay (server `never_pay`).
+    @ViewBuilder private var cardPaymentBody: some View {
+        let from = t.transfer?.from ?? (t.inflow ? nil : t.account)
+        let to = t.paidCard ?? t.transfer?.to
+        APCard {
+            row(title: "From \(from ?? "your bank account")", chevron: false, icon: "building.columns")
+            APSeparator(afterFace: false)
+            row(title: "To \(to ?? "your card")", chevron: false, icon: "creditcard")
+        }
+        .padding(.top, 10)
+        Text("Not spending. The purchases on the card already count.")
+            .font(Nacre.subheadline).foregroundColor(Pearl.muted)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 4).padding(.top, 4)
+        APCard {
+            Button { sorting = sortAsk(.transfer) } label: {
+                row(title: "Not a card payment?", chevron: true, icon: "ellipsis")
+            }
+            .buttonStyle(.plain)
+            .disabled(busy)
+            .accessibilityHint("Opens What was this?")
+            .accessibilityIdentifier("not-a-card-payment")
+        }
+        .padding(.top, 10)
     }
 
     // MARK: A transfer (TF-01, POLISH-01; was T-05)

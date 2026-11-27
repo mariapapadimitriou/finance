@@ -111,6 +111,10 @@ struct PartsSheet: View {
     var saying: Saying? = nil
     var onPieces: (([[String: Any]]) -> Void)? = nil
     var onBack: (() -> Void)? = nil
+    /// P5g (TP-P5-NeedsALook, fewer taps): Pearl's guess was wrong, so PB-30
+    /// opens with nothing ticked and a "Not a payback" row last, which goes
+    /// on to What was this?.
+    var onNotPayback: (() -> Void)? = nil
     enum Saying { case pays, other }
     let onSaved: (MarkReply) -> Void
 
@@ -1085,6 +1089,9 @@ struct PartsSheet: View {
                 } else if typed.isEmpty, onChangeWho != nil || saying != nil {
                     // "LIKELY · DENISE" with Change: back to Who paid you back?
                     personLabel(first)
+                } else if typed.isEmpty && onNotPayback != nil {
+                    // P5g: "Split with Sam", their splits first.
+                    label("Split with \(first)")
                 } else if typed.isEmpty {
                     // G2-PB30-r: "LIKELY", and VoiceOver hears whose and when.
                     label("Likely")
@@ -1120,6 +1127,16 @@ struct PartsSheet: View {
                     .buttonStyle(APSecondaryButtonStyle())
                     .padding(.top, 4)
                     .accessibilityIdentifier("pb30-search-other")
+            }
+            if let notPayback = onNotPayback {
+                APCard {
+                    Button(action: notPayback) {
+                        CFRowLabel(symbol: "ellipsis", title: "Not a payback")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("pb30-not-a-payback")
+                }
+                .padding(.top, 4)
             }
             if let j = joint {
                 // G2b-JointIn2 TP-03: what happens to the pair, in one line.

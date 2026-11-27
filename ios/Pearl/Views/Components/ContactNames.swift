@@ -20,9 +20,11 @@ final class ContactNames: ObservableObject {
     /// Browsing shows the first 60; searching looks through all of them.
     static let browseCap = 60
 
-    func load() async {
+    /// `ask: false` (P11, fewer taps): never shows the Contacts alert; only
+    /// reads them when she has already said yes.
+    func load(ask: Bool = true) async {
         let store = CNContactStore()
-        if CNContactStore.authorizationStatus(for: .contacts) == .notDetermined {
+        if ask && CNContactStore.authorizationStatus(for: .contacts) == .notDetermined {
             _ = try? await store.requestAccess(for: .contacts)
         }
         let status = CNContactStore.authorizationStatus(for: .contacts)

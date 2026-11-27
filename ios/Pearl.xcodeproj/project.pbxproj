@@ -97,6 +97,7 @@
 		5F55D58B5EE4037CCC2B9E46 /* RecurringSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = C80E04E2FFE753610E20CF17 /* RecurringSheets.swift */; };
 		6DD0DA75E6CDC179E04AA850 /* SplitCarry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B2013BE75B8D7223F305AA5 /* SplitCarry.swift */; };
 		00E8B2945E5B9C6B0391813A /* SplitFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53A5D39D9874E14925943286 /* SplitFlow.swift */; };
+		7870E05606CA4A868F29A969 /* SplitLight.swift in Sources */ = {isa = PBXBuildFile; fileRef = F09418D3B6A87DCBC719AFBA /* SplitLight.swift */; };
 		4872AAE25E28798D24E870B2 /* SplitMenus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 558170EF44F3D7B55B10E732 /* SplitMenus.swift */; };
 		014ED45326E8880E7B9F694D /* TransactionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63873676D9EA2C177703422C /* TransactionDetailView.swift */; };
 		8DAA91D1295F238D6858DE8F /* TransactionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4941CABD801BD86FF3E85FC7 /* TransactionsView.swift */; };
@@ -241,6 +242,7 @@
 		C80E04E2FFE753610E20CF17 /* RecurringSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringSheets.swift; sourceTree = "<group>"; };
 		9B2013BE75B8D7223F305AA5 /* SplitCarry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitCarry.swift; sourceTree = "<group>"; };
 		53A5D39D9874E14925943286 /* SplitFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitFlow.swift; sourceTree = "<group>"; };
+		F09418D3B6A87DCBC719AFBA /* SplitLight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitLight.swift; sourceTree = "<group>"; };
 		558170EF44F3D7B55B10E732 /* SplitMenus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitMenus.swift; sourceTree = "<group>"; };
 		63873676D9EA2C177703422C /* TransactionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionDetailView.swift; sourceTree = "<group>"; };
 		4941CABD801BD86FF3E85FC7 /* TransactionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionsView.swift; sourceTree = "<group>"; };
@@ -512,6 +514,7 @@
 				C80E04E2FFE753610E20CF17 /* RecurringSheets.swift */,
 				9B2013BE75B8D7223F305AA5 /* SplitCarry.swift */,
 				53A5D39D9874E14925943286 /* SplitFlow.swift */,
+				F09418D3B6A87DCBC719AFBA /* SplitLight.swift */,
 				558170EF44F3D7B55B10E732 /* SplitMenus.swift */,
 				63873676D9EA2C177703422C /* TransactionDetailView.swift */,
 				4941CABD801BD86FF3E85FC7 /* TransactionsView.swift */,
@@ -718,6 +721,7 @@
 				5F55D58B5EE4037CCC2B9E46 /* RecurringSheets.swift in Sources */,
 				6DD0DA75E6CDC179E04AA850 /* SplitCarry.swift in Sources */,
 				00E8B2945E5B9C6B0391813A /* SplitFlow.swift in Sources */,
+				7870E05606CA4A868F29A969 /* SplitLight.swift in Sources */,
 				4872AAE25E28798D24E870B2 /* SplitMenus.swift in Sources */,
 				014ED45326E8880E7B9F694D /* TransactionDetailView.swift in Sources */,
 				8DAA91D1295F238D6858DE8F /* TransactionsView.swift in Sources */,
