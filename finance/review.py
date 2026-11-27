@@ -615,6 +615,9 @@ def _for_store(st, today: str | None = None) -> dict:
     # in the server's words, with the likely purchases as tiles.
     from . import payback_question
     payback_question.annotate(st, review, txns)
+    # P3 / P4 (TP-P3-NoGuess): each What was this? its own four likeliest.
+    from . import likely
+    likely.annotate(st, review, txns)
     # Questions about her plan (finance/checks.py): Yes or No cards.
     from . import checks
     from . import api as core_api

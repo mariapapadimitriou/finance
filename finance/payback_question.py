@@ -108,9 +108,9 @@ def build(t: Transaction, transactions: list[Transaction], splits: dict | None =
           payer: dict | None = None, people: list[str] | None = None,
           cards: dict[str, str] | None = None, sender: str | None = None,
           candidates: list[dict] | None = None) -> dict | None:
-    """The question for one deposit, or None when no purchase is likely or
-    nobody is named to be paying her back (a nameless e-Transfer isn't
-    "Interac" paying her back). `sender` is the name the review already
+    """The question for one deposit, or None when no purchase is likely. A
+    nameless e-Transfer isn't "Interac" paying her back: Pearl guesses the
+    purchase and asks who (P5h, `_nameless`). `sender` is the name the review already
     settled on; `candidates` are review.charge_candidates', when computed."""
     from .categorize import is_generic_transfer_name
     from .etransfers import memo, party
@@ -127,8 +127,11 @@ def build(t: Transaction, transactions: list[Transaction], splits: dict | None =
     # names them, or for a payer that isn't an e-Transfer, it's a name.
     named = sent.get("named_by") == "you" or not sent
     if not who:
-        if not (t.merchant or "").strip() or is_generic_transfer_name(t.merchant):
+        if not (t.merchant or "").strip():
             return None
+        if is_generic_transfer_name(t.merchant):
+            # P5h: no clear name. Pearl guesses the purchase, never who.
+            return _nameless(t, transactions, splits, payer, cards, candidates)
         who = t.merchant
     got = round(-t.amount, 2)
     by_id = {x.fingerprint: x for x in transactions}
@@ -234,6 +237,83 @@ def build(t: Transaction, transactions: list[Transaction], splits: dict | None =
         "card": {"title": f"Paying you back for {m}?",
                  "line": f"Pearl’s guess · {guess}" if guess else "Pearl’s guess"},
     }
+
+
+_SHARE_WORDS = {2: "Half", 3: "A third", 4: "A quarter", 5: "A fifth", 6: "A sixth"}
+
+
+def _nameless(t: Transaction, transactions: list[Transaction], splits: dict | None, payer: dict | None,
+              cards: dict[str, str], candidates: list[dict] | None) -> dict | None:
+    """P5h (TP-P5-NeedsALook): money with no clear name on it ("Interac
+    e-Transfer"). Pearl still guesses the purchase, "A third of Pai Northern
+    Thai?", but never who: each tile carries everyone on the split who still
+    owes (`people`), and the app asks Who sent this? before anything is
+    credited. Nobody is guessed, added to a split, or remembered."""
+    from .review import charge_candidates
+    from .splits import for_inflow
+
+    got = round(-t.amount, 2)
+    by_id = {x.fingerprint: x for x in transactions}
+    who = _shown(t) or "Money in"
+    tiles: list[dict] = []
+    seen: set[str] = set()
+
+    # 1. A split someone on it still owes about this much on, the closest first.
+    if splits:
+        rows, _ = for_inflow(t, transactions, splits, payer or {})
+        by_charge: dict[str, list[dict]] = {}
+        for r in rows:
+            if r.get("unknown") or r["owes"] < 0.005:
+                continue
+            by_charge.setdefault(r["charge_id"], []).append(r)
+        fits = []
+        for cid, people in by_charge.items():
+            near = min(abs(p["owes"] - got) for p in people)
+            if near <= max(3.0, got * 0.05):
+                fits.append((near, cid, people))
+        fits.sort(key=lambda f: f[0])
+        for _, cid, people in fits:
+            c = by_id.get(cid)
+            if c is None or cid in seen:
+                continue
+            seen.add(cid)
+            n = share_of(got, c.amount)
+            tiles.append(_tile(c, cards, kind="split", ways=n,
+                               people=[{"name": p["name"], "owes": round(p["owes"], 2)} for p in people],
+                               title=f"{_shown(c)} · {_money(c.amount)}",
+                               compare=_fraction_line(got, c.amount, n),
+                               toast=f"Paid back {_money(got)} for {_shown(c)}"))
+
+    # 2. An even share of a purchase nobody split.
+    for cand in candidates if candidates is not None else charge_candidates(t, transactions):
+        c = by_id.get(cand["id"])
+        if c is None or c.fingerprint in seen or (splits or {}).get(c.fingerprint):
+            continue
+        seen.add(c.fingerprint)
+        n = cand.get("split") or share_of(got, c.amount)
+        tiles.append(_tile(c, cards, kind="share", ways=n, people=[],
+                           title=f"{_shown(c)} · {_money(c.amount)}",
+                           compare=_fraction_line(got, c.amount, n),
+                           toast=f"Paid back {_money(got)} for {_shown(c)}"))
+
+    tiles = tiles[:MAX_TILES]
+    if not tiles:
+        return None
+    best = tiles[0]
+    best["guess"] = True
+    best["after"] = best["compare"]
+    m, n = best["merchant"], best.get("ways")
+    title = f"{_SHARE_WORDS[n]} of {m}?" if n in _SHARE_WORDS else f"Paying you back for {m}?"
+    return {"who": who, "named": False, "unknown": True, "tiles": tiles, "part": False,
+            "card": {"title": title, "line": f"Pearl’s guess · {best['compare']}"}}
+
+
+def _fraction_line(got: float, amount: float, n: int | None) -> str:
+    """"Exactly a third of $120.00", "About half of $80.00", "$40.00 of $95.00"."""
+    if n in _FRACTION:
+        exact = abs(round(amount / n, 2) - got) < 0.015
+        return f"{'Exactly' if exact else 'About'} {_FRACTION[n]} of {_money(amount)}"
+    return f"{_money(got)} of {_money(amount)}"
 
 
 def annotate(st, review: dict, txns: list[Transaction]) -> None:
