@@ -268,6 +268,28 @@ def seed_joint(db_path: str) -> None:
             store.set_transaction_category(t.fingerprint, "Dining")
 
 
+# Ask Pearl (THL-308): two credit cards with limits and due days, for PC-26d.
+# The server never has a real key here: no model is ever called. With
+# PEARL_ASK_SIMPLE=1 it gets a key that is never sent and a $0 monthly cap,
+# so every answer is the built-in one with PC-23's quiet line.
+ASK = "testAskPearl"
+
+
+def seed_ask(db_path: str) -> None:
+    import json
+    from finance.store import Store
+    store = Store(db_path)
+    today = date.today().isoformat()
+    store.note_account("scotia_visa_8830", name="Scotiabank Visa ••8830", account_type="credit",
+                       subtype="credit card")
+    store.note_account("amex_1004", name="American Express ••1004", account_type="credit",
+                       subtype="credit card")
+    store.set_balance("scotia_visa_8830", 1840.00, None, 5000, "CAD", today)
+    store.set_balance("amex_1004", 2710.00, None, 3000, "CAD", today)
+    store.set_setting("debt_details", json.dumps({"scotia_visa_8830": {"due_day": 3},
+                                                  "amex_1004": {"due_day": 14}}))
+
+
 # AP-HomeCalm (engBOT's GaugeUITests): a ledger with nothing to do, in place
 # of the demo: three months of pay, rent and groceries, every row sorted.
 CALM = "testGaugeCalm"
@@ -349,7 +371,8 @@ def main() -> int:
             return r.returncode
     os.makedirs(args.out, exist_ok=True)
     udid = simulator(runtime, args.text, args.appearance)
-    env_base = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
+    # No live AI calls from a journey (THL-308): the real key never reaches the server.
+    env_base = {k: v for k, v in os.environ.items() if k not in ("DATABASE_URL", "ANTHROPIC_API_KEY")}
 
     proxy = ThreadingHTTPServer(("localhost", PORT), SlowProxy)
     threading.Thread(target=proxy.serve_forever, daemon=True).start()
@@ -364,6 +387,10 @@ def main() -> int:
                     seed_older(db_path)
                 elif journey and journey.startswith(FEWER):
                     seed_fewer(db_path)
+                elif journey == ASK:
+                    seed_ask(db_path)
+                    # PC-24 shows on a first open: nothing the app kept.
+                    subprocess.run(["xcrun", "simctl", "uninstall", udid, "com.mariapapadimitriou.pearl"], capture_output=True)
                 elif journey == CALM:
                     seed_calm(db_path)
                     subprocess.run(["xcrun", "simctl", "uninstall", udid, "com.mariapapadimitriou.pearl"], capture_output=True)
@@ -376,6 +403,8 @@ def main() -> int:
                     subprocess.run(["xcrun", "simctl", "uninstall", udid, "com.mariapapadimitriou.pearl"], capture_output=True)
                 env = {**env_base, "LEDGER_DB": db_path, "PORT": str(SERVER_PORT), "PEARL_PWNED_CHECK": "0",
                        "SPENDIE_SECRET_KEY": "ui-test-key-that-is-definitely-long-enough"}
+                if journey == ASK and os.environ.get("PEARL_ASK_SIMPLE") == "1":
+                    env.update({"ANTHROPIC_API_KEY": "sk-journey-never-sent", "PEARL_AI_MONTHLY_CAP_USD": "0"})
                 log_path = os.path.join(args.out, f"server-{journey or 'all'}.log")
                 with open(log_path, "w") as log:
                     server = subprocess.Popen([sys.executable, "app.py"], cwd=ROOT, env=env, stdout=log, stderr=log)

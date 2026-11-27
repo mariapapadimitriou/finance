@@ -1084,6 +1084,63 @@ final class PersonJourneysUITests: XCTestCase {
         step("profile")
     }
 
+    /// THL-308, Ask Pearl on every iPhone (PC-20 to PC-26, CN-06): Before
+    /// you ask, Not now, off, Turn on, Try asking, the answers, couldn't
+    /// answer, and the switch in Profile › Privacy. The journeys' server has
+    /// no key, so the answers are Pearl's built-in ones; no model is called.
+    func testAskPearl() {
+        for scheme in ["light", "dark"] {
+            launch(scheme)
+            tap(app.tabBars.buttons["Pearl"], "the Pearl tab")
+            if scheme == "light" {
+                XCTAssertTrue(app.buttons["ask-turn-on"].waitForExistence(timeout: 15), "No Before you ask")
+                XCTAssertFalse(app.textFields["chat-composer"].exists, "The field shows before Turn on")
+                step("PC-24 before you ask")
+                tap(app.buttons["ask-not-now"], "Not now")
+                step("PC-25 ask pearl is off")
+                tap(app.buttons["ask-turn-on"], "Turn on Ask Pearl")
+            }
+            XCTAssertTrue(app.buttons["ask-example-0"].waitForExistence(timeout: 15), "No Try asking")
+            step("PC-21 try asking")
+            tap(app.buttons["ask-example-0"], "How's this month going?")
+            step("PC-22 this month", settle: 3)
+            ask("When are my cards due?")
+            step("PC-26d cards", settle: 3)
+            if scheme == "dark" { break }
+            tap(app.buttons["chat-new"].firstMatch, "New chat")
+            tap(app.buttons.matching(NSPredicate(format: "label == 'New chat' AND identifier != 'chat-new'")).firstMatch,
+                "the sheet's New chat")
+            tap(app.buttons["ask-example-1"], "a shop this year")
+            step("PC-26a a shop", settle: 3)
+            let last = Calendar.current.date(byAdding: .month, value: -1, to: Date())!
+            let month = DateFormatter().monthSymbols[Calendar.current.component(.month, from: last) - 1]
+            ask("How did \(month) go?")
+            step("PC-26b a month", settle: 3)
+            app.swipeUp()
+            step("PC-26b a month scrolled")
+            ask("Any subscriptions I forgot?")
+            step("subscriptions", settle: 3)
+            ask("Can I afford a trip to Lisbon?")
+            step("PC-23 couldn't answer", settle: 3)
+            app.buttons["profile-circle"].firstMatch.tap()
+            tap(anyButton(containing: "Privacy"), "Privacy and consent")
+            XCTAssertTrue(element(containing: "Uses Claude, by Anthropic").waitForExistence(timeout: 15),
+                          "No Ask Pearl switch")
+            step("CN-06 privacy")
+            tap(app.switches.matching(NSPredicate(format: "label == 'Ask Pearl'")).firstMatch, "the Ask Pearl switch")
+            step("CN-06 turn off ask pearl")
+            tap(button("Keep it on"), "Keep it on")
+        }
+    }
+
+    /// Ask Pearl in the composer, and send.
+    private func ask(_ words: String) {
+        let field = app.textFields["chat-composer"]
+        tap(field, "the composer")
+        field.typeText(words)
+        tap(app.buttons["chat-send"], "Send")
+    }
+
     /// Home in light and dark, with the tree, to learn the screen.
     func testLookAtHome() {
         for scheme in ["light", "dark"] {

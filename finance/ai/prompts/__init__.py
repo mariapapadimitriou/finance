@@ -20,6 +20,8 @@ _REF = re.compile(r"^([a-z][a-z0-9_]*)@([1-9][0-9]*)$")
 # sha256 of each published prompt. A test fails if a file drifts from it.
 FROZEN = {
     "ask@1": "e06470208ef47093156b557a02fad63eac47bc2dbf393c30c04060241c405672",
+    # Phase 2 (2026-11-27): Ask Pearl's read-only tool loop, they/them.
+    "ask@2": "e29b7fc772c34dd026d14f09de000d2b6d2594a433b20c179260645f38aa3ebb",
 }
 
 

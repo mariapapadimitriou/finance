@@ -3,9 +3,14 @@ import Combine
 import os
 
 // Pearl chat (PC-01 to PC-13; note 1340:8893, THL-117, THL-139, THL-213,
-// THL-254): the logic, in plain types. No views, no UIKit and no
-// FoundationModels here, so ios/tools/check_chat.py compiles this file for
-// the Mac with Models.swift and runs the chat on a scripted model.
+// THL-254) and Ask Pearl (PC-20 to PC-26, THL-308): the logic, in plain
+// types. No views and no UIKit here, so ios/tools/check_chat.py compiles this
+// file for the Mac with Models.swift and runs the chat on a scripted model.
+//
+// THL-308 (AI Phase 2, 2026-11-27): no model ever runs on the phone, not
+// even as a fallback. Every iPhone asks Claude through Pearl's server
+// (`CloudBrain`, POST /api/ask), and Python works out every number. With no
+// server answer it falls back on `ScriptedBrain` and the server's own reading.
 //
 // Nothing changes until she confirms (product owner, 2026-11-15). That's
 // structural, not a promise:
@@ -33,6 +38,10 @@ struct ChatStart: Decodable {
     /// same reply so opening the chat is one trip to the server (2026-11-15).
     /// Nil from a server before that.
     let asks: ChatAsks?
+    /// Ask Pearl (THL-308): "on", "off" or "unasked" (PC-24 asks first).
+    let ask: String?
+    /// PC-21's Try asking card: four questions, each sent with one tap.
+    let examples: [String]?
 }
 
 /// The days she meant: "from the weekend" (PC-05), "from Sat–Sun" (PC-10).
@@ -211,6 +220,156 @@ struct PlanProposal: Decodable, Hashable {
 /// What a write endpoint says when the chat needs nothing back.
 struct ChatOK: Decodable {}
 
+// MARK: - Ask Pearl's answers (PC-22, PC-26; finance/ask.py)
+
+/// PC-26b and PC-22: a month. This month compares with where she usually is
+/// by today; a past month says what was left at the end.
+struct MonthFact: Decodable, Hashable {
+    struct Top: Decodable, Hashable {
+        let category: String
+        let amount: Double
+        let share: Double
+    }
+    struct Change: Decodable, Hashable {
+        let category: String
+        let over: Double
+        let count: Int
+    }
+    let month: String
+    let name: String
+    let current: Bool
+    let moneyIn: Double
+    let spent: Double
+    let top: [Top]
+    let allowanceLeft: Double?
+    let overBy: Double?
+    let usualByNow: Double?
+    let day: Int?
+    let changes: [Change]
+
+    enum CodingKeys: String, CodingKey {
+        case month, name, current, spent, top, day, changes
+        case moneyIn = "money_in", allowanceLeft = "allowance_left", overBy = "over_by"
+        case usualByNow = "usual_by_now"
+    }
+}
+
+/// PC-26a: a shop this year, with a bar per month.
+struct MerchantFact: Decodable, Hashable {
+    struct Month: Decodable, Hashable {
+        let month: String
+        let label: String
+        let amount: Double
+        let now: Bool
+    }
+    let merchant: String
+    let year: Int
+    let total: Double
+    let visits: Int
+    let average: Double?
+    let months: [Month]
+    let query: String
+}
+
+/// PC-26c: up to 10 rows, and how many in all.
+struct SearchFact: Decodable, Hashable {
+    let query: String
+    let count: Int
+    let total: Double
+    let rows: [BriefTransaction]
+    let since: String?
+
+    enum CodingKeys: String, CodingKey { case query, count, total, rows, since }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        query = (try? c.decode(String.self, forKey: .query)) ?? ""
+        count = (try? c.decode(Int.self, forKey: .count)) ?? 0
+        total = (try? c.decode(Double.self, forKey: .total)) ?? 0
+        rows = (try? c.decodeIfPresent([Lenient<BriefTransaction>].self, forKey: .rows))?.compactMap { $0.value } ?? []
+        since = try? c.decodeIfPresent(String.self, forKey: .since)
+    }
+}
+
+/// PC-26d: each credit card by its nickname. `state` is "ok", "near" (80%
+/// of the limit or more: amber) or "over" (past it: red).
+struct CardsFact: Decodable, Hashable {
+    struct Card: Decodable, Hashable {
+        let name: String
+        let spent: Double
+        let balance: Double?
+        let limit: Double?
+        let used: Double?
+        let state: String
+        let due: String?
+    }
+    let cards: [Card]
+}
+
+/// PC-22: Pearl's suggestion, its own dashed card. Its one action only
+/// opens a screen ("See Dining out"); nothing in it can change anything.
+struct AskSuggestion: Hashable {
+    let text: String
+    let label: String
+    /// "category" (with `category` and `month`) or "cashflow" (with `query`).
+    let open: String
+    let category: String?
+    let month: String?
+    let query: String?
+}
+
+/// One line of POST /api/ask's stream (finance/ask.py).
+enum AskEvent {
+    case step(String)
+    case fact(kind: String, data: Data)
+    case text(String)
+    case reset
+    case words(String)
+    case suggestion(AskSuggestion)
+    case simple(until: String)
+    case couldnt
+    case done
+
+    /// A line of the stream, or nil for one it doesn't know.
+    static func parse(_ line: String) -> AskEvent? {
+        guard let raw = line.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: raw) as? [String: Any],
+              let type = obj["type"] as? String else { return nil }
+        switch type {
+        case "step": return .step(obj["text"] as? String ?? "")
+        case "fact":
+            guard let kind = obj["kind"] as? String, let data = obj["data"],
+                  let bytes = try? JSONSerialization.data(withJSONObject: data) else { return nil }
+            return .fact(kind: kind, data: bytes)
+        case "text": return .text(obj["text"] as? String ?? "")
+        case "reset": return .reset
+        case "words": return .words(obj["text"] as? String ?? "")
+        case "suggestion":
+            guard let text = obj["text"] as? String, let action = obj["action"] as? [String: Any],
+                  let label = action["label"] as? String, let open = action["open"] as? String else { return nil }
+            return .suggestion(AskSuggestion(text: text, label: label, open: open,
+                                             category: action["category"] as? String,
+                                             month: action["month"] as? String,
+                                             query: action["query"] as? String))
+        case "simple": return .simple(until: obj["until"] as? String ?? "")
+        case "couldnt": return .couldnt
+        case "done": return .done
+        default: return nil
+        }
+    }
+}
+
+/// POST /api/ask, line by line. Only reads: the server's tools are read-only.
+protocol ChatAsking {
+    func ask(_ text: String, plans: Bool) -> AsyncThrowingStream<AskEvent, Error>
+}
+
+/// The phone has no connection: Send waits until it's back (PC-23).
+struct ChatOffline: Error {}
+
+/// The server says Ask Pearl is off for her (turned off on another phone).
+struct ChatAskOff: Error {}
+
 // MARK: - Proposals
 
 /// Something Pearl proposes, held as a card in the chat. A value: holding one
@@ -330,10 +489,19 @@ struct ChatFindings {
     var trips: [TripAsk]?
     var patterns: [PatternAsk]?
     var plan: PlanProposal?
+    /// Ask Pearl's answers (PC-26).
+    var month: MonthFact?
+    var merchant: MerchantFact?
+    var search: SearchFact?
+    var cards: CardsFact?
 
     var isEmpty: Bool {
         tell == nil && spending == nil && subscriptions == nil && trips == nil && patterns == nil && plan == nil
+            && !hasFacts
     }
+
+    /// One of Ask Pearl's own answers: a fact card (PC-22, PC-26).
+    var hasFacts: Bool { month != nil || merchant != nil || search != nil || cards != nil }
 
     /// What ChatEngine.show makes cards or a plan of (PC-05 to PC-10, PC-12).
     var showsCards: Bool {
@@ -344,7 +512,7 @@ struct ChatFindings {
     }
 
     /// What ChatEngine.show answers in words (PC-04), the model's or the server's.
-    var answers: Bool { !showsCards && (spending != nil || subscriptions != nil || trips != nil) }
+    var answers: Bool { !showsCards && (spending != nil || subscriptions != nil || trips != nil || hasFacts) }
 }
 
 /// The model's tools, and everything they can touch: a reader, and the
@@ -360,13 +528,46 @@ actor ChatTools {
     /// What the tools have found so far, as each one returns, so the chat
     /// can show cards before the model has finished its sentence.
     private let onFound: (@Sendable (ChatFindings) -> Void)?
+    /// PC-23: the thinking step, naming the tool that's running.
+    private let onStep: (@Sendable (String) -> Void)?
 
     init(reader: ChatReader, allowsPlans: Bool, asks: ChatAsks? = nil,
-         onFound: (@Sendable (ChatFindings) -> Void)? = nil) {
+         onFound: (@Sendable (ChatFindings) -> Void)? = nil,
+         onStep: (@Sendable (String) -> Void)? = nil) {
         self.reader = reader
         self.allowsPlans = allowsPlans
         self.asks = asks
         self.onFound = onFound
+        self.onStep = onStep
+    }
+
+    /// The server is running a tool: "Looking at November…".
+    func step(_ label: String) {
+        guard !label.isEmpty else { return }
+        onStep?(label)
+    }
+
+    /// What one of the server's read-only tools found (POST /api/ask): a
+    /// fact card, whole. A kind it doesn't know is left out.
+    func record(kind: String, data: Data) {
+        let d = JSONDecoder()
+        switch kind {
+        case "month": found.month = try? d.decode(MonthFact.self, from: data)
+        case "merchant": found.merchant = try? d.decode(MerchantFact.self, from: data)
+        case "search": found.search = try? d.decode(SearchFact.self, from: data)
+        case "cards": found.cards = try? d.decode(CardsFact.self, from: data)
+        case "spending": found.spending = try? d.decode(SpendingAnswer.self, from: data)
+        case "subscriptions": found.subscriptions = try? d.decode(SubscriptionsAnswer.self, from: data)
+        case "tell": found.tell = try? d.decode(TellReply.self, from: data)
+        case "plan": found.plan = allowsPlans ? try? d.decode(PlanProposal.self, from: data) : nil
+        case "asks":
+            if let a = try? d.decode(ChatAsks.self, from: data) {
+                found.trips = a.trips
+                found.patterns = a.patterns
+            }
+        default: return
+        }
+        onFound?(found)
     }
 
     func tell(_ text: String, category: String? = nil, days: [String]? = nil, people: [String]? = nil,
@@ -464,6 +665,17 @@ enum ChatMode: String {
 struct BrainReply {
     var text: String?
     var echo: String?
+    /// PC-22: Pearl's suggestion, its own dashed card.
+    var suggestion: AskSuggestion? = nil
+    /// PC-23: past the monthly or daily cap, the day answers are full again
+    /// ("December 1", "tomorrow"): one quiet line per chat.
+    var simple: String? = nil
+    /// PC-23: Pearl couldn't answer (the model failed, refused or was unsure).
+    var couldnt = false
+    /// Words from Ask Pearl, shown as PC-22 draws an answer.
+    var cloud = false
+    /// The words are still coming.
+    var streaming = false
 }
 
 /// Reads what she said and uses the tools. It can only read and propose:
@@ -474,11 +686,14 @@ protocol PearlBrain {
     /// first words show at once.
     func respond(to text: String, mode: ChatMode?, tools: ChatTools,
                  partial: @escaping @Sendable (String) -> Void) async throws -> BrainReply
-    /// Load the model before her first words. Nothing off Apple Intelligence.
+    /// Get ready before her first words.
     func prewarm()
     /// A language model, worth asking when the server couldn't read her
     /// words. The scripted brain only asks the server what it already asked.
     var isModel: Bool { get }
+    /// Asked first, before the server's own reading of her words: Ask Pearl
+    /// on the server (THL-308) answers every question itself.
+    var asksFirst: Bool { get }
 }
 
 extension PearlBrain {
@@ -490,12 +705,57 @@ extension PearlBrain {
     func prewarm() {}
 
     var isModel: Bool { false }
+
+    var asksFirst: Bool { false }
+}
+
+/// Ask Pearl (THL-308, AI Phase 2): Claude, through Pearl's server. The
+/// server runs the read-only tools and Python works out every number; this
+/// reads the stream: the step, the fact cards whole, the words as they come.
+/// It holds only an asker (POST /api/ask) and the tools: nothing that writes.
+struct CloudBrain: PearlBrain {
+    let asker: ChatAsking
+    var plans = false
+
+    var isModel: Bool { true }
+    var asksFirst: Bool { true }
+
+    func respond(to text: String, mode: ChatMode?, tools: ChatTools) async throws -> BrainReply {
+        try await respond(to: text, mode: mode, tools: tools, partial: { _ in })
+    }
+
+    func respond(to text: String, mode: ChatMode?, tools: ChatTools,
+                 partial: @escaping @Sendable (String) -> Void) async throws -> BrainReply {
+        var reply = BrainReply(cloud: true)
+        var words = ""
+        for try await event in asker.ask(text, plans: plans) {
+            switch event {
+            case .step(let label): await tools.step(label)
+            case .fact(let kind, let data): await tools.record(kind: kind, data: data)
+            case .text(let more):
+                words += more
+                partial(words)
+            case .reset:
+                words = ""
+                partial(words)
+            case .words(let whole):
+                words = whole
+                partial(words)
+            case .suggestion(let s): reply.suggestion = s
+            case .simple(let until): reply.simple = until
+            case .couldnt: reply.couldnt = true
+            case .done: break
+            }
+        }
+        reply.text = words.isEmpty ? nil : words
+        return reply
+    }
 }
 
 /// The deterministic model: routes her words to one tool and leaves the
 /// reading of them to the server (finance/chat.py). For check_chat.py, for
-/// DEBUG's -pearl-chat-stub, and the fallback when Apple Intelligence can't
-/// answer (a guardrail, a refusal, a full context).
+/// Tell Pearl what you did, and the fallback when Ask Pearl's server can't
+/// answer at all.
 struct ScriptedBrain: PearlBrain {
     enum Route: Equatable { case tell, spending, subscriptions, trips, plan }
 
@@ -655,9 +915,33 @@ struct ChatExecutor {
 // MARK: - The words (note 1340:8893; A+ G7 boards)
 
 enum ChatWords {
-    static let placeholder = "Message Pearl"
-    /// PC-03 (TEXT-01).
-    static let onDevice = "On this iPhone only"
+    /// PC-21: the composer's prompt.
+    static let placeholder = "Ask Pearl"
+    /// PC-21: the start's hero.
+    static let hero = "Ask about your money"
+    static let tryAsking = "Try asking"
+    /// PC-24 (approved 2026-11-27; counsel reviews the wording, THL-117).
+    static let consentTitle = "Before you ask"
+    static let consentLine = "Pearl uses Claude, by Anthropic, to understand your questions. It never sends your account numbers or bank logins."
+    static let turnOn = "Turn on Ask Pearl"
+    static let notNow = "Not now"
+    /// PC-25.
+    static let offTitle = "Ask Pearl is off"
+    static let offLine = "Turn it on to ask about your money. Pearl uses Claude, never your account numbers or bank logins."
+    static let searchInstead = "Search instead"
+    /// PC-23: couldn't answer, then four things it can always do.
+    static let couldnt = "I can\u{2019}t answer that one yet. Here\u{2019}s what I can do:"
+    /// PC-23: offline. The chat stays; Send waits.
+    static let offline = "You\u{2019}re offline. Ask again when you\u{2019}re back."
+    /// PC-23 (Option A): one quiet line per chat past the cap. Never
+    /// dollars, tokens or the word "limit".
+    static func simple(_ until: String) -> String { "Pearl\u{2019}s keeping answers simple until \(until)." }
+    /// PC-22's overline: "November so far".
+    static func soFar(_ name: String) -> String { "\(name) so far" }
+    /// PC-26a's overline: "Loblaws · 2026".
+    static func shopYear(_ shop: String, _ year: Int) -> String { "\(shop) \u{00B7} \(year)" }
+    /// "See all 38 in Cash flow".
+    static func seeAll(_ n: Int) -> String { "See all \(n) in Cash flow" }
     static let nothingChanged = "Okay, nothing changed."
     /// G7-Chat: under the dots while Pearl works it out.
     static let working = "Pearl is working it out"
@@ -872,12 +1156,39 @@ struct Deck {
     }
 }
 
+/// PC-22, PC-26: one of Ask Pearl's answers. A class, so the screen stays
+/// small on the stack (check_stack.py).
+final class ChatAnswer {
+    let said: String?
+    let text: String
+    let found: ChatFindings
+    let suggestion: AskSuggestion?
+    /// PC-23's quiet line, on the first answer past the cap only.
+    let simple: String?
+    let streaming: Bool
+
+    init(said: String?, text: String, found: ChatFindings, suggestion: AskSuggestion? = nil,
+         simple: String? = nil, streaming: Bool = false) {
+        self.said = said
+        self.text = text
+        self.found = found
+        self.suggestion = suggestion
+        self.simple = simple
+        self.streaming = streaming
+    }
+}
+
 /// What the chat shows: one exchange at a time, as the frames draw it.
 indirect enum ChatScreen {
     /// PC-03.
     case start
-    /// Her words, while Pearl works it out (G7-Chat: the dots).
-    case thinking(said: String)
+    /// Her words, while Pearl works it out (G7-Chat: the dots), and the
+    /// step naming the tool that's running (PC-23: "Looking at November…").
+    case thinking(said: String, step: String?)
+    /// PC-22, PC-26: Ask Pearl's answer: the words, the fact cards, a suggestion.
+    case answer(ChatAnswer)
+    /// PC-23: couldn't answer, and four things it can always do.
+    case couldnt(said: String)
     /// PC-04: her words, Pearl's answer, the totals and the rows behind it.
     case reply(said: String?, text: String, answer: SpendingAnswer?, rows: [BriefTransaction])
     /// PC-05, PC-06, PC-08, PC-09.
@@ -928,6 +1239,18 @@ final class ChatEngine: ObservableObject {
     private var shownEarly = false
     /// "Set Nov 18": today, for PC-13's card.
     var today: () -> String = { Format.isoDay(Date()) }
+    /// Ask Pearl (THL-308): "on", "off" or "unasked", from GET /api/chat;
+    /// nil until it has answered. Set to "on" by the tab's Turn on.
+    @Published var askState: String?
+    /// PC-21's four questions.
+    @Published private(set) var examples: [String] = []
+    /// PC-23: the quiet line is said once per chat.
+    private var simpleShown = false
+    /// PC-23 (offline): what she asked when the connection dropped, for the
+    /// composer to hold until it's back.
+    @Published var waiting: String?
+    /// Whether the phone has a connection (NWPathMonitor, in the view).
+    var isOnline: @MainActor () -> Bool = { true }
 
     init(brain: PearlBrain, reader: ChatReader, executor: ChatExecutor, allowsPlans: Bool,
          describe: @escaping (Error) -> String = { $0.localizedDescription }) {
@@ -951,6 +1274,9 @@ final class ChatEngine: ObservableObject {
         let began = DispatchTime.now().uptimeNanoseconds
         guard let start = try? await reader.start() else { return }
         ChatLog.note("open", since: began)
+        // A server before THL-308 says nothing: Ask Pearl isn't there yet.
+        askState = start.ask ?? "unasked"
+        examples = start.examples ?? []
         if start.suggest, start.asks == nil, let more = try? await reader.asks() {
             asks = more
         } else {
@@ -959,6 +1285,13 @@ final class ChatEngine: ObservableObject {
         guard start.suggest, let asks = asks else { return }
         let cards = asks.patterns.map(ProposedAction.pattern) + asks.trips.map(ProposedAction.trip)
         if !cards.isEmpty { screen = .cards(Deck(cards: cards, lead: nil, echo: nil)) }
+    }
+
+    /// Ask Pearl's state again (turned on or off in Profile › Privacy).
+    func refreshAsk() async {
+        guard let start = try? await reader.start() else { return }
+        askState = start.ask ?? "unasked"
+        examples = start.examples ?? []
     }
 
     /// PC-03's starters. Find subscriptions and Was this a trip? answer at
@@ -978,6 +1311,11 @@ final class ChatEngine: ObservableObject {
     func send(_ text: String) async {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !busy else { return }
+        // PC-23: offline, the chat stays and Send waits.
+        guard isOnline() else {
+            waiting = text
+            return
+        }
         let m = mode
         mode = nil
         await run(said: text, text: text, mode: m)
@@ -1006,15 +1344,18 @@ final class ChatEngine: ObservableObject {
         mode = nil
         asks = nil
         last = nil
+        simpleShown = false
+        waiting = nil
         restart()
         await open()
     }
 
     private func run(said: String?, text: String, mode: ChatMode?) async {
+        let before = screen
         self.said = said
         last = (said, text, mode)
         error = nil
-        screen = .thinking(said: said ?? text)
+        screen = .thinking(said: said ?? text, step: nil)
         turn += 1
         let now = turn
         working = now
@@ -1023,6 +1364,12 @@ final class ChatEngine: ObservableObject {
         defer { if working == now { working = nil } }
         let began = DispatchTime.now().uptimeNanoseconds
         var reply = BrainReply()
+        // Ask Pearl (THL-308): a question goes to the server's Claude first;
+        // Tell Pearl what you did and the starters read as before.
+        if brain.asksFirst && (mode == nil || mode == .ask) {
+            await ask(said: said, text: text, mode: mode, before: before, turn: now, began: began)
+            return
+        }
         // 2026-11-15: the server first. It reads her words itself and works
         // out the answer (totals, the cards); when it could, that's the
         // answer and the model isn't asked at all. The model is for words the
@@ -1051,7 +1398,7 @@ final class ChatEngine: ObservableObject {
             ChatLog.note("turn (model)", since: began)
         } catch {
             ChatLog.note("turn failed", since: began)
-            // Apple Intelligence couldn't (a guardrail, a refusal, a full
+            // The model couldn't (a guardrail, a refusal, a full
             // context). What a tool already found stands; else the server's
             // own reading, from above; else it reads her words again.
             if (await tools.found).isEmpty {
@@ -1090,6 +1437,71 @@ final class ChatEngine: ObservableObject {
         show(f, reply, said: said)
     }
 
+    /// Ask Pearl's turn (PC-21 to PC-26): the step while the server works,
+    /// the fact cards whole as each tool returns, the words as they come.
+    /// Offline, the chat stays as it was and the words wait (PC-23); with no
+    /// answer from the server at all, its own reading of her words.
+    private func ask(said: String?, text: String, mode: ChatMode?, before: ChatScreen,
+                     turn now: Int, began: UInt64) async {
+        let tools = ChatTools(reader: reader, allowsPlans: allowsPlans, asks: asks, onFound: { [weak self] f in
+            Task { @MainActor in self?.found(f, turn: now) }
+        }, onStep: { [weak self] label in
+            Task { @MainActor in self?.stepping(label, turn: now) }
+        })
+        var reply: BrainReply
+        do {
+            reply = try await brain.respond(to: text, mode: mode, tools: tools) { [weak self] words in
+                Task { @MainActor in self?.saying(words, turn: now) }
+            }
+            ChatLog.note("turn (ask)", since: began)
+        } catch is ChatOffline {
+            guard turn == now else { return }
+            working = nil
+            screen = before
+            waiting = said ?? text
+            return
+        } catch is ChatAskOff {
+            guard turn == now else { return }
+            working = nil
+            screen = before
+            askState = "off"
+            return
+        } catch {
+            ChatLog.note("turn (ask) failed", since: began)
+            // What a tool already found stands; else the server's own
+            // reading of her words; else G7-Unavailable's Try again.
+            let got = await tools.found
+            guard got.isEmpty else {
+                guard turn == now else { return }
+                working = nil
+                show(got, BrainReply(cloud: true), said: said)
+                return
+            }
+            let first = ChatTools(reader: reader, allowsPlans: allowsPlans, asks: asks)
+            let answered = await serverAnswered(text, mode, first)
+            guard turn == now else { return }
+            working = nil
+            let f = await first.found
+            if answered, !f.isEmpty { show(f, BrainReply(), said: said) } else { screen = .failed(said: said ?? text) }
+            return
+        }
+        guard turn == now else { return }
+        working = nil
+        if let until = reply.simple {
+            reply.simple = simpleShown ? nil : until
+            simpleShown = true
+        }
+        let f = await tools.found
+        if shownEarly && !isUntouched { return }
+        show(f, reply, said: said)
+    }
+
+    /// PC-23: the step under the dots, naming the tool that's running.
+    private func stepping(_ label: String, turn now: Int) {
+        guard working == now, turn == now, case .thinking(let said, _) = screen else { return }
+        screen = .thinking(said: said, step: label)
+    }
+
     /// The server's own reading of her words (ScriptedBrain's route): true
     /// when that's an answer. Not when it couldn't tell which spending, or
     /// when what she said fits none of the open ones she has.
@@ -1114,7 +1526,7 @@ final class ChatEngine: ObservableObject {
         guard !busy else { return false }
         switch screen {
         case .cards(let d): return d.index == 0 && d.done.isEmpty
-        case .plan, .thinking: return true
+        case .plan, .thinking, .answer: return true
         default: return false
         }
     }
@@ -1124,6 +1536,14 @@ final class ChatEngine: ObservableObject {
     private func found(_ f: ChatFindings, turn now: Int) {
         guard working == now, turn == now else { return }
         latest = f
+        if brain.asksFirst, !f.showsCards, f.hasFacts {
+            // PC-23 (streaming): the figures land whole, the words follow.
+            switch screen {
+            case .thinking, .answer: show(f, BrainReply(cloud: true, streaming: true), said: said)
+            default: break
+            }
+            return
+        }
         guard case .thinking = screen, f.showsCards else { return }
         show(f, BrainReply(), said: said)
         shownEarly = true
@@ -1131,7 +1551,17 @@ final class ChatEngine: ObservableObject {
 
     /// The model's answer so far, on PC-04 as it comes.
     private func saying(_ words: String, turn now: Int) {
-        guard working == now, turn == now, !shownEarly, latest.answers else { return }
+        guard working == now, turn == now, !shownEarly else { return }
+        if brain.asksFirst {
+            switch screen {
+            case .thinking, .answer:
+                guard !words.isEmpty || latest.hasFacts else { return }
+                show(latest, BrainReply(text: words, cloud: true, streaming: true), said: said)
+            default: break
+            }
+            return
+        }
+        guard latest.answers else { return }
         switch screen {
         case .thinking, .reply: show(latest, BrainReply(text: words), said: said)
         default: break
@@ -1140,6 +1570,10 @@ final class ChatEngine: ObservableObject {
 
     /// The findings, as the screen the frames draw for them.
     func show(_ f: ChatFindings, _ reply: BrainReply, said: String?) {
+        if reply.couldnt {
+            screen = .couldnt(said: said ?? last?.text ?? "")
+            return
+        }
         if let tell = f.tell {
             if tell.proposals.isEmpty {
                 screen = .nothing(line: tell.line)
@@ -1156,6 +1590,18 @@ final class ChatEngine: ObservableObject {
         }
         if let p = f.plan, !p.nothing {
             screen = .plan(said: said ?? "", p)
+            return
+        }
+        if reply.cloud {
+            // PC-22, PC-26: Ask Pearl's words, its fact cards and a suggestion.
+            let text = reply.text ?? (reply.streaming ? "" : (f.spending?.line ?? f.subscriptions?.line
+                                                            ?? (f.trips != nil ? ChatWords.noTrip : "")))
+            if text.isEmpty && f.isEmpty && !reply.streaming {
+                screen = .couldnt(said: said ?? last?.text ?? "")
+                return
+            }
+            screen = .answer(ChatAnswer(said: said, text: text, found: f, suggestion: reply.suggestion,
+                                        simple: reply.simple, streaming: reply.streaming))
             return
         }
         if let a = f.spending {

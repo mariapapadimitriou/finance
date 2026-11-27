@@ -317,11 +317,11 @@ struct TransactionsView: View {
     /// puts the card on that month.
     private func focus(on request: CashFlowFocus.Request) {
         let reload = filters.needsServer
-        query = ""
+        query = request.query ?? ""
         searching = false
         showCalendar = false
         cardFilter = nil
-        filters = TxFilters(categories: [request.category])
+        filters = request.category.map { TxFilters(categories: [$0]) } ?? TxFilters()
         if let m = request.month, m != month { month = m; Task { await loadCard() } }
         if reload { Task { await self.reload() } }
     }
@@ -2807,10 +2807,13 @@ final class CashFlowFocus: ObservableObject {
     static let shared = CashFlowFocus()
 
     struct Request: Equatable {
-        /// The category's name, as Filters lists it ("Takeout").
-        let category: String
+        /// The category's name, as Filters lists it ("Takeout"); nil for
+        /// every category.
+        let category: String?
         /// "2026-11"; nil keeps the month Cash flow is on.
         let month: String?
+        /// Ask Pearl's "See all 38 in Cash flow" (THL-308): Search, with these words.
+        var query: String? = nil
     }
 
     /// The waiting request; Cash flow sets it back to nil once it has it.
@@ -2818,5 +2821,15 @@ final class CashFlowFocus: ObservableObject {
 
     func show(category: String, month: String? = nil) {
         request = Request(category: category, month: month)
+    }
+
+    /// Ask Pearl's "See October in Cash flow": the card on that month.
+    func show(month: String) {
+        request = Request(category: nil, month: month)
+    }
+
+    /// Ask Pearl's "See all 12 in Cash flow": Search with these words.
+    func search(_ words: String) {
+        request = Request(category: nil, month: nil, query: words)
     }
 }

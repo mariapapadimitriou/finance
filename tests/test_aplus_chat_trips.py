@@ -74,13 +74,16 @@ class TestChatLooksLikeG7(unittest.TestCase):
         self.assertNotIn("ignoresSafeArea(.keyboard", self.view)
 
     def test_working_dots_and_failed_try_again(self):
-        self.assertIn("ChatWorking()", self.view)
+        self.assertIn("ChatWorking()", read("Chat", "ChatAsk.swift"))
         self.assertIn('Button("Try again", action: retry)', self.view)
         self.assertIn("await engine.retry()", self.view)
 
-    def test_unavailable_is_a_primary_button(self):
-        self.assertIn('"It runs on this iPhone only, and needs a newer one."', self.view)
-        self.assertIn('Button("Search instead", action: onSearch)', self.view)
+    def test_off_turns_on_with_a_primary_button(self):
+        # PC-25 (THL-308): Turn on Ask Pearl is the Primary; Search instead is quiet.
+        ask = code(read("Chat", "ChatAsk.swift"))
+        self.assertIn("Button(ChatWords.turnOn, action: turnOn)", ask)
+        self.assertIn("ChatQuietLink(title: ChatWords.searchInstead, action: search)", ask)
+        self.assertNotIn("this iPhone only", self.view)
 
 
 class TestUndoInChat(unittest.TestCase):

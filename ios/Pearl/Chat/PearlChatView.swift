@@ -1,20 +1,28 @@
+import Network
 import SwiftUI
 
 /// Pearl chat (note 1340:8893, THL-117, THL-139, THL-213, THL-254), the
-/// Pearl tab since A+ (REDESIGN-02, -03, -14): a full tab screen with the
-/// tab bar showing. The conversation stays across tab switches; "New chat"
-/// asks first on a Pearl sheet, then clears it. One exchange at a time, as
-/// the Claude Design boards draw it (AP-Chat, G7-*):
+/// Pearl tab since A+ (REDESIGN-02, -03, -14), and Ask Pearl on every iPhone
+/// since THL-308 (PC-20 A: the tab is on every phone). A full tab screen with
+/// the tab bar showing. The conversation stays across tab switches; "New
+/// chat" asks first on a Pearl sheet, then clears it. One exchange at a time,
+/// as the Claude Design boards draw it (AP-Chat, G7-*, AI2-*):
 ///
-/// PC-03  AP-Chat / G7-Chat 1  "Pearl", Start with…, On this iPhone only, Message Pearl
-///        G7-Chat 2            typing: the composer rides just above the keyboard
-///        G7-Chat 3            her bubble, the dots, "Pearl is working it out"
-/// PC-04  G7-Chat 4            an answer: the line, its totals, the rows (each opens its page)
+/// PC-24  AI2-Privacy 1        first open: Before you ask · Turn on Ask Pearl · Not now
+/// PC-25  AI2-Switch 5         off: Ask Pearl is off · Turn on Ask Pearl · Search instead
+/// PC-21  AI2-Start 1          the hero, Try asking (four, one tap each), Tell Pearl what you did, Ask Pearl
+///        AI2-Start 3          typing: the composer rides just above the keyboard
+/// PC-23  AI2-States 1         her bubble, the dots, the step naming the tool
+///        AI2-States 2         streaming: the figures whole, the words as they come
+///        AI2-States 3         couldn't answer · four things it can always do
+///        AI2-States 4         offline: the banner, the chat stays, Send waits
+///        AI2-States 5         past the cap: one quiet line per chat
+/// PC-22  AI2-Answer 1         an answer: the words, a fact card, a SUGGESTION
+/// PC-26  AI2-Types            a shop, a month, a search, credit cards (ChatAsk.swift)
 /// PC-05/06/08/09 G7-Tell, G7-TellMore  the cards (ChatCards.swift)
 /// PC-07  G7-TellMore 1        "Sorted 7. 2 left for later." · 2 back in Needs a look · See the 2
 /// PC-10  G7-TellMore 4        couldn't match · Tell it differently
-/// PC-11  G7-Unavailable 1     needs Apple Intelligence · Search instead (the tab stays; the bar keeps 5)
-///        G7-Unavailable 2     couldn't answer · Try again
+///        G7-Unavailable 2     the server couldn't answer · Try again
 ///        G7-Unavailable 3     Start a new chat? (a Pearl sheet)
 /// PC-12  G7-Confirm 1         a plan to set: Set it · Not now
 /// PC-13  G7-Confirm 2         "Done. Dining out plan set to $220 a month." · See it in Your plan · toast with Undo
@@ -24,15 +32,25 @@ import SwiftUI
 struct PearlChatView: View {
     @EnvironmentObject private var app: AppModel
     @StateObject private var engine: ChatEngine
+    @StateObject private var connection = ChatConnection()
     @State private var text = ""
     @FocusState private var composing: Bool
     @State private var path: [Route] = []
-    @State private var available = PearlIntelligence.available
     /// Opened once: the conversation then stays until New chat.
     @State private var opened = false
     @State private var askingNewChat = false
-    /// PC-11's Search instead: Cash flow's search.
+    /// PC-24 / PC-25's Turn on Ask Pearl, on its way.
+    @State private var turningOn = false
+    @State private var turnOnError: String?
+    /// PC-24's Not now: Ask Pearl stays off and nothing was sent. Kept on
+    /// this phone only; the tab then shows PC-25.
+    @State private var notNow = UserDefaults.standard.bool(forKey: PearlChatView.notNowKey)
+    /// PC-23 (offline): her words wait in the composer until the phone is back.
+    @State private var holding = false
+    /// PC-25's Search instead, and every "in Cash flow" link: the Cash flow tab.
     let onSearch: () -> Void
+
+    static let notNowKey = "pearl.ask.notNow"
 
     enum Route: Hashable {
         case transaction(String)
@@ -43,6 +61,9 @@ struct PearlChatView: View {
         case plan
     }
 
+    /// What the tab shows before the chat: Ask Pearl's consent (THL-308).
+    enum Gate { case loading, consent, off, on }
+
     /// PC-12/PC-13 plans in chat. Your plan is parked with Save (product
     /// owner, 2026-11-18), so the chat never offers a plan card, never links
     /// "See it in Your plan" and never opens it while YourPlanGate.shown is off.
@@ -50,19 +71,30 @@ struct PearlChatView: View {
 
     init(api: APIClient, describe: @escaping (Error) -> String, onSearch: @escaping () -> Void) {
         _engine = StateObject(wrappedValue: ChatEngine(
-            brain: PearlIntelligence.brain(plans: Self.plans), reader: ChatReader(APIChatReading(api: api)),
+            brain: CloudBrain(asker: APIChatAsking(api: api), plans: Self.plans),
+            reader: ChatReader(APIChatReading(api: api)),
             executor: ChatExecutor(writer: APIChatWriting(api: api)), allowsPlans: Self.plans,
             describe: describe))
         self.onSearch = onSearch
+    }
+
+    private var gate: Gate {
+        switch engine.askState {
+        case nil: return .loading
+        case "on"?: return .on
+        case "off"?: return .off
+        default: return notNow ? .off : .consent
+        }
     }
 
     var body: some View {
         NavigationStack(path: $path) {
             VStack(spacing: 0) {
                 ChatTop(large: largeTitle) { askingNewChat = true }
-                content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                if available {
-                    ChatComposer(text: $text, composing: $composing, onDevice: isStart, off: isThinking, send: send)
+                if gate == .on && (holding || !connection.online) { AskOfflineBanner() }
+                gated.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                if gate == .on {
+                    ChatComposer(text: $text, composing: $composing, off: isThinking, send: send)
                 }
             }
             .nacreScreen(.nacre)
@@ -83,10 +115,28 @@ struct PearlChatView: View {
             }
         }
         .task {
-            available = PearlIntelligence.available
-            guard available, !opened else { return }
+            engine.isOnline = { [connection] in connection.online }
+            guard !opened else { return }
             opened = true
             await engine.open()
+        }
+        .onAppear {
+            // Ask Pearl may have been turned on or off in Profile › Privacy.
+            if opened, gate != .on { Task { await engine.refreshAsk() } }
+        }
+        .onChange(of: connection.online) { online in
+            // PC-23: Send waited; the phone is back.
+            if online && holding {
+                holding = false
+                send()
+            }
+        }
+        .onChange(of: engine.waiting) { waiting in
+            // The connection dropped as she sent: her words back in the composer.
+            guard let waiting = waiting else { return }
+            engine.waiting = nil
+            text = waiting
+            holding = true
         }
         .sheet(isPresented: $askingNewChat) {
             // G7-Unavailable 3 (REDESIGN-14): asks first, on a Pearl sheet.
@@ -96,6 +146,7 @@ struct PearlChatView: View {
                            onConfirm: {
                                askingNewChat = false
                                text = ""
+                               holding = false
                                composing = false
                                path = []
                                Task { await engine.newChat() }
@@ -103,7 +154,7 @@ struct PearlChatView: View {
                            onClose: { askingNewChat = false })
         }
         .onChange(of: engine.mode) { mode in
-            // Tell Pearl what you did · Ask about my spending: her words next.
+            // Tell Pearl what you did: her words next.
             if mode != nil { composing = true }
         }
     }
@@ -120,45 +171,72 @@ struct PearlChatView: View {
         return false
     }
 
-    /// AP-Chat: "Pearl" as a large title on the start and where Apple
-    /// Intelligence can't run; over an exchange, "Pearl" inline and centred
-    /// with New chat on the right. No Close: it's a tab.
-    private var largeTitle: Bool { !available || isStart }
+    /// AP-Chat, AI2-*: "Pearl" as a large title on the start, on Before you
+    /// ask and while Ask Pearl is off; over an exchange, "Pearl" inline and
+    /// centred with New chat on the left. No Close: it's a tab.
+    private var largeTitle: Bool { gate != .on || isStart }
 
     // MARK: The screens
 
-    @ViewBuilder private var content: some View {
-        if !available {
-            ChatUnavailable(onSearch: onSearch)
-        } else {
-            switch engine.screen {
-            case .start:
-                ChatStarters { mode in Task { await engine.pick(mode) } }
-            case .thinking(let said):
-                ScrollView { VStack(spacing: 0) { ChatYou(text: said); ChatWorking() }.chatPage() }
-            case .reply(let said, let text, let answer, let rows):
-                ChatReply(said: said, text: text, answer: answer, rows: rows)
-            case .cards(let deck):
-                ChatDeckView(engine: engine, deck: deck)
-            case .sorted(let sorted, let left):
-                ChatSorted(said: engine.heard, sorted: sorted, left: left) { path.append(.needsALook) }
-            case .nothing(let line):
-                ChatNothing(said: engine.heard, line: line) {
-                    // PC-10's Tell it differently puts her back in the composer.
-                    engine.restart()
-                    engine.mode = .tell
-                    composing = true
-                }
-            case .plan(let said, let p):
-                ChatPlanAsk(engine: engine, said: said, plan: p)
-            case .done(let said, let notes):
-                ChatDone(said: said, notes: notes) { link in path.append(route(link)) }
-            case .noChange(let said, let plan):
-                ChatNoChange(said: said, plan: plan)
-            case .failed(let said):
-                ChatFailed(said: said, busy: engine.busy) { Task { await engine.retry() } }
-            }
+    @ViewBuilder private var gated: some View {
+        switch gate {
+        case .loading:
+            Color.clear
+        case .consent:
+            AskConsent(busy: turningOn, error: turnOnError, turnOn: turnOn, notNow: {
+                // PC-24's Not now: off, and nothing is sent.
+                notNow = true
+                UserDefaults.standard.set(true, forKey: Self.notNowKey)
+            })
+        case .off:
+            AskOff(busy: turningOn, error: turnOnError, turnOn: turnOn, search: onSearch)
+        case .on:
+            content
         }
+    }
+
+    /// Each screen erased on its own (check_stack.py): fifteen kinds of
+    /// screen in one switch made a 64 KB frame.
+    private var content: AnyView {
+        switch engine.screen {
+        case .start:
+            return AnyView(AskStart(examples: examples, ask: { q in ask(q) }, tell: { engine.mode = .tell }))
+        case .thinking(let said, let step):
+            return AnyView(AskThinking(said: said, step: step))
+        case .answer(let answer):
+            return AnyView(AskAnswerView(answer: answer, open: open))
+        case .couldnt(let said):
+            return AnyView(AskCouldnt(said: said, examples: examples, ask: { q in ask(q) }, search: onSearch))
+        case .reply(let said, let text, let answer, let rows):
+            return AnyView(ChatReply(said: said, text: text, answer: answer, rows: rows))
+        case .cards(let deck):
+            return AnyView(ChatDeckView(engine: engine, deck: deck))
+        case .sorted(let sorted, let left):
+            return AnyView(ChatSorted(said: engine.heard, sorted: sorted, left: left) { path.append(.needsALook) })
+        case .nothing(let line):
+            return AnyView(ChatNothing(said: engine.heard, line: line) {
+                // PC-10's Tell it differently puts her back in the composer.
+                engine.restart()
+                engine.mode = .tell
+                composing = true
+            })
+        case .plan(let said, let p):
+            return AnyView(ChatPlanAsk(engine: engine, said: said, plan: p))
+        case .done(let said, let notes):
+            return AnyView(ChatDone(said: said, notes: notes) { link in path.append(route(link)) })
+        case .noChange(let said, let plan):
+            return AnyView(ChatNoChange(said: said, plan: plan))
+        case .failed(let said):
+            return AnyView(ChatFailed(said: said, busy: engine.busy) { Task { await engine.retry() } })
+        }
+    }
+
+    /// PC-21's four questions; a server from before THL-308 sends none.
+    private var examples: [String] {
+        engine.examples.isEmpty
+            ? ["How\u{2019}s this month going?", "Where did my money go last month?",
+               "When are my cards due?", "Any subscriptions I forgot?"]
+            : engine.examples
     }
 
     /// Where a confirmation lives. PC-13's "See it in Your plan" opens Your
@@ -171,10 +249,60 @@ struct PearlChatView: View {
         }
     }
 
+    /// An answer's link: a transaction's page, or Cash flow on what it found.
+    /// Each only opens a screen; nothing changes.
+    private func open(_ link: AskLink) {
+        switch link {
+        case .transaction(let id):
+            path.append(.transaction(id))
+        case .category(let name, let month):
+            CashFlowFocus.shared.show(category: name, month: month)
+            onSearch()
+        case .search(let words):
+            CashFlowFocus.shared.search(words)
+            onSearch()
+        case .month(let month):
+            CashFlowFocus.shared.show(month: month)
+            onSearch()
+        }
+    }
+
+    /// PC-24 / PC-25: Turn on Ask Pearl, stored on the server with its time.
+    private func turnOn() {
+        turningOn = true
+        turnOnError = nil
+        Task {
+            defer { turningOn = false }
+            do {
+                let _: Privacy = try await app.api.put("api/privacy/consents",
+                                                       ["key": "ai_ask", "value": true, "source": "chat"])
+                notNow = false
+                UserDefaults.standard.set(false, forKey: Self.notNowKey)
+                engine.askState = "on"
+            } catch {
+                turnOnError = app.handle(error) ?? "Couldn\u{2019}t turn it on. Try again."
+            }
+        }
+    }
+
+    /// A question tapped on PC-21 or PC-23: sent at once, or held while offline.
+    private func ask(_ question: String) {
+        engine.mode = nil
+        text = question
+        send()
+    }
+
     private func send() {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        // PC-23: offline, the chat stays and Send waits with her words.
+        guard connection.online else {
+            holding = true
+            composing = false
+            return
+        }
         let said = text
         text = ""
+        holding = false
         composing = false
         Task { await engine.send(said) }
     }
@@ -218,37 +346,6 @@ private struct ChatTop: View {
             .frame(height: ProfileSlot.size)
             .padding(.top, ProfileSlot.top)
         }
-    }
-}
-
-// MARK: - PC-03 · the start
-
-/// AP-Chat: START WITH, then the four starters on one card.
-private struct ChatStarters: View {
-    let pick: (ChatMode) -> Void
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                APSectionLabel(text: "Start with").padding(.top, 40)
-                APCard {
-                    starter("sparkles", "Tell Pearl what you did", nil, .tell)
-                    APSeparator(afterFace: false)
-                    starter("bag", "Ask about my spending", "A short answer, with the transactions behind it", .ask)
-                    APSeparator(afterFace: false)
-                    starter("tv", "Find subscriptions", nil, .subscriptions)
-                    APSeparator(afterFace: false)
-                    starter("airplane", "Was this a trip?", nil, .trips)
-                }
-            }
-            .chatPage()
-        }
-    }
-
-    private func starter(_ symbol: String, _ title: String, _ sub: String?, _ mode: ChatMode) -> some View {
-        Button { pick(mode) } label: { ChatStarterRow(symbol: symbol, title: title, sub: sub) }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("chat-starter-\(mode.rawValue)")
     }
 }
 
@@ -356,32 +453,7 @@ private struct ChatNothing: View {
     }
 }
 
-// MARK: - PC-11 · couldn't answer
-
-/// G7-Unavailable 1 (PC-11, from AI-15): where Apple Intelligence can't run
-/// (A+: the tab stays and the bar keeps five), or if it stops while open.
-private struct ChatUnavailable: View {
-    let onSearch: () -> Void
-
-    var body: some View {
-        VStack(spacing: 6) {
-            ChatIcon(symbol: "sparkles")
-            Text("Pearl chat needs Apple Intelligence")
-                .font(Nacre.title2).foregroundColor(Pearl.ink)
-                .multilineTextAlignment(.center)
-                .padding(.top, 8)
-                .accessibilityAddTraits(.isHeader)
-            Text("It runs on this iPhone only, and needs a newer one.")
-                .font(Nacre.subheadline).foregroundColor(Pearl.muted)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            Button("Search instead", action: onSearch)
-                .buttonStyle(APPrimaryButtonStyle())
-                .padding(.top, 18)
-        }
-        .padding(.horizontal, 36).padding(.top, 120)
-    }
-}
+// MARK: - G7-Unavailable 2 · the server couldn't answer
 
 /// G7-Unavailable 2: her bubble, "Pearl couldn't answer that. Try again.", Try again.
 private struct ChatFailed: View {
@@ -546,15 +618,14 @@ private struct ChatDoneCard: View {
 
 // MARK: - The composer
 
-/// "Message Pearl" (dictation is the keyboard's mic). A+ (REDESIGN-03, -09;
-/// G7-Chat): a capsule well with the 32 pt send arrow, off while empty and
-/// rose with words. It sits just above the keyboard while she types (the
-/// keyboard's safe area lifts it), and over the tab bar otherwise. The start
-/// has "On this iPhone only" over it; while Pearl works it out it's at 45%.
+/// "Ask Pearl" (PC-21; dictation is the keyboard's mic). A+ (REDESIGN-03,
+/// -09; G7-Chat, AI2-Start): a capsule well with the 32 pt send arrow, off
+/// while empty and rose with words. It sits just above the keyboard while
+/// she types (the keyboard's safe area lifts it), and over the tab bar
+/// otherwise; while Pearl works it out it's at 45%.
 private struct ChatComposer: View {
     @Binding var text: String
     var composing: FocusState<Bool>.Binding
-    let onDevice: Bool
     let off: Bool
     let send: () -> Void
 
@@ -563,11 +634,6 @@ private struct ChatComposer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if onDevice {
-                Text(ChatWords.onDevice.uppercased())
-                    .font(Nacre.label).tracking(0.78).foregroundColor(Pearl.muted)
-                    .padding(.horizontal, 4)
-            }
             HStack(spacing: 8) {
                 TextField("", text: $text, prompt: Text(ChatWords.placeholder).foregroundColor(Pearl.muted))
                     .font(Nacre.body).foregroundColor(Pearl.ink)
@@ -678,4 +744,47 @@ struct APIChatWriting: ChatWriting {
     func delete<T: Decodable>(_ path: String, query: [String: String]) async throws -> T {
         try await api.delete(path, query: query)
     }
+}
+
+/// Ask Pearl's answers (THL-308): POST /api/ask, line by line, through the
+/// app's APIClient. It only reads: the server's tools are read-only.
+struct APIChatAsking: ChatAsking {
+    let api: APIClient
+
+    func ask(_ text: String, plans: Bool) -> AsyncThrowingStream<AskEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    for try await line in api.lines("api/ask", ["text": text, "plans": plans]) {
+                        if let event = AskEvent.parse(line) { continuation.yield(event) }
+                    }
+                    continuation.finish()
+                } catch let error as APIError where error == .offline {
+                    continuation.finish(throwing: ChatOffline())
+                } catch let error as APIClient.StreamRefused where error.status == 403 {
+                    continuation.finish(throwing: ChatAskOff())
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+}
+
+/// Whether the phone has a connection (PC-23: offline, Send waits).
+@MainActor
+final class ChatConnection: ObservableObject {
+    @Published private(set) var online = true
+    private let monitor = NWPathMonitor()
+
+    init() {
+        monitor.pathUpdateHandler = { [weak self] path in
+            let up = path.status == .satisfied
+            Task { @MainActor in self?.online = up }
+        }
+        monitor.start(queue: DispatchQueue(label: "pearl.chat.connection"))
+    }
+
+    deinit { monitor.cancel() }
 }

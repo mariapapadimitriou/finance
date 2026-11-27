@@ -2,7 +2,8 @@
 reads: the chat's cards change things through the endpoints they already use
 (see finance/chat.py), and only when she taps Yes, Set it or Make it.
 
-* GET  /api/chat                   PB-01's "has a suggestion", the cards waiting, her categories and people
+* GET  /api/chat                   PB-01's "has a suggestion", the cards waiting, her categories and people,
+                                   Ask Pearl's state and PC-21's four questions
 * POST /api/chat/tell              {text, category?, days?, people?, ids?}: one proposal per transaction
 * POST /api/chat/spending          {text?, category?, month?, merchant?}: PC-04's answer
 * GET  /api/chat/subscriptions     Find subscriptions
@@ -72,8 +73,15 @@ def _chat_timing(response):
 
 @bp.get("/chat")
 def chat_start():
+    """PB-01's "has a suggestion" and the cards waiting, plus Ask Pearl
+    (THL-308): whether it's on, off or not asked yet (PC-24, PC-25), and the
+    four questions on PC-21's Try asking card."""
+    from . import ask, ask_api
     st = store()
-    return jsonify(chat.start(st, st.all_transactions(), _today()))
+    txns = st.all_transactions()
+    today = _today()
+    return jsonify({**chat.start(st, txns, today), "ask": ask_api.state_for(g.get("user")),
+                    "examples": ask.examples(st, txns, today)})
 
 
 @bp.post("/chat/tell")

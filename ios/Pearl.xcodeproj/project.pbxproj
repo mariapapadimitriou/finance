@@ -17,10 +17,10 @@
 		66E41A3E5E360919B07AC2D8 /* Outbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF48220EB3AFD0472A9CCB8D /* Outbox.swift */; };
 		D10AA7E5417A8A26C680693D /* PearlApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 955CF69FC7C7C7429408F5FF /* PearlApp.swift */; };
 		56A01A7EC04AF1CC683C4DAF /* ScreenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B670A9594CD7E9CE94448CBD /* ScreenStore.swift */; };
+		44FD519ABBE8B2D26FAD7224 /* ChatAsk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D9A63B5EE6DCFC2DAAFA854 /* ChatAsk.swift */; };
 		A96C766E6CE8931AFDC871B6 /* ChatCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85A9D07F156259B0B94A3CAB /* ChatCards.swift */; };
 		FF32C180C18201A202569156 /* ChatCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20A0D0FD5A01727DA3F07F48 /* ChatCore.swift */; };
 		03C5BD12B46EE6A1ED619D64 /* ChatParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51E7BD21699BBA2E21E6CE64 /* ChatParts.swift */; };
-		088D84ECF510C9FC9DB4B186 /* PearlBrainLive.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB90E2CB598406D79C7F278D /* PearlBrainLive.swift */; };
 		2A360C1D0A1AD308844AA631 /* PearlChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26786647CBF83A54D90263A5 /* PearlChatView.swift */; };
 		E0EF121505265AD17ACCEDF3 /* APlus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9748BC5C78670DA8DD76653C /* APlus.swift */; };
 		197D74CCEC857E06FD81CB2C /* Nacre.swift in Sources */ = {isa = PBXBuildFile; fileRef = A959B442690D5F84B1A63FFA /* Nacre.swift */; };
@@ -116,8 +116,8 @@
 		90C363208D3502F31EE967BE /* Fraunces-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 5123041A452F1AE9E3CD559D /* Fraunces-SemiBold.ttf */; };
 		436E75E984B4850BBF8D916E /* LinkKit in Frameworks */ = {isa = PBXBuildFile; productRef = A8318EFB1C654A8D1F922D04 /* LinkKit */; };
 		FC9DAA094F769A689A86048D /* ConsolidationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B637EA372818923C1246122 /* ConsolidationUITests.swift */; };
-		10399355D115163613F57163 /* FewerTapsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D05A9DA6D10CECA409A1541 /* FewerTapsUITests.swift */; };
 		408B467F717ECB889BDC7C17 /* FewerTapsHomeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A184ADCF6148308522099E40 /* FewerTapsHomeUITests.swift */; };
+		10399355D115163613F57163 /* FewerTapsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D05A9DA6D10CECA409A1541 /* FewerTapsUITests.swift */; };
 		F6559E96041ACD56C22514F9 /* GaugeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5091F4D530CD334A9D573D16 /* GaugeUITests.swift */; };
 		CDB1FB14ECC588122F3CE128 /* OverUnderUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73F2C41C66637E36C1D77050 /* OverUnderUITests.swift */; };
 		C4D449BAF44C6DF24B4410D9 /* PersonJourneysUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33A599E2CA5F3A2F441A0DAE /* PersonJourneysUITests.swift */; };
@@ -142,8 +142,8 @@
 		95D653871703BB6B6441A16C /* Pearl.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pearl.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A887B5D29B4EAB09648BF16 /* PearlUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PearlUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4B637EA372818923C1246122 /* ConsolidationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsolidationUITests.swift; sourceTree = "<group>"; };
-		1D05A9DA6D10CECA409A1541 /* FewerTapsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FewerTapsUITests.swift; sourceTree = "<group>"; };
 		A184ADCF6148308522099E40 /* FewerTapsHomeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FewerTapsHomeUITests.swift; sourceTree = "<group>"; };
+		1D05A9DA6D10CECA409A1541 /* FewerTapsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FewerTapsUITests.swift; sourceTree = "<group>"; };
 		5091F4D530CD334A9D573D16 /* GaugeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GaugeUITests.swift; sourceTree = "<group>"; };
 		73F2C41C66637E36C1D77050 /* OverUnderUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverUnderUITests.swift; sourceTree = "<group>"; };
 		33A599E2CA5F3A2F441A0DAE /* PersonJourneysUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonJourneysUITests.swift; sourceTree = "<group>"; };
@@ -162,10 +162,10 @@
 		BF48220EB3AFD0472A9CCB8D /* Outbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Outbox.swift; sourceTree = "<group>"; };
 		955CF69FC7C7C7429408F5FF /* PearlApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlApp.swift; sourceTree = "<group>"; };
 		B670A9594CD7E9CE94448CBD /* ScreenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenStore.swift; sourceTree = "<group>"; };
+		8D9A63B5EE6DCFC2DAAFA854 /* ChatAsk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAsk.swift; sourceTree = "<group>"; };
 		85A9D07F156259B0B94A3CAB /* ChatCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatCards.swift; sourceTree = "<group>"; };
 		20A0D0FD5A01727DA3F07F48 /* ChatCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatCore.swift; sourceTree = "<group>"; };
 		51E7BD21699BBA2E21E6CE64 /* ChatParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatParts.swift; sourceTree = "<group>"; };
-		EB90E2CB598406D79C7F278D /* PearlBrainLive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlBrainLive.swift; sourceTree = "<group>"; };
 		26786647CBF83A54D90263A5 /* PearlChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlChatView.swift; sourceTree = "<group>"; };
 		9748BC5C78670DA8DD76653C /* APlus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APlus.swift; sourceTree = "<group>"; };
 		A959B442690D5F84B1A63FFA /* Nacre.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nacre.swift; sourceTree = "<group>"; };
@@ -303,8 +303,8 @@
 			isa = PBXGroup;
 			children = (
 				4B637EA372818923C1246122 /* ConsolidationUITests.swift */,
-				1D05A9DA6D10CECA409A1541 /* FewerTapsUITests.swift */,
 				A184ADCF6148308522099E40 /* FewerTapsHomeUITests.swift */,
+				1D05A9DA6D10CECA409A1541 /* FewerTapsUITests.swift */,
 				5091F4D530CD334A9D573D16 /* GaugeUITests.swift */,
 				73F2C41C66637E36C1D77050 /* OverUnderUITests.swift */,
 				33A599E2CA5F3A2F441A0DAE /* PersonJourneysUITests.swift */,
@@ -359,10 +359,10 @@
 		9D76D747570B5103168D9E7B /* Chat */ = {
 			isa = PBXGroup;
 			children = (
+				8D9A63B5EE6DCFC2DAAFA854 /* ChatAsk.swift */,
 				85A9D07F156259B0B94A3CAB /* ChatCards.swift */,
 				20A0D0FD5A01727DA3F07F48 /* ChatCore.swift */,
 				51E7BD21699BBA2E21E6CE64 /* ChatParts.swift */,
-				EB90E2CB598406D79C7F278D /* PearlBrainLive.swift */,
 				26786647CBF83A54D90263A5 /* PearlChatView.swift */,
 			);
 			path = Chat;
@@ -641,10 +641,10 @@
 				66E41A3E5E360919B07AC2D8 /* Outbox.swift in Sources */,
 				D10AA7E5417A8A26C680693D /* PearlApp.swift in Sources */,
 				56A01A7EC04AF1CC683C4DAF /* ScreenStore.swift in Sources */,
+				44FD519ABBE8B2D26FAD7224 /* ChatAsk.swift in Sources */,
 				A96C766E6CE8931AFDC871B6 /* ChatCards.swift in Sources */,
 				FF32C180C18201A202569156 /* ChatCore.swift in Sources */,
 				03C5BD12B46EE6A1ED619D64 /* ChatParts.swift in Sources */,
-				088D84ECF510C9FC9DB4B186 /* PearlBrainLive.swift in Sources */,
 				2A360C1D0A1AD308844AA631 /* PearlChatView.swift in Sources */,
 				E0EF121505265AD17ACCEDF3 /* APlus.swift in Sources */,
 				197D74CCEC857E06FD81CB2C /* Nacre.swift in Sources */,
@@ -739,8 +739,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				FC9DAA094F769A689A86048D /* ConsolidationUITests.swift in Sources */,
-				10399355D115163613F57163 /* FewerTapsUITests.swift in Sources */,
 				408B467F717ECB889BDC7C17 /* FewerTapsHomeUITests.swift in Sources */,
+				10399355D115163613F57163 /* FewerTapsUITests.swift in Sources */,
 				F6559E96041ACD56C22514F9 /* GaugeUITests.swift in Sources */,
 				CDB1FB14ECC588122F3CE128 /* OverUnderUITests.swift in Sources */,
 				C4D449BAF44C6DF24B4410D9 /* PersonJourneysUITests.swift in Sources */,

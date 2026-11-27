@@ -17,6 +17,7 @@ Only `finance/ai/` imports `anthropic` (a test checks).
 
 from __future__ import annotations
 
+import contextlib
 import os
 from dataclasses import dataclass, field
 
@@ -103,13 +104,12 @@ class Client:
         self._client = anthropic.Anthropic(api_key=api_key, timeout=config.TIMEOUT_SECONDS,
                                            max_retries=config.MAX_RETRIES)
 
-    def send(self, *, model: str, system: str, messages: list, tools: list | None = None,
-             max_tokens: int = 1024, effort: str = "low") -> Reply:
-        safety.check(system, messages, tools or [])
-        params = build_request(model, system, messages, tools, max_tokens, effort)
+    @contextlib.contextmanager
+    def _mapped(self):
+        """The SDK's errors as a ClientError with a plain kind."""
         a = self._sdk
         try:
-            message = self._client.messages.create(**params)
+            yield
         except a.BadRequestError as e:
             raise ClientError("bad_request", e.message, getattr(e, "request_id", None)) from e
         except a.AuthenticationError as e:
@@ -127,7 +127,30 @@ class Client:
             raise ClientError("timeout", str(e)) from e
         except a.APIConnectionError as e:
             raise ClientError("connection", str(e)) from e
+
+    def send(self, *, model: str, system: str, messages: list, tools: list | None = None,
+             max_tokens: int = 1024, effort: str = "low") -> Reply:
+        safety.check(system, messages, tools or [])
+        params = build_request(model, system, messages, tools, max_tokens, effort)
+        with self._mapped():
+            message = self._client.messages.create(**params)
         return to_reply(message)
+
+    def stream(self, *, model: str, system: str, messages: list, tools: list | None = None,
+               max_tokens: int = 1024, effort: str = "low"):
+        """The same request, streamed (AI Phase 2, /api/ask): yields
+        ("text", words) as the answer is written, then ("reply", Reply) once
+        the message is whole. Tool inputs are small and never shown, so they
+        aren't streamed: the API validates them whole."""
+        safety.check(system, messages, tools or [])
+        params = build_request(model, system, messages, tools, max_tokens, effort)
+        with self._mapped():
+            with self._client.messages.stream(**params) as s:
+                for event in s:
+                    if event.type == "text":
+                        yield ("text", event.text)
+                message = s.get_final_message()
+        yield ("reply", to_reply(message))
 
 
 def from_env():

@@ -438,7 +438,9 @@ CONSENTS = {"terms": True, "read_data": True}
 # unticked) and anonymous usage data (CN-04, on unless she turns it off,
 # THL-138). O-07's "improve suggestions" box was dropped for that last one.
 REQUIRED = ("terms", "read_data", "insights")
-OPTIONAL = ("ai_sort", "tips", "analytics")
+# Ask Pearl (THL-308, PC-24, CN-06): an explicit opt-in on first use, never
+# chosen for her; /api/ask refuses anyone without it.
+OPTIONAL = ("ai_sort", "tips", "analytics", "ai_ask")
 KNOWN = REQUIRED + OPTIONAL
 DEFAULT_ON = {"analytics"}
 
