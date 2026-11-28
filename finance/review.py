@@ -570,6 +570,7 @@ def _for_store(st, today: str | None = None) -> dict:
     review = build(txns, today=today, dismissed=st.dismissed_reviews(),
                    splits=st.splits(), payer=st.payback_people(), found_on=found_on,
                    skipped=st.skipped_reviews(), recurring=st.recurring_transfers(), me=_me())
+    _charged_again(st, txns, review)
     from .categorize import merchant_key
     mixed = mixed_merchants(txns, st.confirmed_categories())
     names = {t.fingerprint: merchant_key(t.merchant or "") for t in txns}
@@ -635,10 +636,17 @@ def _for_store(st, today: str | None = None) -> dict:
     review["open"] += len(review["pattern_asks"])
     # TR-01: one Quick sort card for each likely trip, behind the same switch.
     from . import trips
-    review["trip_asks"] = trips.candidates(st, txns, today or core_api._today_iso()) \
+    # TR-20 (AI4-PastTrips, THL-309): older trips after the new ones, at
+    # most PAST_A_DAY a day, each labelled "Past trip · 1 of 6".
+    review["trip_asks"] = trips.asks(st, trips.candidates(st, txns, today or core_api._today_iso()),
+                                     today or core_api._today_iso()) \
         if pattern_sort.is_on(st) else []
     review["count"] += len(review["trip_asks"])
     review["open"] += len(review["trip_asks"])
+    # TR-30 (AI4-Pair, THL-309): one card for two rows that are very likely
+    # the same money moving; their own questions fold into it.
+    from . import pair_asks
+    pair_asks.fold(review, pair_asks.asks(st, txns, today or core_api._today_iso()))
     from . import sorted_log
     from . import api as core
     day = today or core._today_iso()
@@ -648,6 +656,35 @@ def _for_store(st, today: str | None = None) -> dict:
     # REDESIGN-18: Home's streak counts her own answers too.
     review["you_sorted"] = sorted_log.her_count(st, review, day, ids_in)
     return review
+
+
+def _charged_again(st, txns: list[Transaction], review: dict) -> None:
+    """WL-21 (AI4-Forgotten, THL-309): a subscription she said wasn't hers
+    anymore (Worth a look's Not mine anymore) that charges again: that
+    charge is a question in Needs a look, as any row Pearl isn't sure of."""
+    from . import income_bills as ib
+    stopped = {k: v["stopped"] for k, v in (ib.load(st).get("bills") or {}).items()
+               if isinstance(v, dict) and v.get("state") == "no" and v.get("stopped")}
+    if not stopped:
+        return
+    unsure = review.setdefault("unsure_category", [])
+    have = {it["txn"]["id"] for it in unsure}
+    dismissed, held = st.dismissed_reviews(), st.skipped_reviews()
+    for t in sorted(txns, key=lambda t: t.date, reverse=True):
+        since = stopped.get(t.merchant or "")
+        key = "cat:" + t.fingerprint
+        if (since is None or t.amount <= 0 or t.excluded or t.date[:10] <= since
+                or t.category_source == "user" or key in dismissed or t.fingerprint in have):
+            continue
+        skipped = key in held
+        unsure.append({"key": key, "txn": _brief(t), "guess": t.category or "Other",
+                       "reason": "It charged again after you said it wasn’t yours anymore.",
+                       "skipped": skipped})
+        review["count"] = review.get("count", 0) + 1
+        if skipped:
+            review["skipped"] = review.get("skipped", 0) + 1
+        else:
+            review["open"] = review.get("open", 0) + 1
 
 
 def sorted_view(st, view: str, today: str) -> list[dict]:
@@ -686,4 +723,6 @@ def ids_in(review: dict) -> set[str]:
         for it in review.get(part) or []:
             if it.get("txn"):
                 out.add(it["txn"]["id"])
+    for p in review.get("pair_asks") or []:         # TR-30: both rows of the pair
+        out.update((p["out"], p["in"]))
     return out

@@ -78,6 +78,10 @@ def fixture_store(directory: str, fx: dict):
     by_ref = {(t.raw or {}).get("plaid_id"): t.fingerprint for t in st.all_transactions()}
     for a in fx.get("answers") or []:
         st.set_transaction_category(by_ref[a["ref"]], a["category"])
+    # Her I-04 answers (THL-309: a price rise is only asked on a bill she counts).
+    if fx.get("income_bills"):
+        from finance import income_bills as ib
+        ib.save(st, {**ib.empty(), **fx["income_bills"]})
     return st
 
 

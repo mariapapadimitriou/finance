@@ -443,7 +443,9 @@ def asks(st, txns: list[Transaction], today: date) -> dict:
     if not pattern_sort.is_on(st):
         return {"patterns": [], "trips": []}
     day = today.isoformat()
-    return {"patterns": pattern_sort.pending(st, day, txns), "trips": trips.candidates(st, txns, day)}
+    # TR-20 (THL-309): the same trips Quick sort asks today.
+    return {"patterns": pattern_sort.pending(st, day, txns),
+            "trips": trips.asks(st, trips.candidates(st, txns, day), day)}
 
 
 # ── A plan (PC-12, PC-13) ──────────────────────────────────────────────────

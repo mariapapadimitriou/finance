@@ -1,0 +1,172 @@
+{
+ "name": "pairs_to_ask",
+ "about": "Made up. Two moves Pearl can't pair by itself (a transfer that took four days, a card payment that took six), so it asks; one $300 out with two arrivals it could be (asks nothing); and e-Transfers between different people, the same amounts, which are never her own money moving.",
+ "today": "2026-11-15",
+ "accounts": {
+  "chq": {
+   "name": "Chequing",
+   "type": "depository",
+   "subtype": "checking",
+   "mask": "1001"
+  },
+  "sav": {
+   "name": "Savings",
+   "type": "depository",
+   "subtype": "savings",
+   "mask": "2002"
+  },
+  "visa": {
+   "name": "Visa",
+   "type": "credit",
+   "subtype": "credit card",
+   "mask": "3003"
+  }
+ },
+ "transactions": [
+  {
+   "ref": "eft-out",
+   "account_id": "chq",
+   "date": "2026-10-02",
+   "name": "ONLINE BANKING TRANSFER",
+   "amount": 750.0,
+   "personal_finance_category": {
+    "primary": "TRANSFER_OUT",
+    "detailed": "TRANSFER_OUT_ACCOUNT_TRANSFER"
+   }
+  },
+  {
+   "ref": "eft-in",
+   "account_id": "sav",
+   "date": "2026-10-06",
+   "name": "DEPOSIT",
+   "amount": -750.0,
+   "personal_finance_category": {
+    "primary": "TRANSFER_IN",
+    "detailed": "TRANSFER_IN_ACCOUNT_TRANSFER"
+   }
+  },
+  {
+   "ref": "card-out",
+   "account_id": "chq",
+   "date": "2026-10-20",
+   "name": "BILL PAYMENT CREDIT CARD",
+   "amount": 412.3,
+   "personal_finance_category": {
+    "primary": "TRANSFER_OUT",
+    "detailed": "TRANSFER_OUT_ACCOUNT_TRANSFER"
+   }
+  },
+  {
+   "ref": "card-in",
+   "account_id": "visa",
+   "date": "2026-10-26",
+   "name": "PAYMENT RECEIVED - THANK YOU",
+   "amount": -412.3,
+   "personal_finance_category": {
+    "primary": "TRANSFER_IN",
+    "detailed": "TRANSFER_IN_ACCOUNT_TRANSFER"
+   }
+  },
+  {
+   "ref": "two-out",
+   "account_id": "chq",
+   "date": "2026-11-01",
+   "name": "ONLINE BANKING TRANSFER",
+   "amount": 300.0,
+   "personal_finance_category": {
+    "primary": "TRANSFER_OUT",
+    "detailed": "TRANSFER_OUT_ACCOUNT_TRANSFER"
+   }
+  },
+  {
+   "ref": "two-in-a",
+   "account_id": "sav",
+   "date": "2026-11-05",
+   "name": "DEPOSIT",
+   "amount": -300.0,
+   "personal_finance_category": {
+    "primary": "TRANSFER_IN",
+    "detailed": "TRANSFER_IN_ACCOUNT_TRANSFER"
+   }
+  },
+  {
+   "ref": "two-in-b",
+   "account_id": "visa",
+   "date": "2026-11-06",
+   "name": "PAYMENT RECEIVED - THANK YOU",
+   "amount": -300.0,
+   "personal_finance_category": {
+    "primary": "TRANSFER_IN",
+    "detailed": "TRANSFER_IN_ACCOUNT_TRANSFER"
+   }
+  },
+  {
+   "ref": "pal-out",
+   "account_id": "chq",
+   "date": "2026-11-08",
+   "name": "SEND E-TFR ***Z1x",
+   "amount": 80.0,
+   "personal_finance_category": {
+    "primary": "TRANSFER_OUT",
+    "detailed": "TRANSFER_OUT_ACCOUNT_TRANSFER"
+   }
+  },
+  {
+   "ref": "pal-in",
+   "account_id": "sav",
+   "date": "2026-11-11",
+   "name": "E-TRANSFER RECEIVED JORDAN KIM",
+   "amount": -80.0,
+   "personal_finance_category": {
+    "primary": "TRANSFER_IN",
+    "detailed": "TRANSFER_IN_ACCOUNT_TRANSFER"
+   }
+  },
+  {
+   "ref": "pal2-out",
+   "account_id": "chq",
+   "date": "2026-11-12",
+   "name": "E-TRANSFER SENT ALEX MORGAN",
+   "amount": 45.0,
+   "personal_finance_category": {
+    "primary": "TRANSFER_OUT",
+    "detailed": "TRANSFER_OUT_ACCOUNT_TRANSFER"
+   }
+  },
+  {
+   "ref": "pal2-in",
+   "account_id": "sav",
+   "date": "2026-11-12",
+   "name": "E-TRANSFER RECEIVED SAM LEE",
+   "amount": -45.0,
+   "personal_finance_category": {
+    "primary": "TRANSFER_IN",
+    "detailed": "TRANSFER_IN_ACCOUNT_TRANSFER"
+   }
+  }
+ ],
+ "exhaustive": [
+  "transfers.pair_ask",
+  "transfers.pairs"
+ ],
+ "labels": [
+  {
+   "detector": "transfers.pair_ask",
+   "refs": [
+    "eft-out",
+    "eft-in"
+   ],
+   "kind": "transfer_pair",
+   "truth": true
+  },
+  {
+   "detector": "transfers.pair_ask",
+   "refs": [
+    "card-out",
+    "card-in"
+   ],
+   "kind": "card_payment",
+   "truth": true
+  }
+ ]
+}

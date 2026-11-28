@@ -12,16 +12,21 @@ from signals_replay import replay, table
 
 # detector@version: precision on 2026-11-27 (tp / labelled).
 FLOORS = {
-    "income.cadence@1": 1.00,         # 2 / 2
-    "income_bills.pay@1": 1.00,       # 2 / 2
+    "income.cadence@1": 1.00,         # 3 / 3 (THL-309: + fixtures/pay_semimonthly.json)
+    "income_bills.pay@1": 1.00,       # 3 / 3
     "income_bills.rent@1": 1.00,      # 1 / 1
     "recurring@1": 1.00,              # 16 / 16 (the demo's subscriptions and bills)
     "recurring_transfers@1": 1.00,    # 1 / 1
     "duplicates@1": 1.00,             # 1 / 1
-    # Pairs a friend's e-Transfer in with another's out for the same amount
-    # (fixtures/transfers_and_card_payments.json): the kind of mistake real
-    # cases will show. Phase 4 (THL-309) fixes it under a new version.
-    "transfers.pairs@1": 0.66,        # 2 / 3
+    # @1 paired a friend's e-Transfer in with another's out for the same
+    # amount (2 / 4 with fixtures/pairs_to_ask.json). @2 (THL-309): an
+    # e-Transfer naming someone else never pairs as her own money.
+    "transfers.pairs@2": 1.00,        # 2 / 2
+    # AI Phase 4, part 1 (THL-309), on 2026-11-28.
+    "transfers.pair_ask@1": 1.00,     # 2 / 2 (fixtures/pairs_to_ask.json)
+    "recurring.price_rise@1": 1.00,   # 1 / 1 (fixtures/price_rise.json)
+    "recurring.forgotten@1": 1.00,    # 1 / 1 (fixtures/subscriptions_forgotten.json)
+    "trips@1": 1.00,                  # 2 / 2 (fixtures/past_trips.json: the whole history)
     # A pattern at a shop that sells everything (fixtures/her_answers.json):
     # her Yes is what keeps it from sorting (AI detects, she confirms).
     "pattern_sort.category@1": 0.50,  # 1 / 2

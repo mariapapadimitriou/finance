@@ -5,6 +5,7 @@
 * PUT  /api/quick-sort/<id>            {action: right|category|marked|skip|undo, category?, title?,
                                         every?}: every = every open guess from the merchant (T-85).
 * POST /api/quick-sort/done            the done screen: safe to spend before → after, rules saved.
+* POST /api/quick-sort/pairs/<out>/<in>/<answer>   TR-30: yes, not_this, skip or undo.
 """
 
 from __future__ import annotations
@@ -57,3 +58,33 @@ def quick_sort_step(txn_id):
 def quick_sort_done():
     st = store()
     return jsonify(quick_sort.finish(st, st.all_transactions(), _today()))
+
+
+# ── TR-30 (AI4-Pair, THL-309): one card about one pair ──────────────────
+
+@bp.post("/quick-sort/pairs/<out_id>/<in_id>/<answer>")
+def quick_sort_pair(out_id, in_id, answer):
+    """Yes links the two as one transfer (with the link's Undo); Not this
+    and Skip leave both rows as they are. `undo` takes any of them back."""
+    from . import pair_asks
+    st = store()
+    today = _today().isoformat()
+    if answer == "undo":
+        pair_asks.undo(st, out_id, in_id, today)
+        return jsonify({"ok": True})
+    if answer not in ("yes", "not_this", "skip"):
+        return jsonify({"error": "Yes, Not this or Skip."}), 400
+    p = pair_asks.lookup(st, out_id, in_id, today)
+    if p is None:
+        return jsonify({"error": "Pearl isn’t asking about these any more."}), 404
+    if answer == "not_this":
+        pair_asks.not_this(st, p, today)
+        return jsonify({"ok": True})
+    if answer == "skip":
+        pair_asks.skip(st, p, today)
+        return jsonify({"ok": True})
+    out, status = core.link_rows(st, out_id, [in_id])
+    if status != 200:
+        return jsonify(out), status
+    pair_asks.yes(st, p, today)
+    return jsonify(out)

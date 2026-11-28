@@ -60,8 +60,10 @@ def listed(client):
 def test_on_their_own_each_leg_is_asked_about(client):
     i = ids(client)
     assert txn(client, i["SEND E-TFR ***abc"])["category"] == UNSORTED
-    asked = {m["txn"]["id"] for m in client.get("/api/review").get_json()["money_in"]}
-    assert i["RZ363 TFR-FR"] in asked
+    # TR-30 (THL-309): the two are one question, "Same money?", not two.
+    review = client.get("/api/review").get_json()
+    assert [(p["out"], p["in"]) for p in review["pair_asks"]] == [(i["SEND E-TFR ***abc"], i["RZ363 TFR-FR"])]
+    assert i["RZ363 TFR-FR"] not in {m["txn"]["id"] for m in review["money_in"]}
 
 
 def test_candidates_are_the_same_amount_within_a_week(client):

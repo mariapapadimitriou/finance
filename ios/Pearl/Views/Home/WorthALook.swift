@@ -22,6 +22,24 @@ struct WorthItem: Decodable, Identifiable, Hashable {
     /// T-74 (AP-Paycheque): a lone "Got it" pill under the line.
     var ack: String? = nil
     var target: Target? = nil
+    /// WL-20, WL-21 (THL-309): the line under the title ("Was $16.49 since March.").
+    var sub: String? = nil
+    /// The second pill ("Not this", "Not mine anymore"); nil is Not now.
+    var no: String? = nil
+    /// What a tap on the row opens: its fact card and the same two answers.
+    var sheet: Sheet? = nil
+
+    /// WL-20 / WL-21's sheet (`.card.fact`): the caps, the figure, its line,
+    /// a now-vs-before bar for a price rise, and a note for a subscription.
+    struct Sheet: Decodable, Hashable {
+        let title: String
+        let over: String
+        let big: String
+        let line: String
+        var note: String? = nil
+        var now: Double? = nil
+        var before: Double? = nil
+    }
 
     struct Target: Decodable, Hashable {
         var screen: String?
@@ -44,7 +62,7 @@ struct WorthItem: Decodable, Identifiable, Hashable {
         }
     }
 
-    enum CodingKeys: String, CodingKey { case id, kind, tier, title, amount, icon, tone, yes, ack, target }
+    enum CodingKeys: String, CodingKey { case id, kind, tier, title, amount, icon, tone, yes, ack, target, sub, no, sheet }
 
     /// The line icon (SF Symbols for the boards' line icons).
     var symbol: String {
@@ -112,6 +130,8 @@ struct WorthALookSection: View {
     let onYes: (WorthItem) -> Void
     let onNotNow: (WorthItem) -> Void
     let onGotIt: (WorthItem) -> Void
+    /// WL-20 / WL-21: the row with a sheet was tapped.
+    var onSheet: (WorthItem) -> Void = { _ in }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -121,7 +141,8 @@ struct WorthALookSection: View {
                 ForEach(Array(items.prefix(3).enumerated()), id: \.element.id) { i, item in
                     if i > 0 { APSeparator(afterFace: false) }
                     WorthRow(item: item, onOpen: { onOpen(item) }, onYes: { onYes(item) },
-                             onNotNow: { onNotNow(item) }, onGotIt: { onGotIt(item) })
+                             onNotNow: { onNotNow(item) }, onGotIt: { onGotIt(item) },
+                             onSheet: { onSheet(item) })
                         .transition(reduceMotion ? .opacity
                                     : .asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity),
                                                   removal: .move(edge: .leading).combined(with: .opacity)))
@@ -141,6 +162,7 @@ struct WorthRow: View {
     let onYes: () -> Void
     let onNotNow: () -> Void
     let onGotIt: () -> Void
+    var onSheet: () -> Void = {}
 
     var body: some View {
         if let ack = item.ack {
@@ -154,10 +176,17 @@ struct WorthRow: View {
             .frame(minHeight: 56)
         } else if item.yes != nil {
             VStack(alignment: .leading, spacing: 6) {
-                line
+                if item.sheet != nil {
+                    // WL-20 / WL-21: the row opens its fact card.
+                    Button(action: onSheet) { line.contentShape(Rectangle()) }.buttonStyle(.plain)
+                        .accessibilityHint("Shows what Pearl saw.")
+                        .accessibilityIdentifier("worth-sheet-\(item.kind)")
+                } else {
+                    line
+                }
                 HStack(spacing: 8) {
                     Button(item.yes ?? "Yes", action: onYes).buttonStyle(WorthPillStyle(primary: true))
-                    Button("Not now", action: onNotNow).buttonStyle(WorthPillStyle(primary: false))
+                    Button(item.no ?? "Not now", action: onNotNow).buttonStyle(WorthPillStyle(primary: false))
                 }
                 .padding(.leading, 48)
             }
@@ -177,14 +206,21 @@ struct WorthRow: View {
     private var line: some View {
         HStack(spacing: 12) {
             item.iconView
-            Text(item.title)
-                .font(.custom("Figtree-Regular", size: 16, relativeTo: .body))
-                .foregroundColor(Pearl.ink)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title)
+                    .font(.custom("Figtree-Regular", size: 16, relativeTo: .body))
+                    .foregroundColor(Pearl.ink)
+                    .lineLimit(2)
+                if let sub = item.sub {
+                    // `.row .s`: 13, muted.
+                    Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(2)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             if let amount = item.amount {
+                // WL-20 / WL-21: a bill's amount is spending (`money-out`).
                 Text(amount).font(.custom("Figtree-SemiBold", size: 16, relativeTo: .body))
-                    .monospacedDigit().foregroundColor(Pearl.ink)
+                    .monospacedDigit().foregroundColor(item.sheet != nil ? Pearl.moneyOut : Pearl.ink)
                     .pearlAmountFit().fixedSize()
             } else if item.opens && item.ack == nil {
                 Image(systemName: "chevron.right").font(.system(size: 14, weight: .semibold))
@@ -210,5 +246,43 @@ struct WorthPillStyle: ButtonStyle {
             .background(Capsule().fill(primary ? (configuration.isPressed ? Pearl.action : APlus.actionWash) : APlus.chip))
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .tapTarget(vertical: 6, horizontal: 2)
+    }
+}
+
+// MARK: - WL-20 / WL-21 · the sheet a row opens (THL-309)
+
+/// "Netflix went up" or "Crave": the fact card (`.card.fact`), a note for a
+/// subscription ("To stop it, cancel with Crave. Pearl can't cancel for
+/// you."), then the row's two answers as the sheet's buttons.
+struct WorthFactSheet: View {
+    let item: WorthItem
+    let sheet: WorthItem.Sheet
+    let onYes: () -> Void
+    let onNo: () -> Void
+    let close: () -> Void
+
+    var body: some View {
+        PearlSheet {
+            APSheetHeader(heading: sheet.title, close: close)
+            AskFactCard {
+                AskStyle.over(sheet.over)
+                Text(sheet.big).font(AskStyle.big).foregroundColor(Pearl.moneyOut)
+                    .monospacedDigit().pearlAmountFit().padding(.top, 2)
+                Text(sheet.line).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                if let now = sheet.now, let before = sheet.before {
+                    AskCompare(spent: now, usual: before, spentLabel: "Now", usualLabel: "Before")
+                }
+            }
+            .accessibilityElement(children: .combine)
+            if let note = sheet.note {
+                // `.sline`: 15, muted, under the card.
+                Text(note).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+            }
+        } footer: {
+            PearlSheetButtons(primary: item.yes ?? "Yes", secondary: item.no ?? "Not now",
+                              onPrimary: onYes, onSecondary: onNo)
+        }
     }
 }

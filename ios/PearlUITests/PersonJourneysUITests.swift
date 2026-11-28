@@ -31,7 +31,7 @@ final class PersonJourneysUITests: XCTestCase {
         app.launch()
         // N-01 asks about notifications once the Allowance has a number.
         let notNow = app.buttons["Not now"]
-        if notNow.waitForExistence(timeout: 5) { notNow.tap() }
+        if notNow.waitForExistence(timeout: 5), notNow.isHittable { notNow.tap() }
         XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 20), "No tab bar")
     }
 
@@ -1139,6 +1139,53 @@ final class PersonJourneysUITests: XCTestCase {
         tap(field, "the composer")
         field.typeText(words)
         tap(app.buttons["chat-send"], "Send")
+    }
+
+    /// AI Phase 4, part 1 (THL-309; run_journeys.py's seed_ai): WL-20's price
+    /// rise and WL-21's forgotten subscription on Home, each sheet and its
+    /// answer; then Quick sort's TR-30 pair card and TR-20's past trip.
+    func testAIDetections() {
+        launch("light")
+        let rise = app.buttons["worth-sheet-price_rise"]
+        if !rise.waitForExistence(timeout: 10) { app.swipeUp() }
+        XCTAssertTrue(rise.waitForExistence(timeout: 15), "No price rise in For you")
+        scrollTo(rise)
+        step("WL-20 WL-21 for you")
+        tap(rise, "the price rise")
+        XCTAssertTrue(text(containing: "more a year").waitForExistence(timeout: 10), "No price rise sheet")
+        step("WL-20 the sheet")
+        tap(app.buttons["sheet-primary"], "Got it")
+        step("WL-20 got it")
+        let forgot = app.buttons["worth-sheet-forgotten"]
+        tap(forgot, "the forgotten subscription")
+        XCTAssertTrue(text(containing: "Pearl can’t cancel for you").waitForExistence(timeout: 10),
+                      "No forgotten sheet")
+        step("WL-21 the sheet")
+        tap(button("Not mine anymore"), "Not mine anymore")
+        step("WL-21 not mine anymore")
+        app.swipeDown()
+        tap(button("Sort now"), "Sort now")
+        let pair = app.descendants(matching: .any)["quick-sort-pair"]
+        var tries = 0
+        while !pair.exists && tries < 40 {
+            if !button("Skip").waitForExistence(timeout: 5) { break }
+            button("Skip").tap()
+            sleep(1)
+            tries += 1
+        }
+        XCTAssertTrue(pair.waitForExistence(timeout: 10), "No pair card")
+        step("TR-30 pair")
+        tap(button("Yes"), "Yes on the pair")
+        step("TR-30 linked", settle: 3)
+        tries = 0
+        while !text(containing: "PAST TRIP").exists && tries < 40 {
+            if !button("Skip").waitForExistence(timeout: 5) { break }
+            button("Skip").tap()
+            sleep(1)
+            tries += 1
+        }
+        XCTAssertTrue(text(containing: "PAST TRIP").waitForExistence(timeout: 10), "No past trip card")
+        step("TR-20 past trip")
     }
 
     /// Home in light and dark, with the tree, to learn the screen.

@@ -1,0 +1,202 @@
+{
+ "name": "pay_semimonthly",
+ "about": "Made up. Pay on the 15th and the last day of each month (semimonthly, THL-309 income review: found, no change needed), and one e-Transfer from a friend that is not pay.",
+ "today": "2026-11-15",
+ "accounts": {
+  "chq": {
+   "name": "Chequing",
+   "type": "depository",
+   "subtype": "checking",
+   "mask": "1001"
+  }
+ },
+ "transactions": [
+  {
+   "ref": "pay1",
+   "account_id": "chq",
+   "date": "2026-05-15",
+   "name": "ACME CORP PAYROLL",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "pay2",
+   "account_id": "chq",
+   "date": "2026-05-31",
+   "name": "ACME CORP PAYROLL",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "pay3",
+   "account_id": "chq",
+   "date": "2026-06-15",
+   "name": "ACME CORP PAYROLL",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "pay4",
+   "account_id": "chq",
+   "date": "2026-06-30",
+   "name": "ACME CORP PAYROLL",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "pay5",
+   "account_id": "chq",
+   "date": "2026-07-15",
+   "name": "ACME CORP PAYROLL",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "pay6",
+   "account_id": "chq",
+   "date": "2026-07-31",
+   "name": "ACME CORP PAYROLL",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "pay7",
+   "account_id": "chq",
+   "date": "2026-08-15",
+   "name": "ACME CORP PAYROLL",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "pay8",
+   "account_id": "chq",
+   "date": "2026-08-31",
+   "name": "ACME CORP PAYROLL",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "pay9",
+   "account_id": "chq",
+   "date": "2026-09-15",
+   "name": "ACME CORP PAYROLL",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "pay10",
+   "account_id": "chq",
+   "date": "2026-09-30",
+   "name": "ACME CORP PAYROLL",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "pay11",
+   "account_id": "chq",
+   "date": "2026-10-15",
+   "name": "ACME CORP PAYROLL",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "pay12",
+   "account_id": "chq",
+   "date": "2026-10-31",
+   "name": "ACME CORP PAYROLL",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "gift",
+   "account_id": "chq",
+   "date": "2026-09-03",
+   "name": "E-TRANSFER RECEIVED RILEY PARK",
+   "amount": -150.0,
+   "personal_finance_category": {
+    "primary": "TRANSFER_IN",
+    "detailed": "TRANSFER_IN_ACCOUNT_TRANSFER"
+   }
+  }
+ ],
+ "exhaustive": [
+  "income.cadence",
+  "income_bills.pay"
+ ],
+ "labels": [
+  {
+   "detector": "income.cadence",
+   "refs": [
+    "pay1",
+    "pay2",
+    "pay3",
+    "pay4",
+    "pay5",
+    "pay6",
+    "pay7",
+    "pay8",
+    "pay9",
+    "pay10",
+    "pay11",
+    "pay12"
+   ],
+   "match": "subset",
+   "truth": true
+  },
+  {
+   "detector": "income_bills.pay",
+   "refs": [
+    "pay1",
+    "pay2",
+    "pay3",
+    "pay4",
+    "pay5",
+    "pay6",
+    "pay7",
+    "pay8",
+    "pay9",
+    "pay10",
+    "pay11",
+    "pay12"
+   ],
+   "match": "subset",
+   "truth": true
+  }
+ ]
+}
