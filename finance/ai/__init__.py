@@ -11,6 +11,8 @@ allows. Every iPhone gets the same AI, through the server.
 - `budget`  kill switch, monthly $ cap, daily request cap; never raises
 - `usage`   app_ai_usage rows and the read-only cost summary
 - `safety`  what never goes to the model (account numbers, Plaid tokens)
+- `mask`    her values as placeholders ([SHOP1], [AMT1]) on every route, filled
+            back in on the server; a per-route allowlist (Phase 2b)
 """
 
 from .router import Answer, ask  # noqa: F401

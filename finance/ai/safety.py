@@ -1,7 +1,9 @@
 """What may never go to the model (AI plan v2, data minimisation).
 
-Sent: her words and what Python already worked out (totals, merchant names,
-dates, categories). Never sent: account or card numbers, Plaid tokens or ids,
+Sent: her words and what Python already worked out, with her amounts,
+dates, people, cards and shops as placeholders (`mask.py`, Phase 2b; a
+route's allowlist may send some kinds as they are). Never sent, on any
+route: account or card numbers, Plaid tokens or ids,
 passwords, keys. `check` refuses a payload that carries one, so a caller's
 mistake turns into a fallback, not a leak; `redact` masks long digit runs for
 callers that want to pass text through anyway.

@@ -21,6 +21,15 @@ cap), every call is one `app_ai_usage` row under the question's ask_id,
 nothing unsafe is sent (`safety.check`, again in the client), and nothing
 raises to her: `end` with ok False means "answer with Python".
 
+Masking (Phase 2b, mask.py): her messages and every tool result go to the
+model with placeholders for her values ([SHOP1], [AMT1], ...), as the
+route's allowlist says. The model's tool calls are filled back in before
+`execute` runs (an unknown placeholder goes back to it as an error), and its
+words are filled back in as they stream, so no placeholder reaches her. A
+reply that names a placeholder never issued, or writes a figure of its own,
+ends with ok False and reason "mask_unknown" or "mask_number" (recorded on
+that call's usage row): the caller answers with Python.
+
 Escalation to Sonnet happens only before any tool has run (a server error,
 a timeout, a lost connection, or a call to a tool that wasn't offered): a
 question half answered isn't asked again at 20x the price.
@@ -31,7 +40,7 @@ from __future__ import annotations
 import time
 import uuid
 
-from . import budget, config, prompts, safety, usage
+from . import budget, config, mask, prompts, safety, usage
 from . import client as client_mod
 from .router import ESCALATE_ON, _judge, models_for
 
@@ -44,10 +53,12 @@ class ToolInputError(ValueError):
 
 
 def run(route: str, messages: list, tools: list, execute, *, base, user_id,
-        client=_USE_ENV, now: float | None = None):
+        client=_USE_ENV, now: float | None = None, known: dict | None = None):
     """Yield the events above. `execute(name, input) -> (content, payload)`:
-    `content` is the text the model gets back (already safe to send),
-    `payload` whatever the caller wants handed back in the "tool" event."""
+    `input` has her values filled back in; `content` is the text the model
+    gets back (already safe to send; masked here), `payload` whatever the
+    caller wants handed back in the "tool" event. `known` is the people,
+    cards and shops to mask by name (mask.py)."""
     ask_id = uuid.uuid4().hex
     cfg = config.ROUTES.get(route)
 
@@ -77,6 +88,9 @@ def run(route: str, messages: list, tools: list, execute, *, base, user_id,
         return
     try:
         safety.check(messages, tools)
+        masker = mask.for_route(cfg, known)
+        messages = masker.messages(messages)
+        safety.check(messages)
     except safety.UnsafePayload:
         skip("blocked", prompt_ref=prompt_ref)
         yield end(False, "blocked")
@@ -96,14 +110,16 @@ def run(route: str, messages: list, tools: list, execute, *, base, user_id,
             began = time.perf_counter()
             reply = None
             wrote = False
+            gate = mask.ReplyGate(masker)
             try:
                 for kind, value in ai.stream(model=model, system=system, messages=convo,
                                              tools=tools, max_tokens=cfg["max_tokens"],
                                              effort=cfg["effort"]):
                     if kind == "text":
-                        if value:
+                        out = gate.feed(value) if value else ""
+                        if out:
                             wrote = True
-                            yield {"kind": "text", "text": value}
+                            yield {"kind": "text", "text": out}
                     else:
                         reply = value
             except safety.UnsafePayload:
@@ -127,6 +143,8 @@ def run(route: str, messages: list, tools: list, execute, *, base, user_id,
             cost = config.cost_usd(model, reply.input_tokens, reply.cache_read_tokens,
                                    reply.cache_write_tokens, reply.output_tokens)
             outcome = _judge(reply, tools, None, None)
+            if outcome == "ok" and not reply.tool_calls:
+                outcome = masker.problem(reply.text) or "ok"
             usage.record(base, user_id=user_id, ask_id=ask_id, route=route, attempt=attempt,
                          model=model, prompt=prompt_ref, input_tokens=reply.input_tokens,
                          cache_read_tokens=reply.cache_read_tokens,
@@ -141,13 +159,16 @@ def run(route: str, messages: list, tools: list, execute, *, base, user_id,
                     break                                   # once more, on Sonnet
                 yield end(False, outcome, used=used)
                 return
-            if outcome != "ok":                             # a refusal, or cut off
+            if outcome != "ok":                 # a refusal, cut off, or a mask rule broken
                 if wrote:
                     yield {"kind": "reset"}
                 yield end(False, outcome, used=used)
                 return
             if not reply.tool_calls:
-                yield end(True, "ok", text=reply.text, used=used)
+                tail = gate.finish()
+                if tail:
+                    yield {"kind": "text", "text": tail}
+                yield end(True, "ok", text=masker.fill(reply.text), used=used)
                 return
             # Words before a tool call are a preamble, not the answer.
             if wrote:
@@ -158,17 +179,26 @@ def run(route: str, messages: list, tools: list, execute, *, base, user_id,
                 return
             results = []
             for call in reply.tool_calls:
-                yield {"kind": "step", "name": call["name"], "input": call["input"]}
                 try:
-                    content, payload = execute(call["name"], call["input"] or {})
+                    inp = masker.fill_value(call["input"] or {})
+                except mask.UnknownPlaceholder as e:
+                    results.append({"type": "tool_result", "tool_use_id": call["id"],
+                                    "content": f"There is no {e}. Use only the placeholders "
+                                               "you were given, exactly as written.",
+                                    "is_error": True})
+                    continue
+                yield {"kind": "step", "name": call["name"], "input": inp}
+                try:
+                    content, payload = execute(call["name"], inp)
                 except ToolInputError as e:
                     results.append({"type": "tool_result", "tool_use_id": call["id"],
-                                    "content": str(e), "is_error": True})
+                                    "content": masker.text(str(e)), "is_error": True})
                     continue
                 used += 1
+                content = masker.content(content)
                 results.append({"type": "tool_result", "tool_use_id": call["id"],
                                 "content": content})
-                yield {"kind": "tool", "name": call["name"], "input": call["input"],
+                yield {"kind": "tool", "name": call["name"], "input": inp,
                        "payload": payload}
             convo = convo + [{"role": "assistant", "content": reply.content},
                              {"role": "user", "content": results}]

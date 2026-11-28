@@ -149,6 +149,8 @@ class FakeStream:
         step = self.script.pop(0)
         if isinstance(step, Exception):
             raise step
+        if callable(step):                 # a reply written from what it was sent
+            step = step(messages)
         text = step.get("text", "")
         if text:
             half = len(text) // 2
@@ -161,6 +163,27 @@ class FakeStream:
             model=model, stop_reason=step.get("stop_reason", "tool_use" if calls else "end_turn"),
             text=text, tool_calls=calls, content=content, input_tokens=200,
             cache_read_tokens=1500, output_tokens=40, request_id="req_x"))
+
+
+def last_result(messages) -> dict:
+    """The last tool result the model was sent, as JSON."""
+    for m in reversed(messages):
+        if isinstance(m.get("content"), list):
+            for b in m["content"]:
+                if isinstance(b, dict) and b.get("type") == "tool_result":
+                    return json.loads(b["content"])
+    raise AssertionError("no tool result")
+
+
+def question(messages) -> str:
+    return messages[0]["content"]
+
+
+def ph(text, tag="SHOP") -> str:
+    """The first placeholder of a kind in what the model was sent."""
+    m = re.search(rf"\[{tag}\d+\]", text)
+    assert m, text
+    return m.group(0)
 
 
 def tool(name, **inp):
@@ -267,8 +290,9 @@ class TestStream:
         fill(c.st)
         turn_on(c)
         m = ask.month(ask.Ledger(c.st, TODAY))
-        said = m.line
-        fake = FakeStream(tool("month"), {"text": said})
+        said = f"You’ve spent {ask.whole(m.data['spent'])} so far in November."
+        fake = FakeStream(tool("month"), lambda msgs: {
+            "text": f"You’ve spent {last_result(msgs)['spent']} so far in {last_result(msgs)['name']}."})
         evs = events(c, "How's this month going?", fake, monkeypatch)
         kinds = [e["type"] for e in evs]
         # The step names the tool, before its card; the card comes whole.
@@ -276,8 +300,9 @@ class TestStream:
         assert kinds.index("step") < kinds.index("fact") < kinds.index("text")
         fact = of(evs, "fact")[0]
         assert fact["kind"] == "month" and fact["data"]["spent"] == m.data["spent"]
-        # Only the words stream, in pieces.
-        assert len(of(evs, "text")) == 2 and words(evs) == said
+        # Only the words stream, in pieces, with her values filled back in.
+        assert len(of(evs, "text")) >= 1 and words(evs) == said
+        assert not re.search(r"\[[A-Z]+\d+\]", json.dumps(evs))
         assert kinds[-1] == "done"
         # The model was Haiku, both turns; the tool's result went back to it.
         assert [x["model"] for x in fake.calls] == [config.DEFAULT_MODEL] * 2
@@ -302,12 +327,13 @@ class TestStream:
         c = sign_up(app, outbox)
         fill(c.st)
         turn_on(c)
-        events(c, "Show my Uber rides", FakeStream(tool("search", words="Uber"),
-                                                   {"text": "12 Uber rides since September."}),
+        events(c, "Show my Uber rides",
+               FakeStream(lambda msgs: tool("search", words=ph(question(msgs))),
+                          lambda msgs: {"text": f"Here are your {ph(question(msgs))} rides."}),
                monkeypatch)
         rows = usage.rows(app.config["STORE"], c.user.id)
         assert len(rows) == 2 and len({r["ask_id"] for r in rows}) == 1
-        assert all(r["outcome"] == "ok" and r["cost_usd"] > 0 and r["prompt"] == "ask@2"
+        assert all(r["outcome"] == "ok" and r["cost_usd"] > 0 and r["prompt"] == "ask@3"
                    for r in rows)
         day = usage.periods()[1]
         assert usage.day_requests(app.config["STORE"], c.user.id, day) == 1
@@ -514,3 +540,177 @@ class TestAnswers:
         lines = [ask.month(led).line, ask.month(led, "2026-10").line, ask.cards(led).line,
                  ask.search(led, "Uber").line, ask.merchant_history(led, "Loblaws").line]
         assert all("safe to spend" not in x.lower() for x in lines)
+
+
+# ── Masking (AI Phase 2b, product owner 2026-11-27) ──────────────────────
+
+# Every real value in the demo ledger the model must never see.
+SHOPS = ("Loblaws", "Uber", "Pai", "Acme", "Northern")
+PEOPLE = ("Georgia", "Klev", "Sam Lee", "Sam")
+CARDS = ("TD Visa", "Amex", "Cobalt", "Chequing")
+MONTHS = ("January", "February", "March", "April", "June", "July", "August", "September",
+          "October", "November", "December", "Sept", "Oct", "Nov", "Dec")
+PLACEHOLDER = re.compile(r"\[(?:AMT|DATE|PERSON|CARD|SHOP|NUM)\d+\]")
+
+
+def with_people(st):
+    """A split with Georgia Klev and an e-Transfer from Sam Lee."""
+    lob = next(x for x in st.all_transactions() if x.merchant == "Loblaws")
+    st.set_split(lob.fingerprint, "even", [{"name": "Georgia Klev", "amount": 35.5}], True)
+    st.add_transactions([Transaction(date="2026-11-22", description="INTERAC E-TRANSFER SAM LEE",
+                                     merchant="Sam Lee", amount=-35.5, account_id="chq",
+                                     account_name="Chequing", category="Transfers",
+                                     raw={"account_type": "depository"})])
+
+
+def assert_nothing_real(fake):
+    """No demo shop, person, card, amount, date or figure in anything sent."""
+    assert fake.calls
+    for call in fake.calls:
+        sent = json.dumps(call["messages"], ensure_ascii=False)
+        bare = PLACEHOLDER.sub("", sent)
+        for word in SHOPS + PEOPLE + CARDS + MONTHS:
+            assert not re.search(rf"(?<![\w]){re.escape(word)}(?![\w])", bare, re.I), (word, sent)
+        assert not re.search(r"\d", bare), sent           # no amount, date, count or year
+        assert "$" not in bare, sent
+
+
+class TestMasking:
+    def test_no_real_value_reaches_the_model(self, app, outbox, monkeypatch):
+        c = sign_up(app, outbox)
+        fill(c.st)
+        with_people(c.st)
+        turn_on(c)
+        script = [
+            ("How's this month going?", [tool("month"), {"text": "You're doing fine."}]),
+            ("How did October go?",
+             [lambda m: tool("month", month=ph(question(m), "DATE")), {"text": "It went well."}]),
+            ("How much at Loblaws in 2025 and 2026?",
+             [lambda m: tool("merchant_history", merchant=ph(question(m))),
+              {"text": "Here it is."}]),
+            ("Show my Uber rides", [lambda m: tool("search", words=ph(question(m))),
+                                    {"text": "Here they are."}]),
+            ("When are my TD Visa and Amex Cobalt due?", [tool("cards"), {"text": "Soon."}]),
+            ("What did I spend on Groceries in November, about $81?",
+             [lambda m: tool("spending", category="Groceries", month=ph(question(m), "DATE")),
+              {"text": "About usual."}]),
+            ("Did Georgia pay me back? Sam Lee sent $35.50 on Nov 22",
+             [lambda m: tool("search", words=ph(question(m), "PERSON")),
+              {"text": "Found it."}]),
+            ("Any subscriptions I forgot?", [tool("subscriptions"), {"text": "A few."}]),
+            ("Was this a trip?", [tool("trips_and_patterns"), {"text": "Maybe."}]),
+            ("Went out for dinner with Georgia on Saturday",
+             [lambda m: tool("tell", category="Dining", people=[ph(question(m), "PERSON")]),
+              {"text": "Matched."}]),
+        ]
+        for q, steps in script:
+            fake = FakeStream(*steps)
+            evs = events(c, q, fake, monkeypatch)
+            assert of(evs, "fact"), q
+            assert_nothing_real(fake)
+            # What she reads has no placeholder left in it.
+            assert not PLACEHOLDER.search(json.dumps(evs, ensure_ascii=False)), q
+
+    def test_the_typed_question_is_masked(self, app, outbox, monkeypatch):
+        c = sign_up(app, outbox)
+        fill(c.st)
+        with_people(c.st)
+        turn_on(c)
+        fake = FakeStream({"text": "", "stop_reason": "refusal"})
+        events(c, "Did georgia klev pay me $40 at LOBLAWS on my TD Visa on Nov 3?", fake,
+               monkeypatch)
+        q = question(fake.calls[0]["messages"])
+        assert re.fullmatch(r"Did \[PERSON1\] pay me \[AMT1\] at \[SHOP1\] on my \[CARD1\] "
+                            r"on \[DATE1\]\?", q), q
+
+    def test_round_trip_mask_tool_unmask(self, app, outbox, monkeypatch):
+        c = sign_up(app, outbox)
+        fill(c.st)
+        turn_on(c)
+        seen = {}
+
+        def answer(msgs):
+            r = last_result(msgs)
+            seen.update(r)
+            return {"text": f"{r['total']} at {r['merchant']} this year, about "
+                            f"{r['about_a_month']} a month."}
+
+        fake = FakeStream(lambda m: tool("merchant_history", merchant=ph(question(m))), answer)
+        evs = events(c, "How much at Loblaws this year?", fake, monkeypatch)
+        # The model asked for [SHOP1]; the server ran the tool for Loblaws.
+        assert fake.calls[0]["messages"][0]["content"] == "How much at [SHOP1] this year?"
+        assert seen["merchant"] == "[SHOP1]" and PLACEHOLDER.fullmatch(seen["total"])
+        f = ask.merchant_history(ask.Ledger(c.st, TODAY), "Loblaws")
+        assert of(evs, "step")[0]["text"] == "Looking at Loblaws…"
+        assert of(evs, "fact")[0]["data"]["total"] == f.data["total"]
+        assert words(evs) == (f"{ask.whole(f.data['total'])} at Loblaws this year, about "
+                              f"{ask.whole(f.data['per_month'])} a month.")
+        assert usage.rows(app.config["STORE"], c.user.id)[-1]["outcome"] == "ok"
+
+    def test_an_unknown_placeholder_falls_back(self, app, outbox, monkeypatch):
+        c = sign_up(app, outbox)
+        fill(c.st)
+        turn_on(c)
+        fake = FakeStream(lambda m: tool("merchant_history", merchant=ph(question(m))),
+                          {"text": "You spent [AMT9] at [SHOP7]."})
+        evs = events(c, "How much at Loblaws this year?", fake, monkeypatch)
+        f = ask.merchant_history(ask.Ledger(c.st, TODAY), "Loblaws")
+        assert words(evs) == f.line                         # Python's own line
+        assert not PLACEHOLDER.search(json.dumps(evs))
+        assert usage.rows(app.config["STORE"], c.user.id)[-1]["outcome"] == "mask_unknown"
+
+    def test_an_unknown_placeholder_in_a_tool_call_goes_back_as_an_error(
+            self, app, outbox, monkeypatch):
+        c = sign_up(app, outbox)
+        fill(c.st)
+        turn_on(c)
+        fake = FakeStream(tool("merchant_history", merchant="[SHOP42]"),
+                          lambda m: tool("merchant_history", merchant=ph(question(m))),
+                          {"text": "Here it is."})
+        evs = events(c, "How much at Loblaws this year?", fake, monkeypatch)
+        sent = json.dumps(fake.calls[1]["messages"])
+        assert "is_error" in sent and "SHOP42" in sent
+        assert of(evs, "fact")[0]["data"]["merchant"] == "Loblaws"
+
+    @pytest.mark.parametrize("reply", ["You spent [AMT1] across 22 visits.",
+                                       "That's $1,000 at [SHOP1].",
+                                       "About [AMT2]5 a month."])
+    def test_a_raw_number_falls_back(self, app, outbox, monkeypatch, reply):
+        c = sign_up(app, outbox)
+        fill(c.st)
+        turn_on(c)
+        fake = FakeStream(lambda m: tool("merchant_history", merchant=ph(question(m))),
+                          {"text": reply})
+        evs = events(c, "How much at Loblaws this year?", fake, monkeypatch)
+        f = ask.merchant_history(ask.Ledger(c.st, TODAY), "Loblaws")
+        assert words(evs) == f.line
+        # Nothing of the model's figure reached her, not even while it streamed.
+        assert not any("22" in e["text"] or "1,000" in e["text"] for e in of(evs, "text"))
+        assert usage.rows(app.config["STORE"], c.user.id)[-1]["outcome"] == "mask_number"
+
+    def test_no_tool_and_a_bad_reply_answers_from_python(self, app, outbox, monkeypatch):
+        c = sign_up(app, outbox)
+        fill(c.st)
+        turn_on(c)
+        evs = events(c, "When are my cards due?", FakeStream({"text": "Due on the 3rd."}),
+                     monkeypatch)
+        assert of(evs, "fact")[0]["kind"] == "cards" and of(evs, "words")
+
+    def test_comparisons_go_as_words(self, led):
+        m = ask.month(led)
+        assert m.model["compared_with_usual_by_now"] in ("about usual", "more than usual",
+                                                         "less than usual")
+        assert "usual_by_now" not in m.model
+        assert not re.search(r"\$[\d,]+ (more|less)", m.model["line"])
+        assert all(set(c) == {"category", "compared_with_usual"} for c in m.model["changes"])
+        cards = ask.cards(led).model["cards"]
+        assert all("used" not in c and "%" not in json.dumps(c) for c in cards)
+        assert {c["against_limit"] for c in cards} == {"well under its limit", "close to its limit"}
+
+    def test_known_terms(self, led):
+        with_people(led.st)
+        k = ask.known_terms(led)
+        assert {"Loblaws", "Uber", "Pai"} <= set(k["shop"])
+        assert {"Georgia Klev", "Sam Lee"} <= set(k["person"]) and "Sam Lee" not in k["shop"]
+        assert {"TD Visa", "Amex Cobalt", "Chequing"} <= set(k["card"])
+        assert not any(re.search(r"\d{4}", x) for x in k["card"])
