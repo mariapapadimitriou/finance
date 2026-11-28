@@ -19,9 +19,11 @@ from finance.ingest.base import IngestResult
 from finance.models import Transaction
 from finance.pipeline import ingest
 
-TODAY = date.today()
-# The last whole weekend: always in the past, so "the weekend" means it.
-SAT = TODAY - timedelta(days=(TODAY.weekday() - 5) % 7 or 7)
+# Pearl's "today" for these tests is the latest Wednesday, so the last whole
+# weekend is always just behind it, whatever day the suite runs. On a real
+# Saturday "this weekend" means today, which broke these tests on weekends.
+TODAY = date.today() - timedelta(days=(date.today().weekday() - 2) % 7)
+SAT = TODAY - timedelta(days=4)
 SUN = SAT + timedelta(days=1)
 
 
@@ -32,8 +34,10 @@ def tx(desc, amount, when, raw=None, account="visa", merchant=None):
 
 
 @pytest.fixture()
-def client(tmp_path):
+def client(tmp_path, monkeypatch):
     from app import create_app
+    from finance import chat_api
+    monkeypatch.setattr(chat_api, "_today", lambda: TODAY)
     db = tmp_path / "chat.db"
     app = create_app(str(db))
     app.config.update(TESTING=True)
