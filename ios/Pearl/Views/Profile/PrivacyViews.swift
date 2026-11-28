@@ -5,7 +5,10 @@ import UserNotifications
 // Privacy and notifications (Pearl iOS Handoff File, Pearl app page, THL-117
 // and THL-139): CN-04 Privacy and consent, CN-05 Turn off AI sorting?, CN-06
 // Ask Pearl's switch and Turn off Ask Pearl? (THL-308, AI2-Switch), N-01
-// Turn on notifications and N-02 Notifications.
+// Turn on notifications and N-02 Notifications. THL-309 (Pearl redesign
+// canvas, Pearl page, AI Phase 4): CN-07 Off · Rules · Smart in the row
+// (AI4-Setting, option A), CN-08 Turn on Smart? (AI4-Consent) and CN-09
+// stepping down (AI4-StepDown).
 
 let cardRadius: CGFloat = 22
 
@@ -116,6 +119,11 @@ struct ConsentView: View {
     @State private var askingAskOff = false
     @State private var busy: String?
     @State private var error: String?
+    /// CN-08: Turn on Smart?, the first time she picks Smart.
+    @State private var askingSmart = false
+    /// CN-09: what Off goes back to with Undo, and the line after Smart → Rules.
+    @State private var steppedDown = false
+    @State private var toast: PearlToast.Model?
 
     var body: some View {
         ProfilePage {
@@ -134,14 +142,40 @@ struct ConsentView: View {
         .reloads { await load() }
         .docSheet($doc)
         .sheet(isPresented: $askingAIOff) {
-            // CN-05r (TEST-06, reworded for P1a in AI-02b): a Pearl sheet, not a stock alert.
+            // CN-09 (AI4-StepDown 3): Smart or Rules → Off asks first, on the
+            // reworded Pearl sheet. Her patterns stay.
+            let was = mode
             PearlConfirmSheet(overline: "Pearl sorts for you", title: "Stop Pearl sorting for you?",
-                              message: "New ones wait for you in Quick sort. What’s already sorted, and your rules, stay.",
+                              message: SortingWords.offSheet(patterns),
                               primary: "Turn off", busyLabel: "Turning off…", secondary: "Keep it on",
                               failure: "Couldn’t turn it off. Nothing changed. Try again.",
                               onClose: { askingAIOff = false }) {
-                privacy = try await app.api.put("api/privacy/consents", ["key": "ai_sort", "value": false])
+                privacy = try await putSorting("off")
                 askingAIOff = false
+                steppedDown = false
+                say("Pearl stopped sorting for you.") { await undoSorting(to: was) }
+            }
+        }
+        .sheet(isPresented: $askingSmart) {
+            // CN-08 (AI4-Consent): asked once. "Like Ask Pearl, …" when she
+            // already uses it. Not now, ✕ or a swipe keep what she had.
+            let was = mode
+            PearlConfirmSheet(overline: "Pearl sorts for you", title: "Turn on Smart?",
+                              message: SortingWords.consent(likeAsk: isOn("ai_ask")),
+                              primary: "Turn on Smart", busyLabel: "Turning on…", secondary: "Not now",
+                              failure: "Couldn’t turn it on. Nothing changed. Try again.",
+                              onClose: { askingSmart = false }) {
+                privacy = try await putSorting("smart", consent: true)
+                askingSmart = false
+                steppedDown = false
+                say("Smart is on.") { await undoSorting(to: was) }
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let toast = toast {
+                PearlToast(model: toast) { if self.toast == toast { withAnimation { self.toast = nil } } }
+                    .padding(.bottom, 12)
+                    .id(toast.id)
             }
         }
         .sheet(isPresented: $askingAskOff) {
@@ -187,12 +221,11 @@ struct ConsentView: View {
             }
             .accessibilityIdentifier("privacy-ask-pearl")
             APSeparator(afterFace: false)
-            // AI-08 (1313:4855, AI-03c): Pearl sorts for you, asking first.
-            SwitchRow(symbol: "sparkles", title: "Pearl sorts for you",
-                      sub: "Asks you once for each pattern",
-                      isOn: isOn("ai_sort"), disabled: busy == "ai_sort") { on in
-                if on { Task { await change("ai_sort", to: true) } } else { askingAIOff = true }
-            }
+            // CN-07 (THL-309, AI4-Setting option A): Off · Rules · Smart in
+            // the row, one tap, and one line under it that follows the choice.
+            SortingRow(mode: mode, line: SortingWords.line(mode, patterns: patterns, steppedDown: steppedDown),
+                       disabled: busy == "sorting") { choose($0) }
+                .accessibilityIdentifier("privacy-sorting")
             APSeparator(afterFace: false)
             SwitchRow(symbol: "envelope", title: "Tips and news by email",
                       isOn: isOn("tips"), disabled: busy == "tips") { on in
@@ -225,6 +258,70 @@ struct ConsentView: View {
 
     private func isOn(_ key: String) -> Bool { privacy?.consents?[key]?.value == true }
 
+    // MARK: CN-07 / CN-08 / CN-09
+
+    /// Off · Rules · Smart, from the server; the old switch maps across.
+    private var mode: String { privacy?.sorting?.mode ?? (isOn("ai_sort") ? "rules" : "off") }
+    private var patterns: Int { privacy?.sorting?.patterns ?? 0 }
+
+    /// One tap. Smart the first time asks (CN-08); Off asks (CN-09); the
+    /// rest is at once, with a toast and Undo where the boards draw one.
+    private func choose(_ pick: String) {
+        guard pick != mode, busy == nil else { return }
+        switch pick {
+        case "off":
+            askingAIOff = true
+        case "smart" where privacy?.sorting?.asked != true:
+            askingSmart = true
+        default:
+            let was = mode
+            Task {
+                guard await setSorting(pick) else { return }
+                steppedDown = was == "smart" && pick == "rules"
+                if steppedDown {
+                    say("Back to Rules.") { await undoSorting(to: was) }
+                } else if pick == "smart" {
+                    say("Smart is on.") { await undoSorting(to: was) }
+                }
+            }
+        }
+    }
+
+    /// Shows the choice straight away, then takes the server's record of it.
+    private func setSorting(_ pick: String) async -> Bool {
+        let before = privacy
+        privacy?.sorting?.mode = pick
+        busy = "sorting"
+        error = nil
+        defer { busy = nil }
+        do {
+            privacy = try await putSorting(pick)
+            return true
+        } catch {
+            privacy = before
+            self.error = app.handle(error)
+            return false
+        }
+    }
+
+    private func putSorting(_ pick: String, consent: Bool = false) async throws -> Privacy {
+        try await app.api.put("api/privacy/sorting", ["mode": pick, "consent": consent])
+    }
+
+    private func undoSorting(to was: String) async {
+        steppedDown = false
+        _ = await setSorting(was)
+    }
+
+    private func say(_ text: String, undo: @escaping () async -> Void) {
+        withAnimation {
+            toast = PearlToast.Model(text: text, action: "Undo", run: {
+                withAnimation { toast = nil }
+                Task { await undo() }
+            })
+        }
+    }
+
     /// "Agreed Oct 2, 2026", or "Not agreed".
     private func agreed(_ key: String) -> String {
         guard let consent = privacy?.consents?[key], consent.value == true else { return "Not agreed" }
@@ -253,6 +350,72 @@ struct ConsentView: View {
             privacy = before
             self.error = app.handle(error)
         }
+    }
+}
+
+// MARK: - CN-07 Pearl sorts for you
+
+/// CN-07's words (AI4-Setting, AI4-Consent, AI4-StepDown), exactly as drawn.
+enum SortingWords {
+    static func line(_ mode: String, patterns n: Int, steppedDown: Bool) -> String {
+        switch mode {
+        case "off":
+            return n > 0 ? "Nothing sorts by itself. \(yours(n)) stay for when you turn it back on."
+                : "Nothing sorts by itself."
+        case "smart":
+            return "Rules, plus Claude for reasons and harder cases."
+        default:
+            if steppedDown && n > 0 {
+                return n == 1 ? "Your pattern keeps sorting. Only its reason goes back to plain."
+                    : "Your \(n) patterns keep sorting. Only their reasons go back to plain."
+            }
+            return "Sorts the ways you said yes to."
+        }
+    }
+
+    static func offSheet(_ n: Int) -> String {
+        n > 0 ? "New ones wait for you in Quick sort. \(yours(n)) stay, ready if you turn it back on."
+            : "New ones wait for you in Quick sort."
+    }
+
+    /// CN-08, with the correction to THL-309 AC 3: shop names only.
+    static func consent(likeAsk: Bool) -> String {
+        (likeAsk ? "Like Ask Pearl, Smart uses Claude, by Anthropic."
+            : "Smart uses Claude, by Anthropic, for reasons and harder cases.")
+            + " It sees shop names only, never amounts, dates, people, account numbers or bank logins."
+            + " You still say yes first."
+    }
+
+    private static func yours(_ n: Int) -> String { n == 1 ? "Your pattern will" : "Your \(n) patterns" }
+}
+
+/// kit `.row.noface.sortrow`: the icon, "Pearl sorts for you" over the
+/// three-part `.seg` (Off · Rules · Smart) and one muted line that changes
+/// with the choice (role status, so VoiceOver reads the change).
+struct SortingRow: View {
+    let mode: String
+    let line: String
+    var disabled = false
+    let pick: (String) -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            IconBubble(symbol: "sparkles", size: 36)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Pearl sorts for you").font(Nacre.body).foregroundColor(Pearl.ink)
+                    .accessibilityAddTraits(.isHeader)
+                APSegmented(options: [("off", "Off"), ("rules", "Rules"), ("smart", "Smart")],
+                            selection: Binding(get: { mode }, set: { if let v = $0 { pick(v) } }))
+                    .disabled(disabled)
+                Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.updatesFrequently)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(minHeight: 64)
+        .onChange(of: line) { new in UIAccessibility.post(notification: .announcement, argument: new) }
     }
 }
 

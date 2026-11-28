@@ -50,10 +50,13 @@ struct ProfileSummary: Decodable {
     let rules: Int?
     /// Recurring transfers she confirmed (THL-295).
     var recurring: Int? = nil
+    /// AU-01: the owner sees Profile › AI usage; everyone else, nothing.
+    var aiUsage: Bool? = nil
 
     enum CodingKeys: String, CodingKey {
         case accounts, rules, recurring
         case needsYou = "needs_you"
+        case aiUsage = "ai_usage"
     }
 }
 
@@ -1829,6 +1832,16 @@ struct Review: Decodable {
         var extra: Extra? = nil
         /// AI-07: why Pearl won't sort this one by itself.
         var unsure: Unsure? = nil
+        /// AI-03r / AI-03s (THL-309): the guess's one quiet grey reason, in
+        /// Python's words ("Like your last 5 at Pizzeria Bella.") or, in
+        /// Smart, Claude's. No badge either way.
+        @Boxed var why: Why? = nil
+
+        struct Why: Decodable, Hashable {
+            let text: String
+            /// "claude" when Claude worded it (Smart), else "pearl".
+            var by: String? = nil
+        }
         /// P3 / P4 (TP-P3-NoGuess): the four likeliest categories for this
         /// purchase, from her own ledger (finance/likely.py). Tiles she taps.
         @Boxed var likely: [String]? = nil
@@ -1933,7 +1946,7 @@ struct Review: Decodable {
 
         enum CodingKeys: String, CodingKey {
             case key, txn, reason, skipped, from, guess, label, people, candidates, series, rest, share, twin
-            case siblings, pair, credit, extra, unsure, payback, over, split
+            case siblings, pair, credit, extra, unsure, payback, over, split, why
             case guessLabel = "guess_label"
         }
 
@@ -1973,6 +1986,7 @@ struct Review: Decodable {
             over = opt(Over.self, .over)
             split = opt(SplitMatch.self, .split)
             unsure = opt(Unsure.self, .unsure)
+            why = opt(Why.self, .why)
             payback = opt(PaybackQuestion.self, .payback)
         }
 
@@ -2560,6 +2574,17 @@ struct Privacy: Decodable {
     let contact: String?
     /// CN-04: "read_data", "insights", "ai_sort", "tips", "analytics"…
     var consents: [String: Consent]?
+    /// CN-07 (THL-309): Pearl sorts for you, Off · Rules · Smart.
+    var sorting: Sorting? = nil
+
+    struct Sorting: Decodable, Equatable {
+        /// "off", "rules" or "smart".
+        var mode: String
+        /// CN-08 was answered before: Smart again needs no sheet.
+        var asked: Bool? = nil
+        /// "Your 14 patterns": the ones she said yes to.
+        var patterns: Int? = nil
+    }
 
     struct Consent: Decodable {
         let value: Bool?

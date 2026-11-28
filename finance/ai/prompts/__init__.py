@@ -24,6 +24,9 @@ FROZEN = {
     "ask@2": "e29b7fc772c34dd026d14f09de000d2b6d2594a433b20c179260645f38aa3ebb",
     # Phase 2b (2026-11-27): placeholders for her values (finance/ai/mask.py).
     "ask@3": "55c7523d192b5ee7b56df29379fc6446711fc67a6eac4643be2530bc7449a2d4",
+    # Phase 4 (THL-309, 2026-11-28): Smart sorting picks among Python's
+    # answers with the strict `pick` tool and words one reason (smart_sort.py).
+    "sort_reason@1": "5d4105869109b5eec263cd2215270d4747a65fb3ace8517a20c2d91e8df3bdd6",
 }
 
 

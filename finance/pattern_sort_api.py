@@ -21,6 +21,7 @@ from flask import g, jsonify, request
 
 from . import api as core
 from . import pattern_sort as ps
+from . import smart_sort
 from . import users
 from .api import bp, store
 
@@ -46,7 +47,9 @@ def _row(st, rec: dict) -> dict:
     return {"id": rec["id"], "txn": rec["txn"], "pattern": rec["pattern"], "kind": rec["kind"],
             "line": rec["line"], "answer": rec["answer"], "count": rec["count"], "day": rec["day"],
             "merchant": (t.merchant or t.description) if t else "", "amount": t.amount if t else 0.0,
-            "date": t.date[:10] if t else rec["day"]}
+            "date": t.date[:10] if t else rec["day"],
+            # AI-03s: Claude's words while Smart is on, else none (the plain line).
+            **smart_sort.record_reason(st, rec)}
 
 
 @bp.post("/pattern-sort/run")
@@ -58,7 +61,17 @@ def pattern_sort_run():
     if not ps.is_on(st):
         # Switched on before this existed: from now on, never the past.
         ps.switched_on(st)
-    new = ps.run(st, core._today_iso())
+    user = g.get("user")
+    smart_sort.sync_mirror(st, user)
+    if smart_sort.is_smart(st):
+        # Smart (THL-309): right after each sync, Rules with Claude on the
+        # harder cases; any failure is Rules for the rest of this sync.
+        from flask import current_app
+        got = smart_sort.run(st, core._today_iso(), base=current_app.config["STORE"],
+                             user_id=user.id if user is not None else None)
+        new = got["sorted"]
+    else:
+        new = ps.run(st, core._today_iso())
     if new:
         core._reclassify(st)
     return jsonify({"sorted": len(new), "on": True, "rows": [_row(st, r) for r in new]})

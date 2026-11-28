@@ -737,6 +737,8 @@ struct QuickSortView: View {
             return hint.isEmpty ? nil : hint
         }
         if let unsure = ask.item.unsure { return unsure.line }
+        // AI-03r / AI-03s (THL-309): the guess's one quiet reason, both modes.
+        if let why = ask.item.why, isGuess(ask) { return why.text }
         guard isGuess(ask), ask.item.pair == nil, ask.incomeGuess == nil else { return nil }
         if ask.guessesOther { return "Tap the card to pick something else." }
         if ask.varies(accounts) { return "\(ask.t.name) varies, so just this one." }

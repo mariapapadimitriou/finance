@@ -46,10 +46,14 @@ struct PatternRecord: Decodable, Identifiable, Hashable {
     var answered: [String]? = nil
     var learned: Bool? = nil
     var confirmed: PatternYes? = nil
+    /// AI-03s (THL-309): Claude's words while Smart is on; nil is the plain line.
+    var reason: String? = nil
+    var reasonBy: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, txn, pattern, kind, line, answer, merchant, amount, date, day, label, account, joint, answered, learned
-        case confirmed
+        case confirmed, reason
+        case reasonBy = "reason_by"
         case patternCount = "pattern_count"
         case patternMerchant = "pattern_merchant"
         case sortedByPattern = "sorted_by_pattern"
@@ -178,10 +182,16 @@ struct PatternWhySheet: View {
         APWho(face: r.merchant, name: "\(r.merchant) · \(amount)",
               line: [r.isJoint ? "\(r.label ?? r.answer) of \(r.joint ?? r.account ?? "Joint")" : (r.label ?? r.answer),
                      Format.short(r.date)].joined(separator: " · "))
-        Text(r.isJoint ? "Like the last \(n) from \(r.firstName)." : "Like your last \(n) at \(r.patternMerchant ?? r.merchant).")
+        Text(r.reason ?? (r.isJoint ? "Like the last \(n) from \(r.firstName)." : "Like your last \(n) at \(r.patternMerchant ?? r.merchant)."))
             .font(Nacre.body).foregroundColor(Pearl.ink)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 4).padding(.top, 2)
+        if r.reason != nil, r.reasonBy == "claude" {
+            // AI-03s: one quiet grey byline, in Smart only (no badge).
+            Text("Reason worded by Claude.")
+                .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                .padding(.horizontal, 4)
+        }
         if let error = error { CautionBanner(text: error) }
         Button("Undo this one") { Task { await undo(r) } }
             .buttonStyle(APPrimaryButtonStyle(busy: busy))

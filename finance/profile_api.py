@@ -661,7 +661,16 @@ def profile_summary():
     return jsonify({"accounts": len(rows),
                     "needs_you": sum(1 for a in rows if a["status"] in NEEDS_YOU),
                     "rules": len(_rules(st)),
-                    "recurring": len(st.recurring_transfers())})
+                    "recurring": len(st.recurring_transfers()),
+                    # AU-01: the AI usage row, for the owner only.
+                    "ai_usage": _owner()})
+
+
+def _owner() -> bool:
+    from flask import g
+
+    from .ai_usage_api import is_owner
+    return is_owner(g.get("user"))
 
 
 # ── S-03: Categories and rules ───────────────────────────────────────────

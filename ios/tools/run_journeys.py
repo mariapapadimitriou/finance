@@ -290,6 +290,65 @@ def seed_ask(db_path: str) -> None:
                                                   "amex_1004": {"due_day": 14}}))
 
 
+# THL-309 (engBOT's SmartSortingUITests): Pearl sorts for you on Rules, a
+# pattern she said yes to whose last row Smart sorted with Claude's words,
+# and Smart's picks for the low-confidence guesses (a fake model, in the
+# seed: no network). The journey turns Smart on, so they show.
+SMART = "testSmartSorting"
+
+
+def seed_smart(db_path: str) -> None:
+    import json
+    from finance import pattern_sort as ps
+    from finance import smart_sort
+    from finance.ai import client as client_mod
+    from finance.ingest.base import IngestResult
+    from finance.models import Transaction
+    from finance.pipeline import ingest
+    from finance.store import Store
+    store = Store(db_path)
+    today = date.today()
+
+    def load(rows):
+        ingest(store, IngestResult(transactions=[
+            Transaction(date=(today - timedelta(days=n)).isoformat(), description=desc, amount=amt,
+                        account_id="amex_1004", account_name="American Express ••1004",
+                        raw={"account_type": "credit", "category_confidence": "LOW"})
+            for n, desc, amt in rows], account_id="amex_1004"))
+
+    load([(60 - i * 7, "NORTHSIDE PANTRY", 40.0 + i) for i in range(5)])
+    for t in store.all_transactions():
+        if t.description == "NORTHSIDE PANTRY":
+            store.set_transaction_category(t.fingerprint, "Groceries")
+    ps.switched_on(store)
+    for ask in ps.pending(store, today.isoformat()):
+        if ask["merchant"] and "Northside" in ask["merchant"]:
+            ps.confirm(store, ask["id"], today.isoformat())
+    load([(1, "NORTHSIDE PANTRY", 61.40)])
+
+    class Fake:
+        def send(self, *, model, system, messages, tools=None, max_tokens=1024, effort="low"):
+            return client_mod.Reply(model=model, stop_reason="tool_use", tool_calls=[{
+                "id": "t", "name": "pick", "input": {
+                    "answer": tools[0]["input_schema"]["properties"]["answer"]["enum"][0],
+                    "reason": "Your usual groceries, like your last [NUM1] at Northside Pantry."}}])
+
+    store.set_setting(smart_sort.SMART_KEY, "1")
+    smart_sort.run(store, today.isoformat(), base=store, user_id=0, client=Fake())
+    store.set_setting(smart_sort.SMART_KEY, "")
+    picks = {"SQ *CORNER STORE 22": "Groceries", "TST* LUCKY NOODLE": "Dining",
+             "PAYPAL *MAKERSMKT": "Shopping", "SP * NORTHSHOP CA": "Shopping",
+             "CITY PARKING 0042": "Transport", "BRIGHT DENTAL CLINIC": "Health"}
+    guesses = smart_sort.guesses(store)
+    for t in store.all_transactions():
+        if t.description in picks:
+            cat = picks[t.description]
+            guesses[t.fingerprint] = {"case": "new", "allowed": [cat], "pick": cat, "agree": True,
+                                      "answer": cat, "line": f"Looks like {t.merchant}, so {cat}.",
+                                      "version": "1"}
+    store.set_setting(smart_sort.GUESS_KEY, json.dumps(guesses, sort_keys=True))
+
+
 # AP-HomeCalm (engBOT's GaugeUITests): a ledger with nothing to do, in place
 # of the demo: three months of pay, rent and groceries, every row sorted.
 CALM = "testGaugeCalm"
@@ -393,6 +452,9 @@ def main() -> int:
                     subprocess.run(["xcrun", "simctl", "uninstall", udid, "com.mariapapadimitriou.pearl"], capture_output=True)
                 elif journey == CALM:
                     seed_calm(db_path)
+                    subprocess.run(["xcrun", "simctl", "uninstall", udid, "com.mariapapadimitriou.pearl"], capture_output=True)
+                elif journey == SMART:
+                    seed_smart(db_path)
                     subprocess.run(["xcrun", "simctl", "uninstall", udid, "com.mariapapadimitriou.pearl"], capture_output=True)
                 elif journey == JOINT:
                     seed_joint(db_path)

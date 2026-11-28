@@ -618,6 +618,10 @@ def _for_store(st, today: str | None = None) -> dict:
     # P3 / P4 (TP-P3-NoGuess): each What was this? its own four likeliest.
     from . import likely
     likely.annotate(st, review, txns)
+    # AI-03r / AI-03s (THL-309): each guess's one quiet reason; in Smart,
+    # Claude's pick among Python's answers and its words.
+    from . import smart_sort
+    smart_sort.annotate(st, review, txns)
     # Questions about her plan (finance/checks.py): Yes or No cards.
     from . import checks
     from . import api as core_api
@@ -656,13 +660,14 @@ def sorted_view(st, view: str, today: str) -> list[dict]:
     if view == "today":
         return sorted_log.today_rows(st, today)
     # AI-02: what Pearl sorted from her own answers first, each opening AI-03.
-    from . import pattern_sort
+    from . import pattern_sort, smart_sort
     learned = []
     for r in pattern_sort.records(st):
         t = st.get_transaction(r["txn"])
         if t is not None:
             learned.append({"id": t.fingerprint, "date": t.date[:10], "merchant": t.merchant or t.description,
-                            "amount": t.amount, "line": r["line"], "record": r["id"]})
+                            "amount": t.amount, "line": r["line"], "record": r["id"],
+                            **smart_sort.record_reason(st, r)})
     return learned + sorted_log.pearl_rows(st, for_store(st, today), today, ids_in)
 
 

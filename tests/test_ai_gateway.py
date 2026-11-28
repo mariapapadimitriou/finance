@@ -357,7 +357,7 @@ def test_prompts_load_by_id_and_version():
     for ref in ("ask@1", "ask@2", "ask@3"):
         text = prompts.load(ref)
         assert "Allowance" in text and "Never say \"safe to spend\"" in text
-    assert prompts.published() == ["ask@1", "ask@2", "ask@3"]
+    assert prompts.published() == ["ask@1", "ask@2", "ask@3", "sort_reason@1"]
     # Phase 2 (THL-308): they/them, and the model calls a tool before it writes.
     v2 = prompts.load("ask@3")
     assert " her " not in v2 and " she " not in v2
@@ -392,8 +392,8 @@ def test_vercel_ships_the_prompt_files():
 
 def test_every_route_names_a_published_prompt():
     for name, cfg in config.ROUTES.items():
-        # None: a route whose prompt comes with a later phase (sort_reason,
-        # Phase 4); until then it falls back ("no_prompt").
+        # None: a route whose prompt comes with a later phase; until then it
+        # falls back ("no_prompt").
         assert cfg["prompt"] is None or cfg["prompt"] in prompts.FROZEN, name
         assert cfg["effort"] in ("low", "medium", "high")
 
@@ -553,7 +553,8 @@ def test_only_ask_exposes_ai():
     import re
     uses = re.compile(r"from \.ai\b|from \. import ask\b(?!_)")
     routes = [p for p in (ROOT / "finance").glob("*_api.py") if uses.search(p.read_text(encoding="utf-8"))]
-    assert sorted(p.name for p in routes) == ["ask_api.py", "chat_api.py"]
+    # Phase 4 (THL-309): AU-01's read-only figures, owner only.
+    assert sorted(p.name for p in routes) == ["ai_usage_api.py", "ask_api.py", "chat_api.py"]
 
 
 def test_anthropic_is_a_requirement():

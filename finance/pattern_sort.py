@@ -66,6 +66,7 @@ BASELINE_KEY = "pattern_sort_baseline"   # {"at": iso, "known": [ids]}
 LOG_KEY = "pattern_sort_log"             # [record] before THL-310; read, new ones go to `detections`
 STATE_KEY = "pattern_sort_state"         # {pattern id: {"on": bool, "stopped_at": iso}}
 NEVER_KEY = "pattern_sort_never"         # [txn ids she undid]
+HELD_KEY = "smart_sort_held"             # [txn ids] Smart disagreed on: never sorted by Pearl (THL-309)
 MIGRATED_KEY = "pattern_sort_asks_first"      # set once rows sorted without asking are back
 SKIPS_MAX = 2                            # a second Skip and Pearl never asks again
 HOW = re.compile(r"[a-z0-9_-]{1,32}")    # where she said Yes ("ask", or the screen code); designBOT picks the places
@@ -277,9 +278,13 @@ def line(p: dict) -> str:
         else f"{label(p)} · like the last {p['count']}"
 
 
-def run(st, today: str) -> list[dict]:
+def run(st, today: str, vet=None) -> list[dict]:
     """Sort what can be sorted now; return the new records. Nothing when
-    the switch is off, nothing older than the switch, at most DAILY_CAP a day."""
+    the switch is off, nothing older than the switch, at most DAILY_CAP a day.
+
+    `vet(t, p)` (Smart, finance/smart_sort.py) is asked before each row is
+    sorted: False leaves it for Quick sort, a dict adds to its record (the
+    reason Claude worded), True sorts it as Rules would."""
     if settle_baseline(st):
         return []                           # after Start over: the history isn't back yet
     base = _json(st, BASELINE_KEY, None)
@@ -291,7 +296,7 @@ def run(st, today: str) -> list[dict]:
     room = DAILY_CAP - done_today
     if room <= 0:
         return []
-    never = set(_json(st, NEVER_KEY, []))
+    never = set(_json(st, NEVER_KEY, [])) | set(_json(st, HELD_KEY, []))
     sorted_ids = {r["txn"] for r in log}
     txns = st.all_transactions()
     state = _state(st)
@@ -317,7 +322,12 @@ def run(st, today: str) -> list[dict]:
         if p is None or t.fingerprint in set((state.get(p["id"]) or {}).get("before") or []):
             # Matched before she said Yes: hers to sort.
             continue
+        verdict = vet(t, p) if vet is not None else True
+        if verdict is False:
+            continue
         rec = _apply(st, t, p, today)
+        if rec and isinstance(verdict, dict):
+            rec.update(verdict)
         if rec:
             log.append(rec)
             new.append(rec)
