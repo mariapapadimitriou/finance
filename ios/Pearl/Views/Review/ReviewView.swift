@@ -71,7 +71,8 @@ struct ReviewView: View {
         .overlay {
             if sorting {
                 QuickSortView(asks: quick, categories: categories, names: recentNames,
-                              patterns: review?.patternAsks ?? [], trips: review?.tripAsks ?? []) {
+                              patterns: review?.patternAsks ?? [], trips: review?.tripAsks ?? [],
+                              pairs: review?.pairAsks ?? []) {
                     sorting = false
                     Task { await load() }
                 }
@@ -269,13 +270,15 @@ struct ReviewView: View {
                 }
             }
             if !showingSkipped && !showingSorted
-                && !(quick.isEmpty && (review?.patternAsks ?? []).isEmpty && (review?.tripAsks ?? []).isEmpty) {
+                && !(quick.isEmpty && (review?.patternAsks ?? []).isEmpty && (review?.tripAsks ?? []).isEmpty
+                     && (review?.pairAsks ?? []).isEmpty) {
                 // T-10; REFRESH-03's P1 took "Tap one to sort it." out. AI-18 and TR-01 count too.
                 // TEST-35: the same number as All, Home and the badge (the rows
                 // listed); Quick sort's own "left" still counts its trip and
                 // pattern cards. With only those left, they are the count.
                 QuickSortCard(count: quick.isEmpty
-                              ? (review?.patternAsks.count ?? 0) + (review?.tripAsks.count ?? 0) : quick.count,
+                              ? (review?.patternAsks.count ?? 0) + (review?.tripAsks.count ?? 0)
+                                + (review?.pairAsks.count ?? 0) : quick.count,
                               sorted: (review?.youSorted ?? 0) + (review?.pearlSorted ?? 0)) {
                     sorting = true
                 }

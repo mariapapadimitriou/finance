@@ -1,0 +1,305 @@
+{
+ "name": "subscriptions_forgotten",
+ "about": "Made up. A music subscription charging for eight months that she never answered (forgotten), one only four months old (not yet), and a utility bill (a bill, not a subscription).",
+ "today": "2026-11-15",
+ "accounts": {
+  "chq": {
+   "name": "Chequing",
+   "type": "depository",
+   "subtype": "checking",
+   "mask": "1001"
+  },
+  "visa": {
+   "name": "Visa",
+   "type": "credit",
+   "subtype": "credit card",
+   "mask": "3003"
+  }
+ },
+ "transactions": [
+  {
+   "ref": "old-0",
+   "account_id": "visa",
+   "date": "2026-04-04",
+   "name": "SPOTIFY P0A1B2",
+   "merchant_name": "Spotify",
+   "amount": 11.99,
+   "personal_finance_category": {
+    "primary": "ENTERTAINMENT",
+    "detailed": "ENTERTAINMENT_MUSIC_AND_AUDIO"
+   }
+  },
+  {
+   "ref": "old-1",
+   "account_id": "visa",
+   "date": "2026-05-04",
+   "name": "SPOTIFY P0A1B2",
+   "merchant_name": "Spotify",
+   "amount": 11.99,
+   "personal_finance_category": {
+    "primary": "ENTERTAINMENT",
+    "detailed": "ENTERTAINMENT_MUSIC_AND_AUDIO"
+   }
+  },
+  {
+   "ref": "old-2",
+   "account_id": "visa",
+   "date": "2026-06-04",
+   "name": "SPOTIFY P0A1B2",
+   "merchant_name": "Spotify",
+   "amount": 11.99,
+   "personal_finance_category": {
+    "primary": "ENTERTAINMENT",
+    "detailed": "ENTERTAINMENT_MUSIC_AND_AUDIO"
+   }
+  },
+  {
+   "ref": "old-3",
+   "account_id": "visa",
+   "date": "2026-07-04",
+   "name": "SPOTIFY P0A1B2",
+   "merchant_name": "Spotify",
+   "amount": 11.99,
+   "personal_finance_category": {
+    "primary": "ENTERTAINMENT",
+    "detailed": "ENTERTAINMENT_MUSIC_AND_AUDIO"
+   }
+  },
+  {
+   "ref": "old-4",
+   "account_id": "visa",
+   "date": "2026-08-04",
+   "name": "SPOTIFY P0A1B2",
+   "merchant_name": "Spotify",
+   "amount": 11.99,
+   "personal_finance_category": {
+    "primary": "ENTERTAINMENT",
+    "detailed": "ENTERTAINMENT_MUSIC_AND_AUDIO"
+   }
+  },
+  {
+   "ref": "old-5",
+   "account_id": "visa",
+   "date": "2026-09-04",
+   "name": "SPOTIFY P0A1B2",
+   "merchant_name": "Spotify",
+   "amount": 11.99,
+   "personal_finance_category": {
+    "primary": "ENTERTAINMENT",
+    "detailed": "ENTERTAINMENT_MUSIC_AND_AUDIO"
+   }
+  },
+  {
+   "ref": "old-6",
+   "account_id": "visa",
+   "date": "2026-10-04",
+   "name": "SPOTIFY P0A1B2",
+   "merchant_name": "Spotify",
+   "amount": 11.99,
+   "personal_finance_category": {
+    "primary": "ENTERTAINMENT",
+    "detailed": "ENTERTAINMENT_MUSIC_AND_AUDIO"
+   }
+  },
+  {
+   "ref": "old-7",
+   "account_id": "visa",
+   "date": "2026-11-04",
+   "name": "SPOTIFY P0A1B2",
+   "merchant_name": "Spotify",
+   "amount": 11.99,
+   "personal_finance_category": {
+    "primary": "ENTERTAINMENT",
+    "detailed": "ENTERTAINMENT_MUSIC_AND_AUDIO"
+   }
+  },
+  {
+   "ref": "new-0",
+   "account_id": "visa",
+   "date": "2026-08-12",
+   "name": "AUDIBLE*ZX81",
+   "merchant_name": "Audible",
+   "amount": 16.95,
+   "personal_finance_category": {
+    "primary": "ENTERTAINMENT",
+    "detailed": "ENTERTAINMENT_MUSIC_AND_AUDIO"
+   }
+  },
+  {
+   "ref": "new-1",
+   "account_id": "visa",
+   "date": "2026-09-12",
+   "name": "AUDIBLE*ZX81",
+   "merchant_name": "Audible",
+   "amount": 16.95,
+   "personal_finance_category": {
+    "primary": "ENTERTAINMENT",
+    "detailed": "ENTERTAINMENT_MUSIC_AND_AUDIO"
+   }
+  },
+  {
+   "ref": "new-2",
+   "account_id": "visa",
+   "date": "2026-10-12",
+   "name": "AUDIBLE*ZX81",
+   "merchant_name": "Audible",
+   "amount": 16.95,
+   "personal_finance_category": {
+    "primary": "ENTERTAINMENT",
+    "detailed": "ENTERTAINMENT_MUSIC_AND_AUDIO"
+   }
+  },
+  {
+   "ref": "new-3",
+   "account_id": "visa",
+   "date": "2026-11-12",
+   "name": "AUDIBLE*ZX81",
+   "merchant_name": "Audible",
+   "amount": 16.95,
+   "personal_finance_category": {
+    "primary": "ENTERTAINMENT",
+    "detailed": "ENTERTAINMENT_MUSIC_AND_AUDIO"
+   }
+  },
+  {
+   "ref": "hydro-0",
+   "account_id": "chq",
+   "date": "2026-01-20",
+   "name": "CITY HYDRO BILL PAYMENT",
+   "merchant_name": "City Hydro",
+   "amount": 88.0,
+   "personal_finance_category": {
+    "primary": "RENT_AND_UTILITIES",
+    "detailed": "RENT_AND_UTILITIES_GAS_AND_ELECTRICITY"
+   }
+  },
+  {
+   "ref": "hydro-1",
+   "account_id": "chq",
+   "date": "2026-02-20",
+   "name": "CITY HYDRO BILL PAYMENT",
+   "merchant_name": "City Hydro",
+   "amount": 89.0,
+   "personal_finance_category": {
+    "primary": "RENT_AND_UTILITIES",
+    "detailed": "RENT_AND_UTILITIES_GAS_AND_ELECTRICITY"
+   }
+  },
+  {
+   "ref": "hydro-2",
+   "account_id": "chq",
+   "date": "2026-03-20",
+   "name": "CITY HYDRO BILL PAYMENT",
+   "merchant_name": "City Hydro",
+   "amount": 90.0,
+   "personal_finance_category": {
+    "primary": "RENT_AND_UTILITIES",
+    "detailed": "RENT_AND_UTILITIES_GAS_AND_ELECTRICITY"
+   }
+  },
+  {
+   "ref": "hydro-3",
+   "account_id": "chq",
+   "date": "2026-04-20",
+   "name": "CITY HYDRO BILL PAYMENT",
+   "merchant_name": "City Hydro",
+   "amount": 88.0,
+   "personal_finance_category": {
+    "primary": "RENT_AND_UTILITIES",
+    "detailed": "RENT_AND_UTILITIES_GAS_AND_ELECTRICITY"
+   }
+  },
+  {
+   "ref": "hydro-4",
+   "account_id": "chq",
+   "date": "2026-05-20",
+   "name": "CITY HYDRO BILL PAYMENT",
+   "merchant_name": "City Hydro",
+   "amount": 89.0,
+   "personal_finance_category": {
+    "primary": "RENT_AND_UTILITIES",
+    "detailed": "RENT_AND_UTILITIES_GAS_AND_ELECTRICITY"
+   }
+  },
+  {
+   "ref": "hydro-5",
+   "account_id": "chq",
+   "date": "2026-06-20",
+   "name": "CITY HYDRO BILL PAYMENT",
+   "merchant_name": "City Hydro",
+   "amount": 90.0,
+   "personal_finance_category": {
+    "primary": "RENT_AND_UTILITIES",
+    "detailed": "RENT_AND_UTILITIES_GAS_AND_ELECTRICITY"
+   }
+  },
+  {
+   "ref": "hydro-6",
+   "account_id": "chq",
+   "date": "2026-07-20",
+   "name": "CITY HYDRO BILL PAYMENT",
+   "merchant_name": "City Hydro",
+   "amount": 88.0,
+   "personal_finance_category": {
+    "primary": "RENT_AND_UTILITIES",
+    "detailed": "RENT_AND_UTILITIES_GAS_AND_ELECTRICITY"
+   }
+  },
+  {
+   "ref": "hydro-7",
+   "account_id": "chq",
+   "date": "2026-08-20",
+   "name": "CITY HYDRO BILL PAYMENT",
+   "merchant_name": "City Hydro",
+   "amount": 89.0,
+   "personal_finance_category": {
+    "primary": "RENT_AND_UTILITIES",
+    "detailed": "RENT_AND_UTILITIES_GAS_AND_ELECTRICITY"
+   }
+  },
+  {
+   "ref": "hydro-8",
+   "account_id": "chq",
+   "date": "2026-09-20",
+   "name": "CITY HYDRO BILL PAYMENT",
+   "merchant_name": "City Hydro",
+   "amount": 90.0,
+   "personal_finance_category": {
+    "primary": "RENT_AND_UTILITIES",
+    "detailed": "RENT_AND_UTILITIES_GAS_AND_ELECTRICITY"
+   }
+  },
+  {
+   "ref": "hydro-9",
+   "account_id": "chq",
+   "date": "2026-10-20",
+   "name": "CITY HYDRO BILL PAYMENT",
+   "merchant_name": "City Hydro",
+   "amount": 88.0,
+   "personal_finance_category": {
+    "primary": "RENT_AND_UTILITIES",
+    "detailed": "RENT_AND_UTILITIES_GAS_AND_ELECTRICITY"
+   }
+  }
+ ],
+ "exhaustive": [
+  "recurring.forgotten"
+ ],
+ "labels": [
+  {
+   "detector": "recurring.forgotten",
+   "refs": [
+    "old-0",
+    "old-1",
+    "old-2",
+    "old-3",
+    "old-4",
+    "old-5",
+    "old-6",
+    "old-7"
+   ],
+   "match": "subset",
+   "truth": true
+  }
+ ]
+}

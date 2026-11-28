@@ -134,11 +134,12 @@ class TestSubscription:
         assert it == {"id": "subscription:Crave", "kind": "subscription", "tier": "yes",
                       "title": "Crave subscription", "amount": "$19.99/mo",
                       "icon": "subscription", "tone": "rose", "yes": "Yes", "ack": None, "target": None,
-                      "since": TODAY.isoformat()}
+                      "sub": None, "no": None, "sheet": None, "since": TODAY.isoformat()}
 
     def test_an_old_one_is_not_new(self, client):
         crave(client, since="2026-03-20")
-        assert items(client) == []
+        # Not new; never answered, so WL-21 asks "Still using Crave?" instead (THL-309).
+        assert [i["kind"] for i in items(client)] == ["forgotten"]
 
     def test_answered_in_income_and_bills_it_goes(self, client):
         crave(client)
@@ -168,8 +169,8 @@ class TestPriceRise:
         [it] = items(client)
         assert it["id"] == "price_rise:Netflix:1700" and it["kind"] == "price_rise"
         assert (it["tier"], it["tone"], it["icon"]) == ("yes", "rose", "price")
-        assert it["title"] == "Netflix went up $2" and it["yes"] == "Update the bill"
-        assert it["amount"] is None and it["target"] is None
+        assert it["title"] == "Netflix went up $2" and it["yes"] == "Got it" and it["no"] == "Not this"
+        assert it["amount"] == "$17.00/mo" and it["sub"] == "Was $15.00 since June." and it["target"] is None
 
     def test_a_rise_months_ago_is_not_news(self, client):
         """Measured against the charge before the latest, not a median over
@@ -180,7 +181,9 @@ class TestPriceRise:
 
     def test_not_a_bill_she_counts(self, client):
         netflix(client, confirm=False)
-        assert items(client) == []
+        # No price rise on a bill she hasn't counted; six months unanswered
+        # is WL-21's "Still using Netflix?" (THL-309).
+        assert [i["kind"] for i in items(client)] == ["forgotten"]
 
     def test_yes_updates_the_bill_and_undo_puts_it_back(self, client):
         netflix(client)
@@ -190,7 +193,7 @@ class TestPriceRise:
                         if b["key"] == "Netflix")["amount"]
         assert amount() == 15.0
         r = post(client, "yes", ["price_rise:Netflix:1700"])
-        assert r["toast"] == "Netflix bill updated" and r["items"] == []
+        assert r["toast"] == "Netflix is now $17.00 a month." and r["items"] == []
         assert amount() == 17.0
         r = post(client, "undo_yes", ["price_rise:Netflix:1700"])
         assert amount() == 15.0 and [i["kind"] for i in r["items"]] == ["price_rise"]
@@ -413,7 +416,7 @@ class TestGoodNews:
                       "title": "Japan fund is halfway there", "amount": None, "icon": "piggy",
                       "tone": "good", "yes": None, "ack": None,
                       "target": {"screen": "piggy", "id": bank, "name": "Japan fund", "month": None},
-                      "since": TODAY.isoformat()}
+                      "sub": None, "no": None, "sheet": None, "since": TODAY.isoformat()}
 
     def test_piggy_not_halfway(self, client):
         piggy(client, opening=1000)

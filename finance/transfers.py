@@ -117,6 +117,36 @@ def _sure_arrival(t: Transaction) -> bool:
     return t.category == NEUTRAL or _ruled_spending(t)
 
 
+def _my_first_name() -> str | None:
+    """Her first name, in a request (review._me); None outside one."""
+    try:
+        from flask import g
+        user = g.get("user")
+    except RuntimeError:
+        return None
+    name = getattr(user, "first_name", None) if user else None
+    return name.strip().lower() if isinstance(name, str) and name.strip() else None
+
+
+def person_to_person(t: Transaction) -> bool:
+    """An e-Transfer that names someone else (AI4-Pair, THL-309): a friend's
+    money, never the other end of a move between her own accounts. The
+    Phase 3 replay paired one friend's $200 in with another friend's $200
+    out a day later. One naming her (sent to herself at another bank) can
+    still pair; so can one that names nobody."""
+    from .etransfers import party
+    p = party(t)
+    if not p or not p.get("name"):
+        return False
+    words = str(p["name"]).split()
+    # A person: a name she typed, a handle, or the bank's two words or more.
+    # One word from the bank's wording can be "Reversal" (E-TFR REVERSAL).
+    if p.get("named_by") != "you" and not p.get("handle") and len(words) < 2:
+        return False
+    me = _my_first_name()
+    return not (me and words[0].lower() == me)
+
+
 def kept_from_rule(transactions: list[Transaction], rows: list[Transaction],
                    category: str, accounts: dict | None = None) -> set[str]:
     """Which of `rows` a merchant rule for `category` would leave alone: the
@@ -350,7 +380,9 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
                if t.amount < 0 and not t.repays
                and (t.category != "Income" or _guessed_income(t))
                and (not getattr(t, "excluded", None) or _put_away(t))
-               and str((t.raw or {}).get("account_type", "")).lower() != "loan"]
+               and str((t.raw or {}).get("account_type", "")).lower() != "loan"
+               # A friend's e-Transfer is never her own money arriving (THL-309).
+               and not person_to_person(t)]
     # Guessed income is only ever a one-to-one end (pass 1), never part of a
     # sum or a day that nets out: the loose passes need the surer arrivals.
     sure_in = [t for t in inflows if t.category != "Income"]
@@ -570,13 +602,17 @@ def _transfer_pairs(transactions: list[Transaction], today: str | None = None) -
     the amount, the two accounts, the days between, and that neither end was
     sorted as spending or income. Each arrival pairs once, nearest first.
     """
+    # THL-309 (transfers.pairs@2): an e-Transfer naming someone else is
+    # person to person at either end, unless she linked it herself.
     outs = sorted((t for t in transactions
-                   if t.amount > 0 and not others(t) and not t.unpaired and (t.category or "") in _MOVED),
+                   if t.amount > 0 and not others(t) and not t.unpaired and (t.category or "") in _MOVED
+                   and (t.transfer_link or not person_to_person(t))),
                   key=lambda t: (t.date, t.fingerprint))
     arrivals: dict[int, list[Transaction]] = {}
     for t in transactions:
         if (t.amount < 0 and not _theirs(t) and not t.repays and not t.unpaired
-                and ((t.category or "") in _MOVED - {UNSORTED} or _guessed_arrival(t))):
+                and ((t.category or "") in _MOVED - {UNSORTED} or _guessed_arrival(t))
+                and not person_to_person(t)):
             arrivals.setdefault(_cents(-t.amount), []).append(t)
     used: set[str] = set()
     pairs: dict[str, str] = {}

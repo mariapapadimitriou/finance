@@ -395,6 +395,9 @@ struct AskThisMonth: View {
 struct AskCompare: View {
     let spent: Double
     let usual: Double
+    /// WL-20 (THL-309) says Now and Before.
+    var spentLabel = "This month"
+    var usualLabel = "Usual by now"
 
     var body: some View {
         let top = max(spent, usual, 1) * 1.15
@@ -413,11 +416,11 @@ struct AskCompare: View {
             HStack(spacing: 16) {
                 HStack(spacing: 6) {
                     RoundedRectangle(cornerRadius: 3).fill(Pearl.moneyOut).frame(width: 10, height: 10)
-                    Text("This month")
+                    Text(spentLabel)
                 }
                 HStack(spacing: 6) {
                     RoundedRectangle(cornerRadius: 1).fill(Pearl.ink).frame(width: 2, height: 12)
-                    Text("Usual by now")
+                    Text(usualLabel)
                 }
             }
             .font(Nacre.footnote).foregroundColor(Pearl.muted)

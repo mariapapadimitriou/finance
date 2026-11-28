@@ -16,12 +16,15 @@ struct QuickSortPrompt: Decodable {
     var patterns: [PatternAsk] { review?.patternAsks ?? [] }
     /// TR-01: likely trips Pearl asks about, after the patterns.
     var trips: [TripAsk] { review?.tripAsks ?? [] }
+    /// TR-30 (THL-309): one card per pair, after the trips.
+    var pairs: [PairAsk] { review?.pairAsks ?? [] }
 
     /// THL-254, on open: only what's new since her last visit. The rest
     /// stays in Needs a look (and Home's Sort now deals everything).
     var newAsks: [Ask] { asks.filter { isNew($0.item.key) } }
     var newPatterns: [PatternAsk] { patterns.filter { isNew($0.key) } }
     var newTrips: [TripAsk] { trips.filter { isNew($0.key) } }
+    var newPairs: [PairAsk] { pairs.filter { isNew($0.key) } }
 
     private func isNew(_ key: String) -> Bool { new.map { $0.contains(key) } ?? true }
 
@@ -86,8 +89,12 @@ struct QuickSortView: View {
     var names: [String] = []
     /// AI-18: one card for each pattern Pearl asks about, before the rest.
     var patterns: [PatternAsk] = []
-    /// TR-01: one card for each likely trip, after the patterns.
+    /// TR-01: one card for each likely trip, after the patterns. TR-20
+    /// (THL-309): past trips (`past`, last in the server's list) come after
+    /// every other question.
     var trips: [TripAsk] = []
+    /// TR-30 (THL-309): one card per pair, after the recent trips.
+    var pairs: [PairAsk] = []
     let onClose: () -> Void
 
     /// The cards, less the ones sorted along with another (T-86).
@@ -97,6 +104,8 @@ struct QuickSortView: View {
     @State private var patternAt = 0
     /// How many of `trips` have been answered; they come next.
     @State private var tripAt = 0
+    /// How many of `pairs` have been answered; after the recent trips.
+    @State private var pairAt = 0
     /// TR-14: the trip card was tapped; its rows, before she answers.
     @State private var seeingTrip: TripAsk?
     /// The last answer in this sitting, for Undo at the card's top right
@@ -117,6 +126,8 @@ struct QuickSortView: View {
         case trip(MadeTrip)
         /// AI-18y: the pattern just said Yes to.
         case pattern(PatternAsk)
+        /// TR-30: a pair just answered, and the link's Undo for a Yes.
+        case pair(PairAsk, answer: String, undo: JSONValue?)
         /// OT-02q: the older ones just moved with the last answer; after its
         /// Undo, or a second one, the answer itself.
         case older(undo: JSONValue?, count: Int, answer: Sorted)
@@ -168,12 +179,15 @@ struct QuickSortView: View {
     private let threshold: CGFloat = 110
 
     init(asks: [Ask], categories: [CategoryList.Category], names: [String] = [],
-         patterns: [PatternAsk] = [], trips: [TripAsk] = [], onClose: @escaping () -> Void) {
+         patterns: [PatternAsk] = [], trips: [TripAsk] = [], pairs: [PairAsk] = [],
+         onClose: @escaping () -> Void) {
         self.asks = asks
         self.categories = categories
         self.names = names
         self.patterns = patterns
-        self.trips = trips
+        // TR-20: recent trips first, past ones (newest first) after them.
+        self.trips = trips.filter { $0.past == nil } + trips.filter { $0.past != nil }
+        self.pairs = pairs
         self.onClose = onClose
         _deck = State(initialValue: asks)
     }
@@ -316,6 +330,9 @@ struct QuickSortView: View {
             patternLines(pattern)
         } else if let trip = trip {
             tripLines(trip)
+        } else if pair != nil {
+            // TR-30: the question and its reason are on the card.
+            EmptyView()
         } else if let ask = current, drafts[ask.id] == nil, let unsure = ask.item.unsure {
             unsureLines(unsure)
         } else {
@@ -375,17 +392,33 @@ struct QuickSortView: View {
     /// AI-18: the pattern on top, while there is one; the deck waits under it.
     private var pattern: PatternAsk? { patternAt < patterns.count ? patterns[patternAt] : nil }
 
-    /// TR-01: a likely trip, once the patterns are answered.
-    private var trip: TripAsk? { pattern == nil && tripAt < trips.count ? trips[tripAt] : nil }
+    /// TR-01: a likely trip, once the patterns are answered. TR-20: a past
+    /// one only once everything else is (after the new questions).
+    private var trip: TripAsk? {
+        guard pattern == nil, tripAt < trips.count else { return nil }
+        if tripAt < recentTrips { return trips[tripAt] }
+        return pairAt >= pairs.count && index >= deck.count ? trips[tripAt] : nil
+    }
 
-    private var current: Ask? { pattern == nil && trip == nil && index < deck.count ? deck[index] : nil }
+    /// How many of `trips` aren't past trips (they lead the list).
+    private var recentTrips: Int { trips.filter { $0.past == nil }.count }
+
+    /// TR-30: a pair, once the patterns and recent trips are answered.
+    private var pair: PairAsk? {
+        pattern == nil && tripAt >= recentTrips && pairAt < pairs.count ? pairs[pairAt] : nil
+    }
+
+    private var current: Ask? {
+        pattern == nil && trip == nil && pair == nil && index < deck.count ? deck[index] : nil
+    }
 
     /// Every question Quick sort walks: Needs a look's.
     private var total: Int { deck.count }
 
     /// What's still to sort, patterns and trips too.
     private var remaining: Int {
-        max(patterns.count - patternAt, 0) + max(trips.count - tripAt, 0) + max(total - index, 0)
+        max(patterns.count - patternAt, 0) + max(trips.count - tripAt, 0) + max(pairs.count - pairAt, 0)
+            + max(total - index, 0)
     }
 
     private func isGuess(_ ask: Ask) -> Bool { ask.isGuess(accounts) }
@@ -536,7 +569,7 @@ struct QuickSortView: View {
     }
 
     /// What's been answered in this sitting, for the streak.
-    private var sortedSoFar: Int { patternAt + tripAt + index }
+    private var sortedSoFar: Int { patternAt + tripAt + pairAt + index }
 
     private var stack: some View {
         // A+: one card, no peeking stack (G1-QuickSort).
@@ -568,6 +601,18 @@ struct QuickSortView: View {
                     .accessibilityHint("Yes groups them as one trip. They stay in \(trip.months).")
                     .accessibilityIdentifier("quick-sort-trip")
                     .id(trip.key)
+                    .transition(arrival)
+            } else if let pair = pair {
+                PairAskCard(pair: pair)
+                    .modifier(away)
+                    .gesture(swipe)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAction(named: "Yes") { right() }
+                    .accessibilityAction(named: "Not this") { pairAnswer(pair, "not_this") }
+                    .accessibilityAction(named: "Skip") { left() }
+                    .accessibilityHint("Yes counts the two as one transfer, not spending or income.")
+                    .accessibilityIdentifier("quick-sort-pair")
+                    .id(pair.key)
                     .transition(arrival)
             } else if let ask = current {
                 card(ask)
@@ -782,7 +827,8 @@ struct QuickSortView: View {
     /// came to (per currency, TR-02m), its dates and count, "Were you in Montréal?" (G7-TripAsk).
     private func tripCard(_ t: TripAsk) -> some View {
         VStack(spacing: 8) {
-            Text("A TRIP")
+            // TR-20 (THL-309): "PAST TRIP · 1 OF 6" for a past one.
+            Text(t.overline.uppercased())
                 .font(.custom("Figtree-SemiBold", size: 12, relativeTo: .caption)).tracking(1.2)
                 .foregroundColor(Pearl.action)
             CFRing(name: t.place ?? "Trip", size: 56,
@@ -856,7 +902,11 @@ struct QuickSortView: View {
     /// Yes, No and Answer.
     @ViewBuilder private var buttons: some View {
         let guessing = current.map(hasYes) ?? true
-        HStack(spacing: current?.kind == .check ? 32 : 56) {
+        HStack(spacing: current?.kind == .check || pair != nil ? 32 : 56) {
+            if let pair = pair {
+                // TR-30 (AI4-Pair): Not this · Skip · Yes.
+                roundButton(symbol: "xmark", label: "Not this", filled: false) { pairAnswer(pair, "not_this") }
+            }
             if let ask = current, let q = paybackGuess(ask) {
                 // P5e: Not this, not Skip: Pearl's guess was wrong.
                 roundButton(symbol: "xmark", label: "Not this", filled: false) { paybackNot(ask, q) }
@@ -877,7 +927,7 @@ struct QuickSortView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .disabled((current == nil && pattern == nil && trip == nil) || leaving != nil)
+        .disabled((current == nil && pattern == nil && trip == nil && pair == nil) || leaving != nil)
     }
 
     /// The pre-A+ `roundButton`, restyled in A+ tokens: a 56 pt circle
@@ -934,6 +984,7 @@ struct QuickSortView: View {
         case .skipped: return nil
         case .trip(let made): return "\(made.name) is a trip."
         case .pattern(let p): return "\(p.name): \(p.label), from now on."
+        case .pair(_, let answer, _): return answer == "yes" ? "One transfer." : nil
         case .older(_, let count, _): return "\(count) more moved."
         }
     }
@@ -969,6 +1020,7 @@ struct QuickSortView: View {
         case .skipped(let s): await undoSkip(s)
         case .trip(let made): await undoTrip(made)
         case .pattern(let p): await undoYes(p)
+        case .pair(let p, _, let payload): await undoPair(p, payload)
         case .older(let payload, let count, let answer): await undoOlder(payload, count, answer)
         }
     }
@@ -1008,7 +1060,7 @@ struct QuickSortView: View {
     private func begin() async {
         // Started: today's offer is used, and these questions aren't new any more.
         // The pattern and trip cards too, or they'd count as new on every open.
-        let keys = asks.map(\.item.key) + patterns.map(\.key) + trips.map(\.key)
+        let keys = asks.map(\.item.key) + patterns.map(\.key) + trips.map(\.key) + pairs.map(\.key)
         let _: OK? = try? await app.api.post("api/quick-sort/seen", ["ids": keys, "start": true])
         if accounts.isEmpty, let overview: AccountsOverview = try? await app.api.get("api/accounts/overview") {
             accounts = overview.linked
@@ -1023,6 +1075,10 @@ struct QuickSortView: View {
         }
         if let trip = trip {
             tripYes(trip)
+            return
+        }
+        if let pair = pair {
+            pairAnswer(pair, "yes")
             return
         }
         guard let ask = current, leaving == nil else { return }
@@ -1144,6 +1200,55 @@ struct QuickSortView: View {
         }
     }
 
+    // MARK: TR-30, a pair (THL-309)
+
+    /// Yes links the two as one transfer; Not this and Skip leave both as
+    /// they are (Pearl doesn't ask about this pair again). Undo takes any back.
+    private func pairAnswer(_ p: PairAsk, _ answer: String) {
+        guard leaving == nil, !busy else { return }
+        fly(answer == "yes")
+        Task { await sendPair(p, answer) }
+    }
+
+    private func sendPair(_ p: PairAsk, _ answer: String) async {
+        busy = true
+        defer { busy = false }
+        do {
+            struct Linked: Decodable { let undo: JSONValue? }
+            let reply: Linked = try await app.api.post("api/quick-sort/pairs/\(p.out)/\(p.in)/\(answer)", [:])
+            error = nil
+            withAnimation { lastAnswer = .pair(p, answer: answer, undo: reply.undo) }
+            drag = .zero
+            leaving = nil
+            pairAt += 1
+            // Like every answer here: Home reloads when Quick sort finishes or closes.
+            if remaining == 0 { await finish() }
+        } catch {
+            self.error = app.handle(error)
+            withAnimation(.spring()) { leaving = nil; drag = .zero }
+        }
+    }
+
+    /// Undo: a Yes's link comes apart (the link's own Undo); the pair's card comes back.
+    private func undoPair(_ p: PairAsk, _ payload: JSONValue?) async {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
+        let after = pairAt
+        withAnimation(Self.undoEase) { lastAnswer = nil; done = nil; pairAt = max(pairAt - 1, 0) }
+        do {
+            if let body = payload?.any as? [String: Any] {
+                let _: OK = try await app.api.post("api/transactions/undo", body)
+                app.changed()
+            }
+            let _: OK = try await app.api.post("api/quick-sort/pairs/\(p.out)/\(p.in)/undo", [:])
+            error = nil
+        } catch {
+            self.error = app.handle(error)
+            withAnimation(Self.undoEase) { pairAt = after }
+        }
+    }
+
     // MARK: TR-01, a trip
 
     /// Yes: the rows become one trip, named for its place. They stay in their months.
@@ -1212,6 +1317,10 @@ struct QuickSortView: View {
         }
         if let trip = trip {
             tripSkip(trip)
+            return
+        }
+        if let pair = pair {
+            pairAnswer(pair, "skip")
             return
         }
         guard let ask = current, leaving == nil else { return }
@@ -1624,5 +1733,49 @@ struct CardAway: ViewModifier {
             .offset(x: x, y: y)
             .rotationEffect(.degrees(tilt))
             .opacity(fade ? 0 : 1)
+    }
+}
+
+// MARK: - TR-30 · Same money? (AI4-Pair, THL-309)
+
+/// One card about one pair (qs.css `.qcard` with `.pairrows`): SAME MONEY?,
+/// "Out of TD Chequing · Nov 20 · $500.00" over "Onto TD Visa · Nov 21 ·
+/// $500.00" in transfer grey with no sign, the question, and why Pearl asks.
+struct PairAskCard: View {
+    let pair: PairAsk
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text("SAME MONEY?")
+                .font(.custom("Figtree-SemiBold", size: 12, relativeTo: .caption)).tracking(1.2)
+                .foregroundColor(Pearl.action)
+            VStack(spacing: 0) {
+                row("Out of \(pair.fromAccount)", pair.outDate)
+                APSeparator(afterFace: false)
+                row("Onto \(pair.toAccount)", pair.inDate)
+            }
+            .padding(.top, 12)
+            Text("One payment moving between your accounts?")
+                .font(Font.custom("Fraunces-SemiBold", size: 24, relativeTo: .title)).foregroundColor(Pearl.ink)
+                .multilineTextAlignment(.center).lineLimit(3)
+                .padding(.top, 14)
+            Text(pair.reason).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                .multilineTextAlignment(.center).lineLimit(2)
+        }
+        .modifier(CardFace())
+    }
+
+    /// `.prow2`: the account (16), the day (13 muted), the amount (16/600, `moved`).
+    private func row(_ title: String, _ day: String) -> some View {
+        HStack(spacing: 10) {
+            Text(title).font(.custom("Figtree-Regular", size: 16, relativeTo: .body))
+                .foregroundColor(Pearl.ink).lineLimit(1).truncationMode(.tail)
+            Spacer(minLength: 6)
+            Text(Format.short(day)).font(Nacre.footnote).foregroundColor(Pearl.muted)
+            Text(Format.amount(pair.amount))
+                .font(.custom("Figtree-SemiBold", size: 16, relativeTo: .body))
+                .monospacedDigit().foregroundColor(Pearl.moved)
+        }
+        .frame(minHeight: 48)
     }
 }

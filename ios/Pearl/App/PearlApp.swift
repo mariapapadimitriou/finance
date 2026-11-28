@@ -180,6 +180,7 @@ struct MainTabs: View {
     @State private var quickSortPatterns: [PatternAsk] = []
     /// TR-01: likely trips, after the patterns.
     @State private var quickSortTrips: [TripAsk] = []
+    @State private var quickSortPairs: [PairAsk] = []
     @State private var offered = false
     /// SEC-10: another device asking to sign in as her, and the ones she's seen.
     @State private var approval: Approval?
@@ -252,10 +253,10 @@ struct MainTabs: View {
         }
         // Part of this screen, not presented over it: nothing dismissed inside can close it.
         .overlay {
-            if !quickSort.isEmpty || !quickSortPatterns.isEmpty || !quickSortTrips.isEmpty {
+            if !quickSort.isEmpty || !quickSortPatterns.isEmpty || !quickSortTrips.isEmpty || !quickSortPairs.isEmpty {
                 QuickSortView(asks: quickSort, categories: app.categories, names: quickSortNames,
-                              patterns: quickSortPatterns, trips: quickSortTrips) {
-                    quickSort = []; quickSortPatterns = []; quickSortTrips = []
+                              patterns: quickSortPatterns, trips: quickSortTrips, pairs: quickSortPairs) {
+                    quickSort = []; quickSortPatterns = []; quickSortTrips = []; quickSortPairs = []
                 }
             }
         }
@@ -308,10 +309,12 @@ struct MainTabs: View {
         // THL-254: once a day at most, only when something is new since her
         // last visit (the server's `show`), and then only the new ones.
         guard let prompt: QuickSortPrompt = try? await app.api.get("api/quick-sort"),
-              prompt.show, !(prompt.newAsks.isEmpty && prompt.newPatterns.isEmpty && prompt.newTrips.isEmpty) else { return }
+              prompt.show, !(prompt.newAsks.isEmpty && prompt.newPatterns.isEmpty && prompt.newTrips.isEmpty
+                             && prompt.newPairs.isEmpty) else { return }
         quickSortNames = prompt.review?.people ?? []
         quickSortPatterns = prompt.newPatterns
         quickSortTrips = prompt.newTrips
+        quickSortPairs = prompt.newPairs
         quickSort = prompt.newAsks
     }
 
@@ -320,7 +323,8 @@ struct MainTabs: View {
     private func page<Content: View>(_ which: Tab, @ViewBuilder content: () -> Content) -> some View {
         NavigationStack {
             content().toolbar(app.hidesTabBar ? .hidden : .visible, for: .tabBar)
-                .accessibilityHidden(!quickSort.isEmpty || !quickSortPatterns.isEmpty || !quickSortTrips.isEmpty)
+                .accessibilityHidden(!quickSort.isEmpty || !quickSortPatterns.isEmpty || !quickSortTrips.isEmpty
+                                     || !quickSortPairs.isEmpty)
         }
         .tabItem {
             // TEST-14: VoiceOver hears the badge's count ("6 to sort").

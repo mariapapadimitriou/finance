@@ -199,6 +199,8 @@ def _analyze_merchant(merchant: str, rows: list[Transaction], today: date) -> di
             "price_change": price_change,
             "total_paid": round(sum(amounts), 2),
             "dates": dates,
+            # Each charge, with `dates` (WL-20's "Was $16.49 since March").
+            "amounts": [round(a, 2) for a in amounts],
         }
         return yield_rec
 

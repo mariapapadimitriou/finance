@@ -51,12 +51,18 @@ DETECTORS: dict[str, Detector] = {d.name: d for d in (
     Detector("income_kind_rules", "1", ("income",), "finance/income_kind_rules.py",
              adapters.income_kind_rules),
     Detector("trips", "1", ("trip",), "finance/trips.py", adapters.trips),
-    Detector("transfers.pairs", "1", ("transfer_pair", "card_payment"), "finance/transfers.py",
+    Detector("transfers.pairs", "2", ("transfer_pair", "card_payment"), "finance/transfers.py",
              adapters.transfers),
     Detector("pairs", "1", ("payback",), "finance/pairs.py", adapters.pairs, reads_review=True),
     Detector("etransfers.party", "1", ("party",), "finance/etransfers.py", adapters.etransfers),
     Detector("joint.payback_offer", "1", ("joint_theirs",), "finance/joint.py", adapters.joint),
     Detector("duplicates", "1", ("duplicate",), "finance/duplicates.py", adapters.duplicates),
+    # AI Phase 4, part 1 (THL-309): Python only, each still waiting on her answer.
+    Detector("recurring.price_rise", "1", ("bill",), "finance/worth_a_look.py", adapters.price_rise),
+    Detector("recurring.forgotten", "1", ("subscription",), "finance/worth_a_look.py",
+             adapters.forgotten),
+    Detector("transfers.pair_ask", "1", ("transfer_pair", "card_payment"), "finance/pair_asks.py",
+             adapters.pair_asks),
 )}
 
 

@@ -1732,6 +1732,8 @@ struct Review: Decodable {
     var patternAsks: [PatternAsk] = []
     /// TR-01: likely trips Pearl asks about, one card each (Quick sort).
     var tripAsks: [TripAsk] = []
+    /// TR-30 (THL-309): two rows that look like one payment between her accounts.
+    var pairAsks: [PairAsk] = []
     /// Answers given today, and rows Pearl sorted without asking.
     var sortedToday: Int = 0
     var pearlSorted: Int = 0
@@ -1767,6 +1769,7 @@ struct Review: Decodable {
         case youSorted = "you_sorted"
         case patternAsks = "pattern_asks"
         case tripAsks = "trip_asks"
+        case pairAsks = "pair_asks"
     }
 
     init(from decoder: Decoder) throws {
@@ -1792,6 +1795,8 @@ struct Review: Decodable {
         patternAsks = (try? c.decodeIfPresent([Lenient<PatternAsk>].self, forKey: .patternAsks))?
             .compactMap { $0.value } ?? []
         tripAsks = (try? c.decodeIfPresent([Lenient<TripAsk>].self, forKey: .tripAsks))?
+            .compactMap { $0.value } ?? []
+        pairAsks = (try? c.decodeIfPresent([Lenient<PairAsk>].self, forKey: .pairAsks))?
             .compactMap { $0.value } ?? []
         threePayMonth = (try? c.decodeIfPresent([Lenient<PayMonth>].self, forKey: .threePayMonth))?
             .compactMap { $0.value } ?? []
@@ -2301,11 +2306,21 @@ struct TripAsk: Decodable, Identifiable, Hashable {
     let count: Int
     let totals: [MoneyTotal]
     var monthNames: [String]? = nil
+    /// TR-20 (THL-309): a past trip's place in today's few, "Past trip · 1 of 6".
+    var past: Past? = nil
+
+    struct Past: Decodable, Hashable {
+        let n: Int
+        let of: Int
+    }
 
     enum CodingKeys: String, CodingKey {
-        case id, key, ids, start, end, days, place, flight, hotel, fees, name, count, totals
+        case id, key, ids, start, end, days, place, flight, hotel, fees, name, count, totals, past
         case monthNames = "month_names"
     }
+
+    /// The card's caps: "A TRIP", or "PAST TRIP · 1 OF 6".
+    var overline: String { past.map { "Past trip · \($0.n) of \($0.of)" } ?? "A trip" }
 
     /// "Mar 4–9 · 23 transactions".
     var line: String { "\(Format.span(start, end)) · \(count) transaction\(count == 1 ? "" : "s")" }
@@ -2321,6 +2336,35 @@ struct TripAsk: Decodable, Identifiable, Hashable {
 
     /// "March", "March and April".
     var months: String { Format.andList(monthNames ?? [Format.monthName(String(start.prefix(7)))]) }
+}
+
+/// TR-30 (AI4-Pair, THL-309): one Quick sort card about one pair, from
+/// GET /api/review's `pair_asks` (finance/pair_asks.py).
+struct PairAsk: Decodable, Identifiable, Hashable {
+    /// "pair:<out id>:<in id>", as Quick sort lists it.
+    let key: String
+    let out: String
+    let `in`: String
+    /// "transfer_pair" or "card_payment".
+    let kind: String
+    let amount: Double
+    let days: Int
+    /// "Same amount, a day apart."
+    let reason: String
+    let fromAccount: String
+    let toAccount: String
+    let outDate: String
+    let inDate: String
+
+    var id: String { key }
+
+    enum CodingKeys: String, CodingKey {
+        case key, out, `in`, kind, amount, days, reason
+        case fromAccount = "from_account"
+        case toAccount = "to_account"
+        case outDate = "out_date"
+        case inDate = "in_date"
+    }
 }
 
 /// A trip (finance/trips.py `summary`): its name, rows, dates, totals per
