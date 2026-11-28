@@ -150,6 +150,14 @@ def payback_question(txn_id: str):
 
 # ── Possible duplicates (THL-165) ────────────────────────────────────────
 
+def _said_duplicate(st, copy_id: str, twin_id: str, what: str) -> None:
+    """Same purchase is a Yes, Two different purchases a Not this, and Undo
+    an Undo, against the duplicates detector's version (THL-310)."""
+    from .signals import PROPOSED, outcome
+    outcome(st, "duplicates", copy_id, "duplicate", what, txn_ids=[copy_id, twin_id],
+            status=PROPOSED if what == "undo" else None)
+
+
 @bp.post("/review/duplicates/<txn_id>")
 def answer_duplicate(txn_id: str):
     st = store()
@@ -162,6 +170,7 @@ def answer_duplicate(txn_id: str):
         return jsonify({"error": "Say whether it was the same purchase."}), 400
     before = st.all_transactions()
     st.set_duplicate_state(txn_id, answer)
+    _said_duplicate(st, txn_id, pair["twin"], "yes" if answer == dup.SAME else "not_this")
     after = st.all_transactions()
     out = {"ok": True, "id": txn_id, "kept": pair["twin"], "state": answer,
            "undo": {"duplicates": {txn_id: pair["state"]}}}
@@ -354,6 +363,8 @@ def undo_extras(st, body: dict) -> tuple[int, str | None]:
         st.set_one_off(i, since is not None, since=since)
     for i, state in dupes.items():
         st.set_duplicate_state(i, state)
+        if state == dup.PENDING:
+            _said_duplicate(st, i, pairs[i]["twin"], "undo")
     for i in unconfirm:
         st.unconfirm_category(i)
         st.undismiss_review("cat:" + i)
