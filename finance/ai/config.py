@@ -35,9 +35,21 @@ PRICES = {
 # see prompts/). `effort` is low: Python has done the thinking already.
 # `escalate` says whether a failure on the default model may be retried on
 # the escalation model (about 20x the price).
+#
+# `mask` is the route's allowlist (AI Phase 2b, product owner 2026-11-27):
+# `raw` names the kinds of value it may send as they are; everything else
+# goes as a placeholder (`mask.py`). No route may send account or card
+# numbers, Plaid tokens or logins whatever it says here: `safety.check`
+# refuses them.
 ROUTES = {
-    # ask@2 (Phase 2, 2026-11-27): Ask Pearl's tool loop; ask@1 stays frozen.
-    "ask": {"prompt": "ask@2", "max_tokens": 1024, "effort": "low", "escalate": True},
+    # ask@3 (Phase 2b): placeholders for every value; ask@1 and @2 stay frozen.
+    "ask": {"prompt": "ask@3", "max_tokens": 1024, "effort": "low", "escalate": True,
+            "mask": {"raw": ()}},
+    # Smart sorting's one-line reasons (Phase 4): the shop name only, never an
+    # amount, a date, a person or an account. Its prompt comes with Phase 4;
+    # until then the route answers "no_prompt" and Python's reasons stand.
+    "sort_reason": {"prompt": None, "max_tokens": 200, "effort": "low", "escalate": False,
+                    "mask": {"raw": ("shop",)}},
 }
 
 # One question may use the read-only tools this many times in a row before

@@ -49,7 +49,7 @@ class FakeClient:
         return client_mod.Reply(model=model, **step)
 
 
-def ok(text="You spent $412.30 on food in November.", **kw):
+def ok(text="You spent a little more on food than usual.", **kw):
     base = {"text": text, "input_tokens": 120, "cache_read_tokens": 900,
             "cache_write_tokens": 0, "output_tokens": 40, "request_id": "req_1"}
     base.update(kw)
@@ -82,7 +82,7 @@ def test_haiku_answers_by_default(base):
     assert a.ok and not a.fall_back and a.model == "claude-haiku-5-5"
     assert a.text.startswith("You spent")
     assert [c["model"] for c in fake.calls] == ["claude-haiku-5-5"]
-    assert fake.calls[0]["system"] == prompts.load("ask@2")
+    assert fake.calls[0]["system"] == prompts.load("ask@3")
     assert fake.calls[0]["effort"] == "low"
 
 
@@ -310,7 +310,7 @@ def test_a_usage_row_records_everything(base):
     a = ask(base, fake, user_id=7)
     (row,) = usage.rows(base)
     assert row["user_id"] == 7 and row["route"] == "ask"
-    assert row["model"] == "claude-haiku-5-5" and row["prompt"] == "ask@2"
+    assert row["model"] == "claude-haiku-5-5" and row["prompt"] == "ask@3"
     assert (row["input_tokens"], row["cache_read_tokens"], row["cache_write_tokens"],
             row["output_tokens"]) == (200, 3000, 500, 80)
     assert row["cost_usd"] == pytest.approx(config.cost_usd("claude-haiku-5-5", 200, 3000, 500, 80))
@@ -354,17 +354,17 @@ def test_usage_is_kept_with_the_account_list_not_a_ledger(base):
 # ── Prompts ──────────────────────────────────────────────────────────────
 
 def test_prompts_load_by_id_and_version():
-    for ref in ("ask@1", "ask@2"):
+    for ref in ("ask@1", "ask@2", "ask@3"):
         text = prompts.load(ref)
         assert "Allowance" in text and "Never say \"safe to spend\"" in text
-    assert prompts.published() == ["ask@1", "ask@2"]
+    assert prompts.published() == ["ask@1", "ask@2", "ask@3"]
     # Phase 2 (THL-308): they/them, and the model calls a tool before it writes.
-    v2 = prompts.load("ask@2")
+    v2 = prompts.load("ask@3")
     assert " her " not in v2 and " she " not in v2
     assert "Call a tool before you write anything" in v2
 
 
-@pytest.mark.parametrize("ref", ["ask", "ask@0", "ask@v1", "ask@3", "../ask@1", ""])
+@pytest.mark.parametrize("ref", ["ask", "ask@0", "ask@v1", "ask@4", "../ask@1", ""])
 def test_unknown_or_malformed_prompts_are_refused(ref):
     with pytest.raises(prompts.PromptError):
         prompts.load(ref)
@@ -392,7 +392,9 @@ def test_vercel_ships_the_prompt_files():
 
 def test_every_route_names_a_published_prompt():
     for name, cfg in config.ROUTES.items():
-        assert cfg["prompt"] in prompts.FROZEN, name
+        # None: a route whose prompt comes with a later phase (sort_reason,
+        # Phase 4); until then it falls back ("no_prompt").
+        assert cfg["prompt"] is None or cfg["prompt"] in prompts.FROZEN, name
         assert cfg["effort"] in ("low", "medium", "high")
 
 

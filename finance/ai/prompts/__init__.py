@@ -22,6 +22,8 @@ FROZEN = {
     "ask@1": "e06470208ef47093156b557a02fad63eac47bc2dbf393c30c04060241c405672",
     # Phase 2 (2026-11-27): Ask Pearl's read-only tool loop, they/them.
     "ask@2": "e29b7fc772c34dd026d14f09de000d2b6d2594a433b20c179260645f38aa3ebb",
+    # Phase 2b (2026-11-27): placeholders for her values (finance/ai/mask.py).
+    "ask@3": "55c7523d192b5ee7b56df29379fc6446711fc67a6eac4643be2530bc7449a2d4",
 }
 
 

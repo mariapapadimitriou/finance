@@ -23,7 +23,7 @@ import time
 import uuid
 from dataclasses import dataclass
 
-from . import budget, config, prompts, safety, usage
+from . import budget, config, mask, prompts, safety, usage
 from . import client as client_mod
 
 ESCALATE_ON = ("server", "timeout", "connection")
@@ -39,6 +39,8 @@ class Answer:
     model: str | None = None
     attempts: int = 0
     cost_usd: float = 0.0
+    filled_text: str = ""              # the reply with her values put back
+    filled_calls: list | None = None   # its tool calls, likewise
 
     @property
     def fall_back(self) -> bool:
@@ -46,11 +48,12 @@ class Answer:
 
     @property
     def text(self) -> str:
-        return self.reply.text if self.reply and self.ok else ""
+        """The answer as she reads it: placeholders filled back in."""
+        return self.filled_text if self.reply and self.ok else ""
 
     @property
     def tool_calls(self) -> list:
-        return self.reply.tool_calls if self.reply and self.ok else []
+        return list(self.filled_calls or []) if self.reply and self.ok else []
 
 
 _USE_ENV = object()
@@ -81,14 +84,34 @@ def _judge(reply, tools, valid_tool, accept) -> str:
 
 
 ESCALATE_OUTCOMES = ("bad_tool", "low_confidence")
+# The reply named a placeholder never issued, or wrote a figure of its own
+# (mask.py): her answer comes from Python, on no bigger model.
+MASK_OUTCOMES = ("mask_unknown", "mask_number")
+
+
+def filled(masker, reply) -> tuple[str, str, list]:
+    """(outcome, words, tool calls) with her values put back: "ok", or a
+    MASK_OUTCOMES reason when the reply can't be used."""
+    why = masker.problem(reply.text)
+    if why:
+        return why, "", []
+    try:
+        calls = [{**call, "input": masker.fill_value(call.get("input") or {})}
+                 for call in reply.tool_calls]
+        return "ok", masker.fill(reply.text), calls
+    except mask.UnknownPlaceholder:
+        return "mask_unknown", "", []
 
 
 def ask(route: str, prompt: str | None, messages: list, tools: list | None = None, *,
         base, user_id, client=_USE_ENV, accept=None, valid_tool=None,
-        now: float | None = None) -> Answer:
+        now: float | None = None, known: dict | None = None) -> Answer:
     """Ask on `route` with system prompt `prompt` (id@version; None for the
     route's own). `accept(reply) -> bool` and `valid_tool(call) -> bool` are
-    the caller's checks: False escalates once, then falls back."""
+    the caller's checks (on the reply as the model wrote it, placeholders
+    and all): False escalates once, then falls back. `known` is the people,
+    cards and shops to mask by name (mask.py); amounts, dates and numbers
+    are masked wherever they are."""
     ask_id = uuid.uuid4().hex
     cfg = config.ROUTES.get(route)
 
@@ -111,6 +134,9 @@ def ask(route: str, prompt: str | None, messages: list, tools: list | None = Non
         return skip("no_prompt", prompt_ref=prompt_ref)
     try:
         safety.check(messages, tools or [])
+        masker = mask.for_route(cfg, known)
+        messages = masker.messages(messages)
+        safety.check(messages)
     except safety.UnsafePayload:
         return skip("blocked", prompt_ref=prompt_ref)
 
@@ -143,6 +169,9 @@ def ask(route: str, prompt: str | None, messages: list, tools: list | None = Non
                                reply.cache_write_tokens, reply.output_tokens)
         spent += cost
         outcome = _judge(reply, tools, valid_tool, accept)
+        words, calls = "", []
+        if outcome == "ok":
+            outcome, words, calls = filled(masker, reply)
         usage.record(base, user_id=user_id, ask_id=ask_id, route=route, attempt=attempt,
                      model=model, prompt=prompt_ref, input_tokens=reply.input_tokens,
                      cache_read_tokens=reply.cache_read_tokens,
@@ -152,7 +181,8 @@ def ask(route: str, prompt: str | None, messages: list, tools: list | None = Non
                      request_id=reply.request_id, now=now)
         if outcome == "ok":
             return Answer(ask_id, route, True, "ok", reply=reply, model=model,
-                          attempts=attempt, cost_usd=spent)
+                          attempts=attempt, cost_usd=spent, filled_text=words,
+                          filled_calls=calls)
         last_reason, last_reply = outcome, reply
         if outcome in ESCALATE_OUTCOMES and attempt < len(chain):
             continue
