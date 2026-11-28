@@ -89,6 +89,21 @@ def short_day(iso: str) -> str:
     return f"{calendar.month_abbr[d.month]} {d.day}"
 
 
+def compared(diff: float) -> str:
+    """A difference Python worked out, in words for the model (Phase 2b):
+    the model never gets a comparison as a number."""
+    return "about usual" if abs(diff) < 1 else "more than usual" if diff > 0 else "less than usual"
+
+
+_COMPARED = re.compile(r"\$[\d,]+(?:\.\d+)?\s+(more|less|over|under)\b")
+
+
+def comparison_words(line: str) -> str:
+    """Python's line for the model: "That’s $40 more than usual" becomes
+    "That’s more than usual"; the figure stays in the card."""
+    return _COMPARED.sub(lambda m: m.group(1), line or "")
+
+
 def first_of_next_month(today: date) -> str:
     """"December 1", for the quiet line (PC-23)."""
     nxt = (today.replace(day=28) + timedelta(days=4)).replace(day=1)
@@ -127,6 +142,35 @@ class Ledger:
             from .api import _txlist_rows
             self._rows = _txlist_rows(self.st)
         return self._rows
+
+
+def known_terms(led: Ledger) -> dict:
+    """Her people, cards and shops by name, for the gateway to mask (AI
+    Phase 2b): split names, joint holders, who paid her back and e-Transfer
+    senders; every account's label and nickname; every merchant."""
+    from . import etransfers, marks
+    st, txns = led.st, led.txns
+    people = etransfers.known_people(txns, st.splits(), st.payback_people())
+    shops: set[str] = set()
+    for t in txns:
+        if t.party:
+            people.append(t.party)
+        p = etransfers.party(t, people) if etransfers.is_etransfer(t) else None
+        if p and p.get("name"):
+            people.append(p["name"])
+            if t.merchant and t.merchant != p["name"]:
+                shops.add(t.merchant)
+        elif t.merchant:
+            shops.add(t.merchant)
+    cards: set[str] = set()
+    for label in marks.account_labels(st).values():
+        if label:
+            cards.add(nickname(label))
+    for a in st.accounts():
+        if a.get("account_name"):
+            cards.add(nickname(a["account_name"]))
+    return {"person": sorted(set(people)), "card": sorted(c for c in cards if c != "Card"),
+            "shop": sorted(shops)}
 
 
 def _spent(pairs) -> float:
@@ -217,10 +261,16 @@ def month(led: Ledger, ym: str | None = None) -> Fact:
         line = (f"In {name}, {whole(money_in)} came in and you spent {whole(spent)}. "
                 + (f"You had {whole(left)} of your Allowance left at the end." if left >= 0
                    else f"You went {whole(-left)} over."))
-    model = {k: v for k, v in data.items() if k != "changes"}
-    model["changes"] = [{"category": c["category"], "more_than_usual": whole(c["over"])}
+    # Comparisons go to the model as words, never as numbers (Phase 2b).
+    model = {k: v for k, v in data.items() if k not in ("changes", "usual_by_now", "day", "top")}
+    for k in ("money_in", "spent", "allowance_left", "over_by"):
+        model[k] = whole(data[k]) if data[k] is not None else None
+    model["top"] = [{"category": x["category"], "amount": whole(x["amount"])} for x in top]
+    if data["usual_by_now"] is not None:
+        model["compared_with_usual_by_now"] = compared(spent - data["usual_by_now"])
+    model["changes"] = [{"category": c["category"], "compared_with_usual": "more than usual"}
                         for c in data["changes"]]
-    model["line"] = line
+    model["line"] = comparison_words(line)
     return Fact("month", data, f"Looking at {name}…", line, suggestion, model)
 
 
@@ -270,7 +320,7 @@ def merchant_history(led: Ledger, name: str, year: int | None = None) -> Fact:
     model = {"merchant": shown, "year": year, "total": whole(total), "visits": visits,
              "about_each": whole(data["average"]) if visits else None,
              "about_a_month": whole(data["per_month"] or 0),
-             "by_month": {m["month"]: whole(m["amount"]) for m in months}, "line": line}
+             "by_month": [{"month": m["month"], "amount": whole(m["amount"])} for m in months], "line": line}
     return Fact("merchant", data, f"Looking at {shown}…", line, None, model)
 
 
@@ -364,11 +414,12 @@ def cards(led: Ledger) -> Fact:
         for c in near[:1]:
             line += (f" {c['name']} is over its limit." if c["state"] == "over"
                      else f" {c['name']} is close to its limit.")
+    against = {"over": "over its limit", "near": "close to its limit", "ok": "well under its limit"}
     model = {"cards": [{"name": c["name"], "spent_this_month": whole(c["spent"]),
                         "balance": whole(c["balance"]) if c["balance"] is not None else None,
                         "limit": whole(c["limit"]) if c["limit"] else None,
-                        "used": f"{round((c['used'] or 0) * 100)}%" if c["used"] is not None else None,
-                        "state": c["state"], "due": short_day(c["due"]) if c["due"] else None}
+                        "against_limit": against[c["state"]] if c["used"] is not None else None,
+                        "due": short_day(c["due"]) if c["due"] else None}
                        for c in out], "line": line}
     data = {"cards": [{k: v for k, v in c.items() if k != "account_id"} for c in out]}
     return Fact("cards", data, "Looking at your cards…", line, None, model)
@@ -385,8 +436,10 @@ def spending(led: Ledger, text: str, category=None, ym=None, merchant=None) -> F
     a = chat.spending(led.st, led.txns, led.today, text=text, category=category, month=ym,
                       merchant=merchant)
     model = {k: a.get(k) for k in ("nothing", "title", "category", "merchant", "month", "count", "line")}
-    for k in ("total", "usual"):
-        model[k] = whole(a[k]) if a.get(k) is not None else None
+    model["total"] = whole(a["total"]) if a.get("total") is not None else None
+    if a.get("total") is not None and a.get("usual") is not None:
+        model["compared_with_usual"] = compared(a["total"] - a["usual"])
+    model["line"] = comparison_words(model.get("line") or "")
     model["rows"] = _strip_rows(a.get("rows") or [])
     return Fact("spending", a, "Looking at your spending…", a.get("line") or "", None, model)
 
@@ -421,7 +474,7 @@ def plan(led: Ledger, text: str, category=None) -> Fact:
     model = {"nothing": a["nothing"], "category": a.get("category"),
              "usual": whole(a["usual"]) if a.get("usual") else None,
              "amount": whole(a["amount"]) if a.get("amount") else None,
-             "line": a.get("line") or ""}
+             "line": comparison_words(a.get("line") or "")}
     return Fact("plan", a, "Working out a plan…", a.get("line") or "", None, model)
 
 
@@ -432,21 +485,23 @@ def _schema(props: dict, required: tuple = ()) -> dict:
             "additionalProperties": False}
 
 
-_MONTH = {"type": "string", "description": "YYYY-MM. Leave out for this month."}
+_MONTH = {"type": "string", "description": "The month: a placeholder such as [DATE1], "
+          "or words such as \"last month\". Leave out for this month."}
 
 TOOLS = [
     {"name": "month", "description": "How a month went: money in, spent, the Allowance left "
      "and where it went most. This month also compares with their usual by today. Use for "
-     "\"How's this month going?\" or \"How did October go?\".",
+     "\"How's this month going?\" or \"How did [DATE1] go?\".",
      "input_schema": _schema({"month": _MONTH})},
     {"name": "merchant_history", "description": "One shop or merchant over a year: the total, "
-     "how many visits and a figure per month. Use for \"How much at Loblaws this year?\".",
-     "input_schema": _schema({"merchant": {"type": "string", "description": "The shop's name, "
-                                           "as they said it."},
-                              "year": {"type": "integer", "description": "Leave out for this year."}},
+     "how many visits and a figure per month. Use for \"How much at [SHOP1] this year?\".",
+     "input_schema": _schema({"merchant": {"type": "string", "description": "The shop's "
+                                           "placeholder, such as [SHOP1]."},
+                              "year": {"type": "string", "description": "A placeholder such as [DATE1]. "
+                                       "Leave out for this year."}},
                              ("merchant",))},
     {"name": "search", "description": "Find transactions by words (a shop, a note, an amount). "
-     "Returns how many match, their total and the latest 10. Use for \"Show my Uber rides\".",
+     "Returns how many match, their total and the latest ten. Use for \"Show my [SHOP1] rides\".",
      "input_schema": _schema({"words": {"type": "string"}, "month": _MONTH}, ("words",))},
     {"name": "cards", "description": "Their credit cards: spent this month, the balance against "
      "the limit, and the due date. Use for \"When are my cards due?\".",
@@ -463,7 +518,8 @@ TOOLS = [
      "Saturday\"): matches it to purchases not sorted yet, as cards they confirm.",
      "input_schema": _schema({"category": {"type": "string"},
                               "days": {"type": "array", "items": {"type": "string"},
-                                       "description": "YYYY-MM-DD days they meant."},
+                                       "description": "The days they meant, as "
+                                       "placeholders such as [DATE1]."},
                               "people": {"type": "array", "items": {"type": "string"}}})},
 ]
 
@@ -481,6 +537,54 @@ def _s(inp: dict, key: str) -> str | None:
     return " ".join(v.split())[:80] if isinstance(v, str) and v.strip() else None
 
 
+def _ym(led: Ledger, value: str | None) -> str | None:
+    """A month the model named, filled back in (Phase 2b): "2026-10", or
+    what she said ("October", "last month"); None when it named none."""
+    if not value:
+        return None
+    if re.fullmatch(r"\d{4}-\d{2}", value):
+        return value
+    m = re.fullmatch(r"(\d{4})-(\d{2})-\d{2}", value)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}"
+    return chat.month_from(None, value, led.today)
+
+
+def _year(led: Ledger, value) -> int | None:
+    """A year the model named, filled back in: None for none, -1 for one
+    Pearl can't use (not a year, or still to come)."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return -1
+    if isinstance(value, int):
+        year = value
+    else:
+        m = re.search(r"\b(20\d\d)\b", str(value))
+        year = int(m.group(1)) if m else -1
+    return year if 2000 <= year <= led.today.year else -1
+
+
+def _day(led: Ledger, value: str) -> str | None:
+    """A day the model named, filled back in: "2026-11-21" or "Nov 21"."""
+    value = str(value or "").strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value[:10]):
+        return value[:10]
+    m = re.fullmatch(r"([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2})(?:,?\s+(\d{4}))?", value)
+    if not m:
+        return None
+    abbr = [a.lower() for a in calendar.month_abbr]
+    if m.group(1).lower() not in abbr:
+        return None
+    mon = abbr.index(m.group(1).lower())
+    year = int(m.group(3)) if m.group(3) else (led.today.year if mon <= led.today.month
+                                               else led.today.year - 1)
+    try:
+        return date(year, mon, int(m.group(2))).isoformat()
+    except ValueError:
+        return None
+
+
 def run_tool(led: Ledger, name: str, inp: dict, text: str, plans: bool = False) -> Fact:
     """One tool, by name, with the model's input. Raises ToolInputError for
     input it can't take."""
@@ -488,30 +592,32 @@ def run_tool(led: Ledger, name: str, inp: dict, text: str, plans: bool = False) 
     if not isinstance(inp, dict):
         raise ToolInputError("The input must be an object.")
     if name == "month":
-        return month(led, _s(inp, "month"))
+        return month(led, _ym(led, _s(inp, "month")))
     if name == "merchant_history":
         shop = _s(inp, "merchant")
         if not shop:
             raise ToolInputError("Name the shop.")
-        year = inp.get("year")
-        if year is not None and (not isinstance(year, int) or not 2000 <= year <= led.today.year):
+        year = _year(led, inp.get("year"))
+        if year == -1:
             raise ToolInputError("The year must be this year or earlier.")
         return merchant_history(led, shop, year)
     if name == "search":
         words = _s(inp, "words")
         if not words:
             raise ToolInputError("Give the words to look for.")
-        return search(led, words, _s(inp, "month"))
+        return search(led, words, _ym(led, _s(inp, "month")))
     if name == "cards":
         return cards(led)
     if name == "spending":
-        return spending(led, text, _s(inp, "category"), _s(inp, "month"), _s(inp, "merchant"))
+        return spending(led, text, _s(inp, "category"), _ym(led, _s(inp, "month")),
+                        _s(inp, "merchant"))
     if name == "subscriptions":
         return subscriptions(led)
     if name == "trips_and_patterns":
         return trips_and_patterns(led)
     if name == "tell":
-        days = [str(d)[:10] for d in inp.get("days") or [] if isinstance(d, str)][:31] or None
+        days = [d for d in (_day(led, x) for x in inp.get("days") or [] if isinstance(x, str))
+                if d][:31] or None
         people = [str(p)[:40] for p in inp.get("people") or [] if isinstance(p, str)][:12] or None
         return tell(led, text, _s(inp, "category"), days, people)
     if name == "plan" and plans:
@@ -523,8 +629,7 @@ def step_for(led: Ledger, name: str, inp: dict) -> str:
     """The thinking step, named before the tool runs (PC-23)."""
     inp = inp if isinstance(inp, dict) else {}
     if name == "month":
-        ym = _s(inp, "month") or ""
-        ym = ym if re.fullmatch(r"\d{4}-\d{2}", ym) else led.today.strftime("%Y-%m")
+        ym = _ym(led, _s(inp, "month")) or led.today.strftime("%Y-%m")
         return f"Looking at {month_name(ym)}…"
     if name == "merchant_history" and _s(inp, "merchant"):
         return f"Looking at {_s(inp, 'merchant')}…"
@@ -667,6 +772,9 @@ def examples(st, txns, today: date) -> list[str]:
 
 # ── The answer, as the phone's stream ────────────────────────────────────
 
+MASK_FALLBACK = ("mask_unknown", "mask_number")
+
+
 def answer(st, *, base, user_id, text: str, today: date, plans: bool = False, client=None,
            now: float | None = None):
     """Yield the stream's events for one question (see the module's doc)."""
@@ -697,9 +805,11 @@ def answer(st, *, base, user_id, text: str, today: date, plans: bool = False, cl
         facts.append(f)
         return for_model(f), f
 
-    # Her words go after the frozen prompt and tools; today's date with them.
-    messages = [{"role": "user", "content": f"Today is {today.isoformat()}.\n\n{safety.redact(text)}"}]
-    kwargs = {"base": base, "user_id": user_id, "now": now}
+    # Her words go after the frozen prompt and tools. No date: the model
+    # would only see a placeholder for it, and the tools know what today is.
+    # Her people, cards and shops go as placeholders (Phase 2b, mask.py).
+    messages = [{"role": "user", "content": safety.redact(text)}]
+    kwargs = {"base": base, "user_id": user_id, "now": now, "known": known_terms(led)}
     if client is not None:
         kwargs["client"] = client
     for ev in loop.run("ask", messages, tools(plans), execute, **kwargs):
@@ -733,6 +843,16 @@ def answer(st, *, base, user_id, text: str, today: date, plans: bool = False, cl
                     yield from python_answer(until)
             elif reason in ("off", "killed", "no_prompt", "no_route", "blocked") and not facts:
                 yield from python_answer()
+            elif reason in MASK_FALLBACK:
+                # A placeholder it made up, or a figure of its own (Phase 2b):
+                # Python's answer instead, never the model's words.
+                if facts:
+                    yield {"type": "words", "text": " ".join(f.line for f in facts if f.line)}
+                    sugg = next((f.suggestion for f in facts if f.suggestion), None)
+                    if sugg:
+                        yield {"type": "suggestion", **sugg}
+                else:
+                    yield from python_answer()
             elif facts:
                 # The model stopped after a tool ran: what Python found stands.
                 yield {"type": "words", "text": " ".join(f.line for f in facts if f.line)}
