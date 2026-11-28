@@ -252,6 +252,9 @@ def answer_pair(txn_id: str):
         return jsonify({"error": str(exc)}), 400
     if out is None:
         return jsonify({"error": "That question has changed. Pull to refresh."}), 409
+    # Yes on the evidence's question, against the pairs detector (THL-310).
+    from .signals import YES, outcome
+    outcome(st, "pairs", txn_id, "payback", YES, txn_ids=[txn_id])
     core._reclassify(st)
     return jsonify(out)
 

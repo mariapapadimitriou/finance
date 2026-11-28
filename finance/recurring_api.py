@@ -33,6 +33,14 @@ def _series_for(st, key: str) -> dict | None:
     return next((it for it in review.get("recurring_transfer") or [] if it["key"] == key), None)
 
 
+def _said(series: dict, what: str, how: str | None = None, status: str | None = None) -> None:
+    """Her answer about a recurring transfer, against the detector's
+    version (THL-310). A rule's id is its series' key."""
+    from .signals import outcome
+    outcome(store(), "recurring_transfers", series["key"], "bill", what, today=_today_iso(),
+            how=how, status=status, txn_ids=series.get("ids") or ())
+
+
 @bp.post("/recurring-transfers")
 def confirm_recurring_transfer():
     """"Yes, it repeats": save the rule for the series asked about (`key`),
@@ -62,6 +70,7 @@ def confirm_recurring_transfer():
         # one for the amount is asked on its own.
         st.write_categories({fp: (category, "user") for fp in s["ids"]})
         st.dismiss_review(s["key"])
+        _said(s, "yes", how="once")
         apply_transfer_matches(st)
         undo = undo_payload(before, snapshot(st, st.all_transactions()))
         undo["undismiss"] = [s["key"]]
@@ -79,6 +88,7 @@ def confirm_recurring_transfer():
         st.delete_recurring_transfer(rid)
     st.set_recurring_transfer(rule)
     st.dismiss_review(s["key"])
+    _said(s, "yes", how="rule")
     apply_transfer_matches(st)
     txns = st.all_transactions()
     pays = rt.paydays(txns)
@@ -112,6 +122,7 @@ def delete_recurring_transfer(rule_id: str):
     keep = {t.fingerprint: (t.category, "user") for t in txns
             if rt.matches(t, rule, pays) and t.category_source not in ("user", "merchant_override")}
     st.delete_recurring_transfer(rule_id)
+    _said({"key": rule_id}, "stop")
     if keep:
         st.write_categories(keep)
     apply_transfer_matches(st)
@@ -138,6 +149,8 @@ def not_recurring(txn_id: str):
         return jsonify({"error": "No recurring rule sorted this one."}), 409
     before = snapshot(st, txns)
     st.write_categories({t.fingerprint: (t.category, "user")})
+    # One row, not the rule: the rule stays confirmed.
+    _said({"key": rule["id"]}, "not_this", how="row", status="confirmed")
     apply_transfer_matches(st)
     undo = undo_payload(before, snapshot(st, st.all_transactions()))
     return jsonify({"ok": True, "title": "Not recurring: just this one.", "undo": undo})

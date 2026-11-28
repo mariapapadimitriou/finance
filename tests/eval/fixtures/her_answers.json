@@ -1,0 +1,212 @@
+{
+ "name": "her_answers",
+ "about": "Made up. She sorted six coffees at one cafe as Coffee, and five trips to a warehouse club as Groceries. Both are patterns by the rules (5 the same). The cafe is one she'd say Yes to; the warehouse club sells everything (her next one was a TV), so a Yes there is wrong.",
+ "today": "2026-11-15",
+ "accounts": {
+  "visa": {
+   "name": "Visa",
+   "type": "credit",
+   "subtype": "credit card",
+   "mask": "5005"
+  }
+ },
+ "transactions": [
+  {
+   "ref": "cafe-0",
+   "account_id": "visa",
+   "date": "2026-09-02",
+   "name": "LUNA CAFE 221",
+   "amount": 5.4,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_COFFEE"
+   }
+  },
+  {
+   "ref": "cafe-1",
+   "account_id": "visa",
+   "date": "2026-09-09",
+   "name": "LUNA CAFE 221",
+   "amount": 6.1,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_COFFEE"
+   }
+  },
+  {
+   "ref": "cafe-2",
+   "account_id": "visa",
+   "date": "2026-09-16",
+   "name": "LUNA CAFE 221",
+   "amount": 4.95,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_COFFEE"
+   }
+  },
+  {
+   "ref": "cafe-3",
+   "account_id": "visa",
+   "date": "2026-09-23",
+   "name": "LUNA CAFE 221",
+   "amount": 5.4,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_COFFEE"
+   }
+  },
+  {
+   "ref": "cafe-4",
+   "account_id": "visa",
+   "date": "2026-09-30",
+   "name": "LUNA CAFE 221",
+   "amount": 7.25,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_COFFEE"
+   }
+  },
+  {
+   "ref": "cafe-5",
+   "account_id": "visa",
+   "date": "2026-10-07",
+   "name": "LUNA CAFE 221",
+   "amount": 5.8,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_COFFEE"
+   }
+  },
+  {
+   "ref": "bulk-0",
+   "account_id": "visa",
+   "date": "2026-09-05",
+   "name": "NORTHGATE WAREHOUSE CLUB",
+   "amount": 212.4,
+   "personal_finance_category": {
+    "primary": "GENERAL_MERCHANDISE",
+    "detailed": "GENERAL_MERCHANDISE_SUPERSTORES"
+   }
+  },
+  {
+   "ref": "bulk-1",
+   "account_id": "visa",
+   "date": "2026-09-19",
+   "name": "NORTHGATE WAREHOUSE CLUB",
+   "amount": 88.15,
+   "personal_finance_category": {
+    "primary": "GENERAL_MERCHANDISE",
+    "detailed": "GENERAL_MERCHANDISE_SUPERSTORES"
+   }
+  },
+  {
+   "ref": "bulk-2",
+   "account_id": "visa",
+   "date": "2026-10-03",
+   "name": "NORTHGATE WAREHOUSE CLUB",
+   "amount": 340.0,
+   "personal_finance_category": {
+    "primary": "GENERAL_MERCHANDISE",
+    "detailed": "GENERAL_MERCHANDISE_SUPERSTORES"
+   }
+  },
+  {
+   "ref": "bulk-3",
+   "account_id": "visa",
+   "date": "2026-10-17",
+   "name": "NORTHGATE WAREHOUSE CLUB",
+   "amount": 61.3,
+   "personal_finance_category": {
+    "primary": "GENERAL_MERCHANDISE",
+    "detailed": "GENERAL_MERCHANDISE_SUPERSTORES"
+   }
+  },
+  {
+   "ref": "bulk-4",
+   "account_id": "visa",
+   "date": "2026-10-31",
+   "name": "NORTHGATE WAREHOUSE CLUB",
+   "amount": 156.75,
+   "personal_finance_category": {
+    "primary": "GENERAL_MERCHANDISE",
+    "detailed": "GENERAL_MERCHANDISE_SUPERSTORES"
+   }
+  }
+ ],
+ "answers": [
+  {
+   "ref": "cafe-0",
+   "category": "Coffee"
+  },
+  {
+   "ref": "cafe-1",
+   "category": "Coffee"
+  },
+  {
+   "ref": "cafe-2",
+   "category": "Coffee"
+  },
+  {
+   "ref": "cafe-3",
+   "category": "Coffee"
+  },
+  {
+   "ref": "cafe-4",
+   "category": "Coffee"
+  },
+  {
+   "ref": "cafe-5",
+   "category": "Coffee"
+  },
+  {
+   "ref": "bulk-0",
+   "category": "Groceries"
+  },
+  {
+   "ref": "bulk-1",
+   "category": "Groceries"
+  },
+  {
+   "ref": "bulk-2",
+   "category": "Groceries"
+  },
+  {
+   "ref": "bulk-3",
+   "category": "Groceries"
+  },
+  {
+   "ref": "bulk-4",
+   "category": "Groceries"
+  }
+ ],
+ "exhaustive": [
+  "pattern_sort.category"
+ ],
+ "labels": [
+  {
+   "detector": "pattern_sort.category",
+   "refs": [
+    "cafe-0",
+    "cafe-1",
+    "cafe-2",
+    "cafe-3",
+    "cafe-4",
+    "cafe-5"
+   ],
+   "kind": "category_pattern",
+   "truth": true
+  },
+  {
+   "detector": "pattern_sort.category",
+   "refs": [
+    "bulk-0",
+    "bulk-1",
+    "bulk-2",
+    "bulk-3",
+    "bulk-4"
+   ],
+   "kind": "category_pattern",
+   "truth": false
+  }
+ ]
+}

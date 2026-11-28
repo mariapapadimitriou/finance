@@ -103,6 +103,18 @@ def _body() -> dict:
     return body if isinstance(body, dict) else {}
 
 
+def _said(st, detector: str, key: str, kind: str, what: str) -> None:
+    """Her answer, against the detector's version (THL-310)."""
+    from .signals import outcome
+    outcome(st, detector, key, kind, what, today=_today_iso())
+
+
+def _bill_kind(row: dict) -> str:
+    """As the recurring adapter names it: an essential is a bill."""
+    from .categorize import group_of
+    return "bill" if group_of(row.get("category") or "Other") == "essentials" else "subscription"
+
+
 @bp.get("/income-bills")
 def income_bills_get():
     return jsonify(_payload(store()))
@@ -150,6 +162,7 @@ def income_bills_pay_answer():
     else:
         state["pay_no"] = sorted(set(state["pay_no"]) | {payer})
     ib.save(st, state)
+    _said(st, "income_bills.pay", payer, "income", "yes" if answer == "yes" else "not_this")
     _sync_plan_income(st, state)
     undo = undo_payload(before, snapshot(st))
     undo["marks"] = {"income_pays": was, **({"pay_rules": rule_was} if rule_was else {})}
@@ -303,7 +316,13 @@ def confirm_bills(st, ticked: dict, today: date) -> None:
         if row is None or row["source"] == "added":
             continue
         entry = state["bills"].setdefault(key, {})
-        entry["state"] = "yes" if on else "no"
+        said = "yes" if on else "no"
+        if entry.get("state") != said:
+            # Only a change is an answer: I-04 sends every bill each time.
+            rent = key.startswith("rent:")
+            _said(st, "income_bills.rent" if rent else "recurring", key,
+                  "bill" if rent else _bill_kind(row), "yes" if on else "not_this")
+        entry["state"] = said
     state["bills_on"] = state["bills_on"] or today.isoformat()
     ib.save(st, state)
 
@@ -391,8 +410,10 @@ def income_bills_rent():
         # asking; the e-Transfers keep their category.
         state["rent"][recipient] = "no"
         ib.save(st, state)
+        _said(st, "income_bills.rent", key, "bill", "not_this")
         return jsonify(_payload(st))
     state["rent"][recipient] = "yes"
+    _said(st, "income_bills.rent", key, "bill", "yes")
     state["bills"][key] = {"state": "yes"}
     st.set_destination(recipient, ib.RENT, series["recipient"])
     for tid in series["ids"]:
