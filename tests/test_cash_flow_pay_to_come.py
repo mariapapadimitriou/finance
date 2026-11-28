@@ -41,7 +41,8 @@ def test_pay_to_come_is_what_the_allowance_still_expects(client):
     waiting = [ln for ln in income["lines"] if not ln.get("arrived")]
     expected = round(sum(ln["amount"] for ln in waiting), 2)
     if expected < 0.5:
-        assert "pay" not in totals, "Once the pay is in, T-01r comes back"
+        # This month always carries the key; it's null once nothing is to come.
+        assert totals.get("pay") is None, "Once the pay is in, T-01r comes back"
         return
     assert totals["pay"]["to_come"] == pytest.approx(expected)
     days = sorted(ln["date"] for ln in waiting if ln.get("date"))
