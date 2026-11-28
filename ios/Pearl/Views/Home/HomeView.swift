@@ -39,6 +39,8 @@ struct HomeView: View {
     /// H-00r's Sort now: Quick sort, straight from Home (TEST-04); a trip
     /// item opens just its trip question.
     @State private var quickSort: QuickSortDeck?
+    /// WL-20 / WL-21 (THL-309): the Worth a look row whose fact card is open.
+    @State private var worthSheet: WorthItem?
     @State private var opening = false
     /// P7b: Home before a bank's Link your bank, straight to Plaid.
     @StateObject private var plaid = PlaidLinker()
@@ -93,9 +95,17 @@ struct HomeView: View {
             .presentationDragIndicator(.visible)
         }
         .onChange(of: linkingBank) { on in if on { Task { await linkBank() } } }
+        .sheet(item: $worthSheet) { item in
+            if let sheet = item.sheet {
+                WorthFactSheet(item: item, sheet: sheet,
+                               onYes: { worthSheet = nil; Task { await answer(item, yes: true) } },
+                               onNo: { worthSheet = nil; Task { await answer(item, yes: false) } },
+                               close: { worthSheet = nil })
+            }
+        }
         .fullScreenCover(item: $quickSort) { deck in
             QuickSortView(asks: deck.asks, categories: app.categories, names: deck.names,
-                          patterns: deck.patterns, trips: deck.trips) {
+                          patterns: deck.patterns, trips: deck.trips, pairs: deck.pairs) {
                 quickSort = nil
                 Task { await load() }
             }
@@ -115,6 +125,7 @@ struct HomeView: View {
             open: { item in Task { await open(item) } },
             yes: { item in Task { await answer(item, yes: true) } },
             notNow: { item in Task { await answer(item, yes: false) } },
+            sheet: { item in worthSheet = item },
             gotIt: { item in Task { await gotIt(item) } },
             payYes: { Task { await answerPay(yes: true) } },
             payNo: { Task { await answerPay(yes: false) } },
@@ -246,7 +257,7 @@ struct HomeView: View {
         do {
             let prompt: QuickSortPrompt = try await app.api.get("api/quick-sort", query: ["all": "1"])
             quickSort = QuickSortDeck(asks: prompt.asks, names: prompt.review?.people ?? [],
-                                      patterns: prompt.patterns, trips: prompt.trips)
+                                      patterns: prompt.patterns, trips: prompt.trips, pairs: prompt.pairs)
         } catch {
             if let words = app.handle(error) { app.say(words) }
         }
@@ -271,13 +282,23 @@ struct HomeView: View {
         }
     }
 
-    /// Yes (or Update the bill) does it, the row leaves and the next slides
+    /// Yes (or Got it, Keep) does it, the row leaves and the next slides
     /// up; only the toast says what happened, with Undo. Not now: for good.
+    /// WL-20 / WL-21 (THL-309): an item with its own second answer (Not
+    /// this, Not mine anymore) sends `no`; Not mine anymore has a toast and Undo.
     private func answer(_ item: WorthItem, yes: Bool) async {
+        let second = item.no != nil
         do {
             let reply: WorthReply = try await app.api.post("api/worth-a-look",
-                                                          ["action": yes ? "yes" : "not_now", "id": item.id])
+                                                          ["action": yes ? "yes" : second ? "no" : "not_now",
+                                                           "id": item.id])
             withAnimation { worth = reply.items }
+            if !yes, second, let toast = reply.toast {
+                app.say(toast, undo: { [api = app.api] in
+                    let _: WorthReply = try await api.post("api/worth-a-look", ["action": "undo_no", "id": item.id])
+                })
+                app.changed()
+            }
             guard yes else { return }
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             app.say(reply.toast ?? "Done", undo: { [api = app.api] in
@@ -309,7 +330,8 @@ struct HomeView: View {
             if let prompt: QuickSortPrompt = try? await app.api.get("api/quick-sort", query: ["all": "1"]) {
                 let trips = prompt.trips.filter { $0.id == target.id || $0.key == target.id }
                 if !trips.isEmpty {
-                    quickSort = QuickSortDeck(asks: [], names: prompt.review?.people ?? [], patterns: [], trips: trips)
+                    quickSort = QuickSortDeck(asks: [], names: prompt.review?.people ?? [], patterns: [], trips: trips,
+                                              pairs: [])
                 }
             }
         case "category":
@@ -337,6 +359,8 @@ struct QuickSortDeck: Identifiable {
     var names: [String]
     var patterns: [PatternAsk]
     var trips: [TripAsk]
+    /// TR-30 (THL-309): one card per pair.
+    var pairs: [PairAsk] = []
 }
 
 /// Where Home goes.
@@ -392,6 +416,8 @@ struct HomeActions {
     let open: (WorthItem) -> Void
     let yes: (WorthItem) -> Void
     let notNow: (WorthItem) -> Void
+    /// WL-20 / WL-21: open the row's fact card.
+    let sheet: (WorthItem) -> Void
     let gotIt: (WorthItem) -> Void
     /// P12a's Yes / No.
     let payYes: () -> Void
@@ -474,7 +500,8 @@ private struct HomeFeed: View {
                           sorting: sorting, actions: actions)
                 if !worth.isEmpty {
                     WorthALookSection(items: worth, onClear: actions.clear, onOpen: actions.open,
-                                      onYes: actions.yes, onNotNow: actions.notNow, onGotIt: actions.gotIt)
+                                      onYes: actions.yes, onNotNow: actions.notNow, onGotIt: actions.gotIt,
+                                      onSheet: actions.sheet)
                         .padding(.top, 20)
                     if let quiet = notify {
                         // P6f: the ask under the news it would have sent.

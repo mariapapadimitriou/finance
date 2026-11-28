@@ -177,7 +177,10 @@ class TestQuestions:
         load(client)
         ps.switched_on(client.st)
         review = client.get("/api/review").get_json()
-        assert len(review["trip_asks"]) == len(EXPECTED)
+        # TR-20 (THL-309): the recent one, then three past trips a day.
+        assert len(review["trip_asks"]) == 1 + 3
+        assert [a.get("past") for a in review["trip_asks"]] == [
+            None, {"n": 1, "of": 5}, {"n": 2, "of": 5}, {"n": 3, "of": 5}]
         keys = client.get("/api/quick-sort?all=1").get_json()["keys"]
         trip_keys = [k for k in keys if k.startswith("trip:")]
         assert trip_keys == [a["key"] for a in review["trip_asks"]]

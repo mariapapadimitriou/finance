@@ -323,3 +323,57 @@ def duplicates(st, txns, today, version):
 def _review(st, today):
     from ..review import for_store
     return for_store(st, today)
+
+
+# ── AI Phase 4 (THL-309): new detectors ──────────────────────────────────
+
+def _worth(st, today, pick):
+    from .. import worth_a_look as wl
+    return pick(wl._Ctx(st, date.fromisoformat(today)))
+
+
+def price_rise(st, txns, today, version):
+    """WL-20: a bill she counts whose last charge is more than she expects."""
+    from .. import worth_a_look as wl
+    out = []
+    for it in _worth(st, today, wl._price_rises):
+        d = it["_data"]
+        rec = d.get("rec") or {}
+        rows = _sorted(t for t in txns if t.merchant == rec.get("merchant") and t.amount > 0
+                       and t.date in set(rec.get("dates") or ()))
+        out.append(Detection(
+            kind="bill", txn_ids=_ids(rows), detector="recurring.price_rise", version=version,
+            key=it["id"].split(":", 1)[1],
+            evidence=evidence(count=rec.get("occurrences"), first=rec.get("first_seen"),
+                              last=rec.get("last_seen"), amount=d["amount"], cadence=d.get("cadence"),
+                              before=d.get("before"))))
+    return out
+
+
+def forgotten(st, txns, today, version):
+    """WL-21: a monthly subscription she has never answered, six months on."""
+    from .. import worth_a_look as wl
+    out = []
+    for it in _worth(st, today, wl._forgotten):
+        d = it["_data"]
+        rec = d.get("rec") or {}
+        rows = _sorted(t for t in txns if t.merchant == rec.get("merchant") and t.amount > 0
+                       and t.date in set(rec.get("dates") or ()))
+        out.append(Detection(
+            kind="subscription", txn_ids=_ids(rows), detector="recurring.forgotten", version=version,
+            key=it["id"].split(":", 1)[1],
+            evidence=evidence(count=rec.get("occurrences"), first=rec.get("first_seen"),
+                              last=rec.get("last_seen"), amount=d["amount"], cadence="monthly",
+                              months=d.get("months"))))
+    return out
+
+
+def pair_asks(st, txns, today, version):
+    """TR-30: two rows Pearl asks about as one payment between her accounts."""
+    from .. import pair_asks as pa
+    return [Detection(kind=p["kind"], txn_ids=(p["out"], p["in"]), detector=pa.DETECTOR,
+                      version=version, key=p["out"],
+                      evidence=evidence(count=2, first=p["out_date"], last=p["in_date"],
+                                        dates=[p["out_date"], p["in_date"]], amount=p["amount"],
+                                        days_apart=p["days"]))
+            for p in pa.asks(st, txns, today)]

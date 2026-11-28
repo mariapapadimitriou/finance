@@ -290,6 +290,63 @@ def seed_ask(db_path: str) -> None:
                                                   "amex_1004": {"due_day": 14}}))
 
 
+# AI Phase 4, part 1 (THL-309): a price rise on a bill she counts (WL-20),
+# the demo's subscriptions she never answered (WL-21), a card payment that
+# took six days (TR-30), and two trips months ago (TR-20).
+AI = "testAIDetections"
+
+
+def seed_ai(db_path: str) -> None:
+    from finance import income_bills as ib, pattern_sort
+    from finance.ingest.base import IngestResult
+    from finance.models import Transaction
+    from finance.pipeline import ingest
+    from finance.store import Store
+    store = Store(db_path)
+    today = date.today()
+
+    def day(n: int) -> str:
+        return (today - timedelta(days=n)).isoformat()
+
+
+    def load(rows, account, name, kind):
+        ingest(store, IngestResult(transactions=[
+            Transaction(date=when, description=desc, amount=amt, account_id=account, account_name=name,
+                        raw={"account_type": kind, **(raw or {})}) for when, desc, amt, raw in rows],
+            account_id=account))
+
+    streaming = {"issuer_category": "ENTERTAINMENT_TV_AND_MOVIES"}
+    load([(day(3 + 30 * n), "VIDEOSTREAM.COM 866", 18.99 if n == 0 else 16.49, streaming) for n in range(8, -1, -1)],
+         "amex_1004", "American Express ••1004", "credit")
+    # The six-day card payment: Pearl pairs within four by itself.
+    load([(day(8), "ONLINE BANKING TRANSFER", 500.00, {"issuer_category": "TRANSFER_OUT_ACCOUNT_TRANSFER"})],
+         "td_chq_2210", "TD Chequing ••2210", "depository")
+    load([(day(2), "PAYMENT RECEIVED - THANK YOU", -500.00, {"issuer_category": "TRANSFER_IN_ACCOUNT_TRANSFER"})],
+         "scotia_visa_8830", "Scotiabank Visa ••8830", "credit")
+    # Two trips months ago: places she'd never been, and a flight before.
+    for start, city, shops in ((240, "Lisbon", ["PASTELARIA BELEM", "TASCA DO CHICO", "MERCADO RIBEIRA",
+                                                "TRAM 28 KIOSK", "LX FACTORY BOOKS"]),
+                               (330, "Halifax", ["BLUENOSE DINER", "WATERFRONT LOBSTER", "SPRING GARDEN BOOKS",
+                                                 "HALIFAX SEAPORT MKT"])):
+        rows = [(day(start + 10), "SKYWAYS AIR 0142", 640.00, {"issuer_category": "TRAVEL_FLIGHTS"})]
+        rows += [(day(start - i // 2), f"{s} {i}", 18.0 + 4.25 * i, {"city": city}) for i, s in enumerate(shops)]
+        load(rows, "scotia_visa_8830", "Scotiabank Visa ••8830", "credit")
+    # She counts the streaming bill (I-04), so its rise is worth a look.
+    merchant = next(t.merchant for t in store.all_transactions() if t.description.startswith("VIDEOSTREAM"))
+    state = ib.load(store)
+    state["bills"][merchant] = {"state": "yes"}
+    state["bills_on"] = day(200)
+    ib.save(store, state)
+    pattern_sort.switched_on(store)
+    # Every other question skipped, so Quick sort is the new cards: the
+    # recent trip, the pair, then the past trips (they come after the rest).
+    from finance.quick_sort import questions
+    from finance.review import for_store
+    for key, _ in questions(for_store(store, today.isoformat())):
+        if not key.startswith(("pair:", "trip:", "pat:")):
+            store.skip_review(key)
+
+
 # AP-HomeCalm (engBOT's GaugeUITests): a ledger with nothing to do, in place
 # of the demo: three months of pay, rent and groceries, every row sorted.
 CALM = "testGaugeCalm"
@@ -390,6 +447,9 @@ def main() -> int:
                 elif journey == ASK:
                     seed_ask(db_path)
                     # PC-24 shows on a first open: nothing the app kept.
+                    subprocess.run(["xcrun", "simctl", "uninstall", udid, "com.mariapapadimitriou.pearl"], capture_output=True)
+                elif journey == AI:
+                    seed_ai(db_path)
                     subprocess.run(["xcrun", "simctl", "uninstall", udid, "com.mariapapadimitriou.pearl"], capture_output=True)
                 elif journey == CALM:
                     seed_calm(db_path)

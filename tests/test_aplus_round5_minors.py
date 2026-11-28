@@ -124,7 +124,7 @@ def test_46_smaller_things():
 
 def test_r6_needs_a_look_card_counts_the_rows():
     rv = read("Views", "Review", "ReviewView.swift")
-    assert "+ (review?.tripAsks.count ?? 0) : quick.count," in rv
+    assert "+ (review?.pairAsks.count ?? 0) : quick.count," in rv     # TR-30 (THL-309)
     assert "QuickSortCard(count: quick.count + (review?.patternAsks" not in rv
 
 

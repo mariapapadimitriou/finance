@@ -32,7 +32,7 @@ def test_a_sorted_card_tilts_seven_degrees_as_it_leaves():
     # Every way a card leaves goes through the one motion.
     assert "withAnimation(.easeIn(duration: 0.25)) { leaving" not in s
     assert s.count("fly(true)") + s.count("fly(false)") >= 8
-    assert s.count(".modifier(away)") == 3
+    assert s.count(".modifier(away)") == 4      # + TR-30's pair card (THL-309)
 
 
 def test_reduce_motion_crossfades_the_card():
@@ -40,7 +40,7 @@ def test_reduce_motion_crossfades_the_card():
     assert "@Environment(\\.accessibilityReduceMotion) private var reduceMotion" in s
     assert "fade: reduceMotion && leaving != nil" in s
     assert "insertion: reduceMotion ? .opacity : .scale(scale: 0.96)" in s
-    assert s.count(".transition(arrival)") == 3
+    assert s.count(".transition(arrival)") == 4
 
 
 def test_the_next_card_comes_up_and_the_tapped_tile_fills():

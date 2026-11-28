@@ -111,7 +111,7 @@ class TestHome:
         # P1a (TP-Words): For you · Dismiss.
         assert 'APSectionLabel(text: "For you", action: "Dismiss"' in worth
         assert "items.prefix(3)" in worth
-        assert 'Button("Not now"' in worth
+        assert 'Button(item.no ?? "Not now"' in worth     # WL-20 / WL-21 name their own
 
     def test_offline(self):
         app = code(read("App", "PearlApp.swift"))

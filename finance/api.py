@@ -2328,14 +2328,19 @@ def set_transfer_links(txn_id: str):
     back in the link it was in."""
     body = request.get_json(silent=True) or {}
     ids = [i for i in (body.get("ids") or []) if isinstance(i, str)]
-    st = store()
+    out, status = link_rows(store(), txn_id, ids)
+    return jsonify(out), status
+
+
+def link_rows(st, txn_id: str, ids: list[str]) -> tuple[dict, int]:
+    """PUT …/links's work, for Quick sort's pair card too (TR-30)."""
     t = st.get_transaction(txn_id)
     if t is None:
-        return jsonify({"error": "No such transaction."}), 404
+        return {"error": "No such transaction."}, 404
     txns = st.all_transactions()
     by_id = {x.fingerprint: x for x in txns}
     if txn_id in ids or any(i not in by_id for i in ids):
-        return jsonify({"error": "Pick transactions Pearl knows."}), 400
+        return {"error": "Pick transactions Pearl knows."}, 400
     links = st.transfer_links()
     group = [txn_id] + ids
     # Every row this changes: the group, and whatever shared a link with one of them.
@@ -2359,6 +2364,9 @@ def set_transfer_links(txn_id: str):
                 st.set_transaction_category(i, "Transfers")
     else:
         link_id = None
+        # TR-30 (THL-309): legs she took out of a link aren't asked about as a pair again.
+        from .pair_asks import forget_pairs
+        forget_pairs(st, [i for i, link in was.items() if link and link == links.get(txn_id)])
         st.unlink_transfer(txn_id)
         title = "Unlinked. Pearl sorts each one again."
     # Legs the link had decided go back to the rules; the match below then
@@ -2371,7 +2379,7 @@ def set_transfer_links(txn_id: str):
     _reclassify(st)
     undo = undo_payload(before, snapshot(st, st.all_transactions()))
     undo["marks"] = {"transfer_links": was, **({"unpaired": unpaired_was} if unpaired_was else {})}
-    return jsonify({"ok": True, "link": link_id, "title": title, "undo": undo})
+    return {"ok": True, "link": link_id, "title": title, "undo": undo}, 200
 
 
 @bp.post("/transactions/<txn_id>/unpair")

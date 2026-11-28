@@ -52,6 +52,11 @@ TRIPS_KEY = "trips"                 # {id: trip}
 SKIPPED_KEY = "trip_skipped"        # [[start, end]] she skipped: never asked again
 ENDED_KEY = "trip_ended"            # {id: {trip, skipped}}: what Undo on TR-13 puts back
 ENDED_KEEP = 20                     # the last few ended trips, for Undo
+# TR-20 (THL-309): a trip that ended longer ago than this is a past trip,
+# asked about after the new questions, at most PAST_A_DAY a day.
+PAST_DAYS = 120
+PAST_A_DAY = 3
+PAST_KEY = "trip_past_answered"     # {day, n}: past trips answered today
 RUN_MIN = 4                         # rows in a run of new places or away
 RUN_GAP = 2                         # days between them, at most
 RUN_SPAN = 21                       # a run this long isn't a trip
@@ -455,6 +460,39 @@ def candidates(st, txns: list[Transaction], today: str) -> list[dict]:
     return out
 
 
+def _past_cutoff(today: str) -> str:
+    return (date.fromisoformat(today) - timedelta(days=PAST_DAYS)).isoformat()
+
+
+def is_past(cand: dict, today: str) -> bool:
+    """TR-20: a trip that ended more than PAST_DAYS ago (Home stays about now)."""
+    return cand["end"] < _past_cutoff(today)
+
+
+def _past_answered(st, today: str) -> int:
+    got = _json(st, PAST_KEY, {})
+    return int(got.get("n") or 0) if isinstance(got, dict) and got.get("day") == today else 0
+
+
+def _count_past(st, cand: dict, today: str) -> None:
+    if is_past(cand, today):
+        _save(st, PAST_KEY, {"day": today, "n": _past_answered(st, today) + 1})
+
+
+def asks(st, cands: list[dict], today: str) -> list[dict]:
+    """TR-20 (AI4-PastTrips, THL-309): what Quick sort asks. Recent trips
+    first, as found; then past ones, newest first, at most PAST_A_DAY a day
+    (those she answered today count), each with `past` {n, of} for "Past
+    trip · 1 of 6". After Start over that's her whole history, a few a day."""
+    recent = [c for c in cands if not is_past(c, today)]
+    past = [c for c in cands if is_past(c, today)]
+    done = _past_answered(st, today)
+    room = max(PAST_A_DAY - done, 0)
+    shown = [{**c, "past": {"n": done + i + 1, "of": done + len(past)}}
+             for i, c in enumerate(past[:room])]
+    return recent + shown
+
+
 def ask_yes(st, cid: str, today: str, txns: list[Transaction] | None = None) -> dict | None:
     """Yes on TR-01: the trip, named for its place (or "Trip" with none)."""
     txns = st.all_transactions() if txns is None else txns
@@ -464,6 +502,7 @@ def ask_yes(st, cid: str, today: str, txns: list[Transaction] | None = None) -> 
     name = cand["name"] or _free_name(st, "Trip")
     trip = create(st, cand["ids"], name, "pearl", today, place=cand["place"])
     _said(st, cand, "yes", today)
+    _count_past(st, cand, today)
     return trip
 
 
@@ -494,4 +533,5 @@ def ask_skip(st, cid: str, today: str, txns: list[Transaction] | None = None) ->
         return False
     _skip_dates(st, cand["start"], cand["end"])
     _said(st, cand, "skip", today, status="rejected")      # never asked about again
+    _count_past(st, cand, today)
     return True

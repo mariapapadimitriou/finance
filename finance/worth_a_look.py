@@ -2,8 +2,8 @@
 
 * GET  /api/worth-a-look   {"items": [...]}
 * POST /api/worth-a-look   {"action", "ids" | "id"}: seen, not_now, clear,
-                           undo_clear, yes, undo_yes, got_it. Every reply has
-                           "ok" and the fresh "items".
+                           undo_clear, yes, undo_yes, no, undo_no, got_it.
+                           Every reply has "ok" and the fresh "items".
 
 An item is one event (`id`): the same thing again has the same id, a new
 event a new one. Each comes only from what Pearl already knows; none is
@@ -28,6 +28,15 @@ Rules (product owner):
   (`/review/dismiss`); a tap opens that month's income.
 * Your plan and Save are parked: no item opens either (plan pace is off;
   the new month opens Home's Allowance).
+* AI Phase 4 (THL-309): a price rise (WL-20, AI4-PriceRise) is "Netflix
+  went up $2.50 · Was $16.49 since March · $18.99/mo" with Got it / Not
+  this; a forgotten subscription (WL-21, AI4-Forgotten) is "Still using
+  Crave? · $19.99 a month for 7 months" with Keep / Not mine anymore. Each
+  row opens a Pearl sheet (`sheet`: its fact card) with the same two
+  answers. `no` is the second answer (Not this, Not mine anymore), with
+  `undo_no`. Every answer is recorded against recurring.price_rise@ or
+  recurring.forgotten@ (THL-310). Nothing changes her numbers without
+  her answer: Got it is what updates the bill the Allowance expects.
 """
 
 from __future__ import annotations
@@ -60,13 +69,19 @@ RISE_MIN, RISE_SHARE = 1.0, 0.04
 # A trip ask is news here only if it ended this recently. Quick sort asks
 # about every trip in her history (finance/trips.py); after Start over that
 # can be years of them, and Home stays about now.
-TRIP_DAYS = 120
+from .trips import PAST_DAYS as TRIP_DAYS  # noqa: E402  (TR-20: the same line)
 
 TIERS = ("yes", "heads_up", "good")
-ACTIONS = ("seen", "not_now", "clear", "undo_clear", "yes", "undo_yes", "got_it")
+ACTIONS = ("seen", "not_now", "clear", "undo_clear", "yes", "undo_yes", "no", "undo_no", "got_it")
 ACK_KINDS = ("paycheque",)
-YES_KINDS = ("subscription", "price_rise")
-HIDDEN = ("seen", "not_now", "cleared", "yes")
+YES_KINDS = ("subscription", "price_rise", "forgotten")
+NO_KINDS = ("price_rise", "forgotten")
+# WL-21: a monthly subscription she has never answered (I-04, Keep, or Yes
+# here) that has charged at least this many months running. Six: past the
+# NEW_DAYS a new one is news for, and half a year of charges is when an
+# unreviewed subscription is worth a question (THL-309).
+FORGOTTEN_MONTHS = 6
+HIDDEN = ("seen", "not_now", "cleared", "yes", "no")
 
 
 # ── Words ─────────────────────────────────────────────────────────────────
@@ -109,9 +124,13 @@ def _key(merchant: str) -> str:
 
 def _item(id_: str, kind: str, tier: str, title: str, icon: str, tone: str, *,
           amount: str | None = None, yes: str | None = None, target: dict | None = None,
-          rank: float = 0.0, data: dict | None = None, ack: str | None = None) -> dict:
+          rank: float = 0.0, data: dict | None = None, ack: str | None = None,
+          sub: str | None = None, no: str | None = None, sheet: dict | None = None) -> dict:
     out = {"id": id_, "kind": kind, "tier": tier, "title": title, "amount": amount,
            "icon": icon, "tone": tone, "yes": yes, "ack": ack,
+           # THL-309: the line under the title, the second answer (Not now
+           # when there is none) and the sheet a tap opens.
+           "sub": sub, "no": no, "sheet": sheet,
            "target": ({"screen": target.get("screen"), "id": target.get("id"),
                        "name": target.get("name"), "month": target.get("month")}
                       if target else None),
@@ -216,10 +235,88 @@ def _price_rises(ctx: _Ctx) -> list[dict]:
         if rise < max(RISE_MIN, billed * RISE_SHARE):
             continue
         name = ctx.name(r["name"])
+        cadence = rec.get("cadence") or r.get("cadence") or "monthly"
+        since = _since(rec, billed)
+        more = _dollars(round(rise * ib.PER_YEAR.get(cadence, 12)))
         out.append(_item(f"price_rise:{r['key']}:{int(round(latest * 100))}", "price_rise", "yes",
                          f"{name} went up {_dollars(rise)}", "price", "rose",
-                         yes="Update the bill", rank=-rise,
-                         data={"key": r["key"], "name": name, "amount": latest}))
+                         amount=f"{_money(latest)}{_PER.get(cadence, '')}",
+                         sub=f"Was {_money(billed)}" + (f" since {since}." if since else "."),
+                         yes="Got it", no="Not this", rank=-rise,
+                         sheet={"title": f"{name} went up",
+                                "over": f"{name} · {_EACH.get(cadence, 'a month')}",
+                                "big": _money(latest),
+                                "line": f"Was {_money(billed)} · {more} more a year",
+                                "now": latest, "before": billed},
+                         data={"key": r["key"], "name": name, "amount": latest, "before": billed,
+                               "cadence": cadence, "rec": rec}))
+    return out
+
+
+_EACH = {"monthly": "a month", "annual": "a year", "quarterly": "every 3 months",
+         "semiannual": "every 6 months", "bimonthly": "every 2 months", "weekly": "a week",
+         "biweekly": "every 2 weeks"}
+
+
+def _since(rec: dict, billed: float) -> str | None:
+    """"March": when the charges before the rise started at `billed`, from
+    the run just before the latest charge. None when the last but one wasn't
+    that amount (her own amount, I-05)."""
+    dates, amounts = rec.get("dates") or [], rec.get("amounts") or []
+    if len(dates) < 2 or len(amounts) != len(dates):
+        return None
+    i = len(amounts) - 2
+    if abs(amounts[i] - billed) >= 0.005:
+        return None
+    while i > 0 and abs(amounts[i - 1] - billed) < 0.005:
+        i -= 1
+    return date.fromisoformat(dates[i][:10]).strftime("%B")
+
+
+def _months_between(a: str, b: str) -> int:
+    x, y = date.fromisoformat(a[:10]), date.fromisoformat(b[:10])
+    return (y.year - x.year) * 12 + y.month - x.month + 1
+
+
+def _forgotten(ctx: _Ctx) -> list[dict]:
+    """WL-21 (AI4-Forgotten): a monthly subscription that has charged for
+    FORGOTTEN_MONTHS or more and that she has never answered: not in I-04,
+    not kept on Insights, not a Yes here. Only from her own ledger, never a
+    list of merchants."""
+    from .recommendations import SUBSCRIPTION_CATEGORIES
+    if not ctx.st.plaid_history_ready(ctx.today.isoformat()):
+        return []
+    kept = core._json_setting(ctx.st, "subscription_choices", {})
+    answers = ctx.bill_state().get("bills") or {}
+    out = []
+    for r in ctx.bills():
+        rec = r.get("rec")
+        if (r["source"] != "found" or r.get("counts") is not None or r.get("question")
+                or r.get("rent") or not rec or not rec.get("active")
+                or rec.get("category") not in SUBSCRIPTION_CATEGORIES
+                or rec.get("cadence") != "monthly" or rec["merchant"] in kept
+                or (answers.get(r["key"]) or {}).get("state")):
+            continue
+        months = _months_between(rec["first_seen"], rec["last_seen"])
+        if months < FORGOTTEN_MONTHS or rec["occurrences"] < FORGOTTEN_MONTHS:
+            continue
+        name = ctx.name(r["name"])
+        amount = round(rec["amount"], 2)
+        paid = round(rec.get("total_paid") or amount * rec["occurrences"], 2)
+        nxt = date.fromisoformat(r["next"][:10]) if r.get("next") else None
+        start = date.fromisoformat(rec["first_seen"][:10]).strftime("%B")
+        line = f"{rec['occurrences']} payments of {_money(amount)}"
+        if nxt and nxt >= ctx.today:
+            line += f" · next on {nxt.strftime('%b')} {nxt.day}"
+        out.append(_item(f"forgotten:{r['key']}", "forgotten", "yes", f"Still using {name}?",
+                         "subscription", "rose", amount=f"{_money(amount)}/mo",
+                         sub=f"{_money(amount)} a month for {months} months.",
+                         yes="Keep", no="Not mine anymore", rank=-paid,
+                         sheet={"title": name, "over": f"{name} · since {start}", "big": _money(paid),
+                                "line": line,
+                                "note": f"To stop it, cancel with {name}. Pearl can’t cancel for you."},
+                         data={"key": r["key"], "name": name, "amount": amount, "last": rec["last_seen"],
+                               "months": months, "rec": rec}))
     return out
 
 
@@ -443,7 +540,8 @@ def candidates(st, today: date) -> list[dict]:
     review = _review(ctx)
     owed = _owed(ctx)
     groups = [
-        _subscriptions(ctx), _price_rises(ctx), _duplicates(ctx, review), _trips(ctx, review),
+        _subscriptions(ctx), _price_rises(ctx), _forgotten(ctx), _duplicates(ctx, review),
+        _trips(ctx, review),
         # Plan pace waits while Your plan is parked (no item opens it).
         _bills_due(ctx), _cards_due(ctx), _unsettled(ctx, owed), _unpaid(ctx, owed),
         _new_month(ctx), _paycheque(ctx, review), _piggy_halfway(ctx), _month_compare(ctx),
@@ -490,6 +588,10 @@ def _rank(found: list[dict], rows: dict[str, dict], today: date) -> list[dict]:
             continue
         live.append(it)
     live.sort(key=lambda it: (TIERS.index(it["tier"]), it["_order"], it["_rank"], it["id"]))
+    # WL-21: one "Still using …?" at a time, the costliest first, so a new
+    # ledger of subscriptions doesn't fill Home.
+    first = next((it["id"] for it in live if it["kind"] == "forgotten"), None)
+    live = [it for it in live if it["kind"] != "forgotten" or it["id"] == first]
     yes = [it for it in live if it["tier"] == "yes"]
     heads = [it for it in live if it["tier"] == "heads_up"]
     good = [it for it in live if it["tier"] == "good"]
@@ -522,6 +624,14 @@ def _yes(st, it: dict, today: date) -> tuple[str, dict]:
         from .income_bills_api import confirm_bills
         confirm_bills(st, {key: True}, today)
         return f"{it['_data']['name']} added to subscriptions", undo
+    if it["kind"] == "forgotten":
+        # Keep: hers, and still expected (WL-21). Pearl was wrong to wonder.
+        entry = state["bills"].setdefault(key, {})
+        entry["state"] = "yes"
+        state["bills_on"] = state["bills_on"] or today.isoformat()
+        ib.save(st, state)
+        _said(st, it, "not_this", today)
+        return f"Keeping {it['_data']['name']}", undo
     amount = it["_data"]["amount"]
     if key.startswith("added:"):
         bill = next((b for b in state["added"] if f"added:{b['id']}" == key), None)
@@ -533,7 +643,49 @@ def _yes(st, it: dict, today: date) -> tuple[str, dict]:
         entry["amount"] = amount
         entry["state"] = "yes"
     ib.save(st, state)
-    return f"{it['_data']['name']} bill updated", undo
+    _said(st, it, "yes", today)
+    # WL-20: "Netflix is now $18.99 a month."
+    each = _EACH.get(it["_data"].get("cadence") or "monthly", "a month")
+    return f"{it['_data']['name']} is now {_money(amount)} {each}.", undo
+
+
+_DETECTOR = {"price_rise": "recurring.price_rise", "forgotten": "recurring.forgotten"}
+
+
+def _said(st, it: dict, what: str, today: date) -> None:
+    """Her answer on a WL-20 or WL-21 item, against its detector (THL-310)."""
+    from .signals import outcome
+    from .signals.model import evidence
+    detector = _DETECTOR.get(it["kind"])
+    if detector is None:
+        return
+    rec = it["_data"].get("rec") or {}
+    outcome(st, detector, it["id"].split(":", 1)[1], "bill" if it["kind"] == "price_rise" else "subscription",
+            what, today=today.isoformat(),
+            ev=evidence(count=rec.get("occurrences"), first=rec.get("first_seen"),
+                        last=rec.get("last_seen"), amount=it["_data"].get("amount"),
+                        cadence=rec.get("cadence")))
+
+
+def _no(st, it: dict, today: date) -> tuple[str | None, dict]:
+    """The second answer. Not this on a price rise: the bill stays as it was
+    and the item goes. Not mine anymore on a forgotten subscription: Pearl
+    stops expecting it (it no longer counts in the Allowance's bills); if it
+    charges again, that charge is asked about in Needs a look."""
+    key = it["_data"]["key"]
+    state = ib.load(st)
+    undo = json.loads(json.dumps({"key": key, "bill": state["bills"].get(key),
+                                  "bills_on": state["bills_on"]}))
+    if it["kind"] == "price_rise":
+        _said(st, it, "not_this", today)
+        return None, undo
+    entry = state["bills"].setdefault(key, {})
+    entry["state"] = "no"
+    entry["stopped"] = it["_data"]["last"][:10]
+    state["bills_on"] = state["bills_on"] or today.isoformat()
+    ib.save(st, state)
+    _said(st, it, "yes", today)
+    return f"{it['_data']['name']} marked as not yours anymore.", undo
 
 
 def _undo_yes(st, undo: dict) -> None:
@@ -619,10 +771,48 @@ def worth_a_look_post():
             _set_state(st, i, None, today)
         return jsonify({**out, "restored": done, "items": items(st, today)})
 
+    if action == "no":
+        # THL-309: Not this (a price rise), Not mine anymore (a forgotten one).
+        if not ids or not {i.split(":", 1)[0] for i in ids} <= set(NO_KINDS):
+            return jsonify({"error": "Only a price rise or a subscription can be answered here."}), 400
+        found = {it["id"]: it for it in candidates(st, today)}
+        toasts = []
+        for i in ids:
+            it = found.get(i)
+            if it is None or (rows.get(i) or {}).get("state") in HIDDEN:
+                continue
+            toast, undo = _no(st, it, today)
+            _set_state(st, i, "no", today, undo=json.dumps({**undo, "kind": it["kind"],
+                                                             "detector_key": i.split(":", 1)[1]}))
+            if toast:
+                toasts.append(toast)
+        out["toast"] = toasts[0] if len(toasts) == 1 else (f"{len(toasts)} updated" if toasts else None)
+        return jsonify({**out, "items": items(st, today)})
+
+    if action == "undo_no":
+        done = []
+        for i in ids:
+            row = rows.get(i) or {}
+            if row.get("state") != "no" or not row.get("undo"):
+                continue
+            try:
+                undo = json.loads(row["undo"])
+                if undo.get("kind") == "forgotten":
+                    _undo_yes(st, undo)
+                from .signals import outcome
+                outcome(st, _DETECTOR[undo["kind"]], undo["detector_key"],
+                        "subscription" if undo["kind"] == "forgotten" else "bill", "undo",
+                        today=today.isoformat())
+            except (TypeError, ValueError, KeyError):
+                continue
+            _set_state(st, i, None, today, undo=None)
+            done.append(i)
+        return jsonify({**out, "undone": done, "items": items(st, today)})
+
     if action == "yes":
         kinds = {i.split(":", 1)[0] for i in ids}
         if not ids or not kinds <= set(YES_KINDS):
-            return jsonify({"error": "Only a new subscription or a price rise can be answered here."}), 400
+            return jsonify({"error": "Only a subscription or a price rise can be answered here."}), 400
         found = {it["id"]: it for it in candidates(st, today)}
         toasts = []
         for i in ids:
@@ -645,6 +835,11 @@ def worth_a_look_post():
             _undo_yes(st, json.loads(row["undo"]))
         except (TypeError, ValueError, KeyError):
             continue
+        kind = i.split(":", 1)[0]
+        if kind in _DETECTOR:
+            from .signals import outcome
+            outcome(st, _DETECTOR[kind], i.split(":", 1)[1],
+                    "bill" if kind == "price_rise" else "subscription", "undo", today=today.isoformat())
         _set_state(st, i, None, today, undo=None)
         done.append(i)
     return jsonify({**out, "undone": done, "items": items(st, today)})

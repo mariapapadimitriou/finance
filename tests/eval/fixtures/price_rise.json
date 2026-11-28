@@ -1,0 +1,269 @@
+{
+ "name": "price_rise",
+ "about": "Made up. Two bills she said count: a streaming plan that went from $16.49 to $18.99 (a rise worth a look) and a phone bill 30 cents more (not worth asking about).",
+ "today": "2026-11-15",
+ "accounts": {
+  "chq": {
+   "name": "Chequing",
+   "type": "depository",
+   "subtype": "checking",
+   "mask": "1001"
+  },
+  "visa": {
+   "name": "Visa",
+   "type": "credit",
+   "subtype": "credit card",
+   "mask": "3003"
+  }
+ },
+ "transactions": [
+  {
+   "ref": "tv-0",
+   "account_id": "visa",
+   "date": "2026-03-09",
+   "name": "NETFLIX.COM 866-579",
+   "merchant_name": "Netflix",
+   "amount": 16.49,
+   "personal_finance_category": {
+    "primary": "ENTERTAINMENT",
+    "detailed": "ENTERTAINMENT_TV_AND_MOVIES"
+   }
+  },
+  {
+   "ref": "tv-1",
+   "account_id": "visa",
+   "date": "2026-04-09",
+   "name": "NETFLIX.COM 866-579",
+   "merchant_name": "Netflix",
+   "amount": 16.49,
+   "personal_finance_category": {
+    "primary": "ENTERTAINMENT",
+    "detailed": "ENTERTAINMENT_TV_AND_MOVIES"
+   }
+  },
+  {
+   "ref": "tv-2",
+   "account_id": "visa",
+   "date": "2026-05-09",
+   "name": "NETFLIX.COM 866-579",
+   "merchant_name": "Netflix",
+   "amount": 16.49,
+   "personal_finance_category": {
+    "primary": "ENTERTAINMENT",
+    "detailed": "ENTERTAINMENT_TV_AND_MOVIES"
+   }
+  },
+  {
+   "ref": "tv-3",
+   "account_id": "visa",
+   "date": "2026-06-09",
+   "name": "NETFLIX.COM 866-579",
+   "merchant_name": "Netflix",
+   "amount": 16.49,
+   "personal_finance_category": {
+    "primary": "ENTERTAINMENT",
+    "detailed": "ENTERTAINMENT_TV_AND_MOVIES"
+   }
+  },
+  {
+   "ref": "tv-4",
+   "account_id": "visa",
+   "date": "2026-07-09",
+   "name": "NETFLIX.COM 866-579",
+   "merchant_name": "Netflix",
+   "amount": 16.49,
+   "personal_finance_category": {
+    "primary": "ENTERTAINMENT",
+    "detailed": "ENTERTAINMENT_TV_AND_MOVIES"
+   }
+  },
+  {
+   "ref": "tv-5",
+   "account_id": "visa",
+   "date": "2026-08-09",
+   "name": "NETFLIX.COM 866-579",
+   "merchant_name": "Netflix",
+   "amount": 16.49,
+   "personal_finance_category": {
+    "primary": "ENTERTAINMENT",
+    "detailed": "ENTERTAINMENT_TV_AND_MOVIES"
+   }
+  },
+  {
+   "ref": "tv-6",
+   "account_id": "visa",
+   "date": "2026-09-09",
+   "name": "NETFLIX.COM 866-579",
+   "merchant_name": "Netflix",
+   "amount": 16.49,
+   "personal_finance_category": {
+    "primary": "ENTERTAINMENT",
+    "detailed": "ENTERTAINMENT_TV_AND_MOVIES"
+   }
+  },
+  {
+   "ref": "tv-7",
+   "account_id": "visa",
+   "date": "2026-10-09",
+   "name": "NETFLIX.COM 866-579",
+   "merchant_name": "Netflix",
+   "amount": 16.49,
+   "personal_finance_category": {
+    "primary": "ENTERTAINMENT",
+    "detailed": "ENTERTAINMENT_TV_AND_MOVIES"
+   }
+  },
+  {
+   "ref": "tv-8",
+   "account_id": "visa",
+   "date": "2026-11-09",
+   "name": "NETFLIX.COM 866-579",
+   "merchant_name": "Netflix",
+   "amount": 18.99,
+   "personal_finance_category": {
+    "primary": "ENTERTAINMENT",
+    "detailed": "ENTERTAINMENT_TV_AND_MOVIES"
+   }
+  },
+  {
+   "ref": "ph-0",
+   "account_id": "chq",
+   "date": "2026-03-15",
+   "name": "MOBILE CO PREAUTH",
+   "merchant_name": "Mobile Co",
+   "amount": 45.0,
+   "personal_finance_category": {
+    "primary": "RENT_AND_UTILITIES",
+    "detailed": "RENT_AND_UTILITIES_TELEPHONE"
+   }
+  },
+  {
+   "ref": "ph-1",
+   "account_id": "chq",
+   "date": "2026-04-15",
+   "name": "MOBILE CO PREAUTH",
+   "merchant_name": "Mobile Co",
+   "amount": 45.0,
+   "personal_finance_category": {
+    "primary": "RENT_AND_UTILITIES",
+    "detailed": "RENT_AND_UTILITIES_TELEPHONE"
+   }
+  },
+  {
+   "ref": "ph-2",
+   "account_id": "chq",
+   "date": "2026-05-15",
+   "name": "MOBILE CO PREAUTH",
+   "merchant_name": "Mobile Co",
+   "amount": 45.0,
+   "personal_finance_category": {
+    "primary": "RENT_AND_UTILITIES",
+    "detailed": "RENT_AND_UTILITIES_TELEPHONE"
+   }
+  },
+  {
+   "ref": "ph-3",
+   "account_id": "chq",
+   "date": "2026-06-15",
+   "name": "MOBILE CO PREAUTH",
+   "merchant_name": "Mobile Co",
+   "amount": 45.0,
+   "personal_finance_category": {
+    "primary": "RENT_AND_UTILITIES",
+    "detailed": "RENT_AND_UTILITIES_TELEPHONE"
+   }
+  },
+  {
+   "ref": "ph-4",
+   "account_id": "chq",
+   "date": "2026-07-15",
+   "name": "MOBILE CO PREAUTH",
+   "merchant_name": "Mobile Co",
+   "amount": 45.0,
+   "personal_finance_category": {
+    "primary": "RENT_AND_UTILITIES",
+    "detailed": "RENT_AND_UTILITIES_TELEPHONE"
+   }
+  },
+  {
+   "ref": "ph-5",
+   "account_id": "chq",
+   "date": "2026-08-15",
+   "name": "MOBILE CO PREAUTH",
+   "merchant_name": "Mobile Co",
+   "amount": 45.0,
+   "personal_finance_category": {
+    "primary": "RENT_AND_UTILITIES",
+    "detailed": "RENT_AND_UTILITIES_TELEPHONE"
+   }
+  },
+  {
+   "ref": "ph-6",
+   "account_id": "chq",
+   "date": "2026-09-15",
+   "name": "MOBILE CO PREAUTH",
+   "merchant_name": "Mobile Co",
+   "amount": 45.0,
+   "personal_finance_category": {
+    "primary": "RENT_AND_UTILITIES",
+    "detailed": "RENT_AND_UTILITIES_TELEPHONE"
+   }
+  },
+  {
+   "ref": "ph-7",
+   "account_id": "chq",
+   "date": "2026-10-15",
+   "name": "MOBILE CO PREAUTH",
+   "merchant_name": "Mobile Co",
+   "amount": 45.0,
+   "personal_finance_category": {
+    "primary": "RENT_AND_UTILITIES",
+    "detailed": "RENT_AND_UTILITIES_TELEPHONE"
+   }
+  },
+  {
+   "ref": "ph-8",
+   "account_id": "chq",
+   "date": "2026-11-15",
+   "name": "MOBILE CO PREAUTH",
+   "merchant_name": "Mobile Co",
+   "amount": 45.3,
+   "personal_finance_category": {
+    "primary": "RENT_AND_UTILITIES",
+    "detailed": "RENT_AND_UTILITIES_TELEPHONE"
+   }
+  }
+ ],
+ "income_bills": {
+  "bills": {
+   "Netflix": {
+    "state": "yes"
+   },
+   "Mobile Co": {
+    "state": "yes"
+   }
+  },
+  "bills_on": "2026-06-01"
+ },
+ "exhaustive": [
+  "recurring.price_rise"
+ ],
+ "labels": [
+  {
+   "detector": "recurring.price_rise",
+   "refs": [
+    "tv-0",
+    "tv-1",
+    "tv-2",
+    "tv-3",
+    "tv-4",
+    "tv-5",
+    "tv-6",
+    "tv-7",
+    "tv-8"
+   ],
+   "match": "subset",
+   "truth": true
+  }
+ ]
+}
