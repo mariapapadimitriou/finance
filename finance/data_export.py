@@ -94,7 +94,18 @@ def _everything_else(base, user, st) -> dict:
         "rules": [{k: v for k, v in r.items() if k != "id"} for r in _rules(st)],
         "budgets": st.budgets(),
         "settings": settings,
+        # What Pearl noticed and her answers to it (finance/signals, THL-310):
+        # since then the rows Pearl sorted live here, not in a setting.
+        "detections": _detections(st),
     }
+
+
+def _detections(st) -> dict:
+    from .signals import ledger
+    keep = ("id", "kind", "detector", "version", "txn_ids", "status", "day", "created_at", "updated_at")
+    return {"found": [{k: r[k] for k in keep} for r in ledger.rows(st)],
+            "answers": [{k: o[k] for k in ("at", "detection", "detector", "version", "outcome")}
+                        for o in ledger.outcomes(st)]}
 
 
 def build(base, user, st) -> tuple[bytes, dict]:

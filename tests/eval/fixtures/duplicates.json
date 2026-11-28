@@ -1,0 +1,23 @@
+{
+  "name": "duplicates",
+  "about": "Made up. A pending charge whose posted version came back under a new id without naming it (the same purchase twice), and two identical coffees the same morning, both posted (two purchases).",
+  "today": "2026-11-15",
+  "accounts": {
+    "visa": {"name": "Visa", "type": "credit", "subtype": "credit card", "mask": "6006"}
+  },
+  "transactions": [
+    {"ref": "dinner-pending", "account_id": "visa", "date": "2026-11-06", "name": "OSTERIA NOVE", "amount": 86.20, "pending": true,
+     "personal_finance_category": {"primary": "FOOD_AND_DRINK", "detailed": "FOOD_AND_DRINK_RESTAURANT"}},
+    {"ref": "dinner-posted", "account_id": "visa", "date": "2026-11-07", "name": "OSTERIA NOVE TORONTO", "amount": 86.20,
+     "personal_finance_category": {"primary": "FOOD_AND_DRINK", "detailed": "FOOD_AND_DRINK_RESTAURANT"}},
+    {"ref": "coffee-1", "account_id": "visa", "date": "2026-11-09", "name": "LUNA CAFE 221", "amount": 4.85,
+     "personal_finance_category": {"primary": "FOOD_AND_DRINK", "detailed": "FOOD_AND_DRINK_COFFEE"}},
+    {"ref": "coffee-2", "account_id": "visa", "date": "2026-11-09", "name": "LUNA CAFE 221", "amount": 4.85,
+     "personal_finance_category": {"primary": "FOOD_AND_DRINK", "detailed": "FOOD_AND_DRINK_COFFEE"}}
+  ],
+  "exhaustive": ["duplicates"],
+  "labels": [
+    {"detector": "duplicates", "refs": ["dinner-pending", "dinner-posted"], "kind": "duplicate", "truth": true},
+    {"detector": "duplicates", "refs": ["coffee-1", "coffee-2"], "truth": false}
+  ]
+}

@@ -61,17 +61,18 @@ def forget(store, t: Transaction) -> bool:
     return True
 
 
-def apply(store, transactions: list[Transaction] | None = None) -> int:
-    """Count every deposit from a remembered payer as income of its kind.
-    Returns how many rows changed. No rules, nothing read."""
-    from .pay_rules import SOURCE, key_of
-    out = rules(store)
+def targets(store, transactions: list[Transaction] | None = None,
+            out: dict[str, dict] | None = None) -> list[tuple[Transaction, str, dict]]:
+    """Every deposit a remembered payer's rule covers, as (row, payer key,
+    rule), read only: what `apply` writes, and what the signals adapter
+    reports (finance/signals). No rules, nothing read."""
+    from .pay_rules import key_of
+    out = rules(store) if out is None else out
     if not out:
-        return 0
+        return []
     txns = transactions if transactions is not None else store.all_transactions()
     pay = store.pay_rules()
-    cats: dict[str, tuple[str, str]] = {}
-    n = 0
+    found_rows = []
     for t in txns:
         if t.amount >= 0 or t.income_type_source == "user":
             continue
@@ -81,6 +82,20 @@ def apply(store, transactions: list[Transaction] | None = None) -> int:
             continue
         if t.category_source == "user" and t.category != "Income":
             continue
+        found_rows.append((t, found[0], rule))
+    return found_rows
+
+
+def apply(store, transactions: list[Transaction] | None = None) -> int:
+    """Count every deposit from a remembered payer as income of its kind.
+    Returns how many rows changed. No rules, nothing read."""
+    from .pay_rules import SOURCE
+    out = rules(store)
+    if not out:
+        return 0
+    cats: dict[str, tuple[str, str]] = {}
+    n = 0
+    for t, _, rule in targets(store, transactions, out):
         if t.category != "Income":
             cats[t.fingerprint] = ("Income", SOURCE)
         # Hers, as if she'd said it: guesses never write over it. Already

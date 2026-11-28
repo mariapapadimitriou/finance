@@ -847,6 +847,43 @@ CREATE TABLE IF NOT EXISTS worth_a_look_state (
     at          TEXT,
     undo        TEXT
 );
+-- Signals (finance/signals, THL-310): what each detector noticed, by
+-- `detector:key`, with its rows, evidence, detector@version and status
+-- (proposed, confirmed, rejected, undone). A row Pearl sorted by itself is
+-- one too, under the pattern it applied (`parent`, the old record in
+-- `payload`): this replaces the `pattern_sort_log` setting going forward.
+CREATE TABLE IF NOT EXISTS detections (
+    seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+    id         TEXT NOT NULL UNIQUE,
+    kind       TEXT NOT NULL,
+    detector   TEXT NOT NULL,
+    version    TEXT NOT NULL,
+    key        TEXT NOT NULL,
+    parent     TEXT,
+    txn_ids    TEXT NOT NULL DEFAULT '[]',
+    evidence   TEXT NOT NULL DEFAULT '{}',
+    score      REAL,
+    status     TEXT NOT NULL,
+    day        TEXT,
+    payload    TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_detections_detector ON detections (detector);
+-- Every Yes, Skip, Not this, Undo and Stop, and each row sorted by itself,
+-- against detector@version. Appended, never rewritten.
+CREATE TABLE IF NOT EXISTS detection_outcomes (
+    seq       INTEGER PRIMARY KEY AUTOINCREMENT,
+    at        TEXT NOT NULL,
+    day       TEXT NOT NULL,
+    detection TEXT NOT NULL,
+    kind      TEXT NOT NULL,
+    detector  TEXT NOT NULL,
+    version   TEXT NOT NULL,
+    outcome   TEXT NOT NULL,
+    how       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_detection_outcomes_detector ON detection_outcomes (detector, version);
 """
 
 
@@ -2871,6 +2908,10 @@ class Store:
         ("review_dismissed", "settled review items"),
         ("review_skipped", "skipped review items"),
         ("worth_a_look_state", "dismissed findings"),
+        # Signals (finance/signals): what Pearl noticed and her answers, by
+        # rows that come back with the same ids, as `pattern_sort_log` below.
+        ("detections", "answers about transactions"),
+        ("detection_outcomes", "answers about transactions"),
         # Rules.
         ("merchant_overrides", "rules"),
         ("transfer_destinations", "rules"),
@@ -2919,6 +2960,8 @@ class Store:
         # that come back with the same ids, so kept they'd reattach. The
         # switch stays; its baseline is taken again once the history is in.
         "pattern_sort_log", "pattern_sort_state", "pattern_sort_never",
+        # The table's rows go too (detections, above).
+        "pattern_sort_in_table",
         # "Waiting to be paid back" on a charge (marks.py), by charge id.
         "reimbursement_waited",
     )

@@ -63,7 +63,7 @@ DAILY_CAP = 20
 SOURCE = "pattern"            # category_source of a row Pearl sorted by a pattern
 
 BASELINE_KEY = "pattern_sort_baseline"   # {"at": iso, "known": [ids]}
-LOG_KEY = "pattern_sort_log"             # [record]
+LOG_KEY = "pattern_sort_log"             # [record] before THL-310; read, new ones go to `detections`
 STATE_KEY = "pattern_sort_state"         # {pattern id: {"on": bool, "stopped_at": iso}}
 NEVER_KEY = "pattern_sort_never"         # [txn ids she undid]
 MIGRATED_KEY = "pattern_sort_asks_first"      # set once rows sorted without asking are back
@@ -132,8 +132,27 @@ def _sender(t: Transaction) -> str:
 
 
 def _log(st) -> list[dict]:
-    out = _json(st, LOG_KEY, [])
-    return out if isinstance(out, list) else []
+    """Every record, oldest first: the old `pattern_sort_log` setting and,
+    since THL-310, the `detections` table (finance/signals/ledger.py)."""
+    from .signals.ledger import load_sort_log
+    return load_sort_log(st)
+
+
+def _save_log(st, log: list[dict], today: str | None = None) -> None:
+    from .signals.ledger import save_sort_log
+    save_sort_log(st, log, today)
+
+
+def _said(st, pid: str, what: str, today: str | None = None, how: str | None = None,
+          status: str | None = None, p: dict | None = None) -> None:
+    """Her answer about a pattern, against its detector@version (THL-310)."""
+    from .signals import outcome
+    from .signals.model import evidence
+    kind = pid.split(":", 1)[0]
+    p = p or {}
+    outcome(st, f"pattern_sort.{kind}", pid, "joint_theirs" if kind == "joint" else "category_pattern",
+            what, today=today, how=how, status=status, txn_ids=p.get("answered") or (),
+            ev=evidence(count=p.get("count"), options=(p["answer"],) if p.get("answer") else ()))
 
 
 def _pattern_id(kind: str, *keys: str) -> str:
@@ -228,7 +247,7 @@ def migrate(st) -> list[dict]:
     for r in back:
         _undo(st, r)
     if back:
-        _save(st, LOG_KEY, log)
+        _save_log(st, log)
     st.set_setting(MIGRATED_KEY, datetime.now(timezone.utc).isoformat(timespec="seconds"))
     return back
 
@@ -304,7 +323,7 @@ def run(st, today: str) -> list[dict]:
             new.append(rec)
             room -= 1
     if new:
-        _save(st, LOG_KEY, log[-2000:])
+        _save_log(st, log, today)
     return new
 
 
@@ -350,7 +369,11 @@ def undo(st, record_id: str) -> dict | None:
     if rec["txn"] not in never:
         never.append(rec["txn"])
     _save(st, NEVER_KEY, never)
-    _save(st, LOG_KEY, log)
+    _save_log(st, log)
+    from .signals import UNDO, outcome
+    from .signals.ledger import _sort_detector, _sort_kind
+    outcome(st, _sort_detector(rec), f"row:{rec['id']}", _sort_kind(rec), UNDO,
+            txn_ids=[rec["txn"]], parent=f"{_sort_detector(rec)}:{rec['pattern']}")
     return rec
 
 
@@ -368,12 +391,14 @@ def stop(st, pid: str) -> list[dict]:
     undone = [r for r in log if r["pattern"] == pid and not r.get("undone")]
     for r in undone:
         _undo(st, r)
-    _save(st, LOG_KEY, log)
+    _save_log(st, log)
     s = _state(st)
     # Keeps her Yes, so Stop's Undo puts the pattern back as it was.
     s[pid] = {**(s.get(pid) or {}), "on": False,
               "stopped_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
     _save(st, STATE_KEY, s)
+    from .signals import STOP
+    _said(st, pid, STOP)
     return undone
 
 
@@ -398,11 +423,16 @@ def restart(st, pid: str, records: list[str]) -> None:
             fresh = _apply(st, t, p, r["day"])
             if fresh:
                 r.update(undone=False, was=fresh.get("was"))
-    _save(st, LOG_KEY, log)
+    _save_log(st, log)
     s = _state(st)
     s[pid] = {k: v for k, v in (s.get(pid) or {}).items() if k != "stopped_at"}
     s[pid]["on"] = True
     _save(st, STATE_KEY, s)
+    # Undo for Stop takes the Stop back: confirmed again, no new answer.
+    if s[pid].get("confirmed"):
+        from .signals import CONFIRMED
+        from .signals.ledger import set_status
+        set_status(st, f"pattern_sort.{pid.split(':', 1)[0]}:{pid}", CONFIRMED)
 
 
 # ── Asking first ───────────────────────────────────────────────────────────
@@ -461,6 +491,8 @@ def confirm(st, pid: str, today: str, how: str = "ask", txns: list[Transaction] 
     s[pid] = {**{k: v for k, v in prior.items() if k not in ("skips", "skipped_at")},
               "on": True, "confirmed": yes, "before": before}
     _save(st, STATE_KEY, s)
+    from .signals import YES
+    _said(st, pid, YES, today=today, how=how, p=p)
     return yes
 
 
@@ -480,9 +512,12 @@ def unconfirm(st, pid: str) -> bool:
     for r in log:
         if r["pattern"] == pid and not r.get("undone"):
             _undo(st, r)
-    _save(st, LOG_KEY, log)
+    _save_log(st, log)
     s[pid] = {k: v for k, v in prior.items() if k not in ("confirmed", "before")}
     _save(st, STATE_KEY, s)
+    # Undo on the Yes: asked about again, so proposed.
+    from .signals import PROPOSED, UNDO
+    _said(st, pid, UNDO, status=PROPOSED)
     return True
 
 
@@ -496,6 +531,9 @@ def skip(st, pid: str) -> dict | None:
     skips = int((s.get(pid) or {}).get("skips") or 0) + 1
     s[pid] = {**(s.get(pid) or {}), "skips": skips, "skipped_at": p["count"]}
     _save(st, STATE_KEY, s)
+    # A second Skip is never asked again: rejected.
+    from .signals import REJECTED, SKIP
+    _said(st, pid, SKIP, status=REJECTED if skips >= SKIPS_MAX else None, p=p)
     return {"skips": skips, "never": skips >= SKIPS_MAX, "again_after": None if skips >= SKIPS_MAX else p["need"]}
 
 

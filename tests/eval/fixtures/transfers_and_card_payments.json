@@ -1,0 +1,38 @@
+{
+  "name": "transfers_and_card_payments",
+  "about": "Made up. Both ends of a card payment and of a move into savings, and the mistakes a same-amount match can make: money to one friend and from another for the same amount a day apart, and a shop refund the day after an e-Transfer out.",
+  "today": "2026-11-15",
+  "accounts": {
+    "chq": {"name": "Chequing", "type": "depository", "subtype": "checking", "mask": "1001"},
+    "sav": {"name": "Savings", "type": "depository", "subtype": "savings", "mask": "2002"},
+    "visa": {"name": "Visa", "type": "credit", "subtype": "credit card", "mask": "3003"}
+  },
+  "transactions": [
+    {"ref": "cp-out", "account_id": "chq", "date": "2026-10-03", "name": "ONLINE BANKING PAYMENT VISA", "amount": 812.40,
+     "personal_finance_category": {"primary": "LOAN_PAYMENTS", "detailed": "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"}},
+    {"ref": "cp-in", "account_id": "visa", "date": "2026-10-04", "name": "PAYMENT - THANK YOU", "amount": -812.40,
+     "personal_finance_category": {"primary": "LOAN_PAYMENTS", "detailed": "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"}},
+
+    {"ref": "sv-out", "account_id": "chq", "date": "2026-10-10", "name": "TFR TO SAVINGS 2002", "amount": 500.00,
+     "personal_finance_category": {"primary": "TRANSFER_OUT", "detailed": "TRANSFER_OUT_SAVINGS"}},
+    {"ref": "sv-in", "account_id": "sav", "date": "2026-10-10", "name": "TFR FROM CHEQUING 1001", "amount": -500.00,
+     "personal_finance_category": {"primary": "TRANSFER_IN", "detailed": "TRANSFER_IN_ACCOUNT_TRANSFER"}},
+
+    {"ref": "friend-out", "account_id": "chq", "date": "2026-10-25", "name": "SEND E-TFR ***Q7k", "amount": 200.00,
+     "personal_finance_category": {"primary": "TRANSFER_OUT", "detailed": "TRANSFER_OUT_ACCOUNT_TRANSFER"}},
+    {"ref": "friend-in", "account_id": "sav", "date": "2026-10-26", "name": "E-TRANSFER RECEIVED PRIYA SHAH", "amount": -200.00,
+     "personal_finance_category": {"primary": "TRANSFER_IN", "detailed": "TRANSFER_IN_ACCOUNT_TRANSFER"}},
+
+    {"ref": "etfr-out", "account_id": "chq", "date": "2026-11-02", "name": "SEND E-TFR ***Ab9", "amount": 64.99,
+     "personal_finance_category": {"primary": "TRANSFER_OUT", "detailed": "TRANSFER_OUT_ACCOUNT_TRANSFER"}},
+    {"ref": "refund-in", "account_id": "visa", "date": "2026-11-03", "name": "BEST BUY REFUND", "amount": -64.99,
+     "personal_finance_category": {"primary": "GENERAL_MERCHANDISE", "detailed": "GENERAL_MERCHANDISE_ELECTRONICS"}}
+  ],
+  "exhaustive": ["transfers.pairs"],
+  "labels": [
+    {"detector": "transfers.pairs", "refs": ["cp-out", "cp-in"], "kind": "card_payment", "truth": true},
+    {"detector": "transfers.pairs", "refs": ["sv-out", "sv-in"], "kind": "transfer_pair", "truth": true},
+    {"detector": "transfers.pairs", "refs": ["friend-out", "friend-in"], "truth": false},
+    {"detector": "transfers.pairs", "refs": ["etfr-out", "refund-in"], "truth": false}
+  ]
+}

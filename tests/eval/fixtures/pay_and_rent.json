@@ -1,0 +1,420 @@
+{
+ "name": "pay_and_rent",
+ "about": "Made up. Pay every two weeks into chequing, rent by e-Transfer to one person on the 1st, and groceries that are neither.",
+ "today": "2026-11-15",
+ "accounts": {
+  "chq": {
+   "name": "Chequing",
+   "type": "depository",
+   "subtype": "checking",
+   "mask": "4004"
+  }
+ },
+ "transactions": [
+  {
+   "ref": "pay-2026-06-05",
+   "account_id": "chq",
+   "date": "2026-06-05",
+   "name": "PAYROLL NORTHWIND LTD",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "pay-2026-06-19",
+   "account_id": "chq",
+   "date": "2026-06-19",
+   "name": "PAYROLL NORTHWIND LTD",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "pay-2026-07-03",
+   "account_id": "chq",
+   "date": "2026-07-03",
+   "name": "PAYROLL NORTHWIND LTD",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "pay-2026-07-17",
+   "account_id": "chq",
+   "date": "2026-07-17",
+   "name": "PAYROLL NORTHWIND LTD",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "pay-2026-07-31",
+   "account_id": "chq",
+   "date": "2026-07-31",
+   "name": "PAYROLL NORTHWIND LTD",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "pay-2026-08-14",
+   "account_id": "chq",
+   "date": "2026-08-14",
+   "name": "PAYROLL NORTHWIND LTD",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "pay-2026-08-28",
+   "account_id": "chq",
+   "date": "2026-08-28",
+   "name": "PAYROLL NORTHWIND LTD",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "pay-2026-09-11",
+   "account_id": "chq",
+   "date": "2026-09-11",
+   "name": "PAYROLL NORTHWIND LTD",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "pay-2026-09-25",
+   "account_id": "chq",
+   "date": "2026-09-25",
+   "name": "PAYROLL NORTHWIND LTD",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "pay-2026-10-09",
+   "account_id": "chq",
+   "date": "2026-10-09",
+   "name": "PAYROLL NORTHWIND LTD",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "pay-2026-10-23",
+   "account_id": "chq",
+   "date": "2026-10-23",
+   "name": "PAYROLL NORTHWIND LTD",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "pay-2026-11-06",
+   "account_id": "chq",
+   "date": "2026-11-06",
+   "name": "PAYROLL NORTHWIND LTD",
+   "amount": -2150.0,
+   "personal_finance_category": {
+    "primary": "INCOME",
+    "detailed": "INCOME_WAGES"
+   }
+  },
+  {
+   "ref": "rent-2026-06",
+   "account_id": "chq",
+   "date": "2026-06-01",
+   "name": "E-TRANSFER SENT JORDAN LEE",
+   "amount": 1800.0,
+   "payment_meta": {
+    "payee": "Jordan Lee"
+   },
+   "personal_finance_category": {
+    "primary": "TRANSFER_OUT",
+    "detailed": "TRANSFER_OUT_ACCOUNT_TRANSFER"
+   }
+  },
+  {
+   "ref": "rent-2026-07",
+   "account_id": "chq",
+   "date": "2026-07-01",
+   "name": "E-TRANSFER SENT JORDAN LEE",
+   "amount": 1800.0,
+   "payment_meta": {
+    "payee": "Jordan Lee"
+   },
+   "personal_finance_category": {
+    "primary": "TRANSFER_OUT",
+    "detailed": "TRANSFER_OUT_ACCOUNT_TRANSFER"
+   }
+  },
+  {
+   "ref": "rent-2026-08",
+   "account_id": "chq",
+   "date": "2026-08-01",
+   "name": "E-TRANSFER SENT JORDAN LEE",
+   "amount": 1800.0,
+   "payment_meta": {
+    "payee": "Jordan Lee"
+   },
+   "personal_finance_category": {
+    "primary": "TRANSFER_OUT",
+    "detailed": "TRANSFER_OUT_ACCOUNT_TRANSFER"
+   }
+  },
+  {
+   "ref": "rent-2026-09",
+   "account_id": "chq",
+   "date": "2026-09-01",
+   "name": "E-TRANSFER SENT JORDAN LEE",
+   "amount": 1800.0,
+   "payment_meta": {
+    "payee": "Jordan Lee"
+   },
+   "personal_finance_category": {
+    "primary": "TRANSFER_OUT",
+    "detailed": "TRANSFER_OUT_ACCOUNT_TRANSFER"
+   }
+  },
+  {
+   "ref": "rent-2026-10",
+   "account_id": "chq",
+   "date": "2026-10-01",
+   "name": "E-TRANSFER SENT JORDAN LEE",
+   "amount": 1800.0,
+   "payment_meta": {
+    "payee": "Jordan Lee"
+   },
+   "personal_finance_category": {
+    "primary": "TRANSFER_OUT",
+    "detailed": "TRANSFER_OUT_ACCOUNT_TRANSFER"
+   }
+  },
+  {
+   "ref": "rent-2026-11",
+   "account_id": "chq",
+   "date": "2026-11-01",
+   "name": "E-TRANSFER SENT JORDAN LEE",
+   "amount": 1800.0,
+   "payment_meta": {
+    "payee": "Jordan Lee"
+   },
+   "personal_finance_category": {
+    "primary": "TRANSFER_OUT",
+    "detailed": "TRANSFER_OUT_ACCOUNT_TRANSFER"
+   }
+  },
+  {
+   "ref": "groc-0",
+   "account_id": "chq",
+   "date": "2026-06-09",
+   "name": "FRESHCO 4471",
+   "amount": 84.12,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_GROCERIES"
+   }
+  },
+  {
+   "ref": "groc-1",
+   "account_id": "chq",
+   "date": "2026-06-23",
+   "name": "FRESHCO 4471",
+   "amount": 41.5,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_GROCERIES"
+   }
+  },
+  {
+   "ref": "groc-2",
+   "account_id": "chq",
+   "date": "2026-07-14",
+   "name": "FRESHCO 4471",
+   "amount": 120.33,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_GROCERIES"
+   }
+  },
+  {
+   "ref": "groc-3",
+   "account_id": "chq",
+   "date": "2026-08-02",
+   "name": "FRESHCO 4471",
+   "amount": 66.1,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_GROCERIES"
+   }
+  },
+  {
+   "ref": "groc-4",
+   "account_id": "chq",
+   "date": "2026-08-30",
+   "name": "FRESHCO 4471",
+   "amount": 92.75,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_GROCERIES"
+   }
+  },
+  {
+   "ref": "groc-5",
+   "account_id": "chq",
+   "date": "2026-09-18",
+   "name": "FRESHCO 4471",
+   "amount": 58.4,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_GROCERIES"
+   }
+  },
+  {
+   "ref": "groc-6",
+   "account_id": "chq",
+   "date": "2026-10-07",
+   "name": "FRESHCO 4471",
+   "amount": 77.77,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_GROCERIES"
+   }
+  },
+  {
+   "ref": "groc-7",
+   "account_id": "chq",
+   "date": "2026-10-29",
+   "name": "FRESHCO 4471",
+   "amount": 101.2,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_GROCERIES"
+   }
+  },
+  {
+   "ref": "groc-8",
+   "account_id": "chq",
+   "date": "2026-11-10",
+   "name": "FRESHCO 4471",
+   "amount": 49.99,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_GROCERIES"
+   }
+  }
+ ],
+ "exhaustive": [
+  "income.cadence",
+  "income_bills.pay",
+  "income_bills.rent",
+  "recurring_transfers",
+  "recurring"
+ ],
+ "labels": [
+  {
+   "detector": "income.cadence",
+   "refs": [
+    "pay-2026-06-05",
+    "pay-2026-06-19",
+    "pay-2026-07-03",
+    "pay-2026-07-17",
+    "pay-2026-07-31",
+    "pay-2026-08-14",
+    "pay-2026-08-28",
+    "pay-2026-09-11",
+    "pay-2026-09-25",
+    "pay-2026-10-09",
+    "pay-2026-10-23",
+    "pay-2026-11-06"
+   ],
+   "match": "subset",
+   "kind": "income",
+   "truth": true
+  },
+  {
+   "detector": "income_bills.pay",
+   "refs": [
+    "pay-2026-06-05",
+    "pay-2026-06-19",
+    "pay-2026-07-03",
+    "pay-2026-07-17",
+    "pay-2026-07-31",
+    "pay-2026-08-14",
+    "pay-2026-08-28",
+    "pay-2026-09-11",
+    "pay-2026-09-25",
+    "pay-2026-10-09",
+    "pay-2026-10-23",
+    "pay-2026-11-06"
+   ],
+   "match": "subset",
+   "kind": "income",
+   "truth": true
+  },
+  {
+   "detector": "income_bills.rent",
+   "refs": [
+    "rent-2026-06",
+    "rent-2026-07",
+    "rent-2026-08",
+    "rent-2026-09",
+    "rent-2026-10",
+    "rent-2026-11"
+   ],
+   "match": "subset",
+   "kind": "bill",
+   "truth": true
+  },
+  {
+   "detector": "recurring_transfers",
+   "refs": [
+    "rent-2026-06",
+    "rent-2026-07",
+    "rent-2026-08",
+    "rent-2026-09",
+    "rent-2026-10",
+    "rent-2026-11"
+   ],
+   "match": "subset",
+   "kind": "bill",
+   "truth": true
+  },
+  {
+   "detector": "recurring",
+   "refs": [
+    "rent-2026-06",
+    "rent-2026-07",
+    "rent-2026-08",
+    "rent-2026-09",
+    "rent-2026-10",
+    "rent-2026-11"
+   ],
+   "match": "subset",
+   "truth": true
+  }
+ ]
+}

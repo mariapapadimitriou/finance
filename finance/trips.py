@@ -462,7 +462,18 @@ def ask_yes(st, cid: str, today: str, txns: list[Transaction] | None = None) -> 
     if cand is None:
         return None
     name = cand["name"] or _free_name(st, "Trip")
-    return create(st, cand["ids"], name, "pearl", today, place=cand["place"])
+    trip = create(st, cand["ids"], name, "pearl", today, place=cand["place"])
+    _said(st, cand, "yes", today)
+    return trip
+
+
+def _said(st, cand: dict, what: str, today: str, status: str | None = None) -> None:
+    """Her answer on TR-01, against the trips detector's version (THL-310)."""
+    from .signals import outcome
+    from .signals.model import evidence
+    outcome(st, "trips", cand["id"], "trip", what, today=today, status=status,
+            txn_ids=cand["ids"], ev=evidence(count=len(cand["ids"]), first=cand["start"],
+                                             last=cand["end"], place=cand.get("place")))
 
 
 def _free_name(st, base: str) -> str:
@@ -482,4 +493,5 @@ def ask_skip(st, cid: str, today: str, txns: list[Transaction] | None = None) ->
     if cand is None:
         return False
     _skip_dates(st, cand["start"], cand["end"])
+    _said(st, cand, "skip", today, status="rejected")      # never asked about again
     return True
