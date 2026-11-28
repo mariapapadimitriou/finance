@@ -197,6 +197,15 @@ struct ProfileView: View {
                     ProfileRow(symbol: "checkmark.shield", title: "How we protect you")
                 }
                 .buttonStyle(.plain)
+                if summary?.aiUsage == true {
+                    // AU-01 (THL-309): the owner's AI usage; hidden for everyone else.
+                    APSeparator()
+                    NavigationLink { AIUsageView() } label: {
+                        ProfileRow(symbol: "gauge.with.dots.needle.33percent", title: "AI usage")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("profile-ai-usage")
+                }
             }
         }
     }

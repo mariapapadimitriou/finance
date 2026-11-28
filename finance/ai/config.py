@@ -45,10 +45,11 @@ ROUTES = {
     # ask@3 (Phase 2b): placeholders for every value; ask@1 and @2 stay frozen.
     "ask": {"prompt": "ask@3", "max_tokens": 1024, "effort": "low", "escalate": True,
             "mask": {"raw": ()}},
-    # Smart sorting's one-line reasons (Phase 4): the shop name only, never an
-    # amount, a date, a person or an account. Its prompt comes with Phase 4;
-    # until then the route answers "no_prompt" and Python's reasons stand.
-    "sort_reason": {"prompt": None, "max_tokens": 200, "effort": "low", "escalate": False,
+    # Smart sorting (Phase 4, THL-309, finance/smart_sort.py): a pick among
+    # the answers Python allows, through a strict tool, and one reason. The
+    # shop name only, never an amount, a date, a person or an account. No
+    # escalation: a failure is Rules behaviour for that sync.
+    "sort_reason": {"prompt": "sort_reason@1", "max_tokens": 200, "effort": "low", "escalate": False,
                     "mask": {"raw": ("shop",)}},
 }
 

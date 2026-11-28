@@ -14,6 +14,11 @@ from typing import Callable
 from . import adapters
 
 
+def _smart(st, txns, today, version):
+    from .. import smart_sort
+    return smart_sort.detections(st, version)
+
+
 @dataclass(frozen=True)
 class Detector:
     name: str
@@ -29,6 +34,9 @@ DETECTORS: dict[str, Detector] = {d.name: d for d in (
              adapters.pattern_sort),
     Detector("pattern_sort.joint", "1", ("joint_theirs",), "finance/pattern_sort.py",
              adapters.pattern_sort),
+    # Phase 4 (THL-309): Smart's picks, each made once, right after a sync.
+    Detector("smart_sort", "1", ("category_pattern",), "finance/smart_sort.py",
+             _smart),
     Detector("likely", "1", ("category_pattern",), "finance/likely.py", adapters.likely,
              reads_review=True),
     Detector("recurring", "1", ("subscription", "bill"), "finance/insights/recurring.py",

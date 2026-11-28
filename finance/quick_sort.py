@@ -251,6 +251,20 @@ def step(st, transactions: list[Transaction], today: date, txn_id: str, action: 
             _save(st, BATCH_KEY, batch)
         return {"ok": True}
     named = bool((t.merchant or "").strip()) and not is_generic_transfer_name(t.merchant)
+    # Smart (THL-309): the card asked Claude's pick among Python's answers;
+    # her Yes is that answer for this row alone (Smart saves no rule).
+    from . import smart_sort
+    smart = smart_sort.shown_guess(st, t)
+    if smart:
+        if action == "right" and smart["answer"] != before and smart["answer"] in CATEGORIES:
+            action, category, new_ones, every = "category", smart["answer"], False, False
+            smart_sort.answered(st, txn_id, "yes")
+        elif action == "right":
+            smart_sort.answered(st, txn_id, "yes")
+        elif action == "skip":
+            smart_sort.answered(st, txn_id, "skip")
+        elif action == "category":
+            smart_sort.answered(st, txn_id, "yes" if category == smart["answer"] else "not_this")
     if action in ("right", "category"):
         shot = snapshot(st, transactions)
         if every and named:

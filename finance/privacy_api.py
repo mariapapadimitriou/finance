@@ -61,11 +61,15 @@ def _connections(st) -> list[dict]:
 
 
 def _privacy(user) -> dict:
+    from . import smart_sort
     return {"consents": users.effective_consents(user),
             "log": users.consent_log(_base(), user.id),
             "contact": mailer.reply_address(),
             "email": user.email,
-            "connections": _connections(store())}
+            "connections": _connections(store()),
+            # CN-07 (THL-309): Off · Rules · Smart, whether CN-08 was answered,
+            # and "Your 14 patterns" for CN-09.
+            "sorting": smart_sort.state(store(), user)}
 
 
 @bp.get("/privacy")
@@ -81,8 +85,13 @@ def _local_privacy() -> dict:
     the ledger (`ask_api.local_consent`)."""
     from . import ask_api
     given = ask_api.local_consent(store())
-    return {"consents": {ask_api.CONSENT: given} if given else {}, "log": [],
-            "contact": mailer.reply_address(), "email": None, "connections": _connections(store())}
+    from . import pattern_sort, smart_sort
+    consents = {ask_api.CONSENT: given} if given else {}
+    if pattern_sort.is_on(store()):
+        consents["ai_sort"] = {"value": True, "at": None}
+    return {"consents": consents, "log": [],
+            "contact": mailer.reply_address(), "email": None, "connections": _connections(store()),
+            "sorting": smart_sort.state(store(), None)}
 
 
 @bp.put("/privacy/consents")
@@ -104,7 +113,9 @@ def privacy_consent():
     if key in users.REQUIRED:
         return jsonify({"error": "Pearl needs this one to work. To withdraw it, "
                                  "delete your account."}), 400
-    if key not in users.OPTIONAL or not isinstance(body.get("value"), bool):
+    if key not in users.OPTIONAL or not isinstance(body.get("value"), bool) \
+            or key == "ai_sort_smart":
+        # Smart's opt-in comes with the setting (PUT /privacy/sorting).
         return jsonify({"error": "Unknown consent."}), 400
     was = bool((users.effective_consents(user).get(key) or {}).get("value"))
     # Ask Pearl's Turn on is on the Pearl tab itself (PC-24, PC-25): logged as "chat".
@@ -114,7 +125,32 @@ def privacy_consent():
         # Pearl sorts for you (P1a): only what arrives from now on (decision 3).
         from . import pattern_sort
         (pattern_sort.switched_on if body["value"] else pattern_sort.switched_off)(store())
+        from . import smart_sort
+        if not body["value"] and "ai_sort_smart" in (user.consents or {}):
+            # Off is off for Smart too (CN-09).
+            user = users.record_consents(_base(), user.id, {"ai_sort_smart": False}, source=source)
+        smart_sort.sync_mirror(store(), user)
     return jsonify(_privacy(user))
+
+
+@bp.put("/privacy/sorting")
+def privacy_sorting():
+    """CN-07: Pearl sorts for you, Off · Rules · Smart (THL-309). Smart the
+    first time needs `consent` (CN-08's Turn on Smart): without it, 409 and
+    `needs_consent`, and nothing changes."""
+    from . import smart_sort
+    body = request.get_json(silent=True) or {}
+    new = body.get("mode")
+    if new not in smart_sort.MODES:
+        return jsonify({"error": "Pick Off, Rules or Smart."}), 400
+    user = _user()
+    if user is not None:
+        user = _fresh(user)
+    try:
+        user = smart_sort.set_mode(_base(), store(), user, new, consent=body.get("consent") is True)
+    except smart_sort.NeedsConsent:
+        return jsonify({"error": "Turn on Smart first.", "needs_consent": True}), 409
+    return jsonify(_privacy(user) if user is not None else _local_privacy())
 
 
 # ── N-01 / N-02 ──────────────────────────────────────────────────────────

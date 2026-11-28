@@ -3933,5 +3933,6 @@ from . import recurring_api  # noqa: E402,F401
 from . import older_transfers_api  # noqa: E402,F401
 from . import chat_api  # noqa: E402,F401
 from . import ask_api  # noqa: E402,F401
+from . import ai_usage_api  # noqa: E402,F401
 from . import your_plan_api  # noqa: E402,F401
 from . import worth_a_look  # noqa: E402,F401

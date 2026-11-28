@@ -2962,6 +2962,9 @@ class Store:
         "pattern_sort_log", "pattern_sort_state", "pattern_sort_never",
         # The table's rows go too (detections, above).
         "pattern_sort_in_table",
+        # Smart (finance/smart_sort.py, THL-309): its guesses and the rows it
+        # held back, by row id. The setting itself (Smart on) stays.
+        "smart_sort_guesses", "smart_sort_held",
         # "Waiting to be paid back" on a charge (marks.py), by charge id.
         "reimbursement_waited",
     )

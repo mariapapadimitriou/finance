@@ -440,7 +440,9 @@ CONSENTS = {"terms": True, "read_data": True}
 REQUIRED = ("terms", "read_data", "insights")
 # Ask Pearl (THL-308, PC-24, CN-06): an explicit opt-in on first use, never
 # chosen for her; /api/ask refuses anyone without it.
-OPTIONAL = ("ai_sort", "tips", "analytics", "ai_ask")
+# Smart sorting (THL-309, CN-08): its own opt-in, apart from Ask Pearl, asked
+# the first time she picks Smart; on means Smart, with `ai_sort` on too.
+OPTIONAL = ("ai_sort", "tips", "analytics", "ai_ask", "ai_sort_smart")
 KNOWN = REQUIRED + OPTIONAL
 DEFAULT_ON = {"analytics"}
 

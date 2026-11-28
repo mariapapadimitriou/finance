@@ -1,0 +1,546 @@
+{
+ "name": "smart_sorting",
+ "about": "Made up, for Smart vs Rules (THL-309 AC 14). Her answers at five shops, patterns she said yes to at two, and seven new purchases with the right answer for each: a pattern that's right, one that's wrong, close and tied answers, and three new shops.",
+ "today": "2026-11-15",
+ "accounts": {
+  "visa": {
+   "name": "Visa",
+   "type": "credit",
+   "subtype": "credit card",
+   "mask": "5005"
+  }
+ },
+ "transactions": [
+  {
+   "ref": "cafe-0",
+   "account_id": "visa",
+   "date": "2026-08-27",
+   "name": "LUNA CAFE 221",
+   "amount": 5.4,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_COFFEE",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "cafe-1",
+   "account_id": "visa",
+   "date": "2026-09-03",
+   "name": "LUNA CAFE 221",
+   "amount": 6.55,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_COFFEE",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "cafe-2",
+   "account_id": "visa",
+   "date": "2026-09-10",
+   "name": "LUNA CAFE 221",
+   "amount": 7.7,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_COFFEE",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "cafe-3",
+   "account_id": "visa",
+   "date": "2026-09-17",
+   "name": "LUNA CAFE 221",
+   "amount": 8.85,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_COFFEE",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "cafe-4",
+   "account_id": "visa",
+   "date": "2026-09-24",
+   "name": "LUNA CAFE 221",
+   "amount": 10.0,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_COFFEE",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "cafe-5",
+   "account_id": "visa",
+   "date": "2026-10-01",
+   "name": "LUNA CAFE 221",
+   "amount": 11.15,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_COFFEE",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "cafe-new",
+   "account_id": "visa",
+   "date": "2026-11-14",
+   "name": "LUNA CAFE 221",
+   "amount": 6.2,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_COFFEE",
+    "confidence_level": "LOW"
+   },
+   "new": true
+  },
+  {
+   "ref": "bulk-0",
+   "account_id": "visa",
+   "date": "2026-08-27",
+   "name": "NORTHGATE WAREHOUSE CLUB",
+   "amount": 120.0,
+   "personal_finance_category": {
+    "primary": "GENERAL_MERCHANDISE",
+    "detailed": "GENERAL_MERCHANDISE_SUPERSTORES",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "bulk-1",
+   "account_id": "visa",
+   "date": "2026-09-03",
+   "name": "NORTHGATE WAREHOUSE CLUB",
+   "amount": 121.15,
+   "personal_finance_category": {
+    "primary": "GENERAL_MERCHANDISE",
+    "detailed": "GENERAL_MERCHANDISE_SUPERSTORES",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "bulk-2",
+   "account_id": "visa",
+   "date": "2026-09-10",
+   "name": "NORTHGATE WAREHOUSE CLUB",
+   "amount": 122.3,
+   "personal_finance_category": {
+    "primary": "GENERAL_MERCHANDISE",
+    "detailed": "GENERAL_MERCHANDISE_SUPERSTORES",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "bulk-3",
+   "account_id": "visa",
+   "date": "2026-09-17",
+   "name": "NORTHGATE WAREHOUSE CLUB",
+   "amount": 123.45,
+   "personal_finance_category": {
+    "primary": "GENERAL_MERCHANDISE",
+    "detailed": "GENERAL_MERCHANDISE_SUPERSTORES",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "bulk-4",
+   "account_id": "visa",
+   "date": "2026-09-24",
+   "name": "NORTHGATE WAREHOUSE CLUB",
+   "amount": 124.6,
+   "personal_finance_category": {
+    "primary": "GENERAL_MERCHANDISE",
+    "detailed": "GENERAL_MERCHANDISE_SUPERSTORES",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "bulk-new",
+   "account_id": "visa",
+   "date": "2026-11-14",
+   "name": "NORTHGATE WAREHOUSE CLUB",
+   "amount": 640.0,
+   "personal_finance_category": {
+    "primary": "GENERAL_MERCHANDISE",
+    "detailed": "GENERAL_MERCHANDISE_SUPERSTORES",
+    "confidence_level": "LOW"
+   },
+   "new": true
+  },
+  {
+   "ref": "corner-0",
+   "account_id": "visa",
+   "date": "2026-08-27",
+   "name": "CORNER MARKET",
+   "amount": 18.0,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_RESTAURANT",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "corner-1",
+   "account_id": "visa",
+   "date": "2026-09-03",
+   "name": "CORNER MARKET",
+   "amount": 19.15,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_RESTAURANT",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "corner-2",
+   "account_id": "visa",
+   "date": "2026-09-10",
+   "name": "CORNER MARKET",
+   "amount": 20.3,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_RESTAURANT",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "corner-3",
+   "account_id": "visa",
+   "date": "2026-09-17",
+   "name": "CORNER MARKET",
+   "amount": 21.45,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_RESTAURANT",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "corner-4",
+   "account_id": "visa",
+   "date": "2026-09-24",
+   "name": "CORNER MARKET",
+   "amount": 22.6,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_RESTAURANT",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "corner-new",
+   "account_id": "visa",
+   "date": "2026-11-14",
+   "name": "CORNER MARKET",
+   "amount": 22.4,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_RESTAURANT",
+    "confidence_level": "LOW"
+   },
+   "new": true
+  },
+  {
+   "ref": "bake-0",
+   "account_id": "visa",
+   "date": "2026-08-27",
+   "name": "SUNRISE BAKERY",
+   "amount": 9.0,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_RESTAURANT",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "bake-1",
+   "account_id": "visa",
+   "date": "2026-09-03",
+   "name": "SUNRISE BAKERY",
+   "amount": 10.15,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_RESTAURANT",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "bake-2",
+   "account_id": "visa",
+   "date": "2026-09-10",
+   "name": "SUNRISE BAKERY",
+   "amount": 11.3,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_RESTAURANT",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "bake-3",
+   "account_id": "visa",
+   "date": "2026-09-17",
+   "name": "SUNRISE BAKERY",
+   "amount": 12.45,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_RESTAURANT",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "bake-new",
+   "account_id": "visa",
+   "date": "2026-11-14",
+   "name": "SUNRISE BAKERY",
+   "amount": 7.8,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_RESTAURANT",
+    "confidence_level": "LOW"
+   },
+   "new": true
+  },
+  {
+   "ref": "pharm-new",
+   "account_id": "visa",
+   "date": "2026-11-14",
+   "name": "MAPLE PHARMACY",
+   "amount": 24.1,
+   "personal_finance_category": {
+    "primary": "GENERAL_MERCHANDISE",
+    "detailed": "GENERAL_MERCHANDISE_OTHER_GENERAL_MERCHANDISE",
+    "confidence_level": "LOW"
+   },
+   "new": true
+  },
+  {
+   "ref": "bistro-new",
+   "account_id": "visa",
+   "date": "2026-11-14",
+   "name": "QUILLON BISTRO",
+   "amount": 48.0,
+   "personal_finance_category": {
+    "primary": "GENERAL_MERCHANDISE",
+    "detailed": "GENERAL_MERCHANDISE_OTHER_GENERAL_MERCHANDISE",
+    "confidence_level": "LOW"
+   },
+   "new": true
+  },
+  {
+   "ref": "zorb-new",
+   "account_id": "visa",
+   "date": "2026-11-14",
+   "name": "ZORBEL HOLDINGS 4471",
+   "amount": 61.0,
+   "personal_finance_category": {
+    "primary": "GENERAL_MERCHANDISE",
+    "detailed": "GENERAL_MERCHANDISE_OTHER_GENERAL_MERCHANDISE",
+    "confidence_level": "LOW"
+   },
+   "new": true
+  },
+  {
+   "ref": "diner-0",
+   "account_id": "visa",
+   "date": "2026-09-06",
+   "name": "HARBOUR DINER",
+   "amount": 30.0,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_RESTAURANT",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "diner-1",
+   "account_id": "visa",
+   "date": "2026-09-13",
+   "name": "HARBOUR DINER",
+   "amount": 31.15,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_RESTAURANT",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "diner-2",
+   "account_id": "visa",
+   "date": "2026-09-20",
+   "name": "HARBOUR DINER",
+   "amount": 32.3,
+   "personal_finance_category": {
+    "primary": "FOOD_AND_DRINK",
+    "detailed": "FOOD_AND_DRINK_RESTAURANT",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "clinic-0",
+   "account_id": "visa",
+   "date": "2026-09-16",
+   "name": "WESTEND CLINIC",
+   "amount": 40.0,
+   "personal_finance_category": {
+    "primary": "MEDICAL",
+    "detailed": "MEDICAL_PRIMARY_CARE",
+    "confidence_level": "LOW"
+   }
+  },
+  {
+   "ref": "clinic-1",
+   "account_id": "visa",
+   "date": "2026-09-23",
+   "name": "WESTEND CLINIC",
+   "amount": 41.15,
+   "personal_finance_category": {
+    "primary": "MEDICAL",
+    "detailed": "MEDICAL_PRIMARY_CARE",
+    "confidence_level": "LOW"
+   }
+  }
+ ],
+ "answers": [
+  {
+   "ref": "cafe-0",
+   "category": "Coffee"
+  },
+  {
+   "ref": "cafe-1",
+   "category": "Coffee"
+  },
+  {
+   "ref": "cafe-2",
+   "category": "Coffee"
+  },
+  {
+   "ref": "cafe-3",
+   "category": "Coffee"
+  },
+  {
+   "ref": "cafe-4",
+   "category": "Coffee"
+  },
+  {
+   "ref": "cafe-5",
+   "category": "Coffee"
+  },
+  {
+   "ref": "bulk-0",
+   "category": "Groceries"
+  },
+  {
+   "ref": "bulk-1",
+   "category": "Groceries"
+  },
+  {
+   "ref": "bulk-2",
+   "category": "Groceries"
+  },
+  {
+   "ref": "bulk-3",
+   "category": "Groceries"
+  },
+  {
+   "ref": "bulk-4",
+   "category": "Groceries"
+  },
+  {
+   "ref": "corner-0",
+   "category": "Groceries"
+  },
+  {
+   "ref": "corner-1",
+   "category": "Dining"
+  },
+  {
+   "ref": "corner-2",
+   "category": "Groceries"
+  },
+  {
+   "ref": "corner-3",
+   "category": "Dining"
+  },
+  {
+   "ref": "corner-4",
+   "category": "Groceries"
+  },
+  {
+   "ref": "bake-0",
+   "category": "Coffee"
+  },
+  {
+   "ref": "bake-1",
+   "category": "Dining"
+  },
+  {
+   "ref": "bake-2",
+   "category": "Coffee"
+  },
+  {
+   "ref": "bake-3",
+   "category": "Dining"
+  },
+  {
+   "ref": "diner-0",
+   "category": "Dining"
+  },
+  {
+   "ref": "diner-1",
+   "category": "Dining"
+  },
+  {
+   "ref": "diner-2",
+   "category": "Dining"
+  },
+  {
+   "ref": "clinic-0",
+   "category": "Health"
+  },
+  {
+   "ref": "clinic-1",
+   "category": "Health"
+  }
+ ],
+ "confirm": "every",
+ "cases": [
+  {
+   "ref": "cafe-new",
+   "truth": "Coffee",
+   "why": "her pattern, right"
+  },
+  {
+   "ref": "bulk-new",
+   "truth": "Shopping",
+   "why": "her pattern, wrong: the shop sells everything"
+  },
+  {
+   "ref": "corner-new",
+   "truth": "Groceries",
+   "why": "close: 3 Groceries, 2 Dining"
+  },
+  {
+   "ref": "bake-new",
+   "truth": "Coffee",
+   "why": "tied: 2 and 2"
+  },
+  {
+   "ref": "pharm-new",
+   "truth": "Health",
+   "why": "new shop; Plaid says merchandise"
+  },
+  {
+   "ref": "bistro-new",
+   "truth": "Dining",
+   "why": "new shop; Plaid says merchandise"
+  },
+  {
+   "ref": "zorb-new",
+   "truth": "Shopping",
+   "why": "new shop; nothing in the name"
+  }
+ ]
+}

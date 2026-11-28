@@ -194,8 +194,13 @@ def test_sort_reason_sends_the_shop_name_and_nothing_else(base):
     assert a.ok and a.text == "Looks like groceries at Loblaws."
 
 
-def test_sort_reason_waits_for_its_prompt(base):
-    # Its own prompt comes with Phase 4; until then Python's reasons stand.
+def test_sort_reason_has_its_own_frozen_prompt(base, monkeypatch):
+    # Phase 4 (THL-309): sort_reason@1; a route without its prompt falls back.
+    from finance.ai import prompts
+    assert config.ROUTES["sort_reason"]["prompt"] == "sort_reason@1"
+    text = prompts.load("sort_reason@1")
+    assert "pick" in text and "[NUM1]" in text and " she " not in text
+    monkeypatch.setitem(config.ROUTES["sort_reason"], "prompt", None)
     fake = FakeClient()
     a = router.ask("sort_reason", None, [{"role": "user", "content": "Loblaws"}], base=base,
                    user_id=1, client=fake, now=NOW)
