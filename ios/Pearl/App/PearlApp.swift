@@ -198,10 +198,10 @@ struct MainTabs: View {
             page(.save) { BlankTab() }
             page(.wins) { BlankTab() }
             // The conversation stays across tab switches (the tab's view, and
-            // its ChatEngine, live as long as the bar). Where Apple
-            // Intelligence can't run it shows PC-11; the bar keeps five.
+            // its ChatEngine, live as long as the bar). PC-20 A (THL-308):
+            // the Pearl tab on every iPhone; Ask Pearl runs on the server.
             PearlChatView(api: app.api, describe: { app.handle($0) ?? "Something went wrong. Try again." },
-                          onSearch: { tab = .cashFlow })   // PC-11's Search instead: Cash flow, where Search is.
+                          onSearch: { tab = .cashFlow })   // PC-25's Search instead: Cash flow, where Search is.
                 .toolbar(app.hidesTabBar ? .hidden : .visible, for: .tabBar)
                 .tabItem {
                     Label {
@@ -331,12 +331,8 @@ struct MainTabs: View {
     }
 
     /// The Pearl tab's dot: a trip or pattern card waiting, the same ones
-    /// Quick sort has. Only where Apple Intelligence can run the chat.
+    /// Quick sort has. On every iPhone (THL-308).
     private func lookForSuggestions() async {
-        guard PearlIntelligence.available else {
-            chatSuggests = false
-            return
-        }
         if let start: ChatStart = try? await app.api.get("api/chat") {
             chatSuggests = start.suggest
         }

@@ -42,6 +42,14 @@ enum Pearl {
     static let moved = dynamic(light: 0x8B879E, dark: 0x8E8BA8)
     static let caution = dynamic(light: 0x8A5A12, dark: 0xF3D9A4)   // --caution
     static let cautionBackground = dynamic(light: 0xFBECC8, dark: 0x3A2E14)
+    /// LimitBar only (PC-26d, product owner 2026-11-27): a card at 80% of its
+    /// limit or more, softer than `caution`. Red stays for over the limit.
+    /// `limitNear`: "Close to its limit", the balance line, the due pill's words.
+    static let limitNear = dynamic(light: 0x8A5A00, dark: 0xF2C063)
+    /// `limitNearBar`: the bar's fill.
+    static let limitNearBar = dynamic(light: 0xB07400, dark: 0xF2C063)
+    /// `limitNearWash`: the due pill's background.
+    static let limitNearWash = dynamic(light: 0xFFF1D6, dark: 0x3A2E14)
 
     static let nacre = LinearGradient(
         colors: [Color(hex: 0xFFD6E0), Color(hex: 0xE3D4FF), Color(hex: 0xCFF3EE)],

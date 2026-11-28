@@ -6,7 +6,7 @@ The product owner's decisions of 2026-11-27 replace the on-device plan below whe
 
 ### Decisions
 - **A cloud model is OK.** Costs must stay low, because Pearl may be sold as a business.
-- **Every iPhone gets the same AI, through the server.** Phones without Apple Intelligence (Anastasia's) included. No phone holds a key.
+- **Every iPhone gets the same AI, through the server.** Every phone, Anastasia's included. No phone holds a key.
 - **Python decides:** totals, detections and decisions. The model only:
   1. understands her words and picks a tool;
   2. phrases answers and one-line reasons;
@@ -14,12 +14,13 @@ The product owner's decisions of 2026-11-27 replace the on-device plan below whe
   A human still confirms every AI detection (the 2026-11-15 rules below still hold: 5/8 earlier answers, 20 a day, new transactions only).
 - **Claude Haiku 5.5 by default** (`claude-haiku-5-5`, $0.10 in / $0.50 out per 1M tokens). It escalates to **Claude Sonnet 5.5** (`claude-sonnet-5-5`, $2 / $10) only when Haiku fails or is unsure. Cache reads are about 0.1x input; Batch is 50% off for overnight work. Expected cost: about $0.02 to $0.04 per active user a month.
 - **Per-user cap: $0.50 a month** (product owner, 2026-11-27). Over it, Pearl answers with Python and templates until the month turns. There is also a daily request cap (60, a guard against loops) and a global kill switch.
-- **Apple's on-device model** stays only as a free offline fallback for basic chat. Open models on the phone are dropped.
+- **Apple Intelligence is never used** (product owner, 2026-11-27, THL-308), not even as a fallback, and no model runs on the phone. With no server answer, the phone uses the scripted brain and the server's own Python reading of the words. Offline, the chat stays and Send waits until the phone is back.
+- **Consent is an explicit opt-in** on first use (PC-24: Turn on Ask Pearl / Not now), stored on the server with its time (`ai_ask`) and withdrawable in Profile › Privacy (CN-06). `/api/ask` refuses anyone who hasn't opted in.
 - **Data minimisation:** the model gets her question and what Python already worked out (totals, tidy merchant names, dates, categories). Never account or card numbers, Plaid tokens, or more about other people than the question needs. Ask Anthropic about Zero Data Retention before launch.
 
 ### Phases (each needs designBOT boards and the product owner's pick)
 1. **Gateway and cost guardrails** (server only, no UI): `finance/ai/` with the client, the router (Haiku, then Sonnet), frozen versioned prompts, the budget and kill switch, and the `app_ai_usage` table with a cost summary. pytest uses a fake client; no live calls. *Built on `feat/ai-gateway`.*
-2. **Ask Pearl on every phone:** `/api/ask` with a server-side tool loop, the missing tools (month, merchantHistory, search, cards), iOS `CloudBrain` behind `PearlBrain` (cloud first, then on-device offline, then scripted), the privacy line and an on/off switch.
+2. **Ask Pearl on every phone:** `/api/ask` with a server-side tool loop, the missing tools (month, merchant_history, search, cards), iOS `CloudBrain` behind `PearlBrain` (the server first, then the scripted brain and the server's own reading), the privacy line and an on/off switch. *Built for THL-308 on `feat/ask-pearl-phase2`.*
 3. **Signals framework:** one `Detection` record, adapters over today's detectors, a `detections` table and a replay harness.
 4. **Better detection:** income and bills, trips across the whole history, transfer and card-payment pairing, price rises and forgotten subscriptions, and AI reasons written overnight in batches.
 5. **New capabilities:** a monthly review and a proactive "worth a look".
@@ -29,9 +30,9 @@ The product owner's decisions of 2026-11-27 replace the on-device plan below whe
 - **Before any live call:** an OK for a one-off smoke call (it costs money) to check that usage rows record cached tokens and $.
 
 ### What below is superseded
-- Section 1 (Apple's Foundation Models) and its 4,096-token limits now apply only to the offline fallback.
+- Section 1 (Apple's Foundation Models) no longer applies: Apple Intelligence is never used, and `PearlBrainLive.swift` and every FoundationModels import were removed (THL-308). It is kept below as history only.
 - Section 2's diagram (the model on the iPhone) and 2.5 ("only while the app is open") are replaced: the model runs on the server, so overnight batches are possible.
-- Section 2.6 and risk 1 (device eligibility) no longer gate anything: every phone gets the cloud model.
+- Section 2.6 and risk 1 (device eligibility) no longer gate anything: every phone gets the cloud model, and nothing in the app checks for or mentions Apple Intelligence.
 - Section 3's `/api/ai/*` endpoints are replaced by Phase 2's `/api/ask` and Phase 3's detections.
 - Section 4's phases are replaced by the five above. The 2026-11-15 decisions at the end still stand, except that "data never leaves the iPhone" no longer holds: the privacy line will say Pearl uses Anthropic.
 

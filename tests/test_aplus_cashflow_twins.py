@@ -57,7 +57,7 @@ class TestFollowUps(unittest.TestCase):
         tv = read(*TX, "TransactionsView.swift")
         self.assertIn("final class CashFlowFocus: ObservableObject", tv)
         self.assertIn(".onReceive(CashFlowFocus.shared.$request)", tv)
-        self.assertIn("filters = TxFilters(categories: [request.category])", tv)
+        self.assertIn("filters = request.category.map { TxFilters(categories: [$0]) } ?? TxFilters()", tv)
         home = read("Views", "Home", "HomeView.swift")
         self.assertIn("CashFlowFocus.shared.show(category: name, month: target.month)", home)
 

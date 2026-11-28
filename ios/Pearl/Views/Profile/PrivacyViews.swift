@@ -3,7 +3,8 @@ import UIKit
 import UserNotifications
 
 // Privacy and notifications (Pearl iOS Handoff File, Pearl app page, THL-117
-// and THL-139): CN-04 Privacy and consent, CN-05 Turn off AI sorting?, N-01
+// and THL-139): CN-04 Privacy and consent, CN-05 Turn off AI sorting?, CN-06
+// Ask Pearl's switch and Turn off Ask Pearl? (THL-308, AI2-Switch), N-01
 // Turn on notifications and N-02 Notifications.
 
 let cardRadius: CGFloat = 22
@@ -111,6 +112,8 @@ struct ConsentView: View {
     @State private var privacy: Privacy?
     @State private var doc: PearlDoc?
     @State private var askingAIOff = false
+    /// CN-06: Turn off Ask Pearl? asks first, on a Pearl sheet.
+    @State private var askingAskOff = false
     @State private var busy: String?
     @State private var error: String?
 
@@ -141,6 +144,18 @@ struct ConsentView: View {
                 askingAIOff = false
             }
         }
+        .sheet(isPresented: $askingAskOff) {
+            // CN-06 (AI2-Switch 3, 4): a Pearl sheet. A failed turn-off says
+            // so and leaves the switch on.
+            PearlConfirmSheet(overline: "Ask Pearl", title: "Turn off Ask Pearl?",
+                              message: "Pearl stops sending your questions to Claude. Your sorting and rules stay.",
+                              primary: "Turn off", busyLabel: "Turning off\u{2026}", secondary: "Keep it on",
+                              failure: "Couldn\u{2019}t turn it off. Nothing changed. Try again.",
+                              onClose: { askingAskOff = false }) {
+                privacy = try await app.api.put("api/privacy/consents", ["key": "ai_ask", "value": false])
+                askingAskOff = false
+            }
+        }
     }
 
     @ViewBuilder
@@ -163,9 +178,16 @@ struct ConsentView: View {
 
         CardCaption("Your choice")
         APCard {
-            // AI-08 (1313:4855, AI-03c): Pearl sorts for you, asking first. Ask Pearl's
-            // switch becomes "Pearl chat" later (note 1340:8893): not shown yet, and
-            // the chat needs no switch of its own until it is.
+            // CN-06 (THL-308, AI2-Switch 1): Ask Pearl, above Pearl sorts for
+            // you, with the privacy line under it. On is instant; off asks first.
+            SwitchRow(symbol: "bubble.left", title: "Ask Pearl",
+                      sub: "Uses Claude, by Anthropic. Never your account numbers or bank logins.",
+                      isOn: isOn("ai_ask"), disabled: busy == "ai_ask") { on in
+                if on { Task { await change("ai_ask", to: true) } } else { askingAskOff = true }
+            }
+            .accessibilityIdentifier("privacy-ask-pearl")
+            APSeparator(afterFace: false)
+            // AI-08 (1313:4855, AI-03c): Pearl sorts for you, asking first.
             SwitchRow(symbol: "sparkles", title: "Pearl sorts for you",
                       sub: "Asks you once for each pattern",
                       isOn: isOn("ai_sort"), disabled: busy == "ai_sort") { on in

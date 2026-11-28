@@ -122,17 +122,18 @@ class TestPearlTab(unittest.TestCase):
 
     def test_conversation_kept_across_tabs(self):
         # Opened once; a tab switch doesn't open it again.
-        self.assertIn("guard available, !opened else { return }", self.chat)
+        self.assertIn("guard !opened else { return }", self.chat)
 
     def test_composer_is_a_well_with_send(self):
         self.assertIn(".wellStyle(focused: composing.wrappedValue, capsule: true)", self.chat)
         self.assertIn('"arrow.up"', self.chat)
         self.assertIn(".disabled(!canSend)", self.chat)
 
-    def test_unavailable_screen_kept(self):
-        self.assertIn('"Pearl chat needs Apple Intelligence"', self.chat)
-        # G7-Unavailable: Search instead is the Primary button.
-        self.assertIn('Button("Search instead", action: onSearch)', self.chat)
+    def test_off_screen_replaces_unavailable(self):
+        # THL-308: no "needs Apple Intelligence" screen; the tab is on every
+        # iPhone, and when Ask Pearl is off it shows PC-25 with Search instead.
+        self.assertNotIn("Apple Intelligence", self.chat)
+        self.assertIn("AskOff(busy: turningOn, error: turnOnError, turnOn: turnOn, search: onSearch)", self.chat)
 
     def test_no_stock_dialogs(self):
         for bad in [".alert(", ".confirmationDialog(", ".actionSheet("]:

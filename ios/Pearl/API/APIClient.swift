@@ -205,6 +205,60 @@ final class APIClient {
                      replayed: http?.value(forHTTPHeaderField: "X-Replayed") == "1")
     }
 
+    /// A non-2xx answer to a streamed request, before any line came.
+    struct StreamRefused: Error {
+        let status: Int
+        let problem: ServerProblem?
+    }
+
+    /// A streamed answer, one line at a time (Ask Pearl, THL-308: POST
+    /// /api/ask answers in application/x-ndjson). No connection, before or
+    /// part way through, is `APIError.offline`; 401 is `.signedOut`; any
+    /// other refusal is `StreamRefused` with the server's words.
+    func lines(_ path: String, _ body: [String: Any]) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    guard let url = RequestURL.make(base: baseURL, path: path, query: [:]) else {
+                        throw APIError.message("That server address doesn't look right.")
+                    }
+                    var request = URLRequest(url: url)
+                    request.httpMethod = "POST"
+                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    request.setValue("application/x-ndjson", forHTTPHeaderField: "Accept")
+                    request.httpBody = try JSONBody.data(body)
+                    request.timeoutInterval = 60
+                    let bytes: URLSession.AsyncBytes
+                    let response: URLResponse
+                    do {
+                        (bytes, response) = try await session.bytes(for: request)
+                    } catch {
+                        if error is CancellationError || (error as? URLError)?.code == .cancelled {
+                            throw CancellationError()
+                        }
+                        throw APIError.offline
+                    }
+                    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                    if status == 401 { throw APIError.signedOut }
+                    if !(200..<300).contains(status) {
+                        var data = Data()
+                        for try await byte in bytes { data.append(byte) }
+                        throw StreamRefused(status: status, problem: try? decoder.decode(ServerProblem.self, from: data))
+                    }
+                    do {
+                        for try await line in bytes.lines { continuation.yield(line) }
+                    } catch let error as URLError where error.code != .cancelled {
+                        throw APIError.offline
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
     /// Forget the session and the device, as signing out does.
     func clearCookies() {
         let storage = HTTPCookieStorage.shared

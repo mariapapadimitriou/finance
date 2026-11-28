@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check Pearl chat without a simulator or Apple Intelligence (2026-11-15).
+"""Check Pearl chat without a simulator (2026-11-15; Ask Pearl, THL-308).
 
 1. Compiles ios/Pearl/Chat/ChatCore.swift for this Mac with API/Models.swift,
    Boxed.swift, Format.swift and a stand-in for ReviewAnswer (as
@@ -8,15 +8,18 @@
    it says, and every write it makes.
 2. Holds "nothing changes until she confirms" in the source:
    * only ChatCards.swift's buttons make a UserTap;
-   * the model's file (PearlBrainLive.swift) never names a writer, the
-     executor, the engine or an APIClient, and never posts or puts;
-   * in ChatCore.swift only ChatExecutor touches the writer.
+   * the model (CloudBrain, which asks Claude through Pearl's server) never
+     names a writer, the executor, the engine or an APIClient, and never
+     posts or puts;
+   * in ChatCore.swift only ChatExecutor touches the writer;
+   * Apple Intelligence is never used (THL-308): no FoundationModels, no
+     PearlBrainLive.swift, nothing that checks for or mentions it.
 
     python3 ios/tools/check_chat.py
 
-What only a physical iPhone with Apple Intelligence can show: the model's own
-words and its reading of hers, its tool calls, the guardrails, the 4,096-token
-budget, speed, and SystemLanguageModel's availability. None of that runs here.
+What only a real server with a key can show: Claude's own words, its tool
+calls and speed. The server's side is in tests/test_ask_pearl.py, on a fake
+client; the first production call is the product owner's smoke check.
 """
 
 from __future__ import annotations
@@ -43,12 +46,25 @@ def static_checks() -> list[str]:
             src = open(path).read()
             if f not in ("ChatCards.swift", "ChatCore.swift") and re.search(r"\bUserTap\(", src):
                 problems.append(f"{os.path.relpath(path, IOS)} makes a UserTap: only ChatCards.swift's buttons may")
-    live = open(os.path.join(CHAT, "PearlBrainLive.swift")).read()
-    for word in ("APIClient", "ChatWriting", "ChatExecutor", "ChatEngine", "APIChatWriting", "UserTap",
-                 ".post(", ".put(", ".patch(", ".delete("):
-        if word in live:
-            problems.append(f"PearlBrainLive.swift names {word}: the model's tools may only read")
     core = open(os.path.join(CHAT, "ChatCore.swift")).read()
+    brain = re.search(r"^struct CloudBrain: PearlBrain \{(.*?)^\}", core, re.S | re.M)
+    if not brain:
+        problems.append("ChatCore.swift has no CloudBrain")
+    else:
+        for word in ("APIClient", "ChatWriting", "ChatExecutor", "ChatEngine", "APIChatWriting", "UserTap",
+                     ".post(", ".put(", ".patch(", ".delete("):
+            if word in brain.group(1):
+                problems.append(f"CloudBrain names {word}: the model may only read")
+    if os.path.exists(os.path.join(CHAT, "PearlBrainLive.swift")):
+        problems.append("PearlBrainLive.swift is back: Apple Intelligence is never used (THL-308)")
+    for root, _, files in os.walk(PEARL):
+        for f in files:
+            if f.endswith(".swift"):
+                src = open(os.path.join(root, f)).read()
+                for word in ("FoundationModels", "SystemLanguageModel", "Apple Intelligence",
+                             "PearlIntelligence", "LanguageModelSession"):
+                    if word in src:
+                        problems.append(f"{f} mentions {word}: Apple Intelligence is never used (THL-308)")
     executor = re.search(r"^struct ChatExecutor \{(.*?)^\}", core, re.S | re.M)
     rest = core.replace(executor.group(0), "") if executor else core
     if re.search(r"\bwriter\.[a-z]", rest):

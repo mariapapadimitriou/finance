@@ -135,13 +135,13 @@ class TestHeadersLevelWithIt(unittest.TestCase):
 
     def test_pearl_tab(self):
         chat = code(read("Chat", "PearlChatView.swift"))
-        top = chat[chat.index("private struct ChatTop"):chat.index("private struct ChatStarters")]
+        top = chat[chat.index("private struct ChatTop"):chat.index("private struct ChatReply")]
         self.assertEqual(top.count(".padding(.top, ProfileSlot.top)"), 2)  # large and inline
         # New chat on the left, clear of the circle on the right.
         self.assertLess(top.index('Button("New chat"'), top.index("Spacer()"))
         self.assertIn('.accessibilityIdentifier("chat-new")', top)
-        # The unavailable state keeps the large title, so the circle too.
-        self.assertIn("private var largeTitle: Bool { !available || isStart }", chat)
+        # Before you ask and Ask Pearl is off keep the large title, so the circle too.
+        self.assertIn("private var largeTitle: Bool { gate != .on || isStart }", chat)
 
 
 if __name__ == "__main__":

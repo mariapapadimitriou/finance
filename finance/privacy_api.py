@@ -72,9 +72,17 @@ def _privacy(user) -> dict:
 def privacy_page():
     user = _user()
     if user is None:
-        return jsonify({"consents": {}, "log": [], "contact": mailer.reply_address(),
-                        "email": None, "connections": _connections(store())})
+        return jsonify(_local_privacy())
     return jsonify(_privacy(_fresh(user)))
+
+
+def _local_privacy() -> dict:
+    """A local ledger with no accounts: only Ask Pearl's consent, kept in
+    the ledger (`ask_api.local_consent`)."""
+    from . import ask_api
+    given = ask_api.local_consent(store())
+    return {"consents": {ask_api.CONSENT: given} if given else {}, "log": [],
+            "contact": mailer.reply_address(), "email": None, "connections": _connections(store())}
 
 
 @bp.put("/privacy/consents")
@@ -82,17 +90,26 @@ def privacy_consent():
     """Give or take back one optional consent (CN-04, CN-05). The ones Pearl
     needs are withdrawn by deleting the account (D-03)."""
     user = _user()
-    if user is None:
-        return _no_account()
     body = request.get_json(silent=True) or {}
     key = str(body.get("key") or "")
+    if user is None:
+        # A local ledger with no accounts (never hosted: the sign-in gate
+        # answers there first): Ask Pearl's opt-in is kept in the ledger,
+        # with its time, so the phone can be tried against a Mac.
+        from . import ask_api
+        if key != ask_api.CONSENT or not isinstance(body.get("value"), bool):
+            return _no_account()
+        ask_api.set_local_consent(store(), body["value"])
+        return jsonify(_local_privacy())
     if key in users.REQUIRED:
         return jsonify({"error": "Pearl needs this one to work. To withdraw it, "
                                  "delete your account."}), 400
     if key not in users.OPTIONAL or not isinstance(body.get("value"), bool):
         return jsonify({"error": "Unknown consent."}), 400
     was = bool((users.effective_consents(user).get(key) or {}).get("value"))
-    user = users.record_consents(_base(), user.id, {key: body["value"]}, source="settings")
+    # Ask Pearl's Turn on is on the Pearl tab itself (PC-24, PC-25): logged as "chat".
+    source = "chat" if body.get("source") == "chat" else "settings"
+    user = users.record_consents(_base(), user.id, {key: body["value"]}, source=source)
     if key == "ai_sort" and body["value"] != was:
         # Pearl sorts for you (P1a): only what arrives from now on (decision 3).
         from . import pattern_sort

@@ -82,7 +82,7 @@ def test_haiku_answers_by_default(base):
     assert a.ok and not a.fall_back and a.model == "claude-haiku-5-5"
     assert a.text.startswith("You spent")
     assert [c["model"] for c in fake.calls] == ["claude-haiku-5-5"]
-    assert fake.calls[0]["system"] == prompts.load("ask@1")
+    assert fake.calls[0]["system"] == prompts.load("ask@2")
     assert fake.calls[0]["effort"] == "low"
 
 
@@ -310,7 +310,7 @@ def test_a_usage_row_records_everything(base):
     a = ask(base, fake, user_id=7)
     (row,) = usage.rows(base)
     assert row["user_id"] == 7 and row["route"] == "ask"
-    assert row["model"] == "claude-haiku-5-5" and row["prompt"] == "ask@1"
+    assert row["model"] == "claude-haiku-5-5" and row["prompt"] == "ask@2"
     assert (row["input_tokens"], row["cache_read_tokens"], row["cache_write_tokens"],
             row["output_tokens"]) == (200, 3000, 500, 80)
     assert row["cost_usd"] == pytest.approx(config.cost_usd("claude-haiku-5-5", 200, 3000, 500, 80))
@@ -354,12 +354,17 @@ def test_usage_is_kept_with_the_account_list_not_a_ledger(base):
 # ── Prompts ──────────────────────────────────────────────────────────────
 
 def test_prompts_load_by_id_and_version():
-    text = prompts.load("ask@1")
-    assert "Allowance" in text and "Never say \"safe to spend\"" in text
-    assert prompts.published() == ["ask@1"]
+    for ref in ("ask@1", "ask@2"):
+        text = prompts.load(ref)
+        assert "Allowance" in text and "Never say \"safe to spend\"" in text
+    assert prompts.published() == ["ask@1", "ask@2"]
+    # Phase 2 (THL-308): they/them, and the model calls a tool before it writes.
+    v2 = prompts.load("ask@2")
+    assert " her " not in v2 and " she " not in v2
+    assert "Call a tool before you write anything" in v2
 
 
-@pytest.mark.parametrize("ref", ["ask", "ask@0", "ask@v1", "ask@2", "../ask@1", ""])
+@pytest.mark.parametrize("ref", ["ask", "ask@0", "ask@v1", "ask@3", "../ask@1", ""])
 def test_unknown_or_malformed_prompts_are_refused(ref):
     with pytest.raises(prompts.PromptError):
         prompts.load(ref)
@@ -392,7 +397,7 @@ def test_every_route_names_a_published_prompt():
 
 
 def test_a_changed_prompt_falls_back(base, monkeypatch):
-    monkeypatch.setitem(prompts.FROZEN, "ask@1", "0" * 64)
+    monkeypatch.setitem(prompts.FROZEN, config.ROUTES["ask"]["prompt"], "0" * 64)
     prompts.load.cache_clear()
     try:
         assert ask(base, FakeClient(ok())).reason == "no_prompt"
@@ -538,10 +543,15 @@ def test_only_finance_ai_imports_anthropic():
     assert "anthropic" in set(_imports(ai_dir / "client.py"))
 
 
-def test_no_endpoint_exposes_ai_yet():
-    # Phase 2 adds /api/ask; Phase 1 is server plumbing only.
+def test_only_ask_exposes_ai():
+    # Phase 2 (THL-308): /api/ask is the one endpoint, in finance/ask_api.py;
+    # app.py itself still knows nothing of the gateway.
     src = (ROOT / "app.py").read_text(encoding="utf-8")
     assert "finance.ai" not in src and "/api/ask" not in src
+    import re
+    uses = re.compile(r"from \.ai\b|from \. import ask\b(?!_)")
+    routes = [p for p in (ROOT / "finance").glob("*_api.py") if uses.search(p.read_text(encoding="utf-8"))]
+    assert sorted(p.name for p in routes) == ["ask_api.py", "chat_api.py"]
 
 
 def test_anthropic_is_a_requirement():

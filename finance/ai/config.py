@@ -36,8 +36,13 @@ PRICES = {
 # `escalate` says whether a failure on the default model may be retried on
 # the escalation model (about 20x the price).
 ROUTES = {
-    "ask": {"prompt": "ask@1", "max_tokens": 1024, "effort": "low", "escalate": True},
+    # ask@2 (Phase 2, 2026-11-27): Ask Pearl's tool loop; ask@1 stays frozen.
+    "ask": {"prompt": "ask@2", "max_tokens": 1024, "effort": "low", "escalate": True},
 }
+
+# One question may use the read-only tools this many times in a row before
+# Pearl stops and answers with what Python already worked out (/api/ask).
+MAX_TOOL_TURNS = 4
 
 # ── Caps ─────────────────────────────────────────────────────────────────
 # Per account, per calendar month (UTC), in US $: $0.50, set by the product

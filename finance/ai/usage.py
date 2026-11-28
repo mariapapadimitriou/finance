@@ -98,11 +98,13 @@ def month_cost(base, user_id, month: str) -> float:
 
 
 def day_requests(base, user_id, day: str) -> int:
-    """Questions that reached the model today (an escalation is the same one)."""
+    """Questions that reached the model today. An escalation is the same
+    question, and so is each turn of one question's tool loop (/api/ask):
+    every row of one question shares its ask_id."""
     ensure_table(base)
     marks = ", ".join("?" for _ in SKIPPED)
     with base.conn(standalone=True) as c:
-        row = c.execute(f"SELECT COUNT(*) AS n FROM app_ai_usage WHERE user_id = ? AND day = ? "
+        row = c.execute(f"SELECT COUNT(DISTINCT ask_id) AS n FROM app_ai_usage WHERE user_id = ? AND day = ? "
                         f"AND attempt = 1 AND outcome NOT IN ({marks})",
                         (int(user_id), day, *SKIPPED)).fetchone()
     return int(row["n"] or 0)
